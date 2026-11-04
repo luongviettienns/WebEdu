@@ -19,7 +19,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 - [x] Khởi tạo Git repository cục bộ (branch `main`).
 - [x] Thiết lập `.gitignore` chuẩn cho Node.js / NestJS / Fullstack.
 - [x] Khởi tạo tài liệu dự án ban đầu (`README.md`, `PROJECT_PROGRESS.md`).
-- [ ] Tạo Public Repository `WebEdu` trên GitHub (`luongviettienns/WebEdu`) và push commit đầu tiên.
+- [x] Tạo Public Repository `WebEdu` trên GitHub (`luongviettienns/WebEdu`) và push commit đầu tiên.
 
 ### Phase 1: Khởi tạo khung Backend (NestJS)
 - [ ] Khởi tạo dự án NestJS trong thư mục `backend/`.
