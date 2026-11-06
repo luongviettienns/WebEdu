@@ -16,6 +16,14 @@ describe('validateEnv', () => {
     expect(() => validateEnv(invalidConfig)).toThrow(/JWT_SECRET/);
   });
 
+  it('throws an error if JWT_SECRET is shorter than 32 characters (SEC-F05)', () => {
+    const shortSecretConfig = {
+      DATABASE_URL: 'postgresql://postgres:postgrespassword@localhost:5432/webedu?schema=public',
+      JWT_SECRET: 'too-short-secret-only-31-chars!',
+    };
+    expect(() => validateEnv(shortSecretConfig)).toThrow(/JWT_SECRET/);
+  });
+
   it('validates and parses a valid environment config with custom values', () => {
     const validConfig = {
       NODE_ENV: 'test',

@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, validateSync } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, MinLength, validateSync } from 'class-validator';
 
 export enum Environment {
   Development = 'development',
@@ -21,6 +21,7 @@ export class EnvironmentVariables {
   DATABASE_URL!: string;
 
   @IsString()
+  @MinLength(32)
   JWT_SECRET!: string;
 
   @IsString()

@@ -3,6 +3,8 @@ import {
   VN_TIMEZONE,
   calculateTeacherAttendanceDeadline,
   isWithinTeacherAttendanceWindow,
+  calculateAgeInVnTimezone,
+  formatDateVn,
 } from './timezone.util.js';
 
 describe('Timezone Utilities (Asia/Ho_Chi_Minh)', () => {
@@ -49,5 +51,25 @@ describe('Timezone Utilities (Asia/Ho_Chi_Minh)', () => {
     // Outside window: Thursday 2026-11-13 at 00:00:01 GMT+7
     const outsideWindow = new Date('2026-11-13T00:00:01+07:00');
     expect(isWithinTeacherAttendanceWindow(lessonDate, outsideWindow)).toBe(false);
+  });
+
+  it('calculates student age accurately in Asia/Ho_Chi_Minh including early morning 00:05 GMT+7 boundary', () => {
+    // Student born on 2014-11-06 (@db.Date stored as 2014-11-06T00:00:00.000Z)
+    const dob = new Date('2014-11-06T00:00:00.000Z');
+
+    // Registering at 2026-11-06 00:05:00+07:00 (which is 2026-11-05T17:05:00.000Z in UTC!)
+    const earlyMorningVn = new Date('2026-11-06T00:05:00+07:00');
+    expect(calculateAgeInVnTimezone(dob, earlyMorningVn)).toBe(12);
+
+    // One minute before midnight in VN (2026-11-05 23:59:00+07:00) -> still 11 years old
+    const beforeBirthdayVn = new Date('2026-11-05T23:59:00+07:00');
+    expect(calculateAgeInVnTimezone(dob, beforeBirthdayVn)).toBe(11);
+  });
+
+  it('calculates leap year birthday (Feb 29) and historical registration reference instant accurately', () => {
+    const leapDob = new Date('2012-02-29T00:00:00.000Z');
+    expect(calculateAgeInVnTimezone(leapDob, new Date('2026-02-28T12:00:00+07:00'))).toBe(13);
+    expect(calculateAgeInVnTimezone(leapDob, new Date('2026-03-01T00:01:00+07:00'))).toBe(14);
+    expect(formatDateVn(leapDob)).toBe('29/02/2012');
   });
 });

@@ -1,0 +1,78 @@
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import { ProfileService } from './profile.service.js';
+import { ChangePasswordDto, UpdateProfileDto } from './dto/profile.dto.js';
+import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
+import { AUTH_COOKIE_NAME, JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../../common/guards/roles.guard.js';
+
+@ApiTags('Profile')
+@Controller('profile')
+@UseGuards(JwtAuthGuard, RolesGuard)
+export class ProfileController {
+  constructor(private readonly profileService: ProfileService) {}
+
+  @Get('me')
+  @ApiOperation({ summary: 'Xem hồ sơ cá nhân (FUNC-078)' })
+  async getMyProfile(@CurrentUser() user: AuthenticatedUser) {
+    return this.profileService.getMyProfile(user.id);
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Cập nhật hồ sơ cá nhân (FUNC-078)' })
+  async updateMyProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateProfileDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.profileService.updateMyProfile(
+      user.id,
+      dto as UpdateProfileDto & Record<string, unknown>,
+    );
+
+    if (result.accessToken) {
+      res.cookie(AUTH_COOKIE_NAME, result.accessToken, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        maxAge: 3600 * 1000,
+      });
+    }
+
+    return result;
+  }
+
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Đổi mật khẩu cá nhân (FUNC-078)' })
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.profileService.changePassword(user.id, dto);
+
+    res.cookie(AUTH_COOKIE_NAME, result.accessToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 3600 * 1000,
+    });
+
+    return result;
+  }
+}

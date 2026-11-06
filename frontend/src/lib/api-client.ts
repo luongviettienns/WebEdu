@@ -26,6 +26,55 @@ export interface HealthCheckResponse {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
+const LEGACY_ACCESS_TOKEN_STORAGE_KEY = 'webedu_access_token';
+
+/**
+ * Chỉ giữ accessToken trong bộ nhớ RAM của tab hiện tại (không lưu Web Storage)
+ * để loại bỏ rủi ro đánh cắp JWT bền vững qua XSS; phiên chính dựa trên Cookie HttpOnly.
+ */
+let inMemoryAccessToken: string | null = null;
+
+function purgeLegacyWebStorageToken(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(LEGACY_ACCESS_TOKEN_STORAGE_KEY);
+  } catch {
+    // Bỏ qua nếu trình duyệt hạn chế quyền truy cập Storage
+  }
+}
+
+export function getStoredAccessToken(): string | null {
+  return inMemoryAccessToken;
+}
+
+export function setStoredAccessToken(token: string | null): void {
+  inMemoryAccessToken = token ?? null;
+  purgeLegacyWebStorageToken();
+}
+
+function normalizeHeaders(headersInit?: HeadersInit): Record<string, string> {
+  if (!headersInit) {
+    return {};
+  }
+  if (headersInit instanceof Headers) {
+    const normalized: Record<string, string> = {};
+    headersInit.forEach((value, key) => {
+      normalized[key] = value;
+    });
+    return normalized;
+  }
+  if (Array.isArray(headersInit)) {
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of headersInit) {
+      normalized[key] = value;
+    }
+    return normalized;
+  }
+  return { ...headersInit };
+}
+
 export class ApiClientError extends Error {
   constructor(
     public readonly status: number,
@@ -38,7 +87,6 @@ export class ApiClientError extends Error {
     this.name = 'ApiClientError';
   }
 
-  // Backward compatibility getter
   get statusCode(): number {
     return this.status;
   }
@@ -56,13 +104,20 @@ export async function fetchApi<T>(
 
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest',
   };
+
+  const token = getStoredAccessToken();
+  if (token) {
+    defaultHeaders['Authorization'] = `Bearer ${token}`;
+  }
 
   const response = await fetch(url, {
     ...options,
+    credentials: 'include',
     headers: {
       ...defaultHeaders,
-      ...options.headers,
+      ...normalizeHeaders(options.headers),
     },
   });
 

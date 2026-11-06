@@ -1,20 +1,32 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const configService = app.get(ConfigService);
+  const trustProxy = configService.get<string>('TRUST_PROXY');
+  if (trustProxy === '1' || trustProxy === 'true') {
+    app.set('trust proxy', 1);
+  }
+
+  app.use(cookieParser());
+
   const port = configService.get<number>('PORT', 3001);
 
-  // Enable CORS safely
+  // Enable CORS safely without throwing raw 500 error before AllExceptionsFilter (P1-1)
   const corsOriginEnv = configService.get<string>('CORS_ORIGIN', 'http://localhost:3000');
-  const allowedOrigins = corsOriginEnv.split(',').map((o) => o.trim());
+  const allowedOrigins = corsOriginEnv
+    .split(',')
+    .map((o) => o.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
 
   app.enableCors({
     origin: (
@@ -25,14 +37,11 @@ async function bootstrap() {
       if (!requestOrigin) {
         return callback(null, true);
       }
-      if (
-        allowedOrigins.includes(requestOrigin) ||
-        (process.env.NODE_ENV !== 'production' &&
-          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(requestOrigin))
-      ) {
+      const normalizedOrigin = requestOrigin.trim().replace(/\/+$/, '');
+      if (allowedOrigins.includes(normalizedOrigin)) {
         return callback(null, true);
       }
-      return callback(new Error(`Origin ${requestOrigin} not allowed by CORS`));
+      return callback(null, false);
     },
     credentials: true,
   });

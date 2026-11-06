@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS (Phong cách xanh lá tối giản, hiển thị chuẩn chữ Hán / Pinyin).
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 1 — Khởi tạo Nền tảng Kỹ thuật Fullstack (HOÀN THÀNH - SẴN SÀNG CHUYỂN PHASE 2)**
+* **Giai đoạn hiện tại**: **Phase 2 — Module 01: Tài khoản, Xác thực & Phân quyền RBAC (HOÀN THÀNH - SẴN SÀNG CHUYỂN PHASE 3)**
 
 ---
 
@@ -39,13 +39,14 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 - [x] **Slice 1.6 (P0 Remediation & Linter Alignment)**: Bật lại luật `typescript/no-explicit-any: "error"` trong `.oxlintrc.json` (0 errors), đồng bộ 100% chính sách cấm `any` của Hiến chương Kiến trúc.
 - [x] **Adversarial Audit & Debate (`akit-critic`)**: Hoàn thành vòng phản biện độc lập, khắc phục 100% các khuyến nghị bảo mật & bất biến nghiệp vụ, nhận phán quyết chính thức: **VERDICT: APPROVE**.
 
-### Phase 2: Module 01 — Tài khoản, Xác thực & Phân quyền RBAC (`FUNC-001..013`, `FUNC-078`)
-- [ ] Lập Sub-Plan `docs/plans/phase-02-auth-users-rbac.md` & chốt Open Issues `AUTH-01..04`.
-- [ ] **Slice 2.1**: Schema & Migration cho `User`, `StudentProfile`, `TeacherProfile`, `GuardianConsent`, `PasswordResetToken`.
-- [ ] **Slice 2.2**: Học viên tự đăng ký (`FUNC-001`, $\ge 12$ tuổi) + Xác nhận Email phụ huynh cho HV $< 16$ tuổi (`FUNC-002`, `DEC-001`).
-- [ ] **Slice 2.3**: Đăng nhập + Lockout 15p sau 5 lần sai (`FUNC-003`), Đăng xuất (`FUNC-004`), Khôi phục mật khẩu qua Email (`FUNC-005`, `DEC-016`).
-- [ ] **Slice 2.4**: Hệ thống Guards RBAC & Đa vai trò (`FUNC-009..013`, `DEC-020`) + Bài test chống truy cập chéo IDOR.
-- [ ] **Slice 2.5**: Quản lý tài khoản GV (`FUNC-006`), Hồ sơ HV & Chờ xếp lớp (`FUNC-007, 008`), Hồ sơ cá nhân & Đổi mật khẩu (`FUNC-078`), Cấu hình trung tâm (`FUNC-013`).
+### Phase 2: Module 01 — Tài khoản, Xác thực & Phân quyền RBAC (`FUNC-001..013`, `FUNC-078`) *(HOÀN THÀNH - 100% GATES PASS)*
+- [x] Lập Sub-Plan [`docs/plans/phase-02-auth-users-rbac.md`](./docs/plans/phase-02-auth-users-rbac.md) & chốt các quyết định `DEC-023` (`User.email` và `User.phone` đều bắt buộc & `UNIQUE`, đăng nhập chỉ dùng `email`, `guardianEmail` nullable cho phép anh/chị/em dùng chung email phụ huynh), `DEC-024` (cô lập lịch sử lớp học của HV), `DEC-025` (2 trường hợp quyền xem lớp cũ của GV), `DEC-026` (ma trận quyền học thuật mở rộng của Admin).
+- [x] **Slice 2.1**: Schema & SQL Migration `20261106171000_init_auth_users_rbac` cho `User`, `StudentProfile`, `TeacherProfile`, `GuardianConsent`, `PasswordResetToken`, `SystemAuditLog` (`@db.Timestamptz(3)`, `onDelete: Restrict`, `calculateAgeInVnTimezone`, `role-hierarchy.util.ts`, `JwtAuthGuard`, `RolesGuard`, `audit-sanitize.util.ts`).
+- [x] **Slice 2.2**: Học viên tự đăng ký (`FUNC-001`, $\ge 12$ tuổi theo `Asia/Ho_Chi_Minh`) + Xác nhận Phụ huynh cho HV $12\text{–}15$ tuổi (`FUNC-002`, `DEC-001`, lưu vết `GuardianConsent` IP/UA).
+- [x] **Slice 2.3**: Đăng nhập bằng Email + Khóa tạm 15p sau 5 lần sai nguyên tử (`FOR UPDATE`) + Cookie `HttpOnly; SameSite=Lax` + CSRF `Origin`/`X-Requested-With` (`FUNC-003`), Đăng xuất + Idle Timeout 60 phút (`FUNC-004`), Khôi phục mật khẩu qua Email chống dò tài khoản & single-use SHA-256 token (`FUNC-005`, `DEC-016`).
+- [x] **Slice 2.4**: Hệ thống Guards RBAC & Đa vai trò dương tính (`FUNC-009..013`, `DEC-020`, `DEC-024..026`) + Chốt chặn `SEC-07` (khóa dòng bảo vệ Superadmin hoạt động cuối cùng) & `SEC-08` (chặn leo thang đặc quyền ngang/dọc) + Bộ kiểm thử E2E chống truy cập chéo IDOR/BOLA (`rbac-isolation.e2e-spec.ts`, `auth.e2e-spec.ts`).
+- [x] **Slice 2.5**: Quản lý tài khoản GV (`FUNC-006`), Hồ sơ HV & Hàng đợi chờ xếp lớp (`FUNC-007, 008`), Hồ sơ cá nhân & Đổi mật khẩu/Email xoay vòng phiên mượt mà (`FUNC-078`), Cấu hình trung tâm & Upload Logo kiểm định Magic Bytes PNG/JPG + Nhật ký kiểm toán (`FUNC-013`), Toàn bộ giao diện `(auth)/**` & `(portal)/**` (15/15 routes Next.js 16.4.5, dọn sạch 7/7 hạng mục Prototype Cleanup của Phase 2).
+- [x] **Slice 2.6 (Independent Security & Critic Audit)**: Hoàn thành 2 vòng kiểm toán độc lập song song với `akit-security` (**`SECURITY GATE PASS`**) và `akit-critic` (**`SPEC COMPLIANCE PASS`**), đạt 100% pass trên 54/54 Unit tests và 15/15 E2E tests.
 
 ### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
 - [ ] Lập Sub-Plan `docs/plans/phase-03-courses-and-classes.md` & chốt Open Issues `COURSE-01`, `CLASS-01..02`.
