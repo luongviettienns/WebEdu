@@ -1,5 +1,5 @@
 import { addDays, endOfDay, startOfDay } from 'date-fns';
-import { toZonedTime, fromZonedTime } from 'date-fns-tz';
+import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
 export const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
@@ -25,4 +25,58 @@ export function isWithinTeacherAttendanceWindow(lessonDate: Date, now: Date = ne
   const windowStart = fromZonedTime(startOfDay(zonedLesson), VN_TIMEZONE);
   const windowEnd = calculateTeacherAttendanceDeadline(lessonDate);
   return now.getTime() >= windowStart.getTime() && now.getTime() <= windowEnd.getTime();
+}
+
+/**
+ * Calculates integer age in years based on calendar date of birth (@db.Date in UTC)
+ * compared against referenceInstant in Asia/Ho_Chi_Minh timezone (BR-04, BR-07, FUNC-001, FUNC-007).
+ * Handles 00:00-06:59 GMT+7 boundary and Feb 29 leap year birthdays accurately.
+ */
+export function calculateAgeInVnTimezone(dob: Date | string, referenceInstant: Date = new Date()): number {
+  let dobYear: number;
+  let dobMonth: number;
+  let dobDay: number;
+
+  if (typeof dob === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dob.trim())) {
+    const parts = dob.trim().split('-').map(Number);
+    dobYear = parts[0]!;
+    dobMonth = parts[1]!;
+    dobDay = parts[2]!;
+  } else {
+    const d = typeof dob === 'string' ? new Date(dob) : dob;
+    dobYear = d.getUTCFullYear();
+    dobMonth = d.getUTCMonth() + 1;
+    dobDay = d.getUTCDate();
+  }
+
+  const refFormatted = formatInTimeZone(referenceInstant, VN_TIMEZONE, 'yyyy-MM-dd');
+  const refParts = refFormatted.split('-').map(Number);
+  const refYear = refParts[0]!;
+  const refMonth = refParts[1]!;
+  const refDay = refParts[2]!;
+
+  let age = refYear - dobYear;
+  if (refMonth < dobMonth || (refMonth === dobMonth && refDay < dobDay)) {
+    age -= 1;
+  }
+  return age;
+}
+
+/**
+ * Formats a calendar date (@db.Date) as dd/mm/yyyy
+ */
+export function formatDateVn(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Formats a timestamp in Asia/Ho_Chi_Minh as dd/mm/yyyy HH:mm
+ */
+export function formatDateTimeVn(date: Date | string, includeSeconds = false): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return formatInTimeZone(d, VN_TIMEZONE, includeSeconds ? 'dd/MM/yyyy HH:mm:ss' : 'dd/MM/yyyy HH:mm');
 }

@@ -40,6 +40,15 @@ export interface ProblemDetailsPayload {
   invalidParams?: string[];
 }
 
+function isPrismaUniqueConstraintError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code?: unknown }).code === 'P2002'
+  );
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -76,6 +85,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
           detail = exception.message || title;
         }
       }
+    } else if (isPrismaUniqueConstraintError(exception)) {
+      status = HttpStatus.CONFLICT;
+      title = HTTP_ERROR_TITLES[HttpStatus.CONFLICT] ?? 'Conflict';
+      detail = 'Dữ liệu email hoặc số điện thoại đã tồn tại trong hệ thống';
     } else if (exception instanceof Error) {
       this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
     }

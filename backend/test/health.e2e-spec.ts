@@ -7,6 +7,10 @@ import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/common/prisma/prisma.service.js';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter.js';
 
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL ??= 'postgresql://postgres:postgres@localhost:5432/webedu_e2e';
+process.env.JWT_SECRET ??= 'webedu-e2e-jwt-secret-key-at-least-32-chars';
+
 describe('Health & Global Error Filter (e2e)', () => {
   let app: INestApplication<App>;
 

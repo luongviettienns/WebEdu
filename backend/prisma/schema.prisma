@@ -17,3 +17,119 @@ model SystemSetting {
 
   @@map("system_settings")
 }
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+  SUPERADMIN
+}
+
+enum UserStatus {
+  PENDING_CLASS
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id                  String      @id @default(uuid())
+  email               String      @unique @db.VarChar(255)
+  phone               String      @unique @db.VarChar(15)
+  fullName            String      @map("full_name") @db.VarChar(100)
+  passwordHash        String      @map("password_hash") @db.VarChar(255)
+  roles               Role[]      @default([STUDENT])
+  status              UserStatus  @default(PENDING_CLASS)
+  failedLoginAttempts Int         @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?   @map("locked_until") @db.Timestamptz(3)
+  tokenVersion        Int         @default(0) @map("token_version")
+  lastLoginAt         DateTime?   @map("last_login_at") @db.Timestamptz(3)
+  lastActivityAt      DateTime?   @map("last_activity_at") @db.Timestamptz(3)
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  studentProfile      StudentProfile?
+  teacherProfile      TeacherProfile?
+  passwordResetTokens PasswordResetToken[]
+  auditLogsAsActor    SystemAuditLog[]     @relation("AuditActor")
+
+  @@index([status])
+  @@map("users")
+}
+
+model StudentProfile {
+  id            String           @id @default(uuid())
+  userId        String           @unique @map("user_id")
+  dateOfBirth   DateTime         @map("date_of_birth") @db.Date
+  guardianEmail String?          @map("guardian_email") @db.VarChar(255)
+  assignedClass String?          @map("assigned_class") @db.VarChar(100)
+  internalNotes String?          @map("internal_notes") @db.Text
+  enrolledAt    DateTime?        @map("enrolled_at") @db.Timestamptz(3)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user          User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  consent       GuardianConsent?
+
+  @@index([guardianEmail])
+  @@map("student_profiles")
+}
+
+model GuardianConsent {
+  id                  String         @id @default(uuid())
+  studentProfileId    String         @unique @map("student_profile_id")
+  guardianEmail       String         @map("guardian_email") @db.VarChar(255)
+  consented           Boolean        @default(true)
+  consentVersion      String         @map("consent_version") @db.VarChar(20)
+  consentTextSnapshot String         @map("consent_text_snapshot") @db.Text
+  ipAddress           String?        @map("ip_address") @db.VarChar(64)
+  userAgent           String?        @map("user_agent") @db.VarChar(500)
+  consentedAt         DateTime       @default(now()) @map("consented_at") @db.Timestamptz(3)
+
+  studentProfile      StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
+
+  @@map("guardian_consents")
+}
+
+model TeacherProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique @map("user_id")
+  notes              String?  @db.Text
+  activeClassesCount Int      @default(0) @map("active_classes_count")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("teacher_profiles")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("password_reset_tokens")
+}
+
+model SystemAuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  actingRole Role?    @map("acting_role")
+  action     String   @db.VarChar(100)
+  targetType String   @map("target_type") @db.VarChar(100)
+  targetId   String?  @map("target_id") @db.VarChar(100)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([actorId])
+  @@map("system_audit_logs")
+}

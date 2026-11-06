@@ -6,12 +6,12 @@
 
 | ID | Module | FUNC | Vấn đề | Khi nào giải quyết |
 |---|---|---|---|---|
-| AUTH-01 | Tài khoản & phân quyền | FUNC-001, FUNC-002, FUNC-003 | Email phụ huynh được lưu riêng với email đăng nhập học viên hay có thể dùng làm email đăng nhập? Hai anh/chị em dùng chung email phụ huynh đăng ký như thế nào? | BLOCKS auth registration |
-| AUTH-02 | Tài khoản & phân quyền | FUNC-001, FUNC-003 | SĐT học viên còn bắt buộc/duy nhất và có dùng đăng nhập hay không, sau khi bỏ SĐT phụ huynh? | BLOCKS registration validation |
-| AUTH-03 | Tài khoản & phân quyền | FUNC-002 | Nội dung cam kết/đồng ý của người giám hộ; dữ liệu cần lưu để chứng minh consent; chính sách bảo vệ trẻ em. | BLOCKS guardian flow |
-| AUTH-04 | Tài khoản & phân quyền | FUNC-006, FUNC-007, FUNC-008, FUNC-078 | Phạm vi dữ liệu GV/HV, chỉnh sửa hồ sơ, quy trình xếp lớp/tài khoản GV, mức ưu tiên Dự kiến P1. | SCOPE at auth module |
+| AUTH-01 | Tài khoản & phân quyền | FUNC-001, FUNC-002, FUNC-003 | Đã chốt (`DEC-023`): `User.email` là `UNIQUE` cho tài khoản HV; `StudentProfile.guardianEmail` lưu riêng và **không `UNIQUE`** để 2 anh/chị em dưới 16 tuổi dùng chung email phụ huynh. | RESOLVED (`DEC-023`) |
+| AUTH-02 | Tài khoản & phân quyền | FUNC-001, FUNC-003 | Đã chốt (`DEC-023`): Cả `User.email` và `User.phone` đều bắt buộc và `UNIQUE` trên toàn hệ thống. Đăng nhập (`FUNC-003`) **chỉ dùng `email` làm tên đăng nhập**. | RESOLVED (`DEC-023`) |
+| AUTH-03 | Tài khoản & phân quyền | FUNC-002 | Lưu vết đầy đủ trong bảng `GuardianConsent` (`guardianEmail`, `consented`, `consentVersion = 'v1.0'`, `consentTextSnapshot`, `consentedAt` `TIMESTAMPTZ(3)`, `ipAddress`, `userAgent`). | RESOLVED (`Phase 2 Plan`) |
+| AUTH-04 | Tài khoản & phân quyền | FUNC-006, FUNC-007, FUNC-008, FUNC-078 | Triển khai đầy đủ cả 4 chức năng Quản lý GV, Quản lý HV, Hàng đợi chờ xếp lớp và Hồ sơ cá nhân trong Phase 2. | RESOLVED (`Phase 2 Plan`) |
 | COURSE-01 | Khóa HSK | FUNC-014, FUNC-016 | Số buổi mặc định từng khóa HSK và quyền CRUD danh mục khóa. | DEFERRED course/class module |
-| CLASS-01 | Lớp học | FUNC-022, FUNC-023 | Giáo viên mới có được xem điểm/lịch sử của học viên tại lớp cũ đến mức nào? | DEFERRED class module |
+| CLASS-01 | Lớp học | FUNC-022, FUNC-023 | Đã chốt (`DEC-024`, `DEC-025`): (1) Giáo viên lớp mới **không được xem lịch sử lớp cũ của học viên** (chỉ HV xem của mình, Admin xem tất cả); (2) Với lớp cũ của chính GV: nếu lớp đã kết thúc thì GV phụ trách có quyền xem, nếu GV bị thay giữa chừng thì GV cũ mất quyền xem. | RESOLVED (`DEC-024`, `DEC-025`) |
 | CLASS-02 | Lớp học | FUNC-017, FUNC-079 | Quy tắc sửa khóa và đóng lớp khi đã có bài nộp/điểm; tác động đến history. | DEFERRED class module |
 | SCHED-01 | Lịch & buổi học | FUNC-026, FUNC-027, FUNC-029, FUNC-030, FUNC-031 | Admin vs GV ai được sửa lịch; tình trạng hủy/sửa; giờ/múi giờ và trạng thái buổi khi nghỉ. | DEFERRED schedule module |
 | ATT-01 | Điểm danh | FUNC-036, FUNC-037 | Ngưỡng nghỉ 30% tính cả vắng có phép? Mốc 2 ngày sửa điểm danh tính từ giờ nào, inclusive? | DEFERRED attendance module |

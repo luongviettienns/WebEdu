@@ -1,103 +1,112 @@
+import Link from 'next/link';
 import React from 'react';
+import { AppHeader } from '@/components/layout/AppHeader';
 
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
-      {/* Navigation Header */}
-      <header className="border-b border-emerald-900/10 bg-white/80 backdrop-blur sticky top-0 z-50">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-700 text-white font-bold text-xl shadow-sm">
-              TD
-            </div>
-            <div>
-              <span className="font-semibold text-lg text-emerald-950 tracking-tight block">
-                Trung Tâm TD Hán Ngữ
-              </span>
-              <span className="text-xs text-slate-500 font-medium block">
-                Hệ Thống Quản Trị Học Tập & Lớp Học
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Backend v1.0 • Asia/Ho_Chi_Minh
-            </span>
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       {/* Hero Section */}
       <main className="flex-1">
         <section className="mx-auto max-w-7xl px-6 py-16 sm:py-24">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100/70 px-4 py-1.5 text-xs font-semibold text-emerald-800 mb-6">
-              <span>🌿 Nền Tảng Đào Tạo Chuẩn HSK 3.0</span>
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-emerald-100/80 px-4 py-1.5 text-xs font-semibold text-emerald-800 border border-emerald-200">
+              <span>Nền Tảng Đào Tạo Chuẩn HSK 3.0</span>
             </div>
             <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
               Học Tập & Quản Trị Giáo Dục{' '}
-              <span className="text-emerald-700 block mt-1 font-serif">
+              <span className="mt-1 block font-serif text-emerald-700">
                 TD 汉语学习平台
               </span>
             </h1>
             <p className="mt-6 text-lg leading-8 text-slate-600">
-              Hệ thống vận hành chuyên sâu cho trung tâm: Quản lý khóa học HSK,
-              phân công giáo viên, điểm danh buổi học chuẩn múi giờ và ngân hàng đề thi
-              tương tác hai bước bảo mật.
+              Hệ thống vận hành chuyên sâu cho trung tâm: Quản lý tài khoản đa
+              vai trò, khóa học HSK, phân công giáo viên, điểm danh buổi học
+              chính xác và ngân hàng đề thi tương tác bảo mật.
             </p>
+
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+              <Link
+                href="/login"
+                className="rounded-xl bg-emerald-700 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
+              >
+                Đăng nhập hệ thống
+              </Link>
+              <Link
+                href="/register"
+                className="rounded-xl border border-emerald-700 bg-white px-6 py-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 transition-colors"
+              >
+                Đăng ký học viên mới
+              </Link>
+            </div>
           </div>
 
-          {/* Core Modules Grid */}
+          {/* Core Modules & Portal Quick Links */}
           <div className="mt-16 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 font-bold text-lg mb-4">
-                01
+            <Link
+              href="/student/overview"
+              className="group rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-lg font-bold text-emerald-700 group-hover:bg-emerald-700 group-hover:text-white transition-colors">
+                HV
               </div>
-              <h3 className="text-base font-semibold text-slate-900">
-                Khóa Học & Lớp Học
-              </h3>
+              <h2 className="text-base font-semibold text-slate-900">
+                Cổng Học Viên
+              </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Đào tạo HSK1–HSK4 và Giao tiếp cơ bản. Ràng buộc chuẩn: 1 lớp = 1 giáo viên, 1 học viên học 1 lớp đang hoạt động.
+                Theo dõi tình trạng xếp lớp, lịch học HSK, bài tập được giao và
+                bảng điểm cá nhân bảo mật.
               </p>
-            </div>
+            </Link>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 font-bold text-lg mb-4">
-                02
+            <Link
+              href="/admin/students"
+              className="group rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-lg font-bold text-emerald-700 group-hover:bg-emerald-700 group-hover:text-white transition-colors">
+                QL
               </div>
-              <h3 className="text-base font-semibold text-slate-900">
-                Lịch Học & Điểm Danh
-              </h3>
+              <h2 className="text-base font-semibold text-slate-900">
+                Quản Trị Học Viên & Xếp Lớp
+              </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Điểm danh 3 trạng thái. Cửa sổ sửa điểm danh 2 ngày theo giờ Việt Nam (GMT+7) và lưu vết kiểm toán đầy đủ.
+                Quản lý hồ sơ học viên, đối soát đồng ý của cha mẹ và duyệt danh
+                sách tài khoản chờ xếp lớp.
               </p>
-            </div>
+            </Link>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 font-bold text-lg mb-4">
-                03
+            <Link
+              href="/admin/teachers"
+              className="group rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-lg font-bold text-emerald-700 group-hover:bg-emerald-700 group-hover:text-white transition-colors">
+                GV
               </div>
-              <h3 className="text-base font-semibold text-slate-900">
-                Ngân Hàng Đề Thi
-              </h3>
+              <h2 className="text-base font-semibold text-slate-900">
+                Đội Ngũ Giáo Viên
+              </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Hỗ trợ 7 dạng câu hỏi HSK tương tác, chuyển đổi từ đề Word/PDF có bước giáo viên kiểm duyệt trước khi giao.
+                Quản lý giảng viên HSK, theo dõi số lớp đang phụ trách và hỗ trợ
+                kiêm nhiệm vai trò Admin.
               </p>
-            </div>
+            </Link>
 
-            <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 font-bold text-lg mb-4">
-                04
+            <Link
+              href="/superadmin/settings"
+              className="group rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm hover:border-emerald-300 hover:shadow-md transition-all"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-lg font-bold text-emerald-700 group-hover:bg-emerald-700 group-hover:text-white transition-colors">
+                SA
               </div>
-              <h3 className="text-base font-semibold text-slate-900">
-                Chấm Điểm & Công Bố
-              </h3>
+              <h2 className="text-base font-semibold text-slate-900">
+                Vận Hành Hệ Thống
+              </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Quy trình hai bước độc lập: Xác nhận điểm $\rightarrow$ Công bố. Điểm và đáp án bảo mật tuyệt đối trước khi công bố.
+                Phân quyền đa vai trò, thiết lập thương hiệu Trung tâm và tra cứu
+                nhật ký kiểm toán hệ thống.
               </p>
-            </div>
+            </Link>
           </div>
         </section>
       </main>
@@ -105,7 +114,8 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-8">
         <div className="mx-auto max-w-7xl px-6 text-center text-xs text-slate-500">
-          Trung Tâm TD Hán Ngữ © 2026 — Nền Tảng Quản Lý Giáo Dục Trực Tuyến WebEdu
+          Trung Tâm TD Hán Ngữ © 2026 — Nền Tảng Quản Lý Giáo Dục Trực Tuyến
+          WebEdu
         </div>
       </footer>
     </div>

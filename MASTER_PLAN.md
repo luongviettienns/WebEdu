@@ -133,19 +133,22 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
   - `Module 03 — Lớp học (9)`: `FUNC-016` (Tạo lớp học — không giới hạn cứng 5 HV theo `DEC-005`), `FUNC-017` (Chỉnh sửa thông tin lớp), `FUNC-018` (Phân công đúng 1 giáo viên phụ trách, không trợ giảng — `DEC-006`), `FUNC-020` (Thêm học viên vào lớp — 1 HV chỉ học 1 lớp active tại 1 thời điểm theo `DEC-007`), `FUNC-022` (Chuyển học viên sang lớp khác — giữ nguyên lịch sử lớp cũ theo `DEC-008`), `FUNC-023` (Xem lịch sử các lớp đã học), `FUNC-024` (Danh sách và chi tiết lớp theo phân quyền), `FUNC-077` (Rút học viên khỏi lớp), `FUNC-079` (Kết thúc / lưu trữ lớp — cho phép dừng trước khi đủ số buổi dự kiến theo `DEC-019`).
 - **Open Issues Gate cần chốt đầu Phase 3:**
   - `COURSE-01`: Số buổi mặc định từng khóa HSK và quyền CRUD danh mục khóa.
-  - `CLASS-01`: Giáo viên lớp mới được xem lịch sử của học viên ở lớp cũ đến mức nào.
+  - `CLASS-01` (**ĐÃ CHỐT — `DEC-024`, `DEC-025`**):
+    1. **Quyền xem lịch sử lớp của học viên (`FUNC-023`):** Học viên xem lịch sử lớp của chính mình; **Giáo viên hiện tại của lớp mới KHÔNG được xem lịch sử lớp cũ của học viên**; Admin xem lịch sử của tất cả học viên; Superadmin không mặc định xem dữ liệu học tập.
+    2. **Quyền của Giáo viên đối với lớp cũ của chính GV đó (`FUNC-011, 018, 024, 079`):** Nếu lớp đã kết thúc (`COMPLETED`/`ARCHIVED`) thì GV phụ trách có quyền xem; nếu GV đang dạy bị thay bằng GV khác (`FUNC-018`) thì **GV cũ mất hoàn toàn quyền xem**, chỉ GV mới có quyền.
+    3. **Quyền vận hành học thuật của Admin (`DEC-026`):** Admin có đầy đủ quyền thực hiện các chức năng `FUNC-034`, `FUNC-040..052`, `FUNC-060`, `FUNC-062`, `FUNC-065`, `FUNC-068`, `FUNC-080`.
   - `CLASS-02`: Quy tắc sửa khóa và đóng/kết thúc lớp (`FUNC-079`) khi lớp đang có bài tập/điểm.
 - **Interfaces (`Consumes` / `Produces`):**
   - **Consumes:** `User`, `Role`, `JwtAuthGuard`, `RolesGuard` từ Phase 2.
   - **Produces:**
     - Models: `Course`, `Class`, `ClassEnrollment` (kèm custom SQL migration `CREATE UNIQUE INDEX idx_unique_student_active_enrollment ON enrollments(student_id) WHERE status = 'ACTIVE'`), `EnrollmentHistoryLog`.
-    - Service helper: `ClassAccessService.assertTeacherOwnsClass(userId, classId)` và `ClassAccessService.assertStudentInClass(userId, classId)`.
+    - Service helper: `ClassAccessService.assertTeacherCanViewClass(userId, classId)` (cho phép GV hiện tại của lớp, hoặc GV phụ trách khi lớp đã `COMPLETED`/`ARCHIVED`, chặn GV cũ đã bị thay thế theo `DEC-025`) và `ClassAccessService.assertStudentInClass(userId, classId)`.
     - APIs: `/api/v1/courses/*`, `/api/v1/classes/*`, `/api/v1/classes/:id/enrollments/*`.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 3:**
   - [ ] **Task 3.1:** Schema & Migration cho `Course` (`FUNC-014`) và `Class` (`FUNC-016, 017, 018` — 1 GV/lớp, không giới hạn 5 HV).
   - [ ] **Task 3.2:** Schema & Partial Unique Index Migration cho `ClassEnrollment` (`FUNC-020`) + Concurrency test chứng minh 1 HV không thể active ở 2 lớp cùng lúc.
-  - [ ] **Task 3.3:** Nghiệp vụ Chuyển lớp (`FUNC-022`), Rút khỏi lớp (`FUNC-077`) và Xem lịch sử lớp (`FUNC-023`) trong `prisma.$transaction`, bảo toàn 100% dữ liệu lớp cũ (`DEC-008`).
-  - [ ] **Task 3.4:** Nghiệp vụ Kết thúc / Lưu trữ lớp (`FUNC-079`, `DEC-019`) và Phân quyền xem Danh sách/Chi tiết lớp (`FUNC-024`: HV chỉ thấy lớp mình, GV chỉ thấy lớp phụ trách, Admin thấy tất cả).
+  - [ ] **Task 3.3:** Nghiệp vụ Chuyển lớp (`FUNC-022`), Rút khỏi lớp (`FUNC-077`) và Xem lịch sử lớp (`FUNC-023` — chặn GV lớp mới xem lịch sử lớp cũ của HV theo `DEC-024`) trong `prisma.$transaction`, bảo toàn 100% dữ liệu lớp cũ (`DEC-008`).
+  - [ ] **Task 3.4:** Nghiệp vụ Kết thúc / Lưu trữ lớp (`FUNC-079`, `DEC-019`) và Phân quyền xem Danh sách/Chi tiết lớp (`FUNC-024`, `DEC-025`: HV chỉ thấy lớp mình, GV thấy lớp đang phụ trách + lớp đã kết thúc của mình nhưng không thấy lớp đã bị thay GV, Admin thấy tất cả).
   - [ ] **Task 3.5:** Giao diện Quản lý Khóa HSK, Danh sách Lớp, Chi tiết Lớp, Modal Xếp lớp / Chuyển lớp / Rút lớp và E2E Playwright tests.
 
 ---
