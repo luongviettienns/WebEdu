@@ -1,10 +1,19 @@
-export interface ApiErrorResponse {
-  statusCode: number;
-  error: string;
-  message: string | string[];
-  timestamp: string;
-  path: string;
+/**
+ * RFC 7807 / RFC 9457 Problem Details for HTTP APIs
+ */
+export interface ProblemDetails {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance: string;
+  timestamp?: string;
+  invalidParams?: string[];
+  [key: string]: unknown;
 }
+
+// Backward-compatible alias
+export type ApiErrorResponse = ProblemDetails;
 
 export interface HealthCheckResponse {
   status: string;
@@ -19,15 +28,23 @@ const API_BASE_URL =
 
 export class ApiClientError extends Error {
   constructor(
-    public readonly statusCode: number,
-    public readonly errorResponse: ApiErrorResponse,
+    public readonly status: number,
+    public readonly problem: ProblemDetails,
   ) {
-    super(
-      Array.isArray(errorResponse.message)
-        ? errorResponse.message.join(', ')
-        : errorResponse.message || 'API Request Failed',
-    );
+    const errorDetails = problem.invalidParams?.length
+      ? `${problem.detail}: ${problem.invalidParams.join(', ')}`
+      : problem.detail || problem.title || `API Request Failed with status ${status}`;
+    super(errorDetails);
     this.name = 'ApiClientError';
+  }
+
+  // Backward compatibility getter
+  get statusCode(): number {
+    return this.status;
+  }
+
+  get errorResponse(): ProblemDetails {
+    return this.problem;
   }
 }
 
@@ -50,19 +67,20 @@ export async function fetchApi<T>(
   });
 
   if (!response.ok) {
-    let errorData: ApiErrorResponse;
+    let problem: ProblemDetails;
     try {
-      errorData = (await response.json()) as ApiErrorResponse;
+      problem = (await response.json()) as ProblemDetails;
     } catch {
-      errorData = {
-        statusCode: response.status,
-        error: response.statusText,
-        message: 'Lỗi phản hồi không xác định từ máy chủ',
+      problem = {
+        type: 'about:blank',
+        title: response.statusText || 'HTTP Error',
+        status: response.status,
+        detail: 'Lỗi phản hồi không xác định từ máy chủ',
+        instance: endpoint,
         timestamp: new Date().toISOString(),
-        path: endpoint,
       };
     }
-    throw new ApiClientError(response.status, errorData);
+    throw new ApiClientError(response.status, problem);
   }
 
   return response.json() as Promise<T>;

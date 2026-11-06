@@ -12,8 +12,8 @@ model SystemSetting {
   key         String   @unique @db.VarChar(100)
   value       String   @db.Text
   description String?  @db.VarChar(255)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("system_settings")
 }
