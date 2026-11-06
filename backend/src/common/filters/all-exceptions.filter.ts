@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-const HTTP_ERROR_NAMES: Record<number, string> = {
+export const HTTP_ERROR_TITLES: Record<number, string> = {
   400: 'Bad Request',
   401: 'Unauthorized',
   402: 'Payment Required',
@@ -19,6 +19,8 @@ const HTTP_ERROR_NAMES: Record<number, string> = {
   408: 'Request Timeout',
   409: 'Conflict',
   410: 'Gone',
+  413: 'Payload Too Large',
+  415: 'Unsupported Media Type',
   422: 'Unprocessable Entity',
   429: 'Too Many Requests',
   500: 'Internal Server Error',
@@ -27,6 +29,16 @@ const HTTP_ERROR_NAMES: Record<number, string> = {
   503: 'Service Unavailable',
   504: 'Gateway Timeout',
 };
+
+export interface ProblemDetailsPayload {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance: string;
+  timestamp: string;
+  invalidParams?: string[];
+}
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -38,35 +50,51 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
-    let errorName = 'Internal Server Error';
-    let message: string | object = 'Internal Server Error';
+    let title = 'Internal Server Error';
+    let detail = 'An unexpected internal error occurred';
+    let invalidParams: string[] | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
-      errorName = HTTP_ERROR_NAMES[status] ?? 'Http Exception';
+      title = HTTP_ERROR_TITLES[status] ?? 'Http Exception';
       const res = exception.getResponse();
 
       if (typeof res === 'string') {
-        message = res;
+        detail = res;
       } else if (typeof res === 'object' && res !== null) {
         const resObj = res as Record<string, unknown>;
-        message = (resObj.message as string | object) ?? exception.message;
         if (typeof resObj.error === 'string') {
-          errorName = resObj.error;
+          title = resObj.error;
+        }
+
+        if (Array.isArray(resObj.message)) {
+          detail = 'Request validation failed';
+          invalidParams = resObj.message.map(String);
+        } else if (typeof resObj.message === 'string') {
+          detail = resObj.message;
+        } else {
+          detail = exception.message || title;
         }
       }
     } else if (exception instanceof Error) {
       this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
     }
 
-    const path = request?.originalUrl || request?.url || '';
+    const instance = request?.originalUrl || request?.url || '';
 
-    response.status(status).json({
-      statusCode: status,
-      error: errorName,
-      message,
+    const problemDetails: ProblemDetailsPayload = {
+      type: 'about:blank',
+      title,
+      status,
+      detail,
+      instance,
       timestamp: new Date().toISOString(),
-      path,
-    });
+      ...(invalidParams ? { invalidParams } : {}),
+    };
+
+    response
+      .setHeader('Content-Type', 'application/problem+json')
+      .status(status)
+      .json(problemDetails);
   }
 }

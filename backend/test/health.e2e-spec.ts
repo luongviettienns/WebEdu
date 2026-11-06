@@ -55,18 +55,20 @@ describe('Health & Global Error Filter (e2e)', () => {
     );
   });
 
-  it('GET /api/v1/non-existent-route returns 404 with RFC 7807 error format', async () => {
+  it('GET /api/v1/non-existent-route returns 404 with RFC 7807 problem details format', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/non-existent-route')
       .expect(404);
 
+    expect(response.headers['content-type']).toMatch(/application\/problem\+json/);
     expect(response.body).toEqual(
       expect.objectContaining({
-        statusCode: 404,
-        error: 'Not Found',
-        message: expect.any(String),
+        type: 'about:blank',
+        title: 'Not Found',
+        status: 404,
+        detail: expect.any(String),
+        instance: '/api/v1/non-existent-route',
         timestamp: expect.any(String),
-        path: '/api/v1/non-existent-route',
       }),
     );
   });
