@@ -1,0 +1,740 @@
+{
+  "project": "TD Hán Ngữ / WebEdu",
+  "version": "1.0",
+  "generated_on": "2026-11-06",
+  "source": "references/Final.xlsx",
+  "source_sha256": "026da17073c9d74d3dbb38ca0b88de50f6c631b2f5cec8262c3704682e744007",
+  "source_sheet_count": 9,
+  "function_count": 71,
+  "module_count": 10,
+  "question_count": 51,
+  "open_question_ids": [
+    4,
+    36,
+    37,
+    38,
+    39
+  ],
+  "source_stage_counts": {
+    "Phase 1": 62,
+    "Dự kiến P1": 7,
+    "Ngoài phạm vi": 2
+  },
+  "decisions_overriding_source": [
+    "guardian_email_instead_of_parent_phone",
+    "defer_scoring_and_templates_by_module"
+  ],
+  "repo": "https://github.com/luongviettienns/WebEdu",
+  "functions": [
+    {
+      "id": "FUNC-001",
+      "module": "Tài khoản & phân quyền",
+      "title": "Học viên tự đăng ký",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 4
+    },
+    {
+      "id": "FUNC-002",
+      "module": "Tài khoản & phân quyền",
+      "title": "Đồng ý của cha mẹ khi đăng ký",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 5
+    },
+    {
+      "id": "FUNC-003",
+      "module": "Tài khoản & phân quyền",
+      "title": "Đăng nhập hệ thống",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Tất cả vai trò",
+      "row": 6
+    },
+    {
+      "id": "FUNC-004",
+      "module": "Tài khoản & phân quyền",
+      "title": "Đăng xuất",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đề xuất",
+      "actors": "Tất cả vai trò",
+      "row": 7
+    },
+    {
+      "id": "FUNC-005",
+      "module": "Tài khoản & phân quyền",
+      "title": "Khôi phục mật khẩu",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Tất cả vai trò",
+      "row": 8
+    },
+    {
+      "id": "FUNC-006",
+      "module": "Tài khoản & phân quyền",
+      "title": "Quản lý tài khoản giáo viên",
+      "stage": "Dự kiến P1",
+      "priority": "High",
+      "state": "Cần xác nhận",
+      "actors": "Admin; Superadmin",
+      "row": 9
+    },
+    {
+      "id": "FUNC-007",
+      "module": "Tài khoản & phân quyền",
+      "title": "Quản lý thông tin học viên",
+      "stage": "Dự kiến P1",
+      "priority": "High",
+      "state": "Cần xác nhận",
+      "actors": "Admin; Superadmin",
+      "row": 10
+    },
+    {
+      "id": "FUNC-008",
+      "module": "Tài khoản & phân quyền",
+      "title": "Liên kết tài khoản với hồ sơ và lớp",
+      "stage": "Dự kiến P1",
+      "priority": "High",
+      "state": "Cần xác nhận",
+      "actors": "Admin; Học viên",
+      "row": 11
+    },
+    {
+      "id": "FUNC-009",
+      "module": "Tài khoản & phân quyền",
+      "title": "Một người dùng nhiều vai trò",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Admin; Giáo viên",
+      "row": 12
+    },
+    {
+      "id": "FUNC-010",
+      "module": "Tài khoản & phân quyền",
+      "title": "Học viên chỉ xem dữ liệu của mình",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 13
+    },
+    {
+      "id": "FUNC-011",
+      "module": "Tài khoản & phân quyền",
+      "title": "Giáo viên chỉ truy cập lớp được phân công",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 14
+    },
+    {
+      "id": "FUNC-012",
+      "module": "Tài khoản & phân quyền",
+      "title": "Admin xem được tất cả lớp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 15
+    },
+    {
+      "id": "FUNC-013",
+      "module": "Tài khoản & phân quyền",
+      "title": "Superadmin vận hành hệ thống",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Superadmin",
+      "row": 16
+    },
+    {
+      "id": "FUNC-014",
+      "module": "Khóa HSK",
+      "title": "Danh mục khóa học HSK",
+      "stage": "Dự kiến P1",
+      "priority": "Medium",
+      "state": "Cần xác nhận",
+      "actors": "Admin",
+      "row": 17
+    },
+    {
+      "id": "FUNC-016",
+      "module": "Lớp học",
+      "title": "Tạo lớp học",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 18
+    },
+    {
+      "id": "FUNC-017",
+      "module": "Lớp học",
+      "title": "Chỉnh sửa thông tin lớp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 19
+    },
+    {
+      "id": "FUNC-018",
+      "module": "Lớp học",
+      "title": "Phân công giáo viên",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 20
+    },
+    {
+      "id": "FUNC-020",
+      "module": "Lớp học",
+      "title": "Thêm học viên vào lớp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 21
+    },
+    {
+      "id": "FUNC-022",
+      "module": "Lớp học",
+      "title": "Chuyển học viên sang lớp khác",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 22
+    },
+    {
+      "id": "FUNC-023",
+      "module": "Lớp học",
+      "title": "Xem lịch sử các lớp đã học",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên; Admin; Giáo viên được phân quyền",
+      "row": 23
+    },
+    {
+      "id": "FUNC-024",
+      "module": "Lớp học",
+      "title": "Danh sách và chi tiết lớp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin; Giáo viên",
+      "row": 24
+    },
+    {
+      "id": "FUNC-026",
+      "module": "Lịch & buổi học",
+      "title": "Khai báo lịch học định kỳ",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 25
+    },
+    {
+      "id": "FUNC-027",
+      "module": "Lịch & buổi học",
+      "title": "Tạo các buổi học theo lịch",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 26
+    },
+    {
+      "id": "FUNC-028",
+      "module": "Lịch & buổi học",
+      "title": "Xem lịch buổi học",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin; Giáo viên; Học viên",
+      "row": 27
+    },
+    {
+      "id": "FUNC-029",
+      "module": "Lịch & buổi học",
+      "title": "Cập nhật lịch khi thay đổi",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 28
+    },
+    {
+      "id": "FUNC-030",
+      "module": "Lịch & buổi học",
+      "title": "Hủy buổi và lưu thông tin cũ",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 29
+    },
+    {
+      "id": "FUNC-031",
+      "module": "Lịch & buổi học",
+      "title": "Tạo buổi học bù",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 30
+    },
+    {
+      "id": "FUNC-032",
+      "module": "Lịch & buổi học",
+      "title": "Nhật ký thay đổi lịch",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Admin; Superadmin",
+      "row": 31
+    },
+    {
+      "id": "FUNC-034",
+      "module": "Điểm danh",
+      "title": "Điểm danh từng buổi",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 32
+    },
+    {
+      "id": "FUNC-035",
+      "module": "Điểm danh",
+      "title": "Xem điểm danh theo lịch",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên; Giáo viên; Admin",
+      "row": 33
+    },
+    {
+      "id": "FUNC-036",
+      "module": "Điểm danh",
+      "title": "Tổng hợp số buổi nghỉ",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên; Giáo viên; Admin",
+      "row": 34
+    },
+    {
+      "id": "FUNC-037",
+      "module": "Điểm danh",
+      "title": "Sửa điểm danh bị nhầm",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Admin",
+      "row": 35
+    },
+    {
+      "id": "FUNC-039",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Tạo/chỉnh sửa/xóa bài tập và bài kiểm tra",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Admin",
+      "row": 36
+    },
+    {
+      "id": "FUNC-040",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Tải đề Word/PDF",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 37
+    },
+    {
+      "id": "FUNC-041",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Chuyển đề thành câu hỏi tương tác",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 38
+    },
+    {
+      "id": "FUNC-042",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Giáo viên kiểm tra đề sau chuyển đổi",
+      "stage": "Dự kiến P1",
+      "priority": "High",
+      "state": "Đề xuất",
+      "actors": "Giáo viên",
+      "row": 39
+    },
+    {
+      "id": "FUNC-043",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Biên tập câu hỏi thủ công",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 40
+    },
+    {
+      "id": "FUNC-044",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Câu hỏi trắc nghiệm 1 đáp án",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 41
+    },
+    {
+      "id": "FUNC-045",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Câu hỏi trắc nghiệm nhiều đáp án",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 42
+    },
+    {
+      "id": "FUNC-046",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Điền từ / trả lời ngắn",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 43
+    },
+    {
+      "id": "FUNC-047",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Sắp xếp từ thành câu",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 44
+    },
+    {
+      "id": "FUNC-048",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Bài viết / dịch câu / tự luận",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 45
+    },
+    {
+      "id": "FUNC-049",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Bài nghe kèm audio",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 46
+    },
+    {
+      "id": "FUNC-050",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Câu hỏi kèm hình ảnh",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 47
+    },
+    {
+      "id": "FUNC-051",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Giao bài tập cho lớp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 48
+    },
+    {
+      "id": "FUNC-052",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Danh sách bài được giao",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 49
+    },
+    {
+      "id": "FUNC-053",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Lưu bài đang làm",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 50
+    },
+    {
+      "id": "FUNC-054",
+      "module": "Bài tập & ngân hàng đề",
+      "title": "Chỉ cho nộp bài một lượt",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 51
+    },
+    {
+      "id": "FUNC-056",
+      "module": "Chấm điểm & AI",
+      "title": "Tự động chấm trắc nghiệm",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Hệ thống; Giáo viên",
+      "row": 52
+    },
+    {
+      "id": "FUNC-057",
+      "module": "Chấm điểm & AI",
+      "title": "AI chấm sơ bộ bài mở",
+      "stage": "Ngoài phạm vi",
+      "priority": "Medium",
+      "state": "Loại bỏ",
+      "actors": "Hệ thống; Giáo viên",
+      "row": 53
+    },
+    {
+      "id": "FUNC-058",
+      "module": "Chấm điểm & AI",
+      "title": "Giáo viên kiểm tra kết quả chấm",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 54
+    },
+    {
+      "id": "FUNC-059",
+      "module": "Chấm điểm & AI",
+      "title": "Giáo viên xác nhận điểm",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 55
+    },
+    {
+      "id": "FUNC-060",
+      "module": "Chấm điểm & AI",
+      "title": "Công bố điểm sau duyệt",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 56
+    },
+    {
+      "id": "FUNC-061",
+      "module": "Chấm điểm & AI",
+      "title": "Giáo viên chỉnh sửa điểm",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Admin",
+      "row": 57
+    },
+    {
+      "id": "FUNC-062",
+      "module": "Chấm điểm & AI",
+      "title": "Theo dõi học viên đã nộp/chưa nộp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đề xuất",
+      "actors": "Giáo viên",
+      "row": 58
+    },
+    {
+      "id": "FUNC-063",
+      "module": "Chấm điểm & AI",
+      "title": "Xem kết quả bài đã công bố",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 59
+    },
+    {
+      "id": "FUNC-064",
+      "module": "Chấm điểm & AI",
+      "title": "Lưu lịch sử chỉnh sửa điểm",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Admin",
+      "row": 60
+    },
+    {
+      "id": "FUNC-065",
+      "module": "Kiểm tra & tổng kết",
+      "title": "Quản lý bài kiểm tra (Mini-test / Giữa kỳ / Cuối kỳ)",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 61
+    },
+    {
+      "id": "FUNC-068",
+      "module": "Kiểm tra & tổng kết",
+      "title": "Hỗ trợ biểu mẫu đề khác nhau",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên",
+      "row": 62
+    },
+    {
+      "id": "FUNC-069",
+      "module": "Kiểm tra & tổng kết",
+      "title": "Theo dõi điểm bài tập về nhà",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên; Học viên; Admin",
+      "row": 63
+    },
+    {
+      "id": "FUNC-070",
+      "module": "Kiểm tra & tổng kết",
+      "title": "Tính điểm tổng kết từ các bài kiểm tra",
+      "stage": "Dự kiến P1",
+      "priority": "Medium",
+      "state": "Cần xác nhận",
+      "actors": "Giáo viên; Admin; Học viên",
+      "row": 64
+    },
+    {
+      "id": "FUNC-071",
+      "module": "Theo dõi tiến độ",
+      "title": "Theo dõi tiến độ buổi học",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên; Giáo viên; Admin",
+      "row": 65
+    },
+    {
+      "id": "FUNC-072",
+      "module": "Theo dõi tiến độ",
+      "title": "Dự kiến ngày kết thúc lớp",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên; Giáo viên; Admin",
+      "row": 66
+    },
+    {
+      "id": "FUNC-073",
+      "module": "Theo dõi tiến độ",
+      "title": "Hiển thị tình trạng học cá nhân",
+      "stage": "Phase 1",
+      "priority": "High",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên",
+      "row": 67
+    },
+    {
+      "id": "FUNC-074",
+      "module": "Theo dõi tiến độ",
+      "title": "Giáo viên theo dõi lớp phụ trách",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Giáo viên",
+      "row": 68
+    },
+    {
+      "id": "FUNC-075",
+      "module": "Theo dõi tiến độ",
+      "title": "Quản lý xem tổng quan các lớp",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 69
+    },
+    {
+      "id": "FUNC-076",
+      "module": "Kiểm tra & tổng kết",
+      "title": "Nhập điểm kiểm tra thủ công",
+      "stage": "Ngoài phạm vi",
+      "priority": "Low",
+      "state": "Loại bỏ",
+      "actors": "Giáo viên; Học viên; Admin",
+      "row": 70
+    },
+    {
+      "id": "FUNC-077",
+      "module": "Lớp học",
+      "title": "Rút học viên khỏi lớp",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 71
+    },
+    {
+      "id": "FUNC-078",
+      "module": "Tài khoản & phân quyền",
+      "title": "Hồ sơ cá nhân & đổi mật khẩu",
+      "stage": "Dự kiến P1",
+      "priority": "Medium",
+      "state": "Đề xuất",
+      "actors": "Tất cả vai trò",
+      "row": 72
+    },
+    {
+      "id": "FUNC-079",
+      "module": "Lớp học",
+      "title": "Kết thúc / lưu trữ lớp",
+      "stage": "Phase 1",
+      "priority": "Low",
+      "state": "Đã ghi nhận",
+      "actors": "Admin",
+      "row": 73
+    },
+    {
+      "id": "FUNC-080",
+      "module": "Thông báo",
+      "title": "Thông báo trong hệ thống",
+      "stage": "Phase 1",
+      "priority": "Medium",
+      "state": "Đã ghi nhận",
+      "actors": "Học viên; Giáo viên; Admin",
+      "row": 74
+    }
+  ]
+}
