@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS (Phong cách xanh lá tối giản, hiển thị chuẩn chữ Hán / Pinyin).
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Chuyển giao từ Phase 0 sang Phase 1 — Khởi tạo Nền tảng Kỹ thuật Fullstack**
+* **Giai đoạn hiện tại**: **Phase 1 — Khởi tạo Nền tảng Kỹ thuật Fullstack (HOÀN THÀNH - SẴN SÀNG CHUYỂN PHASE 2)**
 
 ---
 
@@ -29,13 +29,14 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 - [x] Lập Kế hoạch Tổng thể toàn dự án [`MASTER_PLAN.md`](./MASTER_PLAN.md) và chốt `DEC-021` (Next.js + Tailwind CSS), `DEC-022` (Git Flow chuyên nghiệp).
 - [x] Trích xuất Sub-Plan chi tiết cho Phase 1 tại [`docs/plans/phase-01-foundation-bootstrap.md`](./docs/plans/phase-01-foundation-bootstrap.md).
 
-### Phase 1: Khởi tạo Nền tảng Kỹ thuật Fullstack (`docs/plans/phase-01-foundation-bootstrap.md`)
-- [ ] Thiết lập nhánh Git Flow (`develop` & `feature/phase-01-foundation`).
-- [ ] **Slice 1.1**: Khởi tạo `backend/` NestJS (Strict TS, ESLint cấm `any`), cấu hình `@nestjs/config` (`.env`, `.env.example`).
-- [ ] **Slice 1.2**: Thiết lập `docker-compose.yml` (PostgreSQL 16) + khởi tạo Prisma ORM (`prisma/schema.prisma`, `PrismaService`) + migration nền tảng.
-- [ ] **Slice 1.3**: Cấu hình Global `ValidationPipe`, `AllExceptionsFilter` (RFC 7807), CORS, prefix `/api/v1`, Swagger (`/api/docs`) và endpoint `GET /api/v1/health` (kèm Unit + E2E tests).
-- [ ] **Slice 1.4**: Xây dựng helper múi giờ `timezone.util.ts` (`Asia/Ho_Chi_Minh`) kèm bộ Unit tests kiểm chứng mốc cuối ngày (23:59:59 GMT+7).
-- [ ] **Slice 1.5**: Khởi tạo `frontend/` (Next.js App Router + Tailwind CSS), thiết lập Design System tokens (`DESIGN.md`) và Layout gốc sạch (loại bỏ thanh demo Cleanup #1 và nhãn `FUNC-xxx` Cleanup #6, #7, #8).
+### Phase 1: Khởi tạo Nền tảng Kỹ thuật Fullstack (`docs/plans/phase-01-foundation-bootstrap.md`) *(HOÀN THÀNH - 100% GATES PASS)*
+- [x] Thiết lập nhánh Git Flow (`develop` & `feature/phase-01-foundation`).
+- [x] **Slice 1.1**: Khởi tạo `backend/` NestJS (Strict TS `"strict": true`, `"strictPropertyInitialization": true`, OxLint cấm `any`), cấu hình `@nestjs/config` (`.env`, `.env.example`, `env.validation.ts` với class-validator & class-transformer).
+- [x] **Slice 1.2**: Thiết lập `docker-compose.yml` (PostgreSQL 16) + khởi tạo Prisma ORM (`prisma/schema.prisma`, `PrismaService` với `$connect` graceful fallback) + tệp migration SQL chuẩn `20261106155900_init_system_settings`.
+- [x] **Slice 1.3**: Cấu hình Global `ValidationPipe`, `AllExceptionsFilter` (RFC 7807, stack trace che giấu ở production), CORS whitelist an toàn, prefix `/api/v1`, Swagger (`/api/docs`, bảo mật chỉ chạy non-production) và endpoint `GET /api/v1/health` (ping Prisma DB thực tế, trả về 503 degraded khi mất kết nối CSDL, kèm Unit + E2E tests).
+- [x] **Slice 1.4**: Xây dựng helper múi giờ `timezone.util.ts` (`Asia/Ho_Chi_Minh`) kèm bộ Unit tests kiểm chứng mốc cuối ngày (23:59:59 GMT+7) và chặn cận dưới trước ngày học.
+- [x] **Slice 1.5**: Khởi tạo `frontend/` (Next.js 16 App Router + Tailwind CSS v4), thiết lập Design System tokens (`DESIGN.md` tone xanh trúc Á Đông) và Layout / Home sạch sẽ (loại bỏ triệt để 16 mục prototype demo từ `prototype-review.md`).
+- [x] **Adversarial Audit & Debate (`akit-critic`)**: Hoàn thành vòng phản biện độc lập, khắc phục 100% các khuyến nghị bảo mật & bất biến nghiệp vụ, nhận phán quyết chính thức: **VERDICT: APPROVE**.
 
 ### Phase 2: Module 01 — Tài khoản, Xác thực & Phân quyền RBAC (`FUNC-001..013`, `FUNC-078`)
 - [ ] Lập Sub-Plan `docs/plans/phase-02-auth-users-rbac.md` & chốt Open Issues `AUTH-01..04`.
@@ -95,16 +96,3 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 - [ ] **Slice 9.2**: Kiểm toán loại bỏ 100% 16 hạng mục demo trong `prototype-review.md`.
 - [ ] **Slice 9.3**: Chạy bộ 5 Integration Invariant Tests + Full Playwright E2E Regression Suite.
 - [ ] **Slice 9.4**: Thực hiện `akit-simplify`, `akit-security` audit, `akit-review` độc lập và đóng gói bàn giao (`akit-deliver`).
-
----
-
-## 📝 Nhật Ký Cập Nhật (Changelog)
-* **2026-11-06**:
-  - Tích hợp thành công **AKit v0.4.0** từ repository `https://github.com/luongviettienns/AKit` vào ngữ cảnh dự án WebEdu (30 skills, 6 subagents, hooks, rules, runtime CLI).
-  - Nạp và phân tích toàn diện ngữ cảnh dự án **TD Hán Ngữ v1.0** (71 mã chức năng, 20 quyết định, 20 open issues, 16 mục dọn dẹp prototype).
-  - Tổ chức **Triad Debate** giữa 3 subagents (`akit-debater`, `akit-critic`, `akit-judge`) và ban hành Hiến chương Kiến trúc [`architecture-decision-contract.md`](./TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md).
-  - Xây dựng **Kế hoạch Tổng thể toàn dự án (`MASTER_PLAN.md`)**, chốt quyết định `DEC-021` (Next.js App Router + Tailwind CSS cho Frontend; NestJS + Prisma + PostgreSQL cho Backend) và `DEC-022` (Git Flow chuyên nghiệp).
-  - Khởi tạo Sub-Plan đầu tiên cho Phase 1 tại [`docs/plans/phase-01-foundation-bootstrap.md`](./docs/plans/phase-01-foundation-bootstrap.md).
-* **2026-11-04**:
-  - Tạo cấu hình `.gitignore`, `README.md`, `PROJECT_PROGRESS.md`.
-  - Chuẩn bị đẩy mã nguồn ban đầu cùng bản mẫu `prototype/` lên GitHub repository `luongviettienns/WebEdu`.
