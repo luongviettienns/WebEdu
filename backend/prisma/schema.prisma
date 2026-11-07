@@ -31,6 +31,28 @@ enum UserStatus {
   INACTIVE
 }
 
+enum CourseLevel {
+  HSK1
+  HSK2
+  HSK3
+  HSK4
+  BASIC_COMMUNICATION
+}
+
+enum ClassStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  TRANSFERRED
+  DROPPED
+  COMPLETED
+}
+
 model User {
   id                  String      @id @default(uuid())
   email               String      @unique @db.VarChar(255)
@@ -51,26 +73,34 @@ model User {
   teacherProfile      TeacherProfile?
   passwordResetTokens PasswordResetToken[]
   auditLogsAsActor    SystemAuditLog[]     @relation("AuditActor")
+  taughtClasses       Class[]              @relation("ClassTeacher")
+  enrollments         Enrollment[]         @relation("StudentEnrollments")
 
   @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@index([fullName])
   @@map("users")
 }
 
 model StudentProfile {
-  id            String           @id @default(uuid())
-  userId        String           @unique @map("user_id")
-  dateOfBirth   DateTime         @map("date_of_birth") @db.Date
-  guardianEmail String?          @map("guardian_email") @db.VarChar(255)
-  assignedClass String?          @map("assigned_class") @db.VarChar(100)
-  internalNotes String?          @map("internal_notes") @db.Text
-  enrolledAt    DateTime?        @map("enrolled_at") @db.Timestamptz(3)
-  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String           @id @default(uuid())
+  userId         String           @unique @map("user_id")
+  dateOfBirth    DateTime         @map("date_of_birth") @db.Date
+  guardianEmail  String?          @map("guardian_email") @db.VarChar(255)
+  assignedClass  String?          @map("assigned_class") @db.VarChar(100)
+  currentClassId String?          @map("current_class_id")
+  internalNotes  String?          @map("internal_notes") @db.Text
+  enrolledAt     DateTime?        @map("enrolled_at") @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user          User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  consent       GuardianConsent?
+  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  consent        GuardianConsent?
+  currentClass   Class?           @relation("CurrentStudentClass", fields: [currentClassId], references: [id], onDelete: Restrict)
 
   @@index([guardianEmail])
+  @@index([assignedClass])
+  @@index([currentClassId])
   @@map("student_profiles")
 }
 
@@ -115,6 +145,74 @@ model PasswordResetToken {
 
   @@index([userId, createdAt])
   @@map("password_reset_tokens")
+}
+
+model EmailRateLimit {
+  emailHash       String   @id @map("email_hash") @db.VarChar(64)
+  lastRequestedAt DateTime @map("last_requested_at") @db.Timestamptz(3)
+
+  @@map("email_rate_limits")
+}
+
+model Course {
+  id              String      @id @default(uuid())
+  code            String      @unique @db.VarChar(30)
+  name            String      @db.VarChar(150)
+  level           CourseLevel
+  defaultSessions Int?        @map("default_sessions")
+  description     String?     @db.Text
+  isActive        Boolean     @default(true) @map("is_active")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  classes         Class[]
+
+  @@index([isActive, level])
+  @@map("courses")
+}
+
+model Class {
+  id              String           @id @default(uuid())
+  code            String           @unique @db.VarChar(20)
+  courseId        String           @map("course_id")
+  teacherId       String           @map("teacher_id")
+  status          ClassStatus      @default(UPCOMING)
+  startDate       DateTime         @map("start_date") @db.Date
+  totalSessions   Int              @default(24) @map("total_sessions")
+  expectedEndDate DateTime?        @map("expected_end_date") @db.Date
+  actualEndDate   DateTime?        @map("actual_end_date") @db.Date
+  notes           String?          @db.Text
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  course          Course           @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  teacher         User             @relation("ClassTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
+  enrollments     Enrollment[]
+  currentStudents StudentProfile[] @relation("CurrentStudentClass")
+
+  @@index([teacherId, status])
+  @@index([courseId])
+  @@index([status])
+  @@map("classes")
+}
+
+model Enrollment {
+  id           String           @id @default(uuid())
+  classId      String           @map("class_id")
+  studentId    String           @map("student_id")
+  status       EnrollmentStatus @default(ACTIVE)
+  enrolledDate DateTime         @map("enrolled_date") @db.Date
+  leftDate     DateTime?        @map("left_date") @db.Date
+  reason       String?          @db.Text
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  class        Class            @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student      User             @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([classId, status])
+  @@index([studentId, status])
+  @@map("enrollments")
 }
 
 model SystemAuditLog {

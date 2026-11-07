@@ -1,0 +1,19 @@
+services:
+  postgres_test:
+    image: postgres:16-alpine
+    container_name: webedu_postgres_test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_test_password
+      POSTGRES_DB: webedu_test
+      TZ: Asia/Ho_Chi_Minh
+      PGTZ: Asia/Ho_Chi_Minh
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d webedu_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
