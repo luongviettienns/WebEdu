@@ -40,19 +40,20 @@ export class ProfileController {
     const result = await this.profileService.updateMyProfile(
       user.id,
       dto as UpdateProfileDto & Record<string, unknown>,
+      { rememberMe: user.rememberMe === true },
     );
 
-    if (result.accessToken) {
-      res.cookie(AUTH_COOKIE_NAME, result.accessToken, {
+    if (result.rotatedSession) {
+      res.cookie(AUTH_COOKIE_NAME, result.rotatedSession.accessToken, {
         httpOnly: true,
         sameSite: 'lax',
         secure: process.env.NODE_ENV === 'production',
         path: '/',
-        maxAge: 3600 * 1000,
+        maxAge: result.rotatedSession.expiresIn * 1000,
       });
     }
 
-    return result;
+    return result.profile;
   }
 
   @Post('change-password')
@@ -63,16 +64,19 @@ export class ProfileController {
     @Body() dto: ChangePasswordDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.profileService.changePassword(user.id, dto);
+    const { accessToken, expiresIn, ...publicResult } =
+      await this.profileService.changePassword(user.id, dto, {
+        rememberMe: user.rememberMe === true,
+      });
 
-    res.cookie(AUTH_COOKIE_NAME, result.accessToken, {
+    res.cookie(AUTH_COOKIE_NAME, accessToken, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
-      maxAge: 3600 * 1000,
+      maxAge: expiresIn * 1000,
     });
 
-    return result;
+    return publicResult;
   }
 }

@@ -5,17 +5,30 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import {
+  ClassStatus,
+  CourseLevel,
+  EnrollmentStatus,
+  Prisma,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import {
   calculateAgeInVnTimezone,
   formatDateTimeVn,
+  resolveVnCalendarDateForDb,
 } from '../../common/utils/timezone.util.js';
 import { sanitizeAuditMetadata } from '../../common/utils/audit-sanitize.util.js';
+import {
+  isPrismaUniqueConstraintError,
+  rethrowDuplicateContactConflict,
+} from '../../common/utils/prisma-error.util.js';
 import { formatIsoDateUtc } from '../auth/auth.service.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import type {
   AssignInitialClassDto,
+  ListPendingEnrollmentQueryDto,
   ListStudentsQueryDto,
   UpdateStudentDto,
 } from './dto/students.dto.js';
@@ -23,15 +36,21 @@ import type {
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^0\d{9}$/;
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type GuardianConsentStatus = 'CONFIRMED' | 'NOT_APPLICABLE';
 export type ClassLifecycleStatus = 'UPCOMING' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
 
-export interface TeacherClassStudentAssignment {
-  classId: string;
-  assignedTeacherId: string;
-  studentIds: string[];
-  classStatus: ClassLifecycleStatus;
+export interface AvailableClassDto {
+  id: string;
+  code: string;
+  status: ClassStatus;
+  startDate: string;
+  courseName: string;
+  courseLevel: CourseLevel;
+  teacherName: string;
+  activeStudentsCount: number;
 }
 
 export interface PendingStudentDto {
@@ -70,6 +89,7 @@ export interface StudentDetailDto {
   hasGuardianConsent: boolean;
   guardianEmail: string | null;
   assignedClass: string | null;
+  currentClassId: string | null;
   enrolledAt: string | null;
   internalNotes: string | null;
   guardianConsent: {
@@ -83,20 +103,50 @@ export interface StudentDetailDto {
 
 @Injectable()
 export class StudentsService {
-  // Phase 2 fail-closed registry until Phase 3 Class & ClassEnrollment tables are introduced
-  private readonly teacherClassAssignments: TeacherClassStudentAssignment[] = [];
-
   constructor(private readonly prisma: PrismaService) {}
 
-  private hasTeacherStudentClassAssignment(
+  /**
+   * FUNC-011 & DEC-024/025: A teacher is authorized to view student learning records ONLY when:
+   * 1. The student is currently ACTIVE in an UPCOMING/ACTIVE class assigned to that teacher, OR
+   * 2. The student completed (COMPLETED/ACTIVE) a COMPLETED class formerly led by that teacher (DEC-025 Case 1).
+   * Students who TRANSFERRED or DROPPED out of an ongoing class are NOT operationally accessible.
+   */
+  private buildTeacherAuthorizedEnrollmentFilter(
+    teacherId: string,
+  ): Prisma.EnrollmentWhereInput {
+    return {
+      OR: [
+        {
+          status: EnrollmentStatus.ACTIVE,
+          class: {
+            teacherId,
+            status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+          },
+        },
+        {
+          status: {
+            in: [EnrollmentStatus.COMPLETED, EnrollmentStatus.ACTIVE],
+          },
+          class: {
+            teacherId,
+            status: ClassStatus.COMPLETED,
+          },
+        },
+      ],
+    };
+  }
+
+  private async hasTeacherStudentClassAssignment(
     teacherId: string,
     studentId: string,
-  ): boolean {
-    return this.teacherClassAssignments.some(
-      (assignment) =>
-        assignment.assignedTeacherId === teacherId &&
-        assignment.studentIds.includes(studentId),
-    );
+  ): Promise<boolean> {
+    const matchingCount = await this.prisma.enrollment.count({
+      where: {
+        studentId,
+        ...this.buildTeacherAuthorizedEnrollmentFilter(teacherId),
+      },
+    });
+    return matchingCount > 0;
   }
 
   private toStudentDetailDto(
@@ -111,6 +161,7 @@ export class StudentsService {
         dateOfBirth: Date;
         guardianEmail: string | null;
         assignedClass: string | null;
+        currentClassId?: string | null;
         internalNotes: string | null;
         enrolledAt: Date | null;
         consent?: {
@@ -139,6 +190,7 @@ export class StudentsService {
       hasGuardianConsent: Boolean(consent),
       guardianEmail: profile?.guardianEmail ?? null,
       assignedClass: profile?.assignedClass ?? null,
+      currentClassId: profile?.currentClassId ?? null,
       enrolledAt: profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
       internalNotes: canViewInternalNotes ? (profile?.internalNotes ?? null) : null,
       guardianConsent: consent
@@ -152,6 +204,50 @@ export class StudentsService {
             )}`,
           }
         : null,
+    };
+  }
+
+  async listAvailableClasses(): Promise<{ items: AvailableClassDto[] }> {
+    const classes = await this.prisma.class.findMany({
+      where: {
+        status: {
+          in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE],
+        },
+      },
+      include: {
+        course: {
+          select: {
+            name: true,
+            level: true,
+          },
+        },
+        teacher: {
+          select: {
+            fullName: true,
+          },
+        },
+        _count: {
+          select: {
+            enrollments: {
+              where: { status: EnrollmentStatus.ACTIVE },
+            },
+          },
+        },
+      },
+      orderBy: [{ status: 'asc' }, { startDate: 'asc' }, { code: 'asc' }],
+    });
+
+    return {
+      items: classes.map((cls) => ({
+        id: cls.id,
+        code: cls.code,
+        status: cls.status,
+        startDate: formatIsoDateUtc(cls.startDate),
+        courseName: cls.course.name,
+        courseLevel: cls.course.level,
+        teacherName: cls.teacher.fullName,
+        activeStudentsCount: cls._count.enrollments,
+      })),
     };
   }
 
@@ -221,22 +317,38 @@ export class StudentsService {
     return { items, total, page, limit };
   }
 
-  async getPendingEnrollmentQueue(): Promise<{
+  async getPendingEnrollmentQueue(
+    query?: ListPendingEnrollmentQueryDto,
+  ): Promise<{
     items: PendingStudentDto[];
     totalPending: number;
+    total: number;
+    page: number;
+    limit: number;
   }> {
-    const users = await this.prisma.user.findMany({
-      where: {
-        roles: { has: Role.STUDENT },
-        status: UserStatus.PENDING_CLASS,
-      },
-      include: {
-        studentProfile: {
-          include: { consent: true },
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query?.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = {
+      roles: { has: Role.STUDENT },
+      status: UserStatus.PENDING_CLASS,
+    };
+
+    const [users, totalPending] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: {
+          studentProfile: {
+            include: { consent: true },
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
 
     // Cleanup #12: guardianConsentStatus is strictly 'CONFIRMED' | 'NOT_APPLICABLE' (never 'MISSING')
     const items: PendingStudentDto[] = users.map((u) => ({
@@ -256,7 +368,10 @@ export class StudentsService {
 
     return {
       items,
-      totalPending: items.length,
+      totalPending,
+      total: totalPending,
+      page,
+      limit,
     };
   }
 
@@ -298,59 +413,34 @@ export class StudentsService {
     studentId: string,
     dto: UpdateStudentDto,
   ): Promise<StudentDetailDto> {
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: studentId },
-      include: {
-        studentProfile: {
-          include: { consent: true },
-        },
-      },
-    });
-
-    if (!targetUser || !targetUser.roles.includes(Role.STUDENT)) {
-      throw new NotFoundException('Không tìm thấy học viên');
-    }
-
-    // SEC-08: ADMIN cannot modify or lock any ADMIN or SUPERADMIN account
-    if (
-      (targetUser.roles.includes(Role.SUPERADMIN) ||
-        targetUser.roles.includes(Role.ADMIN)) &&
-      !actor.roles.includes(Role.SUPERADMIN)
-    ) {
+    // FUNC-007 & FUNC-013: internalNotes is strictly Admin-only (pure SUPERADMIN cannot view or modify)
+    if (dto.internalNotes !== undefined && !actor.roles.includes(Role.ADMIN)) {
       throw new ForbiddenException(
-        'Admin không có quyền chỉnh sửa hoặc khóa tài khoản Quản trị viên / Quản trị tối cao',
+        'Chỉ Quản trị viên (Admin) mới có quyền xem hoặc cập nhật ghi chú học vụ nội bộ',
       );
     }
 
-    const nextFullName =
-      dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
-    if (!nextFullName) {
+    if (dto.fullName !== undefined && !dto.fullName.trim()) {
       throw new BadRequestException('Họ và tên không được để trống');
     }
 
-    const nextEmail =
-      dto.email !== undefined
-        ? dto.email.trim().toLowerCase()
-        : targetUser.email;
-    if (!EMAIL_REGEX.test(nextEmail)) {
+    if (
+      dto.email !== undefined &&
+      !EMAIL_REGEX.test(dto.email.trim().toLowerCase())
+    ) {
       throw new BadRequestException('Email không hợp lệ');
     }
 
-    const nextPhone =
-      dto.phone !== undefined ? dto.phone.trim() : targetUser.phone;
-    if (!PHONE_REGEX.test(nextPhone)) {
+    if (dto.phone !== undefined && !PHONE_REGEX.test(dto.phone.trim())) {
       throw new BadRequestException(
         'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0',
       );
     }
 
-    const currentDobStr = targetUser.studentProfile
-      ? formatIsoDateUtc(targetUser.studentProfile.dateOfBirth)
-      : null;
-
-    let newDobDate: Date | undefined;
+    let candidateDobStr: string | undefined;
+    let parsedCandidateDob: Date | undefined;
     if (dto.dateOfBirth !== undefined) {
-      const candidateDobStr = dto.dateOfBirth.trim();
+      candidateDobStr = dto.dateOfBirth.trim();
       if (!ISO_DATE_REGEX.test(candidateDobStr)) {
         throw new BadRequestException('Ngày sinh không hợp lệ (YYYY-MM-DD)');
       }
@@ -361,120 +451,241 @@ export class StudentsService {
       ) {
         throw new BadRequestException('Ngày sinh không hợp lệ');
       }
-
-      if (candidateDobStr !== currentDobStr) {
-        // FUNC-007 Invariant 1: If GuardianConsent exists, DOB is permanently locked
-        if (targetUser.studentProfile?.consent) {
-          throw new BadRequestException(
-            'Ngày sinh đã bị khóa sau khi xác nhận đồng ý của cha mẹ',
-          );
-        }
-
-        // FUNC-007 Invariant 2: If no GuardianConsent, compute age at registration time (user.createdAt)
-        const ageAtRegistration = calculateAgeInVnTimezone(
-          candidateDobStr,
-          targetUser.createdAt,
-        );
-        if (ageAtRegistration < 12) {
-          throw new BadRequestException('Học viên phải từ 12 tuổi trở lên');
-        }
-        if (ageAtRegistration < 16) {
-          throw new BadRequestException(
-            'Không thể sửa ngày sinh: học viên dưới 16 tuổi cần xác nhận đồng ý của cha mẹ khi đăng ký',
-          );
-        }
-
-        newDobDate = parsedDob;
-      }
+      parsedCandidateDob = parsedDob;
     }
 
-    if (nextEmail !== targetUser.email || nextPhone !== targetUser.phone) {
-      const duplicate = await this.prisma.user.findFirst({
-        where: {
-          id: { not: studentId },
-          OR: [{ email: nextEmail }, { phone: nextPhone }],
-        },
-      });
-      if (duplicate) {
-        throw new ConflictException('Email/Số điện thoại đã được sử dụng');
-      }
-    }
-
-    const nextStatus = dto.status ?? targetUser.status;
-    const isLeavingActiveSuperadmin =
-      targetUser.roles.includes(Role.SUPERADMIN) &&
-      nextStatus !== UserStatus.ACTIVE;
-
-    if (isLeavingActiveSuperadmin && actor.id === targetUser.id) {
-      throw new BadRequestException(
-        'Superadmin không thể tự vô hiệu hóa tài khoản của chính mình',
-      );
-    }
-
-    const emailChanged = nextEmail !== targetUser.email;
-    const isDeactivating =
-      nextStatus === UserStatus.INACTIVE &&
-      targetUser.status !== UserStatus.INACTIVE;
-    const shouldRevokeTokens = isDeactivating || emailChanged;
-
-    await this.prisma.$transaction(async (tx) => {
-      if (isLeavingActiveSuperadmin) {
-        const activeSuperadmins = await tx.$queryRaw<Array<{ id: string }>>`
-          SELECT id FROM "users" WHERE 'SUPERADMIN' = ANY("roles") AND "status" = 'ACTIVE' FOR UPDATE
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Deterministic lock order matching SystemSettingsService & TeachersService (ORDER BY id ASC)
+        const lockedRows = await tx.$queryRaw<
+          Array<{ id: string; roles?: Role[]; status?: UserStatus }>
+        >`
+          SELECT id, roles, status FROM "users"
+          WHERE id = ${studentId} OR ('SUPERADMIN' = ANY("roles") AND "status" = 'ACTIVE')
+          ORDER BY id ASC
+          FOR UPDATE
         `;
-        const otherActiveCount = activeSuperadmins.filter(
-          (row) => row.id !== targetUser.id,
-        ).length;
-        if (otherActiveCount < 1) {
-          throw new BadRequestException(
-            'Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động',
-          );
-        }
-      }
 
-      await tx.user.update({
-        where: { id: studentId },
-        data: {
-          fullName: nextFullName,
-          email: nextEmail,
-          phone: nextPhone,
-          status: nextStatus,
-          ...(shouldRevokeTokens ? { tokenVersion: { increment: 1 } } : {}),
-        },
-      });
-
-      if (
-        targetUser.studentProfile &&
-        (newDobDate !== undefined || dto.internalNotes !== undefined)
-      ) {
-        await tx.studentProfile.update({
-          where: { userId: studentId },
-          data: {
-            ...(newDobDate ? { dateOfBirth: newDobDate } : {}),
-            ...(dto.internalNotes !== undefined
-              ? { internalNotes: dto.internalNotes.trim() || null }
-              : {}),
+        const targetUser = await tx.user.findUnique({
+          where: { id: studentId },
+          include: {
+            studentProfile: {
+              include: { consent: true },
+            },
           },
         });
-      }
 
-      await tx.systemAuditLog.create({
-        data: {
-          actorId: actor.id,
-          actingRole: actor.effectiveRole,
-          action: 'UPDATE_STUDENT',
-          targetType: 'User',
-          targetId: studentId,
-          metadata: sanitizeAuditMetadata({
-            fullName: nextFullName,
-            email: nextEmail,
-            phone: nextPhone,
-            status: nextStatus,
-            ...(newDobDate ? { dateOfBirth: formatIsoDateUtc(newDobDate) } : {}),
-          }) as Prisma.InputJsonValue,
-        },
+        if (!targetUser || !targetUser.roles.includes(Role.STUDENT)) {
+          throw new NotFoundException('Không tìm thấy học viên');
+        }
+
+        // SEC-08: ADMIN cannot modify or lock any ADMIN or SUPERADMIN account
+        if (
+          (targetUser.roles.includes(Role.SUPERADMIN) ||
+            targetUser.roles.includes(Role.ADMIN)) &&
+          !actor.roles.includes(Role.SUPERADMIN)
+        ) {
+          throw new ForbiddenException(
+            'Admin không có quyền chỉnh sửa hoặc khóa tài khoản Quản trị viên / Quản trị tối cao',
+          );
+        }
+
+        const nextFullName =
+          dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
+        const nextEmail =
+          dto.email !== undefined
+            ? dto.email.trim().toLowerCase()
+            : targetUser.email;
+        const nextPhone =
+          dto.phone !== undefined ? dto.phone.trim() : targetUser.phone;
+        const nextStatus = dto.status ?? targetUser.status;
+
+        const currentDobStr = targetUser.studentProfile
+          ? formatIsoDateUtc(targetUser.studentProfile.dateOfBirth)
+          : null;
+
+        let newDobDate: Date | undefined;
+        if (
+          candidateDobStr !== undefined &&
+          parsedCandidateDob !== undefined &&
+          candidateDobStr !== currentDobStr
+        ) {
+          // FUNC-007 Invariant 1: If GuardianConsent exists, DOB is permanently locked
+          if (targetUser.studentProfile?.consent) {
+            throw new BadRequestException(
+              'Ngày sinh đã bị khóa sau khi xác nhận đồng ý của cha mẹ',
+            );
+          }
+
+          // FUNC-007 Invariant 2: If no GuardianConsent, compute age at registration time (user.createdAt)
+          const ageAtRegistration = calculateAgeInVnTimezone(
+            candidateDobStr,
+            targetUser.createdAt,
+          );
+          if (ageAtRegistration < 12) {
+            throw new BadRequestException('Học viên phải từ 12 tuổi trở lên');
+          }
+          if (ageAtRegistration < 16) {
+            throw new BadRequestException(
+              'Không thể sửa ngày sinh: học viên dưới 16 tuổi cần xác nhận đồng ý của cha mẹ khi đăng ký',
+            );
+          }
+
+          newDobDate = parsedCandidateDob;
+        }
+
+        if (dto.status !== undefined) {
+          const isPureStudent =
+            targetUser.roles.length === 1 &&
+            targetUser.roles[0] === Role.STUDENT;
+          const validEnrollmentCount = tx.enrollment?.count
+            ? await tx.enrollment.count({
+                where: {
+                  studentId,
+                  status: {
+                    in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED],
+                  },
+                },
+              })
+            : null;
+
+          const hasActiveOrCompletedEnrollment =
+            validEnrollmentCount !== null
+              ? validEnrollmentCount > 0 ||
+                Boolean(targetUser.studentProfile?.currentClassId)
+              : Boolean(
+                  targetUser.studentProfile?.enrolledAt ||
+                    targetUser.studentProfile?.currentClassId ||
+                    targetUser.studentProfile?.assignedClass,
+                );
+
+          const hasEverBeenEnrolled =
+            (validEnrollmentCount !== null && validEnrollmentCount > 0) ||
+            Boolean(
+              targetUser.studentProfile?.enrolledAt ||
+                targetUser.studentProfile?.currentClassId ||
+                targetUser.studentProfile?.assignedClass,
+            );
+
+          // P1-B4 (FUNC-008): Forbid bypassing initial class assignment or reactivating a dropped student without valid enrollment
+          if (
+            nextStatus === UserStatus.ACTIVE &&
+            (targetUser.status === UserStatus.PENDING_CLASS ||
+              (isPureStudent && !hasActiveOrCompletedEnrollment))
+          ) {
+            throw new BadRequestException(
+              'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+            );
+          }
+
+          if (
+            nextStatus === UserStatus.PENDING_CLASS &&
+            (targetUser.status !== UserStatus.PENDING_CLASS ||
+              hasEverBeenEnrolled) &&
+            !(isPureStudent && !hasEverBeenEnrolled)
+          ) {
+            throw new BadRequestException(
+              'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
+            );
+          }
+        }
+
+        if (nextEmail !== targetUser.email || nextPhone !== targetUser.phone) {
+          const duplicate = await tx.user.findFirst({
+            where: {
+              id: { not: studentId },
+              OR: [{ email: nextEmail }, { phone: nextPhone }],
+            },
+          });
+          if (duplicate) {
+            throw new ConflictException('Email/Số điện thoại đã được sử dụng');
+          }
+        }
+
+        const isLeavingActiveSuperadmin =
+          targetUser.roles.includes(Role.SUPERADMIN) &&
+          nextStatus !== UserStatus.ACTIVE;
+
+        if (isLeavingActiveSuperadmin && actor.id === targetUser.id) {
+          throw new BadRequestException(
+            'Superadmin không thể tự vô hiệu hóa tài khoản của chính mình',
+          );
+        }
+
+        if (isLeavingActiveSuperadmin) {
+          const otherActiveCount = lockedRows.filter((row) => {
+            if (row.id === targetUser.id) return false;
+            if (Array.isArray(row.roles)) {
+              return (
+                row.roles.includes(Role.SUPERADMIN) &&
+                row.status === UserStatus.ACTIVE
+              );
+            }
+            return true;
+          }).length;
+          if (otherActiveCount < 1) {
+            throw new BadRequestException(
+              'Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động',
+            );
+          }
+        }
+
+        const emailChanged = nextEmail !== targetUser.email;
+        const isDeactivating =
+          nextStatus === UserStatus.INACTIVE &&
+          targetUser.status !== UserStatus.INACTIVE;
+        const shouldRevokeTokens = isDeactivating || emailChanged;
+
+        const userUpdateData: Prisma.UserUpdateInput = {
+          ...(dto.fullName !== undefined ? { fullName: nextFullName } : {}),
+          ...(dto.email !== undefined ? { email: nextEmail } : {}),
+          ...(dto.phone !== undefined ? { phone: nextPhone } : {}),
+          ...(dto.status !== undefined ? { status: nextStatus } : {}),
+          ...(shouldRevokeTokens ? { tokenVersion: { increment: 1 } } : {}),
+        };
+
+        if (Object.keys(userUpdateData).length > 0) {
+          await tx.user.update({
+            where: { id: studentId },
+            data: userUpdateData,
+          });
+        }
+
+        if (
+          targetUser.studentProfile &&
+          (newDobDate !== undefined || dto.internalNotes !== undefined)
+        ) {
+          await tx.studentProfile.update({
+            where: { userId: studentId },
+            data: {
+              ...(newDobDate ? { dateOfBirth: newDobDate } : {}),
+              ...(dto.internalNotes !== undefined
+                ? { internalNotes: dto.internalNotes.trim() || null }
+                : {}),
+            },
+          });
+        }
+
+        await tx.systemAuditLog.create({
+          data: {
+            actorId: actor.id,
+            actingRole: actor.effectiveRole,
+            action: 'UPDATE_STUDENT',
+            targetType: 'User',
+            targetId: studentId,
+            metadata: sanitizeAuditMetadata({
+              fullName: nextFullName,
+              email: nextEmail,
+              phone: nextPhone,
+              status: nextStatus,
+              ...(newDobDate ? { dateOfBirth: formatIsoDateUtc(newDobDate) } : {}),
+            }) as Prisma.InputJsonValue,
+          },
+        });
       });
-    });
+    } catch (err: unknown) {
+      rethrowDuplicateContactConflict(err);
+    }
 
     return this.getStudentById(actor, studentId);
   }
@@ -489,74 +700,128 @@ export class StudentsService {
       throw new BadRequestException('Lớp học xếp ban đầu không được để trống');
     }
 
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: studentId },
-      include: {
-        studentProfile: {
-          include: { consent: true },
-        },
-      },
-    });
-
-    if (!targetUser || !targetUser.roles.includes(Role.STUDENT)) {
-      throw new NotFoundException('Không tìm thấy học viên');
-    }
-
-    if (
-      (targetUser.roles.includes(Role.SUPERADMIN) ||
-        targetUser.roles.includes(Role.ADMIN)) &&
-      !actor.roles.includes(Role.SUPERADMIN)
-    ) {
-      throw new ForbiddenException(
-        'Admin không có quyền chỉnh sửa hoặc khóa tài khoản Quản trị viên / Quản trị tối cao',
-      );
-    }
-
-    if (targetUser.status !== UserStatus.PENDING_CLASS) {
-      throw new BadRequestException(
-        'Chỉ có thể xếp lớp lần đầu cho học viên đang ở trạng thái Chờ xếp lớp',
-      );
-    }
-
-    const enrolledDate = dto.enrolledAt ? new Date(dto.enrolledAt) : new Date();
-    if (Number.isNaN(enrolledDate.getTime())) {
+    const enrolledDate = resolveVnCalendarDateForDb(dto.enrolledAt);
+    if (!enrolledDate) {
       throw new BadRequestException('Thời điểm xếp lớp (enrolledAt) không hợp lệ');
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: studentId },
-        data: {
-          status: UserStatus.ACTIVE,
-        },
-      });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // Row-lock the student row to serialize concurrent initial enrollment requests
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${studentId} FOR UPDATE`;
 
-      if (targetUser.studentProfile) {
-        await tx.studentProfile.update({
-          where: { userId: studentId },
-          data: {
-            assignedClass: classNameOrId,
-            enrolledAt: enrolledDate,
+        const targetUser = await tx.user.findUnique({
+          where: { id: studentId },
+          include: {
+            studentProfile: {
+              include: { consent: true },
+            },
           },
         });
-      }
 
-      await tx.systemAuditLog.create({
-        data: {
-          actorId: actor.id,
-          actingRole: actor.effectiveRole,
-          action: 'ASSIGN_INITIAL_CLASS',
-          targetType: 'User',
-          targetId: studentId,
-          metadata: sanitizeAuditMetadata({
-            classNameOrId,
-            enrolledAt: enrolledDate.toISOString(),
-            previousStatus: targetUser.status,
-            newStatus: UserStatus.ACTIVE,
-          }) as Prisma.InputJsonValue,
-        },
+        if (!targetUser || !targetUser.roles.includes(Role.STUDENT)) {
+          throw new NotFoundException('Không tìm thấy học viên');
+        }
+
+        if (
+          (targetUser.roles.includes(Role.SUPERADMIN) ||
+            targetUser.roles.includes(Role.ADMIN)) &&
+          !actor.roles.includes(Role.SUPERADMIN)
+        ) {
+          throw new ForbiddenException(
+            'Admin không có quyền chỉnh sửa hoặc khóa tài khoản Quản trị viên / Quản trị tối cao',
+          );
+        }
+
+        if (targetUser.status !== UserStatus.PENDING_CLASS) {
+          throw new BadRequestException(
+            'Chỉ có thể xếp lớp lần đầu cho học viên đang ở trạng thái Chờ xếp lớp',
+          );
+        }
+
+        const isUuid = UUID_REGEX.test(classNameOrId);
+        const targetClass = await tx.class.findFirst({
+          where: isUuid
+            ? { OR: [{ id: classNameOrId }, { code: classNameOrId }] }
+            : { code: classNameOrId },
+        });
+
+        if (!targetClass) {
+          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
+        }
+
+        if (
+          targetClass.status !== ClassStatus.UPCOMING &&
+          targetClass.status !== ClassStatus.ACTIVE
+        ) {
+          throw new BadRequestException(
+            'Chỉ có thể xếp học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
+          );
+        }
+
+        const existingActiveEnrollment = await tx.enrollment.findFirst({
+          where: {
+            studentId,
+            status: EnrollmentStatus.ACTIVE,
+          },
+        });
+
+        if (existingActiveEnrollment) {
+          throw new ConflictException('Học viên đã có lớp học đang hoạt động');
+        }
+
+        await tx.enrollment.create({
+          data: {
+            classId: targetClass.id,
+            studentId,
+            status: EnrollmentStatus.ACTIVE,
+            enrolledDate,
+          },
+        });
+
+        await tx.user.update({
+          where: { id: studentId },
+          data: {
+            status: UserStatus.ACTIVE,
+          },
+        });
+
+        if (targetUser.studentProfile) {
+          await tx.studentProfile.update({
+            where: { userId: studentId },
+            data: {
+              assignedClass: targetClass.code,
+              currentClassId: targetClass.id,
+              enrolledAt: enrolledDate,
+            },
+          });
+        }
+
+        await tx.systemAuditLog.create({
+          data: {
+            actorId: actor.id,
+            actingRole: actor.effectiveRole,
+            action: 'ASSIGN_INITIAL_CLASS',
+            targetType: 'User',
+            targetId: studentId,
+            metadata: sanitizeAuditMetadata({
+              classId: targetClass.id,
+              classCode: targetClass.code,
+              enrolledAt: enrolledDate.toISOString(),
+              previousStatus: targetUser.status,
+              newStatus: UserStatus.ACTIVE,
+            }) as Prisma.InputJsonValue,
+          },
+        });
       });
-    });
+    } catch (err: unknown) {
+      if (isPrismaUniqueConstraintError(err)) {
+        throw new ConflictException(
+          'Học viên đã được xếp lớp bởi một yêu cầu đồng thời khác',
+        );
+      }
+      throw err;
+    }
 
     return this.getStudentById(actor, studentId);
   }
@@ -569,12 +834,14 @@ export class StudentsService {
     records: Array<Record<string, unknown>>;
     message: string;
   }> {
+    let restrictToTeacherId: string | undefined;
+
     if (actor.roles.includes(Role.ADMIN)) {
       // Admin has full access to academic learning records (FUNC-009, DEC-026)
     } else if (actor.roles.includes(Role.STUDENT) && actor.id === studentId) {
       // Student viewing own learning records (FUNC-010)
     } else if (actor.roles.includes(Role.TEACHER)) {
-      const isAssigned = this.hasTeacherStudentClassAssignment(
+      const isAssigned = await this.hasTeacherStudentClassAssignment(
         actor.id,
         studentId,
       );
@@ -583,6 +850,7 @@ export class StudentsService {
           'Giáo viên chỉ được truy cập dữ liệu học tập của học viên thuộc lớp mình đang hoặc đã hoàn thành phụ trách',
         );
       }
+      restrictToTeacherId = actor.id;
     } else {
       throw new ForbiddenException('Bạn không có quyền truy cập');
     }
@@ -595,9 +863,44 @@ export class StudentsService {
       throw new NotFoundException('Không tìm thấy học viên');
     }
 
+    const enrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId,
+        ...(restrictToTeacherId
+          ? this.buildTeacherAuthorizedEnrollmentFilter(restrictToTeacherId)
+          : {}),
+      },
+      include: {
+        class: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { enrolledDate: 'desc' },
+    });
+
+    const records = enrollments.map((enrollment) => ({
+      enrollmentId: enrollment.id,
+      classId: enrollment.classId,
+      classCode: enrollment.class.code,
+      classStatus: enrollment.class.status,
+      courseCode: enrollment.class.course.code,
+      courseName: enrollment.class.course.name,
+      enrollmentStatus: enrollment.status,
+      enrolledDate: formatIsoDateUtc(enrollment.enrolledDate),
+      accessMode: restrictToTeacherId
+        ? enrollment.status === EnrollmentStatus.ACTIVE &&
+          (enrollment.class.status === ClassStatus.UPCOMING ||
+            enrollment.class.status === ClassStatus.ACTIVE)
+          ? 'FULL'
+          : 'READ_ONLY'
+        : 'FULL',
+    }));
+
     return {
       studentId,
-      records: [],
+      records,
       message: 'Dữ liệu học tập học viên',
     };
   }
@@ -639,10 +942,41 @@ export class StudentsService {
       throw new NotFoundException('Không tìm thấy học viên');
     }
 
+    const historicalEnrollments = await this.prisma.enrollment.findMany({
+      where: {
+        studentId,
+        status: {
+          in: [
+            EnrollmentStatus.TRANSFERRED,
+            EnrollmentStatus.COMPLETED,
+            EnrollmentStatus.DROPPED,
+          ],
+        },
+      },
+      include: {
+        class: {
+          include: {
+            course: true,
+          },
+        },
+      },
+      orderBy: { enrolledDate: 'desc' },
+    });
+
+    const pastClasses = historicalEnrollments.map((item) => ({
+      enrollmentId: item.id,
+      classId: item.classId,
+      classCode: item.class.code,
+      courseName: item.class.course.name,
+      enrollmentStatus: item.status,
+      enrolledDate: formatIsoDateUtc(item.enrolledDate),
+      leftDate: item.leftDate ? formatIsoDateUtc(item.leftDate) : null,
+    }));
+
     return {
       studentId,
       currentClass: targetUser.studentProfile?.assignedClass ?? null,
-      pastClasses: [],
+      pastClasses,
     };
   }
 

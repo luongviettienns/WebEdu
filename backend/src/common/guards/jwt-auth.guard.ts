@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserStatus } from '@prisma/client';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { IS_PUBLIC_KEY } from '../decorators/roles.decorator.js';
 import { getHighestRole } from '../auth/role-hierarchy.util.js';
@@ -39,13 +39,18 @@ export class JwtAuthGuard implements CanActivate {
       context.getClass(),
     ]);
 
+    const httpCtx = context.switchToHttp();
+    const request = httpCtx.getRequest<
+      Request & { user?: AuthenticatedUser; cookies?: Record<string, string> }
+    >();
+    const response = httpCtx.getResponse<Response | undefined>();
+
     if (isPublic) {
+      if (STATE_CHANGING_METHODS.has((request.method ?? '').toUpperCase())) {
+        this.verifyExplicitOriginIfPresent(request);
+      }
       return true;
     }
-
-    const request = context
-      .switchToHttp()
-      .getRequest<Request & { user?: AuthenticatedUser; cookies?: Record<string, string> }>();
 
     const extracted = this.extractToken(request);
     if (!extracted) {
@@ -66,6 +71,7 @@ export class JwtAuthGuard implements CanActivate {
       const secret = this.configService.get<string>('JWT_SECRET');
       payload = await this.jwtService.verifyAsync<JwtPayload>(token, { secret });
     } catch {
+      this.clearAuthCookieIfPresent(extracted, response);
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
     }
 
@@ -84,14 +90,17 @@ export class JwtAuthGuard implements CanActivate {
     });
 
     if (!userRecord) {
+      this.clearAuthCookieIfPresent(extracted, response);
       throw new UnauthorizedException('Tài khoản không tồn tại');
     }
 
     if (userRecord.status === UserStatus.INACTIVE) {
+      this.clearAuthCookieIfPresent(extracted, response);
       throw new ForbiddenException('Tài khoản đã bị khóa, vui lòng liên hệ trung tâm');
     }
 
     if (userRecord.tokenVersion !== payload.tokenVersion) {
+      this.clearAuthCookieIfPresent(extracted, response);
       throw new UnauthorizedException('Phiên đăng nhập đã hết hiệu lực, vui lòng đăng nhập lại');
     }
 
@@ -100,6 +109,18 @@ export class JwtAuthGuard implements CanActivate {
       userRecord.lastActivityAt &&
       now.getTime() - userRecord.lastActivityAt.getTime() > IDLE_TIMEOUT_MS
     ) {
+      if (typeof this.prisma.user.updateMany === 'function') {
+        await this.prisma.user.updateMany({
+          where: {
+            id: userRecord.id,
+            tokenVersion: userRecord.tokenVersion,
+          },
+          data: {
+            tokenVersion: { increment: 1 },
+          },
+        });
+      }
+      this.clearAuthCookieIfPresent(extracted, response);
       throw new UnauthorizedException(
         'Phiên đăng nhập đã hết hạn do không hoạt động quá 60 phút',
       );
@@ -124,20 +145,53 @@ export class JwtAuthGuard implements CanActivate {
       effectiveRole: getHighestRole(userRecord.roles),
       status: userRecord.status,
       tokenVersion: userRecord.tokenVersion,
+      rememberMe: payload.rememberMe === true,
     };
 
     return true;
   }
 
-  private verifyCookieCsrfOrigin(request: Request): void {
+  private getAllowedOrigins(): string[] {
     const corsOriginEnv =
       this.configService.get<string>('CORS_ORIGIN') ??
       process.env.CORS_ORIGIN ??
       'http://localhost:3000';
-    const allowedOrigins = corsOriginEnv
+    return corsOriginEnv
       .split(',')
       .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean);
+  }
+
+  private verifyExplicitOriginIfPresent(request: Request): void {
+    const rawOrigin = request.headers?.origin;
+    if (typeof rawOrigin === 'string' && rawOrigin.trim().length > 0) {
+      const normalizedOrigin = rawOrigin.trim().replace(/\/+$/, '');
+      if (!this.getAllowedOrigins().includes(normalizedOrigin)) {
+        throw new ForbiddenException('Nguồn gửi yêu cầu (Origin) không hợp lệ');
+      }
+    }
+  }
+
+  private clearAuthCookieIfPresent(
+    extracted: ExtractedAuthToken,
+    response: Response | undefined,
+  ): void {
+    if (
+      extracted?.source === 'cookie' &&
+      response &&
+      typeof response.clearCookie === 'function'
+    ) {
+      response.clearCookie(AUTH_COOKIE_NAME, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+      });
+    }
+  }
+
+  private verifyCookieCsrfOrigin(request: Request): void {
+    const allowedOrigins = this.getAllowedOrigins();
 
     const rawOrigin = request.headers.origin;
     if (typeof rawOrigin === 'string' && rawOrigin.trim().length > 0) {

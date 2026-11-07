@@ -4,18 +4,26 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, UserStatus } from '@prisma/client';
+import {
+  ClassStatus,
+  EnrollmentStatus,
+  Prisma,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import {
   sanitizeAuditMetadata,
   validateLogoImageDataUri,
 } from '../../common/utils/audit-sanitize.util.js';
+import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
 import { getHighestRole } from '../../common/auth/role-hierarchy.util.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import type {
   CreateSystemUserDto,
   ListAuditLogsQueryDto,
+  ListSystemUsersQueryDto,
   UpdateSystemConfigDto,
   UpdateUserRolesStatusDto,
 } from './dto/system-settings.dto.js';
@@ -46,25 +54,7 @@ export interface SystemConfigResponseDto {
 
 @Injectable()
 export class SystemSettingsService {
-  private roleMutationLock: Promise<unknown> = Promise.resolve();
-
   constructor(private readonly prisma: PrismaService) {}
-
-  private async withSuperadminGuardLock<T>(fn: () => Promise<T>): Promise<T> {
-    const previous = this.roleMutationLock;
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    this.roleMutationLock = previous.then(() => current);
-
-    await previous;
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  }
 
   private toSystemUserDto(user: {
     id: string;
@@ -87,18 +77,42 @@ export class SystemSettingsService {
     };
   }
 
-  async listSystemUsers(): Promise<{
+  async listSystemUsers(query?: ListSystemUsersQueryDto): Promise<{
     items: SystemUserItemDto[];
     total: number;
+    page: number;
+    limit: number;
   }> {
-    const users = await this.prisma.user.findMany({
-      orderBy: { createdAt: 'desc' },
-    });
+    const page = Math.max(1, Number(query?.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query?.limit) || 50));
+    const skip = (page - 1) * limit;
+    const search = query?.search?.trim();
 
-    const items = users.map((u) => this.toSystemUserDto(u));
+    const where: Prisma.UserWhereInput = search
+      ? {
+          OR: [
+            { fullName: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search } },
+          ],
+        }
+      : {};
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
     return {
-      items,
-      total: items.length,
+      items: users.map((u) => this.toSystemUserDto(u)),
+      total,
+      page,
+      limit,
     };
   }
 
@@ -136,6 +150,11 @@ export class SystemSettingsService {
     }
 
     const uniqueRoles = Array.from(new Set(dto.roles));
+    if (uniqueRoles.length === 1 && uniqueRoles[0] === Role.STUDENT) {
+      throw new BadRequestException(
+        'Tài khoản Học viên phải được tạo qua luồng Đăng ký học viên để kiểm tra độ tuổi và đồng ý phụ huynh',
+      );
+    }
 
     const duplicate = await this.prisma.user.findFirst({
       where: {
@@ -148,50 +167,54 @@ export class SystemSettingsService {
 
     const passwordHash = await bcrypt.hash(initialPassword, 10);
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          fullName,
-          email,
-          phone,
-          passwordHash,
-          roles: uniqueRoles,
-          status: UserStatus.ACTIVE,
-        },
-      });
-
-      if (uniqueRoles.includes(Role.TEACHER) && tx.teacherProfile?.upsert) {
-        await tx.teacherProfile.upsert({
-          where: { userId: user.id },
-          update: {},
-          create: {
-            userId: user.id,
-            activeClassesCount: 0,
-          },
-        });
-      }
-
-      await tx.systemAuditLog.create({
-        data: {
-          actorId: actor.id,
-          actingRole: actor.effectiveRole,
-          action: 'CREATE_SYSTEM_USER',
-          targetType: 'User',
-          targetId: user.id,
-          metadata: sanitizeAuditMetadata({
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
             fullName,
             email,
             phone,
+            passwordHash,
             roles: uniqueRoles,
-            initialPassword,
-          }) as Prisma.InputJsonValue,
-        },
+            status: UserStatus.ACTIVE,
+          },
+        });
+
+        if (uniqueRoles.includes(Role.TEACHER) && tx.teacherProfile?.upsert) {
+          await tx.teacherProfile.upsert({
+            where: { userId: user.id },
+            update: {},
+            create: {
+              userId: user.id,
+              activeClassesCount: 0,
+            },
+          });
+        }
+
+        await tx.systemAuditLog.create({
+          data: {
+            actorId: actor.id,
+            actingRole: actor.effectiveRole,
+            action: 'CREATE_SYSTEM_USER',
+            targetType: 'User',
+            targetId: user.id,
+            metadata: sanitizeAuditMetadata({
+              fullName,
+              email,
+              phone,
+              roles: uniqueRoles,
+              initialPassword,
+            }) as Prisma.InputJsonValue,
+          },
+        });
+
+        return user;
       });
 
-      return user;
-    });
-
-    return this.toSystemUserDto(created);
+      return this.toSystemUserDto(created);
+    } catch (err: unknown) {
+      rethrowDuplicateContactConflict(err);
+    }
   }
 
   async updateUserRolesAndStatus(
@@ -201,7 +224,7 @@ export class SystemSettingsService {
   ): Promise<SystemUserItemDto> {
     if (
       targetUserId === actor.id &&
-      (dto.status === UserStatus.INACTIVE ||
+      ((dto.status !== undefined && dto.status !== UserStatus.ACTIVE) ||
         (dto.roles !== undefined && !dto.roles.includes(Role.SUPERADMIN)))
     ) {
       throw new BadRequestException(
@@ -213,87 +236,169 @@ export class SystemSettingsService {
       throw new BadRequestException('Tài khoản phải có ít nhất một vai trò');
     }
 
-    return this.withSuperadminGuardLock(async () => {
-      return this.prisma.$transaction(async (tx) => {
-        // SEC-07: row-lock all active Superadmins so concurrent demotions serialize across
-        // processes. Errors must propagate; a silently skipped lock defeats the invariant.
-        await tx.$queryRaw`SELECT id FROM "users" WHERE 'SUPERADMIN' = ANY("roles") AND "status" = 'ACTIVE' FOR UPDATE`;
+    return this.prisma.$transaction(async (tx) => {
+      // SEC-07 & Deadlock-free lock order: lock target user + all active Superadmins
+      // in a single deterministic ORDER BY id ASC FOR UPDATE query.
+      await tx.$queryRaw`
+        SELECT id FROM "users"
+        WHERE id = ${targetUserId} OR ('SUPERADMIN' = ANY("roles") AND "status" = 'ACTIVE')
+        ORDER BY id ASC
+        FOR UPDATE
+      `;
 
-        const targetUser = await tx.user.findUnique({
-          where: { id: targetUserId },
-        });
-
-        if (!targetUser) {
-          throw new NotFoundException('Không tìm thấy tài khoản');
-        }
-
-        const nextRoles =
-          dto.roles !== undefined
-            ? Array.from(new Set(dto.roles))
-            : targetUser.roles;
-        const nextStatus = dto.status ?? targetUser.status;
-
-        const wasActiveSuperadmin =
-          targetUser.roles.includes(Role.SUPERADMIN) &&
-          targetUser.status === UserStatus.ACTIVE;
-        const willBeActiveSuperadmin =
-          nextRoles.includes(Role.SUPERADMIN) &&
-          nextStatus === UserStatus.ACTIVE;
-
-        if (wasActiveSuperadmin && !willBeActiveSuperadmin) {
-          const otherActiveSuperadmins = await tx.user.count({
-            where: {
-              id: { not: targetUserId },
-              roles: { has: Role.SUPERADMIN },
-              status: UserStatus.ACTIVE,
-            },
-          });
-
-          if (otherActiveSuperadmins < 1) {
-            throw new BadRequestException(
-              'Không thể tự vô hiệu hóa chính mình hoặc gỡ vai trò Superadmin cuối cùng',
-            );
-          }
-        }
-
-        const updated = await tx.user.update({
-          where: { id: targetUserId },
-          data: {
-            roles: nextRoles,
-            status: nextStatus,
-            tokenVersion: { increment: 1 },
-          },
-        });
-
-        if (nextRoles.includes(Role.TEACHER) && tx.teacherProfile?.upsert) {
-          await tx.teacherProfile.upsert({
-            where: { userId: targetUserId },
-            update: {},
-            create: {
-              userId: targetUserId,
-              activeClassesCount: 0,
-            },
-          });
-        }
-
-        await tx.systemAuditLog.create({
-          data: {
-            actorId: actor.id,
-            actingRole: actor.effectiveRole,
-            action: 'UPDATE_USER_ROLES_STATUS',
-            targetType: 'User',
-            targetId: targetUserId,
-            metadata: sanitizeAuditMetadata({
-              previousRoles: targetUser.roles,
-              newRoles: nextRoles,
-              previousStatus: targetUser.status,
-              newStatus: nextStatus,
-            }) as Prisma.InputJsonValue,
-          },
-        });
-
-        return this.toSystemUserDto(updated);
+      const targetUser = await tx.user.findUnique({
+        where: { id: targetUserId },
+        include: {
+          studentProfile: true,
+          teacherProfile: true,
+        },
       });
+
+      if (!targetUser) {
+        throw new NotFoundException('Không tìm thấy tài khoản');
+      }
+
+      const nextRoles =
+        dto.roles !== undefined
+          ? Array.from(new Set(dto.roles))
+          : targetUser.roles;
+      const nextStatus = dto.status ?? targetUser.status;
+
+      if (!nextRoles.includes(Role.STUDENT) && nextStatus === UserStatus.PENDING_CLASS) {
+        throw new BadRequestException(
+          'Trạng thái Chờ xếp lớp chỉ áp dụng cho tài khoản Học viên',
+        );
+      }
+
+      // FUNC-008: Forbid bypassing initial enrollment or reactivating a dropped pure student without an active/completed enrollment
+      const willBePureStudent =
+        nextRoles.length === 1 && nextRoles[0] === Role.STUDENT;
+      if (willBePureStudent) {
+        const validEnrollmentCount = tx.enrollment?.count
+          ? await tx.enrollment.count({
+              where: {
+                studentId: targetUserId,
+                status: {
+                  in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED],
+                },
+              },
+            })
+          : null;
+
+        const hasActiveOrCompletedEnrollment =
+          validEnrollmentCount !== null
+            ? validEnrollmentCount > 0 ||
+              Boolean(targetUser.studentProfile?.currentClassId)
+            : Boolean(
+                targetUser.studentProfile?.enrolledAt ||
+                  targetUser.studentProfile?.currentClassId ||
+                  targetUser.studentProfile?.assignedClass,
+              );
+
+        const hasEverBeenEnrolled =
+          (validEnrollmentCount !== null && validEnrollmentCount > 0) ||
+          Boolean(
+            targetUser.studentProfile?.enrolledAt ||
+              targetUser.studentProfile?.currentClassId ||
+              targetUser.studentProfile?.assignedClass,
+          );
+
+        if (!hasActiveOrCompletedEnrollment && nextStatus === UserStatus.ACTIVE) {
+          throw new BadRequestException(
+            'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+          );
+        }
+        if (hasEverBeenEnrolled && nextStatus === UserStatus.PENDING_CLASS) {
+          throw new BadRequestException(
+            'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
+          );
+        }
+      }
+
+      // FUNC-006: Prevent deactivating or stripping TEACHER role when teacher still leads active/upcoming classes
+      const isDroppingActiveTeacher =
+        targetUser.roles.includes(Role.TEACHER) &&
+        (nextStatus === UserStatus.INACTIVE || !nextRoles.includes(Role.TEACHER));
+      if (isDroppingActiveTeacher) {
+        const dbActiveClasses = tx.class?.count
+          ? await tx.class.count({
+              where: {
+                teacherId: targetUserId,
+                status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+              },
+            })
+          : 0;
+        const effectiveActiveClasses = Math.max(
+          targetUser.teacherProfile?.activeClassesCount ?? 0,
+          dbActiveClasses,
+        );
+        if (effectiveActiveClasses > 0) {
+          throw new ConflictException(
+            `Giáo viên đang phụ trách ${effectiveActiveClasses} lớp. Vui lòng phân công giáo viên khác`,
+          );
+        }
+      }
+
+      const wasActiveSuperadmin =
+        targetUser.roles.includes(Role.SUPERADMIN) &&
+        targetUser.status === UserStatus.ACTIVE;
+      const willBeActiveSuperadmin =
+        nextRoles.includes(Role.SUPERADMIN) &&
+        nextStatus === UserStatus.ACTIVE;
+
+      if (wasActiveSuperadmin && !willBeActiveSuperadmin) {
+        const otherActiveSuperadmins = await tx.user.count({
+          where: {
+            id: { not: targetUserId },
+            roles: { has: Role.SUPERADMIN },
+            status: UserStatus.ACTIVE,
+          },
+        });
+
+        if (otherActiveSuperadmins < 1) {
+          throw new BadRequestException(
+            'Không thể tự vô hiệu hóa chính mình hoặc gỡ vai trò Superadmin cuối cùng',
+          );
+        }
+      }
+
+      const updated = await tx.user.update({
+        where: { id: targetUserId },
+        data: {
+          roles: nextRoles,
+          status: nextStatus,
+          tokenVersion: { increment: 1 },
+        },
+      });
+
+      if (nextRoles.includes(Role.TEACHER) && tx.teacherProfile?.upsert) {
+        await tx.teacherProfile.upsert({
+          where: { userId: targetUserId },
+          update: {},
+          create: {
+            userId: targetUserId,
+            activeClassesCount: 0,
+          },
+        });
+      }
+
+      await tx.systemAuditLog.create({
+        data: {
+          actorId: actor.id,
+          actingRole: actor.effectiveRole,
+          action: 'UPDATE_USER_ROLES_STATUS',
+          targetType: 'User',
+          targetId: targetUserId,
+          metadata: sanitizeAuditMetadata({
+            previousRoles: targetUser.roles,
+            newRoles: nextRoles,
+            previousStatus: targetUser.status,
+            newStatus: nextStatus,
+          }) as Prisma.InputJsonValue,
+        },
+      });
+
+      return this.toSystemUserDto(updated);
     });
   }
 

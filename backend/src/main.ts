@@ -6,10 +6,13 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
+import { AUTH_COOKIE_NAME } from './common/guards/jwt-auth.guard.js';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
 
   const configService = app.get(ConfigService);
   const trustProxy = configService.get<string>('TRUST_PROXY');
@@ -17,6 +20,8 @@ async function bootstrap() {
     app.set('trust proxy', 1);
   }
 
+  // Allow up to 4MB JSON payloads so <=2MB PNG/JPG base64 logos (~2.7MB JSON) succeed
+  app.useBodyParser('json', { limit: '4mb' });
   app.use(cookieParser());
 
   const port = configService.get<number>('PORT', 3001);
@@ -68,6 +73,7 @@ async function bootstrap() {
       .setTitle('WebEdu API — Trung Tâm TD Hán Ngữ')
       .setDescription('Hệ thống Quản lý Học tập & Lớp học trực tuyến')
       .setVersion('1.0.0')
+      .addCookieAuth(AUTH_COOKIE_NAME)
       .addBearerAuth()
       .build();
 

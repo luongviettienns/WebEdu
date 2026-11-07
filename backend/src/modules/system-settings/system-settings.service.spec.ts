@@ -178,9 +178,26 @@ describe('SystemSettingsService (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)',
         findMany: vi.fn(async () => auditLogsStore),
         count: vi.fn(async () => auditLogsStore.length),
       },
-      $transaction: vi.fn(async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        return cb(mockPrisma);
-      }),
+      class: {
+        count: vi.fn(async () => 0),
+      },
+      $transaction: (() => {
+        let txQueue = Promise.resolve();
+        return vi.fn(async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
+          const prev = txQueue;
+          let release!: () => void;
+          const curr = new Promise<void>((r) => {
+            release = r;
+          });
+          txQueue = prev.then(() => curr);
+          await prev;
+          try {
+            return await cb(mockPrisma);
+          } finally {
+            release();
+          }
+        });
+      })(),
     };
 
     service = new SystemSettingsService(mockPrisma as unknown as PrismaService);

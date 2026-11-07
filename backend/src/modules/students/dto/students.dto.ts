@@ -27,6 +27,16 @@ export class ListStudentsQueryDto {
   limit?: number | string;
 }
 
+export class ListPendingEnrollmentQueryDto {
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  page?: number | string;
+
+  @ApiPropertyOptional({ default: 20 })
+  @IsOptional()
+  limit?: number | string;
+}
+
 export class UpdateStudentDto {
   @ApiPropertyOptional({ example: 'Nguyễn Văn An' })
   @IsOptional()
