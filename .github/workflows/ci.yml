@@ -1,0 +1,159 @@
+name: WebEdu Quality Gates
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'fix/**'
+      - 'release/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-gates:
+    name: Backend Static, Unit, Postgres Integration & API E2E
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: webedu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d webedu_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/webedu_test?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/webedu_test?schema=public
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate Prisma Client
+        working-directory: backend
+        run: npm run prisma:generate
+
+      - name: Verify SQL migrations on PostgreSQL 16
+        working-directory: backend
+        run: npx prisma migrate deploy --schema=./prisma/schema.prisma
+
+      - name: Backend TypeScript strict typecheck
+        working-directory: backend
+        run: npm run typecheck
+
+      - name: Backend OxLint type-aware check
+        working-directory: backend
+        run: npm run lint
+
+      - name: Backend production build
+        working-directory: backend
+        run: npm run build
+
+      - name: Backend Unit Tests
+        working-directory: backend
+        run: npm test
+
+      - name: Backend Real PostgreSQL 16 Integration Tests
+        working-directory: backend
+        run: npm run test:integration
+
+      - name: Backend Real PostgreSQL 16 Supertest API E2E Tests
+        working-directory: backend
+        run: npm run test:e2e
+
+  frontend-and-browser-qa:
+    name: Frontend Static, Production Build & Playwright Browser QA
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: webedu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d webedu_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/webedu_test?schema=public
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install & build backend for Browser QA
+        working-directory: backend
+        run: |
+          npm ci
+          npm run prisma:generate
+          npm run build
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend TypeScript strict typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Frontend ESLint check
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend Next.js production build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Install Playwright Chromium browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright Browser QA (Desktop + Mobile)
+        working-directory: frontend
+        run: npm run test:e2e
