@@ -10,13 +10,25 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { AuthService } from './auth.service.js';
+import { AuthLoginService } from './services/auth-login.service.js';
+import { AuthRegistrationService } from './services/auth-registration.service.js';
+import { AuthSessionService } from './services/auth-session.service.js';
+import { PasswordRecoveryService } from './services/password-recovery.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { MailService, type PasswordResetEmailInput } from '../../common/mail/mail.service.js';
 import { CONSENT_TEXT_V1_0, CONSENT_VERSION } from '../../common/auth/auth.types.js';
 
-describe('AuthService (FUNC-001..005 — Hardened Lockout & Mail Abstraction)', () => {
-  let service: AuthService;
+interface AuthTestFacade {
+  register: AuthRegistrationService['register'];
+  login: AuthLoginService['login'];
+  getMe: AuthSessionService['getMe'];
+  logout: AuthSessionService['logout'];
+  forgotPassword: PasswordRecoveryService['forgotPassword'];
+  resetPassword: PasswordRecoveryService['resetPassword'];
+}
+
+describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)', () => {
+  let service: AuthTestFacade;
   let jwtService: JwtService;
   let signAsyncMock: ReturnType<typeof vi.fn>;
   let configService: ConfigService;
@@ -328,12 +340,20 @@ describe('AuthService (FUNC-001..005 — Hardened Lockout & Mail Abstraction)', 
       }),
     } as unknown as MailService;
 
-    service = new AuthService(
-      mockPrisma as unknown as PrismaService,
-      jwtService,
-      configService,
-      mailService,
-    );
+    const prisma = mockPrisma as unknown as PrismaService;
+    const sessionService = new AuthSessionService(prisma, jwtService, configService);
+    const registrationService = new AuthRegistrationService(prisma, sessionService);
+    const loginService = new AuthLoginService(prisma, sessionService);
+    const recoveryService = new PasswordRecoveryService(prisma, mailService);
+
+    service = {
+      register: registrationService.register.bind(registrationService),
+      login: loginService.login.bind(loginService),
+      getMe: sessionService.getMe.bind(sessionService),
+      logout: sessionService.logout.bind(sessionService),
+      forgotPassword: recoveryService.forgotPassword.bind(recoveryService),
+      resetPassword: recoveryService.resetPassword.bind(recoveryService),
+    };
   });
 
   describe('FUNC-001 & FUNC-002: Register & Guardian Consent', () => {

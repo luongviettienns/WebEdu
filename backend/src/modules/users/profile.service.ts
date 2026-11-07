@@ -9,15 +9,16 @@ import { ConfigService } from '@nestjs/config';
 import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
-import { sanitizeAuditMetadata } from '../../common/utils/audit-sanitize.util.js';
+import { writeAuditLog } from '../../common/audit/audit-log.util.js';
+import {
+  assertValidContactFields,
+  normalizeEmail,
+} from '../../common/utils/contact-validation.util.js';
 import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
+import { formatIsoDateUtc } from '../../common/utils/timezone.util.js';
 import type { JwtPayload } from '../../common/auth/auth.types.js';
 import { getHighestRole } from '../../common/auth/role-hierarchy.util.js';
-import { formatIsoDateUtc } from '../auth/auth.service.js';
 import type { ChangePasswordDto, UpdateProfileDto } from './dto/profile.dto.js';
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PHONE_REGEX = /^0\d{9}$/;
 
 export interface UserProfileDto {
   id: string;
@@ -46,6 +47,39 @@ export interface ChangePasswordResult {
   expiresIn: number;
 }
 
+const PROFILE_USER_INCLUDE = {
+  studentProfile: true,
+  teacherProfile: true,
+  _count: {
+    select: {
+      taughtClasses: {
+        where: {
+          status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+        },
+      },
+    },
+  },
+} satisfies Prisma.UserInclude;
+
+interface UserProfileSource {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string;
+  roles: Role[];
+  status: UserStatus;
+  studentProfile?: {
+    dateOfBirth: Date;
+    assignedClass?: string | null;
+  } | null;
+  teacherProfile?: {
+    activeClassesCount?: number;
+  } | null;
+  _count?: {
+    taughtClasses?: number;
+  };
+}
+
 @Injectable()
 export class ProfileService {
   constructor(
@@ -53,6 +87,30 @@ export class ProfileService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  private toUserProfileDto(user: UserProfileSource): UserProfileDto {
+    const activeClassesCount = Math.max(
+      user.teacherProfile?.activeClassesCount ?? 0,
+      user._count?.taughtClasses ?? 0,
+    );
+
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      phone: user.phone,
+      roles: user.roles,
+      effectiveRole: getHighestRole(user.roles),
+      status: user.status,
+      ...(user.studentProfile?.dateOfBirth
+        ? { dateOfBirth: formatIsoDateUtc(user.studentProfile.dateOfBirth) }
+        : {}),
+      ...(user.studentProfile
+        ? { assignedClass: user.studentProfile.assignedClass ?? null }
+        : {}),
+      ...(user.roles.includes(Role.TEACHER) ? { activeClassesCount } : {}),
+    };
+  }
 
   private async signFreshAccessToken(
     user: {
@@ -80,46 +138,14 @@ export class ProfileService {
   async getMyProfile(userId: string): Promise<UserProfileDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        studentProfile: true,
-        teacherProfile: true,
-        _count: {
-          select: {
-            taughtClasses: {
-              where: {
-                status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
-              },
-            },
-          },
-        },
-      },
+      include: PROFILE_USER_INCLUDE,
     });
 
     if (!user) {
       throw new NotFoundException('Tài khoản không tồn tại');
     }
 
-    const activeClassesCount = Math.max(
-      user.teacherProfile?.activeClassesCount ?? 0,
-      user._count?.taughtClasses ?? 0,
-    );
-
-    return {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      phone: user.phone,
-      roles: user.roles,
-      effectiveRole: getHighestRole(user.roles),
-      status: user.status,
-      ...(user.studentProfile?.dateOfBirth
-        ? { dateOfBirth: formatIsoDateUtc(user.studentProfile.dateOfBirth) }
-        : {}),
-      ...(user.studentProfile
-        ? { assignedClass: user.studentProfile.assignedClass ?? null }
-        : {}),
-      ...(user.roles.includes(Role.TEACHER) ? { activeClassesCount } : {}),
-    };
+    return this.toUserProfileDto(user);
   }
 
   async updateMyProfile(
@@ -131,22 +157,11 @@ export class ProfileService {
       throw new BadRequestException('Học viên không được phép tự sửa ngày sinh');
     }
 
-    if (dto.fullName !== undefined && !dto.fullName.trim()) {
-      throw new BadRequestException('Họ và tên không được để trống');
-    }
-
-    if (dto.phone !== undefined && !PHONE_REGEX.test(dto.phone.trim())) {
-      throw new BadRequestException(
-        'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0',
-      );
-    }
-
-    if (
-      dto.email !== undefined &&
-      !EMAIL_REGEX.test(dto.email.trim().toLowerCase())
-    ) {
-      throw new BadRequestException('Email không hợp lệ');
-    }
+    assertValidContactFields({
+      fullName: dto.fullName,
+      phone: dto.phone,
+      email: dto.email,
+    });
 
     const preReadUser = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -159,7 +174,7 @@ export class ProfileService {
 
     const candidateEmailPre =
       dto.email !== undefined
-        ? dto.email.trim().toLowerCase()
+        ? normalizeEmail(dto.email)
         : preReadUser.email;
     let preVerifiedHash: string | null = null;
     if (candidateEmailPre !== preReadUser.email) {
@@ -198,9 +213,7 @@ export class ProfileService {
           const nextPhone =
             dto.phone !== undefined ? dto.phone.trim() : user.phone;
           const nextEmail =
-            dto.email !== undefined
-              ? dto.email.trim().toLowerCase()
-              : user.email;
+            dto.email !== undefined ? normalizeEmail(dto.email) : user.email;
 
           const emailChanged = nextEmail !== user.email;
           if (emailChanged) {
@@ -239,37 +252,28 @@ export class ProfileService {
               ...(dto.email !== undefined ? { email: nextEmail } : {}),
               ...(emailChanged ? { tokenVersion: { increment: 1 } } : {}),
             },
-            include: {
-              studentProfile: true,
-              teacherProfile: true,
-              _count: {
-                select: {
-                  taughtClasses: {
-                    where: {
-                      status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
-                    },
-                  },
-                },
-              },
-            },
+            include: PROFILE_USER_INCLUDE,
           });
 
-          await tx.systemAuditLog.create({
-            data: {
-              actorId: userId,
-              actingRole: getHighestRole(updatedUser.roles),
+          await writeAuditLog(
+            tx,
+            {
+              id: userId,
+              effectiveRole: getHighestRole(updatedUser.roles),
+            },
+            {
               action: 'UPDATE_MY_PROFILE',
               targetType: 'User',
               targetId: userId,
-              metadata: sanitizeAuditMetadata({
+              metadata: {
                 fullName: updatedUser.fullName,
                 phone: updatedUser.phone,
                 emailChanged,
                 previousEmail: emailChanged ? user.email : undefined,
                 newEmail: emailChanged ? nextEmail : undefined,
-              }) as Prisma.InputJsonValue,
+              },
             },
-          });
+          );
 
           return { updated: updatedUser, isEmailChanged: emailChanged };
         },
@@ -279,28 +283,8 @@ export class ProfileService {
         ? await this.signFreshAccessToken(updated, options?.rememberMe === true)
         : undefined;
 
-      const activeClassesCount = Math.max(
-        updated.teacherProfile?.activeClassesCount ?? 0,
-        updated._count?.taughtClasses ?? 0,
-      );
-
       return {
-        profile: {
-          id: updated.id,
-          email: updated.email,
-          fullName: updated.fullName,
-          phone: updated.phone,
-          roles: updated.roles,
-          effectiveRole: getHighestRole(updated.roles),
-          status: updated.status,
-          ...(updated.studentProfile?.dateOfBirth
-            ? { dateOfBirth: formatIsoDateUtc(updated.studentProfile.dateOfBirth) }
-            : {}),
-          ...(updated.studentProfile
-            ? { assignedClass: updated.studentProfile.assignedClass ?? null }
-            : {}),
-          ...(updated.roles.includes(Role.TEACHER) ? { activeClassesCount } : {}),
-        },
+        profile: this.toUserProfileDto(updated),
         ...(rotatedSession ? { rotatedSession } : {}),
       };
     } catch (err: unknown) {
@@ -356,18 +340,21 @@ export class ProfileService {
         },
       });
 
-      await tx.systemAuditLog.create({
-        data: {
-          actorId: userId,
-          actingRole: getHighestRole(updatedUser.roles),
+      await writeAuditLog(
+        tx,
+        {
+          id: userId,
+          effectiveRole: getHighestRole(updatedUser.roles),
+        },
+        {
           action: 'CHANGE_PASSWORD',
           targetType: 'User',
           targetId: userId,
-          metadata: sanitizeAuditMetadata({
+          metadata: {
             passwordRotated: true,
-          }) as Prisma.InputJsonValue,
+          },
         },
-      });
+      );
 
       return updatedUser;
     });

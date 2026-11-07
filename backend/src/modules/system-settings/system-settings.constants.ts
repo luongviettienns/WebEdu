@@ -1,0 +1,3 @@
+export const SETTING_KEY_CENTER_NAME = 'CENTER_NAME';
+export const SETTING_KEY_CENTER_LOGO_URL = 'CENTER_LOGO_URL';
+export const DEFAULT_CENTER_NAME = 'Trung Tâm TD Hán Ngữ';

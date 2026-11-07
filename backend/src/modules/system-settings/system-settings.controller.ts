@@ -13,7 +13,9 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { SystemSettingsService } from './system-settings.service.js';
+import { SystemConfigService } from './services/system-config.service.js';
+import { SystemUsersService } from './services/system-users.service.js';
+import { UserRoleStatusService } from './services/user-role-status.service.js';
 import {
   CreateSystemUserDto,
   ListAuditLogsQueryDto,
@@ -31,13 +33,17 @@ import { RolesGuard } from '../../common/guards/roles.guard.js';
 @Controller('system-settings')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SystemSettingsController {
-  constructor(private readonly systemSettingsService: SystemSettingsService) {}
+  constructor(
+    private readonly systemUsersService: SystemUsersService,
+    private readonly userRoleStatusService: UserRoleStatusService,
+    private readonly systemConfigService: SystemConfigService,
+  ) {}
 
   @Get('users')
   @Roles(Role.SUPERADMIN)
   @ApiOperation({ summary: 'Danh sách tài khoản hệ thống / quản trị (FUNC-013)' })
   async listSystemUsers(@Query() query: ListSystemUsersQueryDto) {
-    return this.systemSettingsService.listSystemUsers(query);
+    return this.systemUsersService.listSystemUsers(query);
   }
 
   @Post('users')
@@ -48,7 +54,7 @@ export class SystemSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateSystemUserDto,
   ) {
-    return this.systemSettingsService.createSystemUser(user, dto);
+    return this.systemUsersService.createSystemUser(user, dto);
   }
 
   @Patch('users/:id/roles')
@@ -62,14 +68,14 @@ export class SystemSettingsController {
     @Param('id') id: string,
     @Body() dto: UpdateUserRolesStatusDto,
   ) {
-    return this.systemSettingsService.updateUserRolesAndStatus(user, id, dto);
+    return this.userRoleStatusService.updateUserRolesAndStatus(user, id, dto);
   }
 
   @Public()
   @Get('config')
   @ApiOperation({ summary: 'Lấy cấu hình Tên trung tâm & Logo (Public cho màn Login & Header)' })
   async getSystemConfig() {
-    return this.systemSettingsService.getSystemConfig();
+    return this.systemConfigService.getSystemConfig();
   }
 
   @Put('config')
@@ -79,7 +85,7 @@ export class SystemSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateSystemConfigDto,
   ) {
-    return this.systemSettingsService.updateSystemConfig(
+    return this.systemConfigService.updateSystemConfig(
       user,
       dto as UpdateSystemConfigDto & Record<string, unknown>,
     );
@@ -89,6 +95,6 @@ export class SystemSettingsController {
   @Roles(Role.SUPERADMIN)
   @ApiOperation({ summary: 'Nhật ký vận hành hệ thống mới nhất lên đầu, chỉ đọc (FUNC-013)' })
   async listAuditLogs(@Query() query: ListAuditLogsQueryDto) {
-    return this.systemSettingsService.listAuditLogs(query);
+    return this.systemConfigService.listAuditLogs(query);
   }
 }
