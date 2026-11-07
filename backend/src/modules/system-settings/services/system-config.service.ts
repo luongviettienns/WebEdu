@@ -51,7 +51,7 @@ export class SystemConfigService {
 
   async updateSystemConfig(
     actor: AuthenticatedUser,
-    dto: UpdateSystemConfigDto & Record<string, unknown>,
+    dto: UpdateSystemConfigDto,
   ): Promise<SystemConfigResponseDto> {
     if ('timezone' in dto && dto.timezone !== undefined) {
       throw new BadRequestException(

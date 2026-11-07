@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -285,7 +286,39 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
           },
         ),
       },
+      teacherProfile: {
+        findUnique: vi.fn(async ({ where }: { where: { userId: string } }) => {
+          const u = usersStore.get(where.userId);
+          if (!u || !u.roles.includes(Role.TEACHER)) return null;
+          return {
+            userId: u.id,
+            activeClassesCount: Array.from(classesStore.values()).filter(
+              (c) =>
+                c.teacherId === u.id &&
+                (c.status === ClassStatus.UPCOMING || c.status === ClassStatus.ACTIVE),
+            ).length,
+          };
+        }),
+      },
       class: {
+        count: vi.fn(
+          async ({
+            where,
+          }: {
+            where?: {
+              teacherId?: string;
+              status?: { in: ClassStatus[] };
+            };
+          }) => {
+            let count = 0;
+            for (const cls of classesStore.values()) {
+              if (where?.teacherId && cls.teacherId !== where.teacherId) continue;
+              if (where?.status?.in && !where.status.in.includes(cls.status)) continue;
+              count += 1;
+            }
+            return count;
+          },
+        ),
         findFirst: vi.fn(async ({ where }: { where: { code?: string; OR?: Array<{ id?: string; code?: string }> } }) => {
           for (const cls of classesStore.values()) {
             if (where.code && cls.code === where.code) return cls;
@@ -820,6 +853,89 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
     ).rejects.toThrowError(
       new BadRequestException(
         'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+      ),
+    );
+  });
+
+  it('FIX-01: blocks deactivating dual-role STUDENT+TEACHER via updateStudent when leading active classes (FUNC-006)', async () => {
+    usersStore.set('dual-st-1', {
+      id: 'dual-st-1',
+      email: 'dual.teacher@example.com',
+      phone: '0908888888',
+      fullName: 'Teacher Student Dual',
+      roles: [Role.STUDENT, Role.TEACHER],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      studentProfile: {
+        id: 'sp-dual-1',
+        userId: 'dual-st-1',
+        dateOfBirth: new Date('1995-05-15T00:00:00.000Z'),
+        assignedClass: 'HSK1-K21',
+        currentClassId: 'cls-k21',
+        enrolledAt: new Date(),
+        guardianEmail: null,
+        internalNotes: null,
+        consent: null,
+      },
+    });
+
+    classesStore.get('cls-k21')!.teacherId = 'dual-st-1';
+
+    await expect(
+      service.updateStudent(adminActor, 'dual-st-1', {
+        status: UserStatus.INACTIVE,
+      }),
+    ).rejects.toThrowError(ConflictException);
+
+    classesStore.get('cls-k21')!.teacherId = 'teacher-1';
+    const updated = await service.updateStudent(adminActor, 'dual-st-1', {
+      status: UserStatus.INACTIVE,
+    });
+    expect(updated.status).toBe(UserStatus.INACTIVE);
+  });
+
+  it('FIX-02: forbids moving a student with DROPPED or TRANSFERRED enrollment back to PENDING_CLASS', async () => {
+    usersStore.set('student-dropped', {
+      id: 'student-dropped',
+      email: 'dropped@example.com',
+      phone: '0909999999',
+      fullName: 'Student Dropped',
+      roles: [Role.STUDENT],
+      status: UserStatus.INACTIVE,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      studentProfile: {
+        id: 'sp-dropped',
+        userId: 'student-dropped',
+        dateOfBirth: new Date('2000-01-01T00:00:00.000Z'),
+        assignedClass: null,
+        currentClassId: null,
+        enrolledAt: null,
+        guardianEmail: null,
+        internalNotes: null,
+        consent: null,
+      },
+    });
+
+    enrollmentsStore.push({
+      id: 'enr-dropped',
+      classId: 'cls-k21',
+      studentId: 'student-dropped',
+      status: EnrollmentStatus.DROPPED,
+      enrolledDate: new Date('2026-09-01'),
+      leftDate: new Date('2026-10-01'),
+    });
+
+    await expect(
+      service.updateStudent(adminActor, 'student-dropped', {
+        status: UserStatus.PENDING_CLASS,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
       ),
     );
   });

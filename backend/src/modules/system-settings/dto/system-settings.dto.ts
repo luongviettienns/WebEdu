@@ -87,6 +87,10 @@ export class UpdateSystemConfigDto {
   @IsOptional()
   @IsString()
   updatedAt?: string;
+
+  @ApiPropertyOptional({ description: 'Trường múi giờ đã bị loại bỏ khỏi hệ thống' })
+  @IsOptional()
+  timezone?: unknown;
 }
 
 export class ListAuditLogsQueryDto {

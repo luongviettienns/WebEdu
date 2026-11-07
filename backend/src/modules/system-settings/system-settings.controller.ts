@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -73,6 +74,7 @@ export class SystemSettingsController {
 
   @Public()
   @Get('config')
+  @Header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
   @ApiOperation({ summary: 'Lấy cấu hình Tên trung tâm & Logo (Public cho màn Login & Header)' })
   async getSystemConfig() {
     return this.systemConfigService.getSystemConfig();
@@ -85,10 +87,7 @@ export class SystemSettingsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateSystemConfigDto,
   ) {
-    return this.systemConfigService.updateSystemConfig(
-      user,
-      dto as UpdateSystemConfigDto & Record<string, unknown>,
-    );
+    return this.systemConfigService.updateSystemConfig(user, dto);
   }
 
   @Get('audit-logs')

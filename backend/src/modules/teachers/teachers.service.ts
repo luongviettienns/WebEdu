@@ -21,7 +21,9 @@ import {
   assertAnotherActiveSuperadminRemains,
   assertSuperadminNotSelfDeactivating,
   isLeavingActiveSuperadmin,
+  lockTargetUser,
   lockUserAndActiveSuperadmins,
+  type LockedUserRow,
 } from '../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import type {
@@ -33,7 +35,7 @@ import { toTeacherItemDto, type TeacherItemDto } from './mappers/teacher.mapper.
 import {
   assertNoActiveClassesLed,
   countEffectiveActiveClasses,
-} from './policies/teacher-assignment.policy.js';
+} from '../../common/policies/teacher-invariants.policy.js';
 
 /** Teacher account management (FUNC-006). */
 @Injectable()
@@ -129,7 +131,7 @@ export class TeachersService {
           action: 'CREATE_TEACHER',
           targetType: 'User',
           targetId: user.id,
-          metadata: { fullName, email, phone, initialPassword },
+          metadata: { fullName, email, phone, hasInitialCredentials: true },
         });
 
         return { ...user, teacherProfile };
@@ -159,8 +161,41 @@ export class TeachersService {
 
     try {
       const updated = await this.prisma.$transaction(async (tx) => {
-        // Deterministic lock order shared with Students/SystemSettings (ORDER BY id ASC)
-        const lockedRows = await lockUserAndActiveSuperadmins(tx, teacherId);
+        // Determine locking strategy without acquiring out-of-order locks
+        const preliminary = await tx.user.findUnique({
+          where: { id: teacherId },
+          select: { roles: true, status: true },
+        });
+        if (!preliminary || !preliminary.roles.includes(Role.TEACHER)) {
+          throw new NotFoundException('Không tìm thấy giáo viên');
+        }
+
+        // SEC-08: Check actor permissions before locking or evaluating pool state
+        assertActorMayModifyAccount(actor, preliminary.roles);
+
+        const nextStatus = dto.status ?? preliminary.status;
+
+        // SEC-07: Superadmin may not self-deactivate
+        assertSuperadminNotSelfDeactivating(
+          actor,
+          { id: teacherId, roles: preliminary.roles },
+          nextStatus,
+        );
+
+        const leavingSuperadmin = isLeavingActiveSuperadmin(
+          preliminary.roles,
+          nextStatus,
+        );
+
+        let lockedSuperadmins: LockedUserRow[] | undefined;
+        if (leavingSuperadmin) {
+          // Lock all active superadmins in canonical ORDER BY id ASC to avoid 40P01 deadlocks (SEC-07)
+          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, teacherId);
+          assertAnotherActiveSuperadminRemains(teacherId, lockedSuperadmins);
+        } else {
+          // Normal teacher update: lock only the target user row to avoid global contention (FIX-05)
+          await lockTargetUser(tx, teacherId);
+        }
 
         const targetUser = await tx.user.findUnique({
           where: { id: teacherId },
@@ -170,15 +205,12 @@ export class TeachersService {
           throw new NotFoundException('Không tìm thấy giáo viên');
         }
 
-        assertActorMayModifyAccount(actor, targetUser.roles);
-
         const nextFullName =
           dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
         const nextEmail =
           dto.email !== undefined ? normalizeEmail(dto.email) : targetUser.email;
         const nextPhone =
           dto.phone !== undefined ? dto.phone.trim() : targetUser.phone;
-        const nextStatus = dto.status ?? targetUser.status;
 
         if (nextEmail !== targetUser.email || nextPhone !== targetUser.phone) {
           const duplicate = await tx.user.findFirst({
@@ -192,8 +224,6 @@ export class TeachersService {
           }
         }
 
-        assertSuperadminNotSelfDeactivating(actor, targetUser, nextStatus);
-
         const { effective: effectiveActiveClassesCount, fromDb: dbActiveClasses } =
           await countEffectiveActiveClasses(
             tx,
@@ -204,9 +234,6 @@ export class TeachersService {
           assertNoActiveClassesLed(effectiveActiveClassesCount);
         }
 
-        if (isLeavingActiveSuperadmin(targetUser.roles, nextStatus)) {
-          assertAnotherActiveSuperadminRemains(targetUser.id, lockedRows);
-        }
 
         const emailChanged = nextEmail !== targetUser.email;
         const isDeactivating =

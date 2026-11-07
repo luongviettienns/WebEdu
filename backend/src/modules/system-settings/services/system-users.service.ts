@@ -113,7 +113,7 @@ export class SystemUsersService {
           action: 'CREATE_SYSTEM_USER',
           targetType: 'User',
           targetId: user.id,
-          metadata: { fullName, email, phone, roles: uniqueRoles, initialPassword },
+          metadata: { fullName, email, phone, roles: uniqueRoles, hasInitialCredentials: true },
         });
 
         return user;
