@@ -9,10 +9,47 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 * **Repository**: [https://github.com/luongviettienns/WebEdu](https://github.com/luongviettienns/WebEdu)
 * **Kiến trúc & Công nghệ đã chốt (`DEC-021`, `DEC-022`)**:
   - **Backend**: `backend/` — NestJS + Prisma ORM (SQL Migrations chuẩn, cấm `prisma db push`) + PostgreSQL 16+ + TypeScript Strict (`"strict": true`, cấm `any`).
-  - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS (Phong cách xanh lá tối giản, hiển thị chuẩn chữ Hán / Pinyin).
+  - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 2 HOÀN THÀNH & ĐÃ NGHIỆM THU (`ACCEPTED` — 100% GATES PASS) — Sẵn sàng khởi động Phase 3 (Khóa học HSK & Quản lý Lớp học)**
+* **Giai đoạn hiện tại**: **Phase 2 & ĐỢT ĐẠI TU UI/UX PROTOTYPE Á ĐÔNG HOÀN TẤT & ĐÃ RÀ SOÁT TOÀN DIỆN (100% GATES PASS) — SẴN SÀNG KHỞI ĐỘNG PHASE 3 (Khóa học HSK & Quản lý Lớp học)**
+
+---
+
+## 🎨 Hạng Mục Đặc Biệt: Đại Tu UI/UX Chuẩn 100% Prototype Á Đông & Dọn Dẹp Chức Năng Thừa *(HOÀN THÀNH — 100% PASS)*
+- [x] **Phản biện Kiến trúc 3 Bên (Triad Debate)**: `akit-debater` (Đề xuất giải pháp), `akit-critic` (Chỉ ra 5 rủi ro chí mạng: 2 headers crash E2E, SSR hydration mismatch / session flash, CJK font 20MB bloat, overflow 375px mobile, LOC bloat), `akit-judge` (Ban hành Phán quyết và Kế hoạch thực thi `implementation_plan.md` được phê duyệt).
+- [x] **Pha 1: Nền tảng Tokens, Font & Typography An Toàn**: Thiết lập CSS Variables giấy dó, mực tàu, son triện, ngọc bích, xanh chàm, `.seal`, `.fret`, `.han`, `.num` trong `globals.css`; tích hợp Google Font `Be_Vietnam_Pro` và system CJK font stack trong `layout.tsx`; cập nhật `DESIGN.md`.
+- [x] **Pha 2: Cỗ Máy Layout Phân Rã (Anti-God-File <= 100 LOC)**:
+  - `components/layout/nav-links.ts` (62 LOC): Nhóm menu theo vai trò.
+  - `components/layout/SidebarBrand.tsx` (39 LOC): Con dấu `.seal`, slogan, logo trung tâm.
+  - `components/layout/SidebarNav.tsx` (65 LOC): Navigation items, vạch đỏ active 3px, badge đếm.
+  - `components/layout/SidebarFooter.tsx` (79 LOC): Hồi văn `.fret`, user card, nút đăng xuất.
+  - `components/layout/PortalSidebar.tsx` (32 LOC): Sidebar cố định 252px desktop (Notion/Linear style).
+  - `components/layout/MobileNavDrawer.tsx` (77 LOC): Drawer trượt mobile có scrim chống tràn.
+  - `components/layout/PortalTopbar.tsx` (79 LOC): `<header>` duy nhất toàn trang chứa breadcrumb, live center name và bell icon.
+  - `components/layout/PortalShell.tsx` (89 LOC): Client coordinator có skeleton shimmer 252px chống CLS/FOIN.
+  - `features/auth/components/AccessDeniedState.tsx`: Triệt tiêu hoàn toàn thẻ `<AppHeader />` lồng nhau gây lỗi 2 headers.
+- [x] **Pha 3: Đại Tu Màn Hình Xác Thực 2 Cột Desktop / 1 Cột Mobile**:
+  - `features/auth/components/AuthArtSide.tsx` (54 LOC): Cột nghệ thuật thư họa chữ `學` 240px, con dấu triện nghiêng -7deg, Luận Ngữ, có `hidden lg:flex` và `overflow-hidden`.
+  - `features/auth/components/LoginFormCard.tsx` (169 LOC): Reskin son triện/giấy dó, bảo toàn 100% input IDs (`#login-email`, `#login-password`).
+  - `features/auth/components/StudentRegisterForm.tsx` (299 LOC): Reskin Á Đông, bảo toàn khối xác nhận phụ huynh và input IDs.
+  - `(auth)/login/page.tsx`, `(auth)/register/page.tsx`, `(auth)/forgot-password/page.tsx`, `(auth)/reset-password/page.tsx`: Layout 2 cột responsive hoàn chỉnh.
+- [x] **Pha 4: Nâng Cấp Bề Mặt Giao Diện 7 Trang Portal**:
+  - Gỡ bỏ hoàn toàn `<AppHeader />` thừa khỏi toàn bộ 7 trang portal; đưa vào luồng `PortalShell`.
+  - Bổ sung Hanzi eyebrow (`学员管理`, `待分班`, `教师队伍`, `个人档案`, `个人学情`, `系统运营`, `教学工作`).
+  - Bảo toàn 100% headings nghiệp vụ, selectors, và phân quyền.
+- [x] **Pha 5: Xóa Bỏ Landing Page Thừa & Khắc Phục Typography Bị Mờ**:
+  - **Dọn dẹp Route Thừa**: Xóa bỏ trang landing page marketing demo tự phát `/` và tệp `AppHeader.tsx` (> 380 LOC); chuyển đổi `http://localhost:3000/` thành Smart Gateway tự động chuyển hướng (`HTTP 307`) sang `/login`.
+  - **Khắc phục Typography Bị Mờ**: Loại bỏ triệt để việc áp dụng nhầm `font-serif` lên văn bản tiếng Việt; phân định rạch ròi `font-sans` (`Be Vietnam Pro`) cho tiếng Việt và `font-han` (`Noto Serif SC`/`SimSun`) cho chữ Hán; nâng cấp màu chữ từ `var(--ink-3)` lên `var(--ink-2)` (`#4A524C`) đạt chuẩn tương phản cao WCAG AA.
+- [x] **Pha 6: Dọn Dẹp Triệt Để Yếu Tố Môi Trường Phát Triển, Mã `FUNC-xxx` & Cô Lập CSDL Kiểm Thử (`webedu_test`)**:
+  - **Zero `FUNC-xxx` / `DEC-xxx` / `SEC-xxx` / `BR-xxx` trong Production Code**: Xóa sạch 100% mã đặc tả nội bộ khỏi toàn bộ giao diện, bình luận, JSDoc và Swagger `@ApiOperation` trong `frontend/src/**` và `backend/src/**`.
+  - **Loại bỏ 100% UI giả lập / Dev / Placeholder**: Gỡ chuông thông báo giả trên `PortalTopbar.tsx`, gỡ hộp giải thích lộ trình tĩnh trên `teacher/classes/page.tsx`, đồng bộ 16 inner feature components sang bảng màu Thư họa Á Đông chính thức (`0` class `emerald-*` / `slate-*`), xóa 5 file SVG mẫu của Next.js.
+  - **Cô lập CSDL Kiểm thử (`webedu_test`)**: Cấu hình Playwright E2E chạy độc lập trên `webedu_test`, làm sạch CSDL chính thức `webedu` chỉ giữ 5 tài khoản chuẩn và cấu hình `Trung Tâm TD Hán Ngữ`.
+  - **Kiểm Chứng Toàn Diện**:
+    - Backend: Typecheck 0 errors, Lint 0 errors/warnings (92 files), 72/72 Unit tests PASS, Build PASS.
+    - Frontend: Typecheck 0 errors, Lint 0 errors/warnings, Turbopack Build 15/15 static pages.
+    - Playwright E2E (`webedu_test`): **14/14 tests PASS (100%)** trên cả `desktop-chromium` và `mobile-chromium`.
+    - Script `scripts/check-loc.js`: 15/15 services Backend $\le 350$ LOC, 12/12 pages Frontend $\le 250$ LOC.
 
 ---
 
@@ -53,19 +90,35 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Xóa bỏ mock `in-memory-prisma.ts`; đạt 100% PASS trên **61/61 Unit tests**, **11/11 Real PostgreSQL 16 Integration scenarios**, **19/19 Real PostgreSQL Supertest E2E tests**, và **14/14 Playwright Browser QA tests** (Desktop + Mobile Chromium).
   - Thiết lập GitHub Actions CI (`.github/workflows/ci.yml` với `postgres:16-alpine`), hoàn thành tái kiểm toán Stage E (`akit-security`: **PASS**, `akit-critic`: **APPROVE** — 0 findings còn mở), xuất bản Báo cáo Nghiệm thu [`docs/reports/PHASE_02_ACCEPTANCE_REPORT.md`](./docs/reports/PHASE_02_ACCEPTANCE_REPORT.md), và tích hợp vào `develop` qua **PR #1** (`https://github.com/luongviettienns/WebEdu/pull/1` — GitHub Actions CI **PASS**).
 - [x] **Slice 2.8 (Post-Phase-2 Codebase Refactor & Anti-God-File Guardrails — `refactor/phase-02-codebase-cleanup`)**:
-  - **Backend NestJS Refactor**: Phân rã triệt để 3 monolithic services (`students.service.ts` `1,021` dòng, `auth.service.ts` `547` dòng, `system-settings.service.ts` `538` dòng) thành các services chuyên biệt theo Single Responsibility (`StudentQueryService`, `StudentCrudService`, `StudentEnrollmentService`, `StudentAccessService`; `AuthRegistrationService`, `AuthLoginService`, `PasswordRecoveryService`, `AuthSessionService`; `SystemUsersService`, `UserRoleStatusService`, `SystemConfigService`), mappers (`student.mapper.ts`, `teacher.mapper.ts`, `system-user.mapper.ts`) và policies/utilities dùng chung (`superadmin-protection.policy.ts`, `student-enrollment-facts.policy.ts`, `teacher-assignment.policy.ts`, `contact-validation.util.ts`, `pagination.util.ts`, `user-search.util.ts`, `audit-log.util.ts`).
-  - **Frontend Next.js Refactor**: Thu gọn `src/lib/auth-api.ts` từ `746` dòng xuống `8` dòng (barrel tương thích ngược); tách `lib/api-client.ts`, `lib/utils/date.ts`, `types/user.ts` và cấu trúc `src/features/{auth,students,teachers,profile,system-settings}/{api,hooks,components}/` có gắn `AbortController` chống race condition; giảm mạnh quy mô các trang lớn (`superadmin/settings/page.tsx` `-80.3%`, `profile/page.tsx` `-85.9%`, `admin/students/page.tsx` `-53.7%`, `admin/teachers/page.tsx` `-42.1%`, `admin/students/pending/page.tsx` `-39.1%`).
-  - **Test Infrastructure Safety & Regression**: Bổ sung chốt chặn `assertSafeTestDatabaseUrl` (fail-closed) trong `postgres-test-container.ts` kèm 4 unit tests âm tính (`postgres-test-safety.spec.ts`); đạt 100% PASS trên **65/65 Unit tests**, **11/11 Real PostgreSQL Integration scenarios**, **19/19 Real PostgreSQL E2E tests**, và **14/14 Playwright Browser QA tests**.
-  - **Architectural Guardrails Persistence & PR Integration**: Ghi nhận quy chuẩn chống "God File" vào [`architecture-decision-contract.md`](./TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md) (Mục 4) và [`.agents/rules/akit.md`](./.agents/rules/akit.md) (Mục 7), xuất bản báo cáo [`docs/reports/PHASE_02_REFACTOR_REPORT.md`](./docs/reports/PHASE_02_REFACTOR_REPORT.md), vượt qua kiểm toán độc lập (`akit-critic`: **APPROVE**, `akit-security`: **PASS**), và tích hợp vào `develop` qua **PR #2** (`https://github.com/luongviettienns/WebEdu/pull/2` — GitHub Actions CI Run `42361393539` **PASS**).
+  - **Backend NestJS Refactor**: Phân rã triệt để 3 monolithic services (`students.service.ts` `1,021` dòng, `auth.service.ts` `547` dòng, `system-settings.service.ts` `538` dòng) thành các services chuyên biệt theo Single Responsibility, mappers và policies dùng chung.
+  - **Frontend Next.js Refactor**: Thu gọn `src/lib/auth-api.ts` từ `746` dòng xuống `8` dòng; tách `lib/api-client.ts`, `lib/utils/date.ts`, `types/user.ts` và cấu trúc `src/features/**` có gắn `AbortController` chống race condition; giảm mạnh quy mô các trang lớn.
+  - **Test Infrastructure Safety & Regression**: Đạt 100% PASS trên **65/65 Unit tests**, **11/11 Real PostgreSQL Integration scenarios**, **19/19 Real PostgreSQL E2E tests**, và **14/14 Playwright Browser QA tests**.
+  - **Architectural Guardrails Persistence & PR Integration**: Tích hợp vào `develop` qua **PR #2** (`https://github.com/luongviettienns/WebEdu/pull/2`).
 - [x] **Slice 2.9 (Post-Phase-2 Security, Business Logic & Performance Remediation — `fix/post-phase-02-audit-remediation`)**:
-  - **Business Logic & Data Invariants (P0)**: Chặn vô hiệu hóa tài khoản giáo viên có lớp đang hoạt động khi thao tác từ API học viên (`student-crud.service.ts` kiểm tra tài khoản kép `STUDENT+TEACHER` $\rightarrow$ `409 Conflict`); chuẩn hóa và tách biệt 3 trạng thái lịch sử lớp học trong `enrollment-invariants.policy.ts` và `student-enrollment-facts.policy.ts` (`hasActiveEnrollment`, `hasActiveOrCompletedEnrollment`, `hasEverBeenEnrolled`).
-  - **Authentication Security & Anti-DoS (P0/P1)**: Bổ sung bảng `auth_rate_limits` qua migration `20261107190000_auth_rate_limits` và tiện ích `auth-rate-limit.util.ts`, chặn tạm thời 15 phút (HTTP 429) cho các IP có $\ge 15$ lần đăng nhập thất bại/phút nhằm chống DoS khóa tài khoản diện rộng, đồng thời bảo toàn cơ chế khóa tài khoản `SEC-01`; bổ sung IP rate limit (5 req/15m) cho endpoint khôi phục mật khẩu, thay thế so sánh Bcrypt bằng SHA-256 constant-time comparison (`crypto.timingSafeEqual`) chống CPU exhaustion DoS, và cơ chế dọn dẹp ngẫu nhiên có kiểm soát trên `email_rate_limits`.
-  - **Database Concurrency & Deadlock Elimination (P1)**: Tối ưu hóa chính sách bảo vệ Superadmin (`superadmin-protection.policy.ts`), chuyển sang `lockTargetUser` trên người dùng thông thường; chỉ khóa danh sách Superadmin theo thứ tự chuẩn hóa `ORDER BY id ASC FOR UPDATE` khi tài khoản thực sự là Superadmin rời nhóm, loại bỏ hoàn toàn tranh chấp khóa dòng diện rộng và Deadlock `40P01`.
-  - **Defensive Hardening (P1/P2)**: Kiểm định kích thước ảnh logo PNG/JPG (tối đa 800x800 px, 640k pixels) chống Pixel Flood; thêm header HTTP `Cache-Control` cho cấu hình hệ thống; cấu hình CORS fail-fast production; loại bỏ mật khẩu khởi tạo khỏi nhật ký kiểm toán `SystemAuditLog`; ánh xạ ngữ cảnh chi tiết cho lỗi vi phạm khóa duy nhất Prisma `P2002`; bảo toàn `@Roles(Role.STUDENT, Role.TEACHER, Role.ADMIN)` tại controller xem lịch sử lớp học để trả về đúng thông điệp sư phạm theo `DEC-024`.
-  - **Frontend Performance & Anti-God-File Automation (P2)**: Tích hợp hook `useDebounce` (350ms) cho các ô tìm kiếm kèm reset phân trang về trang 1; tự động hóa kiểm tra giới hạn LOC qua script `scripts/check-loc.js` (Services $\le 350$, Pages $\le 250$); phân rã các components lớn (`TeacherListTable`, `StudentListTable`, `PendingStudentListTable`, `StudentOverviewCards`, `LoginFormCard`, `StudentRegisterForm`, `profile.mapper.ts`).
-  - **Full Quality Gates Verification**: Đạt 100% PASS trên **72/72 Unit tests**, **11/11 Real PostgreSQL 16 Integration scenarios**, **19/19 Real PostgreSQL Supertest E2E tests**, và **14/14 Playwright Browser QA tests** (Desktop + Mobile Chromium); xuất bản báo cáo [`docs/reports/POST_PHASE_02_AUDIT_REMEDIATION_REPORT.md`](./docs/reports/POST_PHASE_02_AUDIT_REMEDIATION_REPORT.md).
+  - Đạt 100% PASS trên **72/72 Unit tests**, **11/11 Real PostgreSQL 16 Integration scenarios**, **19/19 Real PostgreSQL Supertest E2E tests**, và **14/14 Playwright Browser QA tests**.
+- [x] **Slice 2.10 (Full Prototype Reskin, East Asian Calligraphy & Production Hardening)**:
+  - Tái hiện 100% linh hồn Thư họa Á Đông: Nền giấy dó, chữ mực tàu, son triện đỏ, ngọc bích, xanh chàm, con dấu `.seal`, hồi văn `.fret`.
+  - Layout 2 cột: Desktop Sidebar 252px cố định + Topbar `<header>` duy nhất; Mobile/Tablet Off-canvas Drawer.
+  - Màn hình Auth 2 cột với `AuthArtSide` chữ `學` 240px, con dấu triện nghiêng -7deg, Luận Ngữ; an toàn trên mobile 375px (`scrollWidth - innerWidth <= 2`).
+  - Đạt 100% PASS: Typecheck 0 errors, Lint 0 errors/warnings, Playwright E2E 14/14 tests PASS, 15/15 Backend Services và 12/12 Frontend Pages đạt chuẩn Anti-God-File LOC.
+- [x] **Slice 2.11 (Production Cleanup, Zero `FUNC-xxx` / Dev Artifacts & Test DB Isolation `webedu_test`)**:
+  - Xóa sạch 100% mã `FUNC-xxx`, `DEC-xxx`, `SEC-xxx`, `BR-xxx`, `INV-xxx` khỏi toàn bộ mã nguồn Production (`backend/src/**` & `frontend/src/**`).
+  - Loại bỏ chuông thông báo giả trên `PortalTopbar.tsx`, thẻ giải thích lộ trình tĩnh trên `teacher/classes/page.tsx`, và chuẩn hóa toàn bộ 16 inner feature components sang bảng màu Thư họa Á Đông chính thức (`0` class `emerald-*` / `slate-*`).
+  - Tách biệt CSDL kiểm thử `webedu_test` cho Playwright E2E và làm sạch CSDL chính thức `webedu`.
+- [x] **Slice 2.12 (Hardening Toàn Diện, Kiểm Kê API/UI & Chứng Minh Độ Tin Cậy Phase 2 — `test/hardening-phase-02`)**:
+  - **Kiểm kê 100% API & UI**: Lập bảng kiểm kê đầy đủ **28 HTTP API Endpoints** (`docs/test-inventory-api.md`) và **12 Trang Giao Diện** (`docs/test-inventory-ui.md`).
+  - **Kiểm thử Tự Động Đối Soát Endpoint**: Viết test E2E `api-inventory-and-rbac-matrix.e2e-spec.ts` tự động trích xuất Express routes từ NestJS và so khớp với danh mục kiểm kê; tự động báo FAIL nếu có endpoint mới chưa khai báo.
+  - **Ma Trận Phân Quyền & Bất Biến DB Thật**: Kiểm chứng ma trận `Vai trò × Endpoint × Trạng thái` (Unauthenticated, Revoked, Inactive, Student, Teacher 4 trạng thái, Admin, Superadmin thuần, Multi-role) + Kiểm tra chống Race Condition xếp lớp/đăng ký trùng trên PostgreSQL 16 thật.
+  - **Coverage Gate Vượt Ngưỡng**: Nâng ngưỡng kiểm soát trong `vitest.config.ts` và CI (`.github/workflows/ci.yml`) lên Lines $\ge 85\%$, Branches $\ge 80\%$; kết quả thực tế đạt **93.72% Lines** và **82.23% Branches** (101 Unit tests).
+  - **Mutation Testing (Stryker)**: Thiết lập `stryker.config.mjs` chạy đột biến 16 tệp nguồn cốt lõi (1.766 mutants); bổ sung 29 unit test chuyên sâu kiểm tra chặt chẽ giá trị biên thời gian (23:59:59 GMT+7, năm nhuận 29/02, 60s cooldown, 15m lockout, 60m idle timeout).
+  - **Khả Năng Tiếp Cận (WCAG 2.1 AA) & Phát Hiện Lỗi Thật**: Tích hợp `@axe-core/playwright`; phát hiện và sửa tối thiểu 2 lỗi thật nghiêm trọng: sửa thẻ `<Link>` nằm trong khối `aria-hidden="true"` tại `AuthArtSide.tsx` và nâng cấp tỷ lệ tương phản màu chữ/badge tại `globals.css` ($\ge 4.5:1$).
+  - **Chứng Minh Độ Ổn Định 3 Lần Chạy Liên Tiếp**: 100% lệnh kiểm thử chạy qua 3 lượt độc lập trên PostgreSQL 16 thật (Backend: 101 unit + 11 integration + 23 E2E = 135 tests; Frontend: 20 Playwright E2E tests) **đạt 100% PASS, 0 flaky tests**.
+  - **Xuất Bản Báo Cáo Nghiệm Thu**: Hoàn thành Báo Cáo Kiểm Thử Toàn Diện & Chứng Minh Độ Tin Cậy Phase 2 bằng tiếng Việt tại [`docs/test-report-phase-02.md`](./docs/test-report-phase-02.md).
 
 ### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
+- [x] **Chốt Quyết định Nghiệp vụ Tiền Đề (`DEC-027`, `DEC-028`)**:
+  - `DEC-027`: Mỗi lớp học chỉ có duy nhất **1 Giáo viên chính thức phụ trách** tại một thời điểm (không có trợ giảng).
+  - `DEC-028`: Tại một thời điểm, mỗi Học viên chỉ được ở trạng thái `ACTIVE` trong **tối đa 1 lớp học duy nhất** (muốn học lớp khác phải `COMPLETED` hoặc `TRANSFERRED`).
 - [ ] Lập Sub-Plan `docs/plans/phase-03-courses-and-classes.md` & chốt Open Issues `COURSE-01`, `CLASS-02`.
 - [ ] **Slice 3.1**: Mở rộng CRUD Danh mục Khóa học HSK1–HSK4 & Giao tiếp cơ bản (`FUNC-014`) + Tạo/Sửa Lớp học, Phân công 1 GV trên nền bảng `courses` & `classes` đã khởi tạo (`FUNC-016..018`).
 - [ ] **Slice 3.2**: Nghiệp vụ `Enrollment` mở rộng: Thêm HV vào lớp (`FUNC-020`) trên nền bảng `enrollments` & Partial Unique Index `idx_unique_student_active_enrollment`.

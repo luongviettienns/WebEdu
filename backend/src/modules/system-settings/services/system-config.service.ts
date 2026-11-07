@@ -70,7 +70,7 @@ export class SystemConfigService {
         : dto.centerLogoBase64;
     const trimmedLogo = rawLogo ? rawLogo.trim() : '';
 
-    // P1-2 / SEC-09: Only allow empty/null (clear logo) or valid PNG/JPEG base64 data URI verified by Magic Bytes
+    // Only allow empty/null (clear logo) or valid PNG/JPEG base64 data URI verified by Magic Bytes
     if (trimmedLogo) {
       const validation = validateLogoImageDataUri(trimmedLogo);
       if (!validation.valid) {

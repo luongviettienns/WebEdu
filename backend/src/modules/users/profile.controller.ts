@@ -25,13 +25,13 @@ export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
   @Get('me')
-  @ApiOperation({ summary: 'Xem hồ sơ cá nhân (FUNC-078)' })
+  @ApiOperation({ summary: 'Xem hồ sơ cá nhân' })
   async getMyProfile(@CurrentUser() user: AuthenticatedUser) {
     return this.profileService.getMyProfile(user.id);
   }
 
   @Patch('me')
-  @ApiOperation({ summary: 'Cập nhật hồ sơ cá nhân (FUNC-078)' })
+  @ApiOperation({ summary: 'Cập nhật hồ sơ cá nhân' })
   async updateMyProfile(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateProfileDto,
@@ -58,7 +58,7 @@ export class ProfileController {
 
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đổi mật khẩu cá nhân (FUNC-078)' })
+  @ApiOperation({ summary: 'Đổi mật khẩu cá nhân' })
   async changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,

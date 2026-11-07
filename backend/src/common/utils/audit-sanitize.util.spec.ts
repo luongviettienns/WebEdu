@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { sanitizeAuditMetadata, validateLogoImageDataUri } from './audit-sanitize.util.js';
+import {
+  assertValidContactFields,
+  assertValidInitialPassword,
+} from './contact-validation.util.js';
 
 describe('Audit Sanitize & Magic Bytes Logo Validator (SEC-09 & SEC-10)', () => {
   it('redacts sensitive password and token fields recursively from audit metadata', () => {
@@ -97,5 +101,74 @@ describe('Audit Sanitize & Magic Bytes Logo Validator (SEC-09 & SEC-10)', () => 
     const validResult = validateLogoImageDataUri(validUri);
     expect(validResult.valid).toBe(true);
     expect(validResult.mimeType).toBe('image/png');
+  });
+
+  it('handles non-object inputs and Date instances in sanitizeAuditMetadata and validates JPEG SOF0 dimensions', () => {
+    expect(sanitizeAuditMetadata(null)).toBeUndefined();
+    expect(sanitizeAuditMetadata(undefined)).toBeUndefined();
+    expect(sanitizeAuditMetadata([] as unknown as Record<string, unknown>)).toBeUndefined();
+
+    const now = new Date('2026-11-07T00:00:00.000Z');
+    expect(sanitizeAuditMetadata({ occurredAt: now, password: 'secret' })).toEqual({
+      occurredAt: now,
+      password: '[REDACTED]',
+    });
+
+    // Valid JPEG with APP0 segment + SOF0 (0xFFC0) 100x100 dimensions
+    const validJpeg = Buffer.from([
+      0xff, 0xd8, // SOI
+      0xff, 0xd0, // RST0 marker
+      0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, // APP0 segment length 4
+      0xff, 0xc0, 0x00, 0x11, 0x08, // SOF0 marker, length 17, precision 8
+      0x00, 0x64, // Height: 100
+      0x00, 0x64, // Width: 100
+      0x03, 0x01, 0x22, 0x00,
+    ]);
+    const validJpegRes = validateLogoImageDataUri(
+      `data:image/jpeg;base64,${validJpeg.toString('base64')}`,
+    );
+    expect(validJpegRes).toEqual({ valid: true, mimeType: 'image/jpeg' });
+
+    // Oversized JPEG 2000x2000 bomb
+    const bombJpeg = Buffer.from([
+      0xff, 0xd8,
+      0xff, 0xc0, 0x00, 0x11, 0x08,
+      0x07, 0xd0, // Height: 2000
+      0x07, 0xd0, // Width: 2000
+      0x03, 0x01, 0x22, 0x00,
+    ]);
+    const bombJpegRes = validateLogoImageDataUri(
+      `data:image/jpeg;base64,${bombJpeg.toString('base64')}`,
+    );
+    expect(bombJpegRes.valid).toBe(false);
+    expect(bombJpegRes.reason).toContain('Kích thước ảnh Logo vượt quá giới hạn');
+  });
+
+  it('validates contact fields and initial password bounds in contact-validation.util', () => {
+    expect(() =>
+      assertValidContactFields({
+        fullName: 'Nguyễn Văn A',
+        email: 'valid@example.com',
+        phone: '0901234567',
+      }),
+    ).not.toThrow();
+
+    expect(() => assertValidContactFields({ fullName: '   ' })).toThrowError(
+      'Họ và tên không được để trống',
+    );
+    expect(() => assertValidContactFields({ email: 'bad-email' })).toThrowError(
+      'Email không hợp lệ',
+    );
+    expect(() => assertValidContactFields({ phone: '123' })).toThrowError(
+      'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0',
+    );
+
+    expect(() => assertValidInitialPassword('ValidPass123')).not.toThrow();
+    expect(() => assertValidInitialPassword('short')).toThrowError(
+      'Mật khẩu phải có ít nhất 8 ký tự',
+    );
+    expect(() => assertValidInitialPassword('X'.repeat(73))).toThrowError(
+      'Mật khẩu không được vượt quá 72 ký tự',
+    );
   });
 });

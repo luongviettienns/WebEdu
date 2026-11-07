@@ -8,6 +8,7 @@ on:
       - 'feature/**'
       - 'bugfix/**'
       - 'fix/**'
+      - 'test/**'
       - 'release/**'
       - 'hotfix/**'
   pull_request:
@@ -24,7 +25,7 @@ concurrency:
 
 jobs:
   backend-gates:
-    name: Backend Static, Unit, Postgres Integration & API E2E
+    name: Backend Static, Unit Coverage, Postgres Integration & API E2E
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -80,9 +81,17 @@ jobs:
         working-directory: backend
         run: npm run build
 
-      - name: Backend Unit Tests
+      - name: Backend Unit Tests & Coverage Gate (>=85% Lines, >=80% Branches)
         working-directory: backend
-        run: npm test
+        run: npm run test:cov
+
+      - name: Upload Backend Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-report
+          path: backend/coverage/
+          retention-days: 14
 
       - name: Backend Real PostgreSQL 16 Integration Tests
         working-directory: backend
@@ -157,3 +166,13 @@ jobs:
       - name: Run Playwright Browser QA (Desktop + Mobile)
         working-directory: frontend
         run: npm run test:e2e
+
+      - name: Upload Playwright HTML Report & Failure Traces/Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-qa-artifacts
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 14

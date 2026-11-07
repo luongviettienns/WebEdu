@@ -90,13 +90,13 @@ export function AssignInitialClassModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-emerald-950">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold text-[var(--ink)]">
           Xếp Lớp Cho Học Viên
         </h2>
-        <p className="mt-1 text-xs text-slate-600">
+        <p className="mt-1 text-xs text-[var(--ink-2)]">
           Học viên: <strong>{targetStudent.fullName}</strong> (
           {targetStudent.email})
         </p>
@@ -104,7 +104,7 @@ export function AssignInitialClassModal({
         {assignError ? (
           <div
             role="alert"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+            className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {assignError}
           </div>
@@ -118,13 +118,13 @@ export function AssignInitialClassModal({
           <div className="space-y-1.5">
             <label
               htmlFor="assign-class-select"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
               Lớp học (Sắp khai giảng / Đang học){' '}
-              <span className="text-red-600">*</span>
+              <span className="text-[var(--red)]">*</span>
             </label>
             {availableClasses.length === 0 ? (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900">
+              <div className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3 text-xs font-medium text-[var(--amber)]">
                 Hiện chưa có lớp học Sắp khai giảng hoặc Đang học trong hệ
                 thống. Vui lòng khởi tạo lớp học trước khi xếp lớp cho học viên.
               </div>
@@ -134,7 +134,7 @@ export function AssignInitialClassModal({
                 required
                 value={selectedClass}
                 onChange={(e) => setSelectedClass(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
               >
                 {availableClasses.map((cls) => (
                   <option key={cls.id} value={cls.code}>
@@ -148,10 +148,10 @@ export function AssignInitialClassModal({
           <div className="space-y-1.5">
             <label
               htmlFor="assign-enrolled-date"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
               Ngày vào lớp ({formatDateDdMmYyyy(enrolledAt)}){' '}
-              <span className="text-red-600">*</span>
+              <span className="text-[var(--red)]">*</span>
             </label>
             <input
               id="assign-enrolled-date"
@@ -159,22 +159,22 @@ export function AssignInitialClassModal({
               required
               value={enrolledAt}
               onChange={(e) => setEnrolledAt(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
             />
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={assigning || availableClasses.length === 0}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
             >
               {assigning ? 'Đang xếp lớp...' : 'Xác nhận'}
             </button>

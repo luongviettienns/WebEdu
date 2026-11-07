@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import React, { useMemo, useState } from 'react';
 import { registerStudent } from '@/features/auth/api/auth.api';
+import { AuthArtSide } from '@/features/auth/components/AuthArtSide';
 import {
   StudentRegisterForm,
   type FormErrors,
@@ -58,82 +59,72 @@ export default function RegisterPage() {
   };
 
   const validate = (): boolean => {
-    const nextErrors: FormErrors = {};
+    const newErrors: FormErrors = {};
 
-    const trimmedName = fullName.trim();
-    if (!trimmedName) {
-      nextErrors.fullName = 'Vui lòng nhập họ và tên';
-    } else if (trimmedName.length > 100) {
-      nextErrors.fullName = 'Họ và tên không được vượt quá 100 ký tự';
+    if (!fullName.trim()) {
+      newErrors.fullName = 'Họ và tên không được để trống';
     }
 
     if (!dateOfBirth) {
-      nextErrors.dateOfBirth = 'Vui lòng chọn ngày sinh';
-    } else if (calculatedAge === null) {
-      nextErrors.dateOfBirth = 'Ngày sinh không hợp lệ';
-    } else if (calculatedAge < 12) {
-      nextErrors.dateOfBirth = 'Học viên phải từ 12 tuổi trở lên';
+      newErrors.dateOfBirth = 'Ngày sinh không được để trống';
+    } else if (isUnder12) {
+      newErrors.dateOfBirth = 'Học viên phải từ 12 tuổi trở lên';
     }
 
-    const trimmedPhone = phone.trim();
-    if (!trimmedPhone) {
-      nextErrors.phone = 'Vui lòng nhập số điện thoại';
-    } else if (!/^0\d{9}$/.test(trimmedPhone)) {
-      nextErrors.phone =
-        'Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0';
+    const cleanPhone = phone.trim();
+    if (!cleanPhone) {
+      newErrors.phone = 'Số điện thoại không được để trống';
+    } else if (!/^0\d{9}$/.test(cleanPhone)) {
+      newErrors.phone = 'Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0';
     }
 
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) {
-      nextErrors.email = 'Vui lòng nhập địa chỉ Email đăng nhập';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      nextErrors.email = 'Định dạng Email không hợp lệ';
+    const cleanEmail = email.trim();
+    if (!cleanEmail) {
+      newErrors.email = 'Email không được để trống';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      newErrors.email = 'Email không đúng định dạng';
     }
 
     if (!password) {
-      nextErrors.password = 'Vui lòng nhập mật khẩu';
+      newErrors.password = 'Mật khẩu không được để trống';
     } else if (password.length < 8) {
-      nextErrors.password = 'Mật khẩu phải có ít nhất 8 ký tự';
-    } else if (password.length > 72) {
-      nextErrors.password = 'Mật khẩu không được vượt quá 72 ký tự';
+      newErrors.password = 'Mật khẩu phải có ít nhất 8 ký tự';
     }
 
     if (!confirmPassword) {
-      nextErrors.confirmPassword = 'Vui lòng xác nhận lại mật khẩu';
-    } else if (confirmPassword !== password) {
-      nextErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
+      newErrors.confirmPassword = 'Vui lòng xác nhận lại mật khẩu';
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
     }
 
     if (requiresGuardianConsent) {
-      const trimmedGuardianEmail = guardianEmail.trim().toLowerCase();
-      if (!trimmedGuardianEmail) {
-        nextErrors.guardianEmail =
-          'Vui lòng nhập Email của cha mẹ/người giám hộ';
-      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedGuardianEmail)) {
-        nextErrors.guardianEmail =
-          'Định dạng Email cha mẹ/người giám hộ không hợp lệ';
+      const cleanGuardian = guardianEmail.trim();
+      if (!cleanGuardian) {
+        newErrors.guardianEmail = 'Vui lòng nhập email của cha mẹ hoặc người giám hộ';
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanGuardian)) {
+        newErrors.guardianEmail = 'Email người giám hộ không đúng định dạng';
       }
 
       if (!guardianConsent) {
-        nextErrors.guardianConsent =
-          'Học viên dưới 16 tuổi bắt buộc phải có sự đồng ý của cha mẹ hoặc người giám hộ';
+        newErrors.guardianConsent =
+          'Bắt buộc phải có sự đồng ý của cha mẹ/người giám hộ';
       }
     }
 
-    setErrors(nextErrors);
-    return Object.keys(nextErrors).length === 0;
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setServerError('');
+    setSuccessMessage('');
+
     if (!validate()) {
       return;
     }
 
     setSubmitting(true);
-    setServerError('');
-    setSuccessMessage('');
-
     try {
       await registerStudent({
         fullName: fullName.trim(),
@@ -162,49 +153,54 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-700 text-2xl font-bold text-white shadow-sm">
-            TD
-          </div>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-emerald-950">
-            Đăng Ký Tài Khoản Học Viên
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Học viện Hán Ngữ & Luyện thi HSK Trực Tuyến
-          </p>
-        </div>
-      </div>
+    <div className="flex min-h-screen w-full bg-[var(--paper)]">
+      {/* Cột Trái Nghệ Thuật Thư Họa Á Đông (Desktop >= 1024px) */}
+      <AuthArtSide />
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <StudentRegisterForm
-          fullName={fullName}
-          setFullName={setFullName}
-          dateOfBirth={dateOfBirth}
-          onDateOfBirthChange={handleDateOfBirthChange}
-          phone={phone}
-          setPhone={setPhone}
-          email={email}
-          setEmail={setEmail}
-          password={password}
-          setPassword={setPassword}
-          confirmPassword={confirmPassword}
-          setConfirmPassword={setConfirmPassword}
-          guardianEmail={guardianEmail}
-          setGuardianEmail={setGuardianEmail}
-          guardianConsent={guardianConsent}
-          setGuardianConsent={setGuardianConsent}
-          calculatedAge={calculatedAge}
-          isUnder12={isUnder12}
-          requiresGuardianConsent={requiresGuardianConsent}
-          errors={errors}
-          setErrors={setErrors}
-          serverError={serverError}
-          successMessage={successMessage}
-          submitting={submitting}
-          onSubmit={(e) => void handleSubmit(e)}
-        />
+      {/* Cột Phải Form Đăng Ký */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 lg:p-12 overflow-y-auto">
+        <div className="w-full max-w-[480px]">
+          {/* Header Đăng Ký */}
+          <div className="mb-6 text-center lg:text-left">
+            <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+              注册 · HỌC VIÊN HSK
+            </div>
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
+              Đăng Ký Tài Khoản Học Viên
+            </h1>
+            <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
+              Học viện Hán Ngữ & Luyện thi HSK Trực Tuyến
+            </p>
+          </div>
+
+          <StudentRegisterForm
+            fullName={fullName}
+            setFullName={setFullName}
+            dateOfBirth={dateOfBirth}
+            onDateOfBirthChange={handleDateOfBirthChange}
+            phone={phone}
+            setPhone={setPhone}
+            email={email}
+            setEmail={setEmail}
+            password={password}
+            setPassword={setPassword}
+            confirmPassword={confirmPassword}
+            setConfirmPassword={setConfirmPassword}
+            guardianEmail={guardianEmail}
+            setGuardianEmail={setGuardianEmail}
+            guardianConsent={guardianConsent}
+            setGuardianConsent={setGuardianConsent}
+            calculatedAge={calculatedAge}
+            isUnder12={isUnder12}
+            requiresGuardianConsent={requiresGuardianConsent}
+            errors={errors}
+            setErrors={setErrors}
+            serverError={serverError}
+            successMessage={successMessage}
+            submitting={submitting}
+            onSubmit={(e) => void handleSubmit(e)}
+          />
+        </div>
       </div>
     </div>
   );

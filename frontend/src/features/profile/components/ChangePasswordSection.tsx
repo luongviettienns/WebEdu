@@ -79,9 +79,9 @@ export function ChangePasswordSection({
   };
 
   return (
-    <section className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900">Đổi mật khẩu</h2>
-      <p className="mt-0.5 text-xs text-slate-500">
+    <section className="lg:col-span-5 rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+      <h2 className="text-lg font-semibold text-[var(--ink)]">Đổi mật khẩu</h2>
+      <p className="mt-0.5 text-xs text-[var(--ink-2)]">
         Sau khi đổi mật khẩu, các phiên đăng nhập trên thiết bị khác sẽ được tự
         động đăng xuất
       </p>
@@ -89,7 +89,7 @@ export function ChangePasswordSection({
       {pwdSuccess ? (
         <div
           role="status"
-          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-900"
+          className="mt-4 rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5 text-sm font-medium text-[var(--jade)]"
         >
           {pwdSuccess}
         </div>
@@ -98,7 +98,7 @@ export function ChangePasswordSection({
       {pwdError ? (
         <div
           role="alert"
-          className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700"
+          className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3.5 text-sm font-medium text-[var(--red-ink)]"
         >
           {pwdError}
         </div>
@@ -144,7 +144,7 @@ export function ChangePasswordSection({
           <button
             type="submit"
             disabled={pwdSubmitting}
-            className="w-full rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50 transition-colors"
+            className="w-full rounded-lg bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] disabled:opacity-50 transition-colors"
           >
             {pwdSubmitting ? 'Đang cập nhật...' : 'Đổi mật khẩu'}
           </button>

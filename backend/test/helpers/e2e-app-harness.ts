@@ -80,6 +80,23 @@ export async function createRealE2eAppHarness(): Promise<RealE2eAppHarness> {
   });
   app.useBodyParser('json', { limit: '4mb' });
   app.use(cookieParser());
+  const allowedOrigins = ['http://localhost:3000'];
+  app.enableCors({
+    origin: (
+      requestOrigin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!requestOrigin) {
+        return callback(null, true);
+      }
+      const normalizedOrigin = requestOrigin.trim().replace(/\/+$/, '');
+      if (allowedOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: true,
+  });
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
     new ValidationPipe({

@@ -2,7 +2,7 @@ import { ConflictException } from '@nestjs/common';
 import { ClassStatus, type Prisma } from '@prisma/client';
 
 /**
- * FUNC-006: a teacher may not be deactivated / stripped of the TEACHER role
+ * A teacher may not be deactivated / stripped of the TEACHER role
  * while still leading UPCOMING or ACTIVE classes. Shared by TeachersService,
  * StudentCrudService, and UserRoleStatusService.
  *
