@@ -303,9 +303,15 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           if (sql.includes('INSERT INTO "auth_rate_limits"')) {
             const key = String(values[0]);
             const now = values[1] as Date;
-            const windowStart = values[3] as Date;
-            const maxPoints = Number(values[6]);
-            const blockUntil = values[7] as Date;
+            const maxPoints = Number(values.find((v) => typeof v === 'number') ?? 15);
+            const blockUntil =
+              (values.find(
+                (v) => v instanceof Date && v.getTime() > now.getTime(),
+              ) as Date) ?? new Date(now.getTime() + 15 * 60 * 1000);
+            const windowStart =
+              (values.find(
+                (v) => v instanceof Date && v.getTime() < now.getTime(),
+              ) as Date) ?? new Date(now.getTime() - 60 * 1000);
             let rec = authRateLimitStore.get(key);
             if (!rec) {
               rec = { points: 1, lastAttemptAt: now, blockedUntil: null };
@@ -313,6 +319,12 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
             } else {
               if (rec.blockedUntil && rec.blockedUntil.getTime() > now.getTime()) {
                 // keep blocked
+              } else if (
+                rec.blockedUntil &&
+                rec.blockedUntil.getTime() <= now.getTime()
+              ) {
+                rec.points = 1;
+                rec.blockedUntil = null;
               } else if (rec.lastAttemptAt.getTime() < windowStart.getTime()) {
                 rec.points = 1;
                 rec.blockedUntil = null;

@@ -53,6 +53,8 @@ export async function assertRateLimitNotExceeded(
         "points" = CASE
           WHEN "auth_rate_limits"."blocked_until" IS NOT NULL AND "auth_rate_limits"."blocked_until" > ${now}
             THEN "auth_rate_limits"."points"
+          WHEN "auth_rate_limits"."blocked_until" IS NOT NULL AND "auth_rate_limits"."blocked_until" <= ${now}
+            THEN 1
           WHEN "auth_rate_limits"."last_attempt_at" < ${windowStart}
             THEN 1
           ELSE "auth_rate_limits"."points" + 1
@@ -60,6 +62,8 @@ export async function assertRateLimitNotExceeded(
         "blocked_until" = CASE
           WHEN "auth_rate_limits"."blocked_until" IS NOT NULL AND "auth_rate_limits"."blocked_until" > ${now}
             THEN "auth_rate_limits"."blocked_until"
+          WHEN "auth_rate_limits"."blocked_until" IS NOT NULL AND "auth_rate_limits"."blocked_until" <= ${now}
+            THEN NULL
           WHEN "auth_rate_limits"."last_attempt_at" >= ${windowStart} AND ("auth_rate_limits"."points" + 1) > ${maxPoints}
             THEN ${blockUntil}
           ELSE NULL
