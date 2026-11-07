@@ -11,9 +11,10 @@ import {
   type StudentItemDto,
 } from '@/features/students/api/students.api';
 import { StudentDetailModal } from '@/features/students/components/StudentDetailModal';
+import { StudentListTable } from '@/features/students/components/StudentListTable';
+import { useDebounce } from '@/features/common/hooks/useDebounce';
 import { extractErrorMessage } from '@/lib/api-client';
-import { formatDateDdMmYyyy } from '@/lib/utils/date';
-import { STATUS_LABELS, type Role } from '@/types/user';
+import { type Role } from '@/types/user';
 
 const PAGE_LIMIT = 20;
 const ALLOWED_ROLES: readonly Role[] = ['ADMIN', 'SUPERADMIN'];
@@ -42,14 +43,16 @@ function AdminStudentsContent({
     useState<StudentItemDto | null>(null);
 
   const canManageInternalNotes = currentUser.roles.includes('ADMIN');
+  const debouncedSearch = useDebounce(search, 350);
 
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
       try {
+        setLoading(true);
         const response = await listStudents(
           {
-            search: search.trim() || undefined,
+            search: debouncedSearch.trim() || undefined,
             status: statusFilter || undefined,
             className: classFilter.trim() || undefined,
             page,
@@ -59,15 +62,11 @@ function AdminStudentsContent({
         );
         if (controller.signal.aborted) return;
         setStudents(response.items ?? []);
-        setTotal(
-          response.total ?? (response.items ? response.items.length : 0),
-        );
+        setTotal(response.total ?? (response.items ? response.items.length : 0));
         setErrorBanner('');
       } catch (error) {
         if (controller.signal.aborted) return;
-        if (onAuthError(error)) {
-          return;
-        }
+        if (onAuthError(error)) return;
         setErrorBanner(
           extractErrorMessage(error, 'Không thể tải danh sách học viên'),
         );
@@ -81,9 +80,7 @@ function AdminStudentsContent({
     return () => {
       controller.abort();
     };
-  }, [search, statusFilter, classFilter, page, refreshTick, onAuthError]);
-
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_LIMIT));
+  }, [debouncedSearch, statusFilter, classFilter, page, refreshTick, onAuthError]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -100,53 +97,48 @@ function AdminStudentsContent({
               cập nhật trạng thái tài khoản
             </p>
           </div>
-          {canManageInternalNotes ? (
-            <Link
-              href="/admin/students/pending"
-              className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
-            >
-              Danh sách chờ xếp lớp
-            </Link>
-          ) : null}
+          <Link
+            href="/admin/students/pending"
+            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100 transition-colors"
+          >
+            📋 Danh sách chờ xếp lớp
+          </Link>
         </div>
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-1 flex-wrap items-center gap-3">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
             <input
-              type="search"
+              type="text"
+              placeholder="Tìm theo họ tên, email, SĐT..."
               value={search}
               onChange={(e) => {
-                setLoading(true);
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="Tìm theo Họ tên, Số điện thoại hoặc Email..."
-              className="w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+              className="w-72 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             />
             <input
               type="text"
+              placeholder="Lọc theo lớp..."
               value={classFilter}
               onChange={(e) => {
-                setLoading(true);
                 setClassFilter(e.target.value);
                 setPage(1);
               }}
-              placeholder="Lọc theo lớp học..."
-              className="w-44 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+              className="w-44 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             />
             <select
-              aria-label="Lọc theo trạng thái tài khoản"
               value={statusFilter}
+              aria-label="Lọc theo trạng thái học viên"
               onChange={(e) => {
-                setLoading(true);
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
-              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-800 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none"
             >
               <option value="">Tất cả trạng thái</option>
-              <option value="PENDING_CLASS">Chờ xếp lớp</option>
               <option value="ACTIVE">Đang hoạt động</option>
+              <option value="PENDING_CLASS">Chờ xếp lớp</option>
               <option value="INACTIVE">Vô hiệu hóa</option>
             </select>
           </div>
@@ -173,127 +165,15 @@ function AdminStudentsContent({
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-600">
-                <tr>
-                  <th className="px-4 py-3.5">STT</th>
-                  <th className="px-4 py-3.5">Họ và tên</th>
-                  <th className="px-4 py-3.5">Ngày sinh</th>
-                  <th className="px-4 py-3.5">Số điện thoại</th>
-                  <th className="px-4 py-3.5">Email</th>
-                  <th className="px-4 py-3.5">Lớp đang học</th>
-                  <th className="px-4 py-3.5">Trạng thái tài khoản</th>
-                  <th className="px-4 py-3.5 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-10 text-center text-sm text-slate-500"
-                    >
-                      Đang tải danh sách học viên...
-                    </td>
-                  </tr>
-                ) : students.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="px-4 py-10 text-center text-sm text-slate-500"
-                    >
-                      Không tìm thấy hồ sơ học viên phù hợp.
-                    </td>
-                  </tr>
-                ) : (
-                  students.map((student, idx) => (
-                    <tr
-                      key={student.id}
-                      className="hover:bg-slate-50/80 transition-colors"
-                    >
-                      <td className="px-4 py-3.5 font-medium text-slate-500">
-                        {(page - 1) * PAGE_LIMIT + idx + 1}
-                      </td>
-                      <td className="px-4 py-3.5 font-semibold text-slate-900">
-                        {student.fullName}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-700">
-                        {formatDateDdMmYyyy(student.dateOfBirth)}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-700">
-                        {student.phone}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-700">
-                        {student.email}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-800">
-                        {student.assignedClass || (
-                          <span className="text-xs italic text-slate-400">
-                            Chưa xếp lớp
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            student.status === 'ACTIVE'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : student.status === 'PENDING_CLASS'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                                : 'bg-slate-200 text-slate-700'
-                          }`}
-                        >
-                          {STATUS_LABELS[student.status] ?? student.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedStudent(student)}
-                          className="rounded-md bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition-colors"
-                        >
-                          Chi tiết & Sửa
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-            <span>
-              Trang {page} / {totalPages}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() => {
-                  setLoading(true);
-                  setPage((p) => Math.max(1, p - 1));
-                }}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1 font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-              >
-                Trang trước
-              </button>
-              <button
-                type="button"
-                disabled={page >= totalPages}
-                onClick={() => {
-                  setLoading(true);
-                  setPage((p) => Math.min(totalPages, p + 1));
-                }}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1 font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
-              >
-                Trang sau
-              </button>
-            </div>
-          </div>
-        </div>
+        <StudentListTable
+          students={students}
+          loading={loading}
+          page={page}
+          total={total}
+          pageLimit={PAGE_LIMIT}
+          onPageChange={setPage}
+          onSelectStudent={setSelectedStudent}
+        />
       </main>
 
       {selectedStudent ? (
@@ -301,15 +181,11 @@ function AdminStudentsContent({
           initialStudent={selectedStudent}
           canManageInternalNotes={canManageInternalNotes}
           onClose={() => setSelectedStudent(null)}
-          onAuthError={onAuthError}
-          onSuccess={(updatedFullName) => {
-            setSelectedStudent(null);
-            setSuccessBanner(
-              `Đã cập nhật hồ sơ học viên ${updatedFullName} thành công`,
-            );
-            setLoading(true);
+          onSuccess={(bannerMessage) => {
+            setSuccessBanner(bannerMessage);
             setRefreshTick((t) => t + 1);
           }}
+          onAuthError={onAuthError}
         />
       ) : null}
     </div>
