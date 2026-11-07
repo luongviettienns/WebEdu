@@ -11,8 +11,8 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Backend**: `backend/` — NestJS + Prisma ORM (SQL Migrations chuẩn, cấm `prisma db push`) + PostgreSQL 16+ + TypeScript Strict (`"strict": true`, cấm `any`).
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS (Phong cách xanh lá tối giản, hiển thị chuẩn chữ Hán / Pinyin).
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
-  - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 2 — Module 01: Tài khoản, Xác thực & Phân quyền RBAC (HOÀN THÀNH - SẴN SÀNG CHUYỂN PHASE 3)**
+  - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
+* **Giai đoạn hiện tại**: **Phase 2 HOÀN THÀNH & ĐÃ NGHIỆM THU (`ACCEPTED` — 100% GATES PASS) — Sẵn sàng khởi động Phase 3 (Khóa học HSK & Quản lý Lớp học)**
 
 ---
 
@@ -39,19 +39,24 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 - [x] **Slice 1.6 (P0 Remediation & Linter Alignment)**: Bật lại luật `typescript/no-explicit-any: "error"` trong `.oxlintrc.json` (0 errors), đồng bộ 100% chính sách cấm `any` của Hiến chương Kiến trúc.
 - [x] **Adversarial Audit & Debate (`akit-critic`)**: Hoàn thành vòng phản biện độc lập, khắc phục 100% các khuyến nghị bảo mật & bất biến nghiệp vụ, nhận phán quyết chính thức: **VERDICT: APPROVE**.
 
-### Phase 2: Module 01 — Tài khoản, Xác thực & Phân quyền RBAC (`FUNC-001..013`, `FUNC-078`) *(HOÀN THÀNH - 100% GATES PASS)*
+### Phase 2: Module 01 — Tài khoản, Xác thực & Phân quyền RBAC (`FUNC-001..013`, `FUNC-078`) *(HOÀN THÀNH & ĐÃ NGHIỆM THU - 100% GATES PASS)*
 - [x] Lập Sub-Plan [`docs/plans/phase-02-auth-users-rbac.md`](./docs/plans/phase-02-auth-users-rbac.md) & chốt các quyết định `DEC-023` (`User.email` và `User.phone` đều bắt buộc & `UNIQUE`, đăng nhập chỉ dùng `email`, `guardianEmail` nullable cho phép anh/chị/em dùng chung email phụ huynh), `DEC-024` (cô lập lịch sử lớp học của HV), `DEC-025` (2 trường hợp quyền xem lớp cũ của GV), `DEC-026` (ma trận quyền học thuật mở rộng của Admin).
 - [x] **Slice 2.1**: Schema & SQL Migration `20261106171000_init_auth_users_rbac` cho `User`, `StudentProfile`, `TeacherProfile`, `GuardianConsent`, `PasswordResetToken`, `SystemAuditLog` (`@db.Timestamptz(3)`, `onDelete: Restrict`, `calculateAgeInVnTimezone`, `role-hierarchy.util.ts`, `JwtAuthGuard`, `RolesGuard`, `audit-sanitize.util.ts`).
 - [x] **Slice 2.2**: Học viên tự đăng ký (`FUNC-001`, $\ge 12$ tuổi theo `Asia/Ho_Chi_Minh`) + Xác nhận Phụ huynh cho HV $12\text{–}15$ tuổi (`FUNC-002`, `DEC-001`, lưu vết `GuardianConsent` IP/UA).
 - [x] **Slice 2.3**: Đăng nhập bằng Email + Khóa tạm 15p sau 5 lần sai nguyên tử (`FOR UPDATE`) + Cookie `HttpOnly; SameSite=Lax` + CSRF `Origin`/`X-Requested-With` (`FUNC-003`), Đăng xuất + Idle Timeout 60 phút (`FUNC-004`), Khôi phục mật khẩu qua Email chống dò tài khoản & single-use SHA-256 token (`FUNC-005`, `DEC-016`).
 - [x] **Slice 2.4**: Hệ thống Guards RBAC & Đa vai trò dương tính (`FUNC-009..013`, `DEC-020`, `DEC-024..026`) + Chốt chặn `SEC-07` (khóa dòng bảo vệ Superadmin hoạt động cuối cùng) & `SEC-08` (chặn leo thang đặc quyền ngang/dọc) + Bộ kiểm thử E2E chống truy cập chéo IDOR/BOLA (`rbac-isolation.e2e-spec.ts`, `auth.e2e-spec.ts`).
 - [x] **Slice 2.5**: Quản lý tài khoản GV (`FUNC-006`), Hồ sơ HV & Hàng đợi chờ xếp lớp (`FUNC-007, 008`), Hồ sơ cá nhân & Đổi mật khẩu/Email xoay vòng phiên mượt mà (`FUNC-078`), Cấu hình trung tâm & Upload Logo kiểm định Magic Bytes PNG/JPG + Nhật ký kiểm toán (`FUNC-013`), Toàn bộ giao diện `(auth)/**` & `(portal)/**` (15/15 routes Next.js 16.4.5, dọn sạch 7/7 hạng mục Prototype Cleanup của Phase 2).
-- [x] **Slice 2.6 (Independent Security & Critic Audit)**: Hoàn thành 2 vòng kiểm toán độc lập song song với `akit-security` (**`SECURITY GATE PASS`**) và `akit-critic` (**`SPEC COMPLIANCE PASS`**), đạt 100% pass trên 54/54 Unit tests và 15/15 E2E tests.
+- [x] **Slice 2.6 (Initial Independent Audit)**: Phản biện độc lập vòng đầu với `akit-security` và `akit-critic`.
+- [x] **Slice 2.7 (Final Remediation, Real PostgreSQL 16 Verification, Browser QA & CI Hardening — `fix/phase-02-final-remediation`)**:
+  - Sửa triệt để lỗi P0 rollback bộ đếm đăng nhập sai trên PostgreSQL thật; chuẩn hóa khóa dòng `ORDER BY id ASC FOR UPDATE` chống Deadlock `40P01` và cập nhật cột từng phần chống ghi đè trạng thái.
+  - Xây dựng `MailModule` (`SmtpEmailProvider` + `email_rate_limits` SHA-256 cooldown, xóa vĩnh viễn `debugResetToken`), migration `20261107103000_phase02_final_remediation` (`Course`, `Class`, `Enrollment`, FK `StudentProfile.currentClassId`, GIN index `users_roles_gin_idx`, Partial Unique Index `idx_unique_student_active_enrollment`), chuyển sang 100% Cookie-Only Auth, tắt `urlencoded` + kiểm tra `Origin` trên `@Public()`, và thu hẹp `FUNC-008` về `@Roles(Role.ADMIN)` (Default-Deny Superadmin thuần).
+  - Xóa bỏ mock `in-memory-prisma.ts`; đạt 100% PASS trên **61/61 Unit tests**, **11/11 Real PostgreSQL 16 Integration scenarios**, **19/19 Real PostgreSQL Supertest E2E tests**, và **14/14 Playwright Browser QA tests** (Desktop + Mobile Chromium).
+  - Thiết lập GitHub Actions CI (`.github/workflows/ci.yml` với `postgres:16-alpine`), hoàn thành tái kiểm toán Stage E (`akit-security`: **PASS**, `akit-critic`: **APPROVE** — 0 findings còn mở), xuất bản Báo cáo Nghiệm thu [`docs/reports/PHASE_02_ACCEPTANCE_REPORT.md`](./docs/reports/PHASE_02_ACCEPTANCE_REPORT.md), và tích hợp vào `develop` qua **PR #1** (`https://github.com/luongviettienns/WebEdu/pull/1` — GitHub Actions CI **PASS**).
 
 ### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
-- [ ] Lập Sub-Plan `docs/plans/phase-03-courses-and-classes.md` & chốt Open Issues `COURSE-01`, `CLASS-01..02`.
-- [ ] **Slice 3.1**: Danh mục Khóa học HSK1–HSK4 & Giao tiếp cơ bản (`FUNC-014`) + Tạo/Sửa Lớp học, Phân công 1 GV (`FUNC-016..018`).
-- [ ] **Slice 3.2**: Schema `ClassEnrollment` + SQL Migration Partial Unique Index (`WHERE status = 'ACTIVE'`) + Thêm HV vào lớp (`FUNC-020`).
+- [ ] Lập Sub-Plan `docs/plans/phase-03-courses-and-classes.md` & chốt Open Issues `COURSE-01`, `CLASS-02`.
+- [ ] **Slice 3.1**: Mở rộng CRUD Danh mục Khóa học HSK1–HSK4 & Giao tiếp cơ bản (`FUNC-014`) + Tạo/Sửa Lớp học, Phân công 1 GV trên nền bảng `courses` & `classes` đã khởi tạo (`FUNC-016..018`).
+- [ ] **Slice 3.2**: Nghiệp vụ `Enrollment` mở rộng: Thêm HV vào lớp (`FUNC-020`) trên nền bảng `enrollments` & Partial Unique Index `idx_unique_student_active_enrollment`.
 - [ ] **Slice 3.3**: Chuyển lớp (`FUNC-022`), Rút học viên khỏi lớp (`FUNC-077`), Xem lịch sử các lớp đã học (`FUNC-023`) bảo toàn 100% lịch sử.
 - [ ] **Slice 3.4**: Kết thúc/Lưu trữ lớp (`FUNC-079`) & Xem danh sách/chi tiết lớp theo quyền (`FUNC-024`).
 - [ ] **Slice 3.5**: Giao diện Quản lý Khóa HSK, Lớp học, Xếp/Chuyển lớp & E2E tests.

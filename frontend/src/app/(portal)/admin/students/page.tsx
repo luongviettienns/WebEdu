@@ -64,6 +64,8 @@ function AdminStudentsContent({
   const [modalError, setModalError] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
 
+  const canManageInternalNotes = currentUser.roles.includes('ADMIN');
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -154,6 +156,12 @@ function AdminStudentsContent({
       selectedStudent?.guardianConsent,
   );
 
+  const isSelectedStudentEnrolled = Boolean(
+    selectedStudent?.enrolledAt ||
+      selectedStudent?.currentClassId ||
+      selectedStudent?.assignedClass,
+  );
+
   const computedAge =
     calculateAgeInVnTimezone(editDateOfBirth) ??
     selectedStudent?.age ??
@@ -202,7 +210,9 @@ function AdminStudentsContent({
         email: trimmedEmail,
         ...(hasDateOfBirthChanged ? { dateOfBirth: normalizedEditDob } : {}),
         status: editStatus,
-        internalNotes: editInternalNotes.trim(),
+        ...(canManageInternalNotes
+          ? { internalNotes: editInternalNotes.trim() }
+          : {}),
       });
       setSuccessBanner(
         `Đã cập nhật hồ sơ học viên ${trimmedName} thành công`,
@@ -239,12 +249,14 @@ function AdminStudentsContent({
               cập nhật trạng thái tài khoản
             </p>
           </div>
-          <Link
-            href="/admin/students/pending"
-            className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
-          >
-            Danh sách chờ xếp lớp
-          </Link>
+          {canManageInternalNotes ? (
+            <Link
+              href="/admin/students/pending"
+              className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
+            >
+              Danh sách chờ xếp lớp
+            </Link>
+          ) : null}
         </div>
 
         {/* Bộ lọc & Tìm kiếm */}
@@ -627,30 +639,53 @@ function AdminStudentsContent({
                     }
                     className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
                   >
-                    <option value="PENDING_CLASS">Chờ xếp lớp</option>
-                    <option value="ACTIVE">Đang hoạt động</option>
-                    <option value="INACTIVE">Vô hiệu hóa</option>
+                    {!isSelectedStudentEnrolled ? (
+                      <>
+                        <option value="PENDING_CLASS">Chờ xếp lớp</option>
+                        <option value="INACTIVE">Vô hiệu hóa</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="ACTIVE">Đang hoạt động</option>
+                        <option value="INACTIVE">Vô hiệu hóa</option>
+                      </>
+                    )}
                   </select>
+                  {!isSelectedStudentEnrolled ? (
+                    <p className="text-[11px] text-slate-600">
+                      Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng
+                      thực hiện tại{' '}
+                      <Link
+                        href="/admin/students/pending"
+                        className="font-semibold text-emerald-700 underline hover:text-emerald-800"
+                      >
+                        Danh sách chờ xếp lớp
+                      </Link>
+                      .
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
-              {/* Ghi chú nội bộ */}
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="stu-internal-notes"
-                  className="block text-sm font-medium text-slate-800"
-                >
-                  Ghi chú nội bộ (Chỉ Admin xem)
-                </label>
-                <textarea
-                  id="stu-internal-notes"
-                  rows={3}
-                  value={editInternalNotes}
-                  onChange={(e) => setEditInternalNotes(e.target.value)}
-                  placeholder="Ghi chú xếp lớp, nhu cầu học tập, lưu ý phụ huynh..."
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
-                />
-              </div>
+              {/* Ghi chú nội bộ — Chỉ hiển thị và cập nhật đối với Admin (FUNC-007, FUNC-013) */}
+              {canManageInternalNotes ? (
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="stu-internal-notes"
+                    className="block text-sm font-medium text-slate-800"
+                  >
+                    Ghi chú nội bộ (Chỉ Admin xem)
+                  </label>
+                  <textarea
+                    id="stu-internal-notes"
+                    rows={3}
+                    value={editInternalNotes}
+                    onChange={(e) => setEditInternalNotes(e.target.value)}
+                    placeholder="Ghi chú xếp lớp, nhu cầu học tập, lưu ý phụ huynh..."
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+                  />
+                </div>
+              ) : null}
 
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
                 <button

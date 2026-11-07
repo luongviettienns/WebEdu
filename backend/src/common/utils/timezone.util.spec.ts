@@ -5,6 +5,7 @@ import {
   isWithinTeacherAttendanceWindow,
   calculateAgeInVnTimezone,
   formatDateVn,
+  resolveVnCalendarDateForDb,
 } from './timezone.util.js';
 
 describe('Timezone Utilities (Asia/Ho_Chi_Minh)', () => {
@@ -71,5 +72,19 @@ describe('Timezone Utilities (Asia/Ho_Chi_Minh)', () => {
     expect(calculateAgeInVnTimezone(leapDob, new Date('2026-02-28T12:00:00+07:00'))).toBe(13);
     expect(calculateAgeInVnTimezone(leapDob, new Date('2026-03-01T00:01:00+07:00'))).toBe(14);
     expect(formatDateVn(leapDob)).toBe('29/02/2012');
+  });
+
+  it('resolves Asia/Ho_Chi_Minh calendar dates at 00:30 GMT+7 without -1 day UTC shift and rejects invalid calendar rollover', () => {
+    // 2026-11-08 00:30:00 GMT+7 is 2026-11-07T17:30:00.000Z in UTC — must resolve to 2026-11-08!
+    const earlyMorningVn = new Date('2026-11-08T00:30:00+07:00');
+    const defaultResolved = resolveVnCalendarDateForDb(undefined, earlyMorningVn);
+    expect(defaultResolved?.toISOString()).toBe('2026-11-08T00:00:00.000Z');
+
+    const isoInstantResolved = resolveVnCalendarDateForDb('2026-11-07T18:15:00.000Z');
+    expect(isoInstantResolved?.toISOString()).toBe('2026-11-08T00:00:00.000Z');
+
+    expect(resolveVnCalendarDateForDb('2026-02-30')).toBeNull();
+    expect(resolveVnCalendarDateForDb('2026-02-30T10:00:00Z')).toBeNull();
+    expect(resolveVnCalendarDateForDb('invalid-date')).toBeNull();
   });
 });

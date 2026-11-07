@@ -1,7 +1,7 @@
 import {
   ApiClientError,
   fetchApi,
-  setStoredAccessToken,
+  purgeLegacyWebStorageTokens,
 } from './api-client';
 
 export type Role = 'STUDENT' | 'TEACHER' | 'ADMIN' | 'SUPERADMIN';
@@ -9,6 +9,12 @@ export type Role = 'STUDENT' | 'TEACHER' | 'ADMIN' | 'SUPERADMIN';
 export type UserStatus = 'PENDING_CLASS' | 'ACTIVE' | 'INACTIVE';
 
 export type GuardianConsentStatus = 'CONFIRMED' | 'NOT_APPLICABLE';
+
+export type ClassLifecycleStatus =
+  | 'UPCOMING'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'ARCHIVED';
 
 export const ROLE_LABELS: Record<Role, string> = {
   SUPERADMIN: 'Superadmin',
@@ -58,7 +64,6 @@ export interface LoginPayload {
 }
 
 export interface LoginResponse {
-  accessToken: string;
   expiresIn: number;
   redirectTo: string;
   user: AuthUserDto;
@@ -89,10 +94,7 @@ export interface UpdateProfilePayload {
   currentPassword?: string;
 }
 
-export interface UpdateProfileResponse extends UserProfileDto {
-  accessToken?: string;
-  expiresIn?: number;
-}
+export type UpdateProfileResponse = UserProfileDto;
 
 export interface ChangePasswordPayload {
   currentPassword: string;
@@ -102,8 +104,6 @@ export interface ChangePasswordPayload {
 
 export interface ChangePasswordResponse {
   message: string;
-  accessToken?: string;
-  expiresIn?: number;
 }
 
 export interface TeacherItemDto {
@@ -160,6 +160,7 @@ export interface StudentItemDto {
   email: string;
   status: UserStatus;
   assignedClass?: string | null;
+  currentClassId?: string | null;
   guardianEmail?: string | null;
   hasGuardianConsent?: boolean;
   guardianConsent?: GuardianConsentInfoDto | null;
@@ -190,6 +191,24 @@ export interface PendingStudentDto {
 export interface PendingEnrollmentResponse {
   items: PendingStudentDto[];
   totalPending: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface AvailableClassDto {
+  id: string;
+  code: string;
+  status: ClassLifecycleStatus;
+  startDate: string;
+  courseName: string;
+  courseLevel: string;
+  teacherName: string;
+  activeStudentsCount: number;
+}
+
+export interface AvailableClassesResponse {
+  items: AvailableClassDto[];
 }
 
 export interface UpdateStudentPayload {
@@ -465,14 +484,11 @@ export async function registerStudent(
 export async function loginWithEmail(
   payload: LoginPayload,
 ): Promise<LoginResponse> {
-  const response = await fetchApi<LoginResponse>('/auth/login', {
+  purgeLegacyWebStorageTokens();
+  return fetchApi<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  if (response.accessToken) {
-    setStoredAccessToken(response.accessToken);
-  }
-  return response;
 }
 
 export async function getCurrentUser(): Promise<AuthUserDto> {
@@ -487,7 +503,7 @@ export async function logoutUser(): Promise<{ message: string }> {
       method: 'POST',
     });
   } finally {
-    setStoredAccessToken(null);
+    purgeLegacyWebStorageTokens();
   }
 }
 
@@ -522,30 +538,19 @@ export async function getMyProfile(): Promise<UserProfileDto> {
 export async function updateMyProfile(
   payload: UpdateProfilePayload,
 ): Promise<UpdateProfileResponse> {
-  const response = await fetchApi<UpdateProfileResponse>('/profile/me', {
+  return fetchApi<UpdateProfileResponse>('/profile/me', {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
-  if (response.accessToken) {
-    setStoredAccessToken(response.accessToken);
-  }
-  return response;
 }
 
 export async function changeMyPassword(
   payload: ChangePasswordPayload,
 ): Promise<ChangePasswordResponse> {
-  const response = await fetchApi<ChangePasswordResponse>(
-    '/profile/change-password',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    },
-  );
-  if (response.accessToken) {
-    setStoredAccessToken(response.accessToken);
-  }
-  return response;
+  return fetchApi<ChangePasswordResponse>('/profile/change-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 // ============================================================================
@@ -611,8 +616,24 @@ export async function listStudents(params?: {
   });
 }
 
-export async function listPendingEnrollmentStudents(): Promise<PendingEnrollmentResponse> {
-  return fetchApi<PendingEnrollmentResponse>('/students/pending-enrollment', {
+export async function listPendingEnrollmentStudents(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<PendingEnrollmentResponse> {
+  const query = new URLSearchParams();
+  if (params?.page) query.set('page', String(params.page));
+  if (params?.limit) query.set('limit', String(params.limit));
+  const qs = query.toString();
+  return fetchApi<PendingEnrollmentResponse>(
+    `/students/pending-enrollment${qs ? `?${qs}` : ''}`,
+    {
+      method: 'GET',
+    },
+  );
+}
+
+export async function listAvailableClasses(): Promise<AvailableClassesResponse> {
+  return fetchApi<AvailableClassesResponse>('/students/available-classes', {
     method: 'GET',
   });
 }

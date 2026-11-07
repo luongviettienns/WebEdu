@@ -1,11 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  ClassStatus,
+  CourseLevel,
+  EnrollmentStatus,
+  Role,
+  UserStatus,
+} from '@prisma/client';
 import { StudentsService } from './students.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 
-describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
+describe('StudentsService (FUNC-007, 008, 010, DEC-024..026)', () => {
   let service: StudentsService;
 
   interface MockStudentUser {
@@ -24,6 +34,7 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       dateOfBirth: Date;
       guardianEmail: string | null;
       assignedClass: string | null;
+      currentClassId: string | null;
       internalNotes: string | null;
       enrolledAt: Date | null;
       consent: {
@@ -35,7 +46,29 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
     } | null;
   }
 
+  interface MockClassRecord {
+    id: string;
+    code: string;
+    courseId: string;
+    teacherId: string;
+    status: ClassStatus;
+    startDate: Date;
+    course: { id: string; code: string; name: string; level: CourseLevel };
+    teacher: { id: string; fullName: string };
+  }
+
+  interface MockEnrollmentRecord {
+    id: string;
+    classId: string;
+    studentId: string;
+    status: EnrollmentStatus;
+    enrolledDate: Date;
+    leftDate: Date | null;
+  }
+
   let usersStore: Map<string, MockStudentUser>;
+  let classesStore: Map<string, MockClassRecord>;
+  let enrollmentsStore: MockEnrollmentRecord[];
   let mockPrisma: Record<string, unknown>;
 
   const adminActor: AuthenticatedUser = {
@@ -62,8 +95,49 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
 
   beforeEach(() => {
     usersStore = new Map();
+    classesStore = new Map();
+    enrollmentsStore = [];
 
-    // Student A (aged 14, has GuardianConsent)
+    const defaultCourse = {
+      id: 'course-hsk1',
+      code: 'HSK1',
+      name: 'Tiếng Trung HSK 1',
+      level: CourseLevel.HSK1,
+    };
+
+    classesStore.set('cls-k20', {
+      id: 'cls-k20',
+      code: 'HSK1-K20',
+      courseId: defaultCourse.id,
+      teacherId: 'teacher-1',
+      status: ClassStatus.UPCOMING,
+      startDate: new Date('2026-12-01T00:00:00.000Z'),
+      course: defaultCourse,
+      teacher: { id: 'teacher-1', fullName: 'Cô Giáo Lan' },
+    });
+
+    classesStore.set('cls-k21', {
+      id: 'cls-k21',
+      code: 'HSK1-K21',
+      courseId: defaultCourse.id,
+      teacherId: 'teacher-1',
+      status: ClassStatus.ACTIVE,
+      startDate: new Date('2026-10-01T00:00:00.000Z'),
+      course: defaultCourse,
+      teacher: { id: 'teacher-1', fullName: 'Cô Giáo Lan' },
+    });
+
+    classesStore.set('cls-completed', {
+      id: 'cls-completed',
+      code: 'HSK1-OLD',
+      courseId: defaultCourse.id,
+      teacherId: 'teacher-1',
+      status: ClassStatus.COMPLETED,
+      startDate: new Date('2026-01-01T00:00:00.000Z'),
+      course: defaultCourse,
+      teacher: { id: 'teacher-1', fullName: 'Cô Giáo Lan' },
+    });
+
     usersStore.set('student-a', {
       id: 'student-a',
       email: 'a@example.com',
@@ -80,6 +154,7 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
         dateOfBirth: new Date('2012-03-10T00:00:00.000Z'),
         guardianEmail: 'parent.a@example.com',
         assignedClass: null,
+        currentClassId: null,
         internalNotes: 'Ghi chú A',
         enrolledAt: null,
         consent: {
@@ -91,7 +166,6 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       },
     });
 
-    // Student B (aged 18 at registration in 2026, NO GuardianConsent)
     usersStore.set('student-b', {
       id: 'student-b',
       email: 'b@example.com',
@@ -108,6 +182,7 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
         dateOfBirth: new Date('2008-01-15T00:00:00.000Z'),
         guardianEmail: null,
         assignedClass: null,
+        currentClassId: null,
         internalNotes: null,
         enrolledAt: null,
         consent: null,
@@ -125,10 +200,16 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
           return usersStore.get(where.id) ?? null;
         }),
         findFirst: vi.fn(async () => null),
-        findMany: vi.fn(async () => {
-          return Array.from(usersStore.values());
+        findMany: vi.fn(async ({ where }: { where?: { status?: UserStatus } }) => {
+          return Array.from(usersStore.values()).filter((u) =>
+            where?.status ? u.status === where.status : true,
+          );
         }),
-        count: vi.fn(async () => usersStore.size),
+        count: vi.fn(async ({ where }: { where?: { status?: UserStatus } }) => {
+          return Array.from(usersStore.values()).filter((u) =>
+            where?.status ? u.status === where.status : true,
+          ).length;
+        }),
         update: vi.fn(
           async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
             const u = usersStore.get(where.id)!;
@@ -165,6 +246,9 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
             if (typeof data.assignedClass === 'string') {
               u.studentProfile!.assignedClass = data.assignedClass;
             }
+            if (typeof data.currentClassId === 'string') {
+              u.studentProfile!.currentClassId = data.currentClassId;
+            }
             if (data.enrolledAt instanceof Date) {
               u.studentProfile!.enrolledAt = data.enrolledAt;
             }
@@ -174,6 +258,212 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
             return u.studentProfile;
           },
         ),
+      },
+      class: {
+        findFirst: vi.fn(async ({ where }: { where: { code?: string; OR?: Array<{ id?: string; code?: string }> } }) => {
+          for (const cls of classesStore.values()) {
+            if (where.code && cls.code === where.code) return cls;
+            if (where.OR) {
+              for (const c of where.OR) {
+                if ((c.id && cls.id === c.id) || (c.code && cls.code === c.code)) {
+                  return cls;
+                }
+              }
+            }
+          }
+          return null;
+        }),
+        findMany: vi.fn(async () => {
+          return Array.from(classesStore.values())
+            .filter((c) => c.status === ClassStatus.UPCOMING || c.status === ClassStatus.ACTIVE)
+            .map((c) => ({
+              ...c,
+              _count: {
+                enrollments: enrollmentsStore.filter(
+                  (e) => e.classId === c.id && e.status === EnrollmentStatus.ACTIVE,
+                ).length,
+              },
+            }));
+        }),
+      },
+      enrollment: {
+        count: vi.fn(
+          async ({
+            where,
+          }: {
+            where: {
+              studentId: string;
+              status?: EnrollmentStatus | { in: EnrollmentStatus[] };
+              class?: {
+                teacherId?: string;
+                status?: ClassStatus | { in: ClassStatus[] };
+              };
+              OR?: Array<{
+                status?: EnrollmentStatus | { in: EnrollmentStatus[] };
+                class?: {
+                  teacherId?: string;
+                  status?: ClassStatus | { in: ClassStatus[] };
+                };
+              }>;
+            };
+          }) => {
+            const matchClause = (
+              e: MockEnrollmentRecord,
+              clause: {
+                status?: EnrollmentStatus | { in: EnrollmentStatus[] };
+                class?: {
+                  teacherId?: string;
+                  status?: ClassStatus | { in: ClassStatus[] };
+                };
+              },
+            ): boolean => {
+              if (typeof clause.status === 'string' && e.status !== clause.status) {
+                return false;
+              }
+              if (
+                clause.status &&
+                typeof clause.status === 'object' &&
+                !clause.status.in.includes(e.status)
+              ) {
+                return false;
+              }
+              if (clause.class) {
+                const cls = classesStore.get(e.classId);
+                if (!cls) return false;
+                if (clause.class.teacherId && cls.teacherId !== clause.class.teacherId) {
+                  return false;
+                }
+                if (
+                  typeof clause.class.status === 'string' &&
+                  cls.status !== clause.class.status
+                ) {
+                  return false;
+                }
+                if (
+                  clause.class.status &&
+                  typeof clause.class.status === 'object' &&
+                  !clause.class.status.in.includes(cls.status)
+                ) {
+                  return false;
+                }
+              }
+              return true;
+            };
+
+            return enrollmentsStore.filter((e) => {
+              if (e.studentId !== where.studentId) return false;
+              if (!matchClause(e, where)) return false;
+              if (where.OR && !where.OR.some((c) => matchClause(e, c))) return false;
+              return true;
+            }).length;
+          },
+        ),
+        findFirst: vi.fn(
+          async ({ where }: { where: { studentId: string; status: EnrollmentStatus } }) => {
+            return (
+              enrollmentsStore.find(
+                (e) => e.studentId === where.studentId && e.status === where.status,
+              ) ?? null
+            );
+          },
+        ),
+        findMany: vi.fn(
+          async ({
+            where,
+          }: {
+            where: {
+              studentId: string;
+              status?: EnrollmentStatus | { in: EnrollmentStatus[] };
+              class?: {
+                teacherId?: string;
+                status?: ClassStatus | { in: ClassStatus[] };
+              };
+              OR?: Array<{
+                status?: EnrollmentStatus | { in: EnrollmentStatus[] };
+                class?: {
+                  teacherId?: string;
+                  status?: ClassStatus | { in: ClassStatus[] };
+                };
+              }>;
+            };
+          }) => {
+            const matchClause = (
+              e: MockEnrollmentRecord,
+              clause: {
+                status?: EnrollmentStatus | { in: EnrollmentStatus[] };
+                class?: {
+                  teacherId?: string;
+                  status?: ClassStatus | { in: ClassStatus[] };
+                };
+              },
+            ): boolean => {
+              if (typeof clause.status === 'string' && e.status !== clause.status) {
+                return false;
+              }
+              if (
+                clause.status &&
+                typeof clause.status === 'object' &&
+                !clause.status.in.includes(e.status)
+              ) {
+                return false;
+              }
+              if (clause.class) {
+                const cls = classesStore.get(e.classId);
+                if (!cls) return false;
+                if (clause.class.teacherId && cls.teacherId !== clause.class.teacherId) {
+                  return false;
+                }
+                if (
+                  typeof clause.class.status === 'string' &&
+                  cls.status !== clause.class.status
+                ) {
+                  return false;
+                }
+                if (
+                  clause.class.status &&
+                  typeof clause.class.status === 'object' &&
+                  !clause.class.status.in.includes(cls.status)
+                ) {
+                  return false;
+                }
+              }
+              return true;
+            };
+
+            return enrollmentsStore
+              .filter((e) => {
+                if (e.studentId !== where.studentId) return false;
+                if (!matchClause(e, where)) return false;
+                if (where.OR && !where.OR.some((c) => matchClause(e, c))) return false;
+                return true;
+              })
+              .map((e) => ({
+                ...e,
+                class: classesStore.get(e.classId)!,
+              }));
+          },
+        ),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const dupActive = enrollmentsStore.find(
+            (e) =>
+              e.studentId === (data.studentId as string) &&
+              e.status === EnrollmentStatus.ACTIVE &&
+              data.status === EnrollmentStatus.ACTIVE,
+          );
+          if (dupActive) {
+            throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+          }
+          const rec: MockEnrollmentRecord = {
+            id: `enr-${enrollmentsStore.length + 1}`,
+            classId: data.classId as string,
+            studentId: data.studentId as string,
+            status: data.status as EnrollmentStatus,
+            enrolledDate: data.enrolledDate as Date,
+            leftDate: null,
+          };
+          enrollmentsStore.push(rec);
+          return rec;
+        }),
       },
       systemAuditLog: {
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => data),
@@ -196,7 +486,7 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
     ).rejects.toThrowError(new ForbiddenException('Bạn không có quyền truy cập'));
   });
 
-  it('enforces positive multi-role RBAC on getStudentById, internalNotes, and getStudentLearningRecords (P0-1 / SEC-F02 / SEC-F03)', async () => {
+  it('enforces positive multi-role RBAC on getStudentById, blocks pure SUPERADMIN from reading or writing internalNotes, and enforces learning records RBAC', async () => {
     const dualTeacherStudent: AuthenticatedUser = {
       id: 'student-a',
       email: 'a@example.com',
@@ -230,12 +520,10 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       tokenVersion: 0,
     };
 
-    // Dual [TEACHER, STUDENT] cannot view Student B profile
     await expect(service.getStudentById(dualTeacherStudent, 'student-b')).rejects.toThrowError(
       new ForbiddenException('Bạn không có quyền truy cập hồ sơ của học viên khác'),
     );
 
-    // Dual [TEACHER, STUDENT] viewing self sees internalNotes: null; Pure SUPERADMIN sees null; ADMIN sees real notes
     const selfView = await service.getStudentById(dualTeacherStudent, 'student-a');
     expect(selfView.internalNotes).toBeNull();
     const saView = await service.getStudentById(pureSuperadmin, 'student-a');
@@ -243,7 +531,18 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
     const adminView = await service.getStudentById(adminActor, 'student-a');
     expect(adminView.internalNotes).toBe('Ghi chú A');
 
-    // Dual [SUPERADMIN, STUDENT] cannot view Student B learning records or class history
+    // Pure SUPERADMIN cannot modify internalNotes (FUNC-007 / FUNC-013)
+    await expect(
+      service.updateStudent(pureSuperadmin, 'student-a', {
+        internalNotes: 'Attempted tamper',
+      }),
+    ).rejects.toThrowError(
+      new ForbiddenException(
+        'Chỉ Quản trị viên (Admin) mới có quyền xem hoặc cập nhật ghi chú học vụ nội bộ',
+      ),
+    );
+    expect(usersStore.get('student-a')!.studentProfile!.internalNotes).toBe('Ghi chú A');
+
     await expect(
       service.getStudentLearningRecords(dualSaStudent, 'student-b'),
     ).rejects.toThrowError(ForbiddenException);
@@ -251,7 +550,6 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       service.getStudentClassHistory(dualSaStudent, 'student-b'),
     ).rejects.toThrowError(ForbiddenException);
 
-    // Unassigned TEACHER fails closed on Student B learning records
     await expect(
       service.getStudentLearningRecords(dualTeacherStudent, 'student-b'),
     ).rejects.toThrowError(
@@ -261,13 +559,52 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
     );
   });
 
-  it('enforces SEC-08, SEC-07, tokenVersion on email change, and assignInitialClass invariants (P0-2)', async () => {
-    // Make student-b dual-role [STUDENT, SUPERADMIN] and ACTIVE (only active SA in store)
+  it('forbids bypassing enrollment via updateStudent (PENDING_CLASS -> ACTIVE or PENDING_CLASS -> INACTIVE -> ACTIVE) and validates real Class on assignInitialClass (FUNC-008)', async () => {
+    // Direct bypass PENDING_CLASS -> ACTIVE via PATCH /students/:id is blocked
+    await expect(
+      service.updateStudent(adminActor, 'student-a', { status: UserStatus.ACTIVE }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+      ),
+    );
+
+    // Two-step bypass PENDING_CLASS -> INACTIVE -> ACTIVE without enrollment is also blocked
+    await service.updateStudent(adminActor, 'student-a', { status: UserStatus.INACTIVE });
+    await expect(
+      service.updateStudent(adminActor, 'student-a', { status: UserStatus.ACTIVE }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+      ),
+    );
+    // Restore to PENDING_CLASS for initial enrollment test
+    await service.updateStudent(adminActor, 'student-a', { status: UserStatus.PENDING_CLASS });
+
+    // Non-existent class -> 404
+    await expect(
+      service.assignInitialClass(adminActor, 'student-a', {
+        classNameOrId: 'HSK9-NONEXISTENT',
+      }),
+    ).rejects.toThrowError(new NotFoundException('Lớp học không tồn tại trong hệ thống'));
+
+    // Completed class -> 400
+    await expect(
+      service.assignInitialClass(adminActor, 'student-a', {
+        classNameOrId: 'HSK1-OLD',
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Chỉ có thể xếp học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
+      ),
+    );
+  });
+
+  it('enforces SEC-08, SEC-07, tokenVersion on email change, and assignInitialClass invariants', async () => {
     const saStudent = usersStore.get('student-b')!;
     saStudent.roles = [Role.STUDENT, Role.SUPERADMIN];
     saStudent.status = UserStatus.ACTIVE;
 
-    // ADMIN cannot modify or assignInitialClass on SUPERADMIN/ADMIN student (SEC-08)
     await expect(
       service.updateStudent(adminActor, 'student-b', { fullName: 'Tampered' }),
     ).rejects.toThrowError(
@@ -287,19 +624,16 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       tokenVersion: 0,
     };
 
-    // Last active SUPERADMIN in store cannot be deactivated even by an actor with SUPERADMIN role
     await expect(
       service.updateStudent(otherSuperadmin, 'student-b', { status: UserStatus.INACTIVE }),
     ).rejects.toThrowError(
       new BadRequestException('Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động'),
     );
 
-    // Changing email on student-a increments tokenVersion
     const beforeVer = usersStore.get('student-a')!.tokenVersion;
     await service.updateStudent(adminActor, 'student-a', { email: 'a.updated@example.com' });
     expect(usersStore.get('student-a')!.tokenVersion).toBe(beforeVer + 1);
 
-    // assignInitialClass rejects invalid enrolledAt and already-ACTIVE students
     await expect(
       service.assignInitialClass(adminActor, 'student-a', {
         classNameOrId: 'HSK1-K21',
@@ -307,9 +641,21 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       }),
     ).rejects.toThrowError(BadRequestException);
 
-    await service.assignInitialClass(adminActor, 'student-a', { classNameOrId: 'HSK1-K21' });
+    const assigned = await service.assignInitialClass(adminActor, 'student-a', {
+      classNameOrId: 'HSK1-K21',
+    });
+    expect(assigned.currentClassId).toBe('cls-k21');
+    expect(assigned.assignedClass).toBe('HSK1-K21');
+
+    // Once enrolled, cannot revert back to PENDING_CLASS via updateStudent
     await expect(
-      service.assignInitialClass(adminActor, 'student-a', { classNameOrId: 'HSK1-K22' }),
+      service.updateStudent(adminActor, 'student-a', { status: UserStatus.PENDING_CLASS }),
+    ).rejects.toThrowError(
+      new BadRequestException('Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp'),
+    );
+
+    await expect(
+      service.assignInitialClass(adminActor, 'student-a', { classNameOrId: 'HSK1-K20' }),
     ).rejects.toThrowError(
       new BadRequestException(
         'Chỉ có thể xếp lớp lần đầu cho học viên đang ở trạng thái Chờ xếp lớp',
@@ -338,7 +684,6 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
   });
 
   it('blocks editing dateOfBirth to < 16 at registration time when student has no GuardianConsent (FUNC-007)', async () => {
-    // Student B registered on 2026-06-02. Setting DOB to 2012-01-01 makes age at registration 14 (< 16)
     await expect(
       service.updateStudent(adminActor, 'student-b', {
         dateOfBirth: '2012-01-01',
@@ -349,14 +694,16 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       ),
     );
 
-    // Setting DOB to 2007-05-20 (age 19 at registration >= 16) is allowed
     const updated = await service.updateStudent(adminActor, 'student-b', {
       dateOfBirth: '2007-05-20',
     });
     expect(updated.dateOfBirth).toBe('2007-05-20');
   });
 
-  it('returns only CONFIRMED or NOT_APPLICABLE in pending-enrollment queue (Cleanup #12) and transitions to ACTIVE on class assignment (FUNC-008)', async () => {
+  it('returns only CONFIRMED or NOT_APPLICABLE in pending-enrollment queue and lists available UPCOMING/ACTIVE classes (FUNC-008)', async () => {
+    const available = await service.listAvailableClasses();
+    expect(available.items.map((c) => c.code)).toEqual(['HSK1-K20', 'HSK1-K21']);
+
     const queue = await service.getPendingEnrollmentQueue();
     expect(queue.totalPending).toBe(2);
     const statuses = queue.items.map((i) => i.guardianConsentStatus);
@@ -371,11 +718,11 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
     expect(enrolled.enrolledAt).toBeTruthy();
   });
 
-  it('enforces DEC-024 on student class history: Student views own, Admin views all, Teacher is blocked from viewing past class history', async () => {
-    const teacherActor: AuthenticatedUser = {
+  it('enforces DEC-024 & DEC-025 on real Enrollment & Class records', async () => {
+    const teacher1: AuthenticatedUser = {
       id: 'teacher-1',
       email: 'teacher@webedu.vn',
-      fullName: 'Teacher One',
+      fullName: 'Cô Giáo Lan',
       phone: '0903333333',
       roles: [Role.TEACHER],
       effectiveRole: Role.TEACHER,
@@ -383,96 +730,71 @@ describe('StudentsService (Slice 2.4 - FUNC-007, 008, 010)', () => {
       tokenVersion: 0,
     };
 
-    // Student A views own class history -> OK
-    const ownHistory = await service.getStudentClassHistory(studentActorA, 'student-a');
-    expect(ownHistory.studentId).toBe('student-a');
+    const teacher2: AuthenticatedUser = {
+      id: 'teacher-2',
+      email: 'teacher2@webedu.vn',
+      fullName: 'Thầy Minh',
+      phone: '0903333334',
+      roles: [Role.TEACHER],
+      effectiveRole: Role.TEACHER,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
 
-    // Student A views Student B class history -> 403
-    await expect(
-      service.getStudentClassHistory(studentActorA, 'student-b'),
-    ).rejects.toThrowError(new ForbiddenException('Bạn không có quyền truy cập'));
+    await service.assignInitialClass(adminActor, 'student-a', {
+      classNameOrId: 'HSK1-K21',
+    });
 
-    // Teacher views student past class history -> 403 (DEC-024)
+    // Assigned teacher can view learning records of student in their class
+    const teacherRecords = await service.getStudentLearningRecords(teacher1, 'student-a');
+    expect(teacherRecords.records).toHaveLength(1);
+    expect(teacherRecords.records[0]?.accessMode).toBe('FULL');
+
+    // Case 1 (DEC-025): Class finishes (COMPLETED), teacher was NOT replaced -> READ_ONLY access
+    classesStore.get('cls-k21')!.status = ClassStatus.COMPLETED;
+    const completedRecords = await service.getStudentLearningRecords(teacher1, 'student-a');
+    expect(completedRecords.records[0]?.accessMode).toBe('READ_ONLY');
+
+    // Case 2 (DEC-025): Teacher is replaced by teacher-2 -> teacher-1 gets 403, teacher-2 gets access
+    classesStore.get('cls-k21')!.status = ClassStatus.ACTIVE;
+    classesStore.get('cls-k21')!.teacherId = 'teacher-2';
     await expect(
-      service.getStudentClassHistory(teacherActor, 'student-a'),
+      service.getStudentLearningRecords(teacher1, 'student-a'),
+    ).rejects.toThrowError(ForbiddenException);
+    const newTeacherRecords = await service.getStudentLearningRecords(teacher2, 'student-a');
+    expect(newTeacherRecords.records).toHaveLength(1);
+
+    // DEC-024: Even current teacher cannot view student's past class history
+    await expect(
+      service.getStudentClassHistory(teacher2, 'student-a'),
     ).rejects.toThrowError(
       new ForbiddenException('Giáo viên không có quyền xem lịch sử lớp cũ của học viên'),
     );
 
-    // Admin views any student's class history -> OK (DEC-024)
-    const adminView = await service.getStudentClassHistory(adminActor, 'student-b');
-    expect(adminView.studentId).toBe('student-b');
-  });
+    const ownHistory = await service.getStudentClassHistory(studentActorA, 'student-a');
+    expect(ownHistory.studentId).toBe('student-a');
+    const adminHistory = await service.getStudentClassHistory(adminActor, 'student-a');
+    expect(adminHistory.currentClass).toBe('HSK1-K21');
 
-  it('enforces DEC-025 & DEC-026 on teacher access to completed vs reassigned classes', () => {
-    const teacherOld: AuthenticatedUser = {
-      id: 'teacher-old',
-      email: 'old@webedu.vn',
-      fullName: 'Old Teacher',
-      phone: '0904444441',
-      roles: [Role.TEACHER],
-      effectiveRole: Role.TEACHER,
-      status: UserStatus.ACTIVE,
-      tokenVersion: 0,
-    };
+    // FUNC-011 & DEC-024/025: When student TRANSFERRED or DROPPED out of ongoing class, teacher loses operational access
+    enrollmentsStore[0]!.status = EnrollmentStatus.DROPPED;
+    usersStore.get('student-a')!.studentProfile!.currentClassId = null;
+    await expect(
+      service.getStudentLearningRecords(teacher2, 'student-a'),
+    ).rejects.toThrowError(ForbiddenException);
 
-    const teacherNew: AuthenticatedUser = {
-      id: 'teacher-new',
-      email: 'new@webedu.vn',
-      fullName: 'New Teacher',
-      phone: '0904444442',
-      roles: [Role.TEACHER],
-      effectiveRole: Role.TEACHER,
-      status: UserStatus.ACTIVE,
-      tokenVersion: 0,
-    };
-
-    // Case 1 (DEC-025): Class ended (COMPLETED), teacher in charge still has READ_ONLY view access
-    expect(
-      service.verifyClassLearningAccess(teacherOld, {
-        classId: 'cls-1',
-        assignedTeacherId: 'teacher-old',
-        classStatus: 'COMPLETED',
+    // Post-drop INACTIVE -> ACTIVE reactivation via updateStudent is blocked when no ACTIVE/COMPLETED enrollment remains
+    await service.updateStudent(adminActor, 'student-a', {
+      status: UserStatus.INACTIVE,
+    });
+    await expect(
+      service.updateStudent(adminActor, 'student-a', {
+        status: UserStatus.ACTIVE,
       }),
-    ).toEqual({ allowed: true, mode: 'READ_ONLY' });
-
-    // Case 2 (DEC-025): Teacher was replaced by teacherNew -> teacherOld is blocked (403), teacherNew is allowed
-    expect(() =>
-      service.verifyClassLearningAccess(teacherOld, {
-        classId: 'cls-2',
-        assignedTeacherId: 'teacher-new',
-        classStatus: 'ACTIVE',
-      }),
-    ).toThrowError(
-      new ForbiddenException(
-        'Giáo viên đã được thay thế không còn quyền truy cập lớp học này',
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
       ),
     );
-
-    expect(
-      service.verifyClassLearningAccess(teacherNew, {
-        classId: 'cls-2',
-        assignedTeacherId: 'teacher-new',
-        classStatus: 'ACTIVE',
-      }),
-    ).toEqual({ allowed: true, mode: 'FULL' });
-
-    // UPCOMING class also grants FULL mode to assigned teacher
-    expect(
-      service.verifyClassLearningAccess(teacherNew, {
-        classId: 'cls-3',
-        assignedTeacherId: 'teacher-new',
-        classStatus: 'UPCOMING',
-      }),
-    ).toEqual({ allowed: true, mode: 'FULL' });
-
-    // DEC-026: Admin has full operational access
-    expect(
-      service.verifyClassLearningAccess(adminActor, {
-        classId: 'cls-2',
-        assignedTeacherId: 'teacher-new',
-        classStatus: 'ACTIVE',
-      }),
-    ).toEqual({ allowed: true, mode: 'FULL' });
   });
 });

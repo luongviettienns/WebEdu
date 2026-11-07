@@ -55,4 +55,20 @@ describe('validateEnv', () => {
     expect(parsed.CORS_ORIGIN).toBe('http://localhost:3000');
     expect(parsed.NODE_ENV).toBe(Environment.Development);
   });
+
+  it('requires SMTP_HOST when NODE_ENV=production and MAIL_PROVIDER=smtp (FUNC-005)', () => {
+    const prodWithoutSmtp = {
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://postgres:postgrespassword@localhost:5432/webedu?schema=public',
+      JWT_SECRET: 'test-super-secret-key-1234567890123456',
+      MAIL_PROVIDER: 'smtp',
+    };
+    expect(() => validateEnv(prodWithoutSmtp)).toThrow(/SMTP_HOST/);
+
+    const prodWithSmtp = validateEnv({
+      ...prodWithoutSmtp,
+      SMTP_HOST: 'smtp.webedu.vn',
+    });
+    expect(prodWithSmtp.SMTP_HOST).toBe('smtp.webedu.vn');
+  });
 });

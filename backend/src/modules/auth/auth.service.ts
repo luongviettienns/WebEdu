@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -14,7 +15,9 @@ import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { MailService } from '../../common/mail/mail.service.js';
 import { calculateAgeInVnTimezone } from '../../common/utils/timezone.util.js';
+import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
 import {
   CONSENT_TEXT_V1_0,
   CONSENT_VERSION,
@@ -25,6 +28,7 @@ import {
   getDefaultRedirectByRole,
   getHighestRole,
 } from '../../common/auth/role-hierarchy.util.js';
+import { IDLE_TIMEOUT_MS } from '../../common/guards/jwt-auth.guard.js';
 import type {
   ForgotPasswordDto,
   LoginDto,
@@ -36,7 +40,9 @@ const DUMMY_PASSWORD_HASH = bcrypt.hashSync('webedu_dummy_anti_timing_secret_202
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes (FUNC-003)
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000; // 60 seconds (FUNC-005)
-const RESET_TOKEN_TTL_MS = 15 * 60 * 1000; // 15 minutes (FUNC-005)
+const RATE_LIMIT_RETENTION_MS = 10 * 60 * 1000; // 10 minutes cleanup window
+const RESET_TOKEN_TTL_MINUTES = 15;
+const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000; // 15 minutes (FUNC-005)
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^0\d{9}$/;
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -55,34 +61,14 @@ export function formatIsoDateUtc(date: Date): string {
 
 @Injectable()
 export class AuthService {
-  private readonly cooldownByEmailHash = new Map<string, number>();
-  private readonly loginLocks = new Map<string, Promise<unknown>>();
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
   ) {}
-
-  private async withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-    const previous = this.loginLocks.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chain = previous.then(() => current);
-    this.loginLocks.set(key, chain);
-
-    await previous;
-    try {
-      return await fn();
-    } finally {
-      release();
-      if (this.loginLocks.get(key) === chain) {
-        this.loginLocks.delete(key);
-      }
-    }
-  }
 
   async register(
     dto: RegisterDto,
@@ -202,15 +188,7 @@ export class AuthService {
         },
       };
     } catch (err: unknown) {
-      if (
-        typeof err === 'object' &&
-        err !== null &&
-        'code' in err &&
-        (err as { code?: string }).code === 'P2002'
-      ) {
-        throw new ConflictException('Email/Số điện thoại đã được sử dụng');
-      }
-      throw err;
+      rethrowDuplicateContactConflict(err);
     }
   }
 
@@ -236,118 +214,140 @@ export class AuthService {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
-    // CPU-bound bcrypt runs outside withKeyLock and BEFORE INACTIVE status check
-    // so wrong passwords on INACTIVE accounts return uniform 401 (anti-enumeration)
+    // CPU-bound bcrypt runs outside DB transaction so slow hashing never holds row locks,
+    // and BEFORE INACTIVE status check so wrong passwords on INACTIVE accounts return uniform 401.
     const isPasswordValid = await bcrypt.compare(password, initialUser.passwordHash);
 
-    return this.withKeyLock(`login:${normalizedEmail}`, async () => {
-      if (!isPasswordValid) {
-        return this.prisma.$transaction(async (tx) => {
-          await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${initialUser.id} FOR UPDATE`;
-          const freshUser =
-            (await tx.user.findUnique({ where: { id: initialUser.id } })) ?? initialUser;
-          const txNow = new Date();
+    // P0-B1 Fix: Return a discriminated outcome from $transaction so PostgreSQL COMMITS
+    // failedLoginAttempts / lockedUntil updates BEFORE any HTTP exception is thrown.
+    const txOutcome = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${initialUser.id} FOR UPDATE`;
 
-          if (freshUser.lockedUntil && freshUser.lockedUntil.getTime() > txNow.getTime()) {
-            throw new ForbiddenException(
-              'Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần',
-            );
-          }
+      const freshUser = await tx.user.findUnique({
+        where: { id: initialUser.id },
+        include: { studentProfile: true },
+      });
 
-          const isExpiredLock =
-            freshUser.lockedUntil !== null &&
-            freshUser.lockedUntil.getTime() <= txNow.getTime();
-          const newAttempts = isExpiredLock ? 1 : freshUser.failedLoginAttempts + 1;
-          const shouldLock = newAttempts >= MAX_FAILED_LOGIN_ATTEMPTS;
-          const lockedUntil = shouldLock
-            ? new Date(txNow.getTime() + LOCKOUT_DURATION_MS)
-            : null;
+      if (!freshUser) {
+        return { kind: 'INVALID_CREDENTIALS' as const };
+      }
 
-          await tx.user.update({
-            where: { id: initialUser.id },
-            data: {
-              failedLoginAttempts: newAttempts,
-              lockedUntil,
-            },
-          });
+      const txNow = new Date();
 
-          if (shouldLock) {
-            throw new ForbiddenException(
-              'Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần',
-            );
-          }
+      if (freshUser.lockedUntil && freshUser.lockedUntil.getTime() > txNow.getTime()) {
+        return { kind: 'LOCKED_15M' as const };
+      }
 
-          throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
+      const effectivePasswordValid =
+        freshUser.passwordHash === initialUser.passwordHash
+          ? isPasswordValid
+          : await bcrypt.compare(password, freshUser.passwordHash);
+
+      if (!effectivePasswordValid) {
+        const isExpiredLock =
+          freshUser.lockedUntil !== null &&
+          freshUser.lockedUntil.getTime() <= txNow.getTime();
+        const newAttempts = isExpiredLock ? 1 : freshUser.failedLoginAttempts + 1;
+        const shouldLock = newAttempts >= MAX_FAILED_LOGIN_ATTEMPTS;
+        const lockedUntil = shouldLock
+          ? new Date(txNow.getTime() + LOCKOUT_DURATION_MS)
+          : null;
+
+        await tx.user.update({
+          where: { id: freshUser.id },
+          data: {
+            failedLoginAttempts: newAttempts,
+            lockedUntil,
+          },
         });
-      }
 
-      const freshUser =
-        (await this.prisma.user.findUnique({
-          where: { id: initialUser.id },
-          include: { studentProfile: true },
-        })) ?? initialUser;
-
-      const now = new Date();
-      if (freshUser.lockedUntil && freshUser.lockedUntil.getTime() > now.getTime()) {
-        throw new ForbiddenException(
-          'Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần',
-        );
-      }
-
-      if (freshUser.passwordHash !== initialUser.passwordHash) {
-        throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
+        return shouldLock
+          ? { kind: 'LOCKED_15M' as const }
+          : { kind: 'INVALID_CREDENTIALS' as const };
       }
 
       if (freshUser.status === UserStatus.INACTIVE) {
-        throw new ForbiddenException('Tài khoản đã bị khóa, vui lòng liên hệ trung tâm');
+        if (freshUser.failedLoginAttempts > 0 || freshUser.lockedUntil !== null) {
+          await tx.user.update({
+            where: { id: freshUser.id },
+            data: {
+              failedLoginAttempts: 0,
+              lockedUntil: null,
+            },
+          });
+        }
+        return { kind: 'INACTIVE' as const };
       }
 
-      const updatedUser = await this.prisma.user.update({
+      const wasIdleExpired =
+        freshUser.lastActivityAt !== null &&
+        txNow.getTime() - freshUser.lastActivityAt.getTime() > IDLE_TIMEOUT_MS;
+
+      const updatedUser = await tx.user.update({
         where: { id: freshUser.id },
         data: {
           failedLoginAttempts: 0,
           lockedUntil: null,
-          lastLoginAt: now,
-          lastActivityAt: now,
+          lastLoginAt: txNow,
+          lastActivityAt: txNow,
+          ...(wasIdleExpired ? { tokenVersion: { increment: 1 } } : {}),
         },
         include: { studentProfile: true },
       });
 
-      const rememberMe = dto.rememberMe === true;
-      const expiresInSeconds = rememberMe ? 7 * 24 * 60 * 60 : 3600;
-
-      const payload: JwtPayload = {
-        sub: updatedUser.id,
-        email: updatedUser.email,
-        tokenVersion: updatedUser.tokenVersion,
-      };
-      const secret = this.configService.get<string>('JWT_SECRET');
-      const accessToken = await this.jwtService.signAsync(payload, {
-        secret,
-        expiresIn: rememberMe ? '7d' : 3600,
-      });
-
-      const effectiveRole = getHighestRole(updatedUser.roles);
-      const userDto: AuthUserDto = {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        fullName: updatedUser.fullName,
-        phone: updatedUser.phone,
-        roles: updatedUser.roles,
-        effectiveRole,
-        status: updatedUser.status,
-        ...(updatedUser.studentProfile?.dateOfBirth
-          ? { dateOfBirth: formatIsoDateUtc(updatedUser.studentProfile.dateOfBirth) }
-          : {}),
-      };
-
-      return {
-        accessToken,
-        expiresIn: expiresInSeconds,
-        redirectTo: getDefaultRedirectByRole(effectiveRole),
-        user: userDto,
-      };
+      return { kind: 'SUCCESS' as const, updatedUser };
     });
+
+    if (txOutcome.kind === 'LOCKED_15M') {
+      throw new ForbiddenException(
+        'Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần',
+      );
+    }
+
+    if (txOutcome.kind === 'INVALID_CREDENTIALS') {
+      throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
+    }
+
+    if (txOutcome.kind === 'INACTIVE') {
+      throw new ForbiddenException('Tài khoản đã bị khóa, vui lòng liên hệ trung tâm');
+    }
+
+    const { updatedUser } = txOutcome;
+    const rememberMe = dto.rememberMe === true;
+    const expiresInSeconds = rememberMe ? 7 * 24 * 60 * 60 : 3600;
+
+    const payload: JwtPayload = {
+      sub: updatedUser.id,
+      email: updatedUser.email,
+      tokenVersion: updatedUser.tokenVersion,
+      ...(rememberMe ? { rememberMe: true } : {}),
+    };
+    const secret = this.configService.get<string>('JWT_SECRET');
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret,
+      expiresIn: rememberMe ? '7d' : 3600,
+    });
+
+    const effectiveRole = getHighestRole(updatedUser.roles);
+    const userDto: AuthUserDto = {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      fullName: updatedUser.fullName,
+      phone: updatedUser.phone,
+      roles: updatedUser.roles,
+      effectiveRole,
+      status: updatedUser.status,
+      ...(updatedUser.studentProfile?.dateOfBirth
+        ? { dateOfBirth: formatIsoDateUtc(updatedUser.studentProfile.dateOfBirth) }
+        : {}),
+    };
+
+    return {
+      accessToken,
+      expiresIn: expiresInSeconds,
+      redirectTo: getDefaultRedirectByRole(effectiveRole),
+      user: userDto,
+    };
   }
 
   async getMe(userId: string): Promise<AuthUserDto> {
@@ -388,7 +388,6 @@ export class AuthService {
   async forgotPassword(dto: ForgotPasswordDto): Promise<{
     message: string;
     cooldownSeconds: number;
-    debugResetToken?: string;
   }> {
     const normalizedEmail = (dto.email ?? '').trim().toLowerCase();
     if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
@@ -396,41 +395,46 @@ export class AuthService {
     }
 
     const emailHash = crypto.createHash('sha256').update(normalizedEmail).digest('hex');
-    const nowMs = Date.now();
+    const now = new Date();
+    const nowMs = now.getTime();
+    const cutoff = new Date(nowMs - FORGOT_PASSWORD_COOLDOWN_MS);
+    const pruneBefore = new Date(nowMs - RATE_LIMIT_RETENTION_MS);
 
-    // Prune expired cooldown entries (> 60s) to prevent unbounded memory growth
-    for (const [hash, timestamp] of this.cooldownByEmailHash.entries()) {
-      if (nowMs - timestamp >= FORGOT_PASSWORD_COOLDOWN_MS) {
-        this.cooldownByEmailHash.delete(hash);
-      }
-    }
+    // Opportunistically clean stale rate-limit rows (> 10 minutes old)
+    await this.prisma.emailRateLimit.deleteMany({
+      where: {
+        lastRequestedAt: { lt: pruneBefore },
+      },
+    });
 
-    const lastRequestedAt = this.cooldownByEmailHash.get(emailHash);
+    // Atomic PostgreSQL conditional upsert enforcing 60s cooldown across all instances
+    // regardless of whether the target email exists (SEC-06 anti-enumeration).
+    const allowedRows = await this.prisma.$queryRaw<Array<{ email_hash: string }>>`
+      INSERT INTO "email_rate_limits" ("email_hash", "last_requested_at")
+      VALUES (${emailHash}, ${now})
+      ON CONFLICT ("email_hash") DO UPDATE
+        SET "last_requested_at" = EXCLUDED."last_requested_at"
+        WHERE "email_rate_limits"."last_requested_at" <= ${cutoff}
+      RETURNING "email_hash"
+    `;
 
-    if (
-      lastRequestedAt !== undefined &&
-      nowMs - lastRequestedAt < FORGOT_PASSWORD_COOLDOWN_MS
-    ) {
+    if (allowedRows.length === 0) {
       throw new HttpException(
         'Vui lòng đợi trước khi gửi lại yêu cầu',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    // Always record cooldown timestamp regardless of whether user exists (SEC-06)
-    this.cooldownByEmailHash.set(emailHash, nowMs);
-
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
 
-    let debugResetToken: string | undefined;
     if (user) {
       const rawToken = crypto.randomBytes(32).toString('hex');
       const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
       const expiresAt = new Date(nowMs + RESET_TOKEN_TTL_MS);
 
-      await this.prisma.passwordResetToken.create({
+      const createdToken = await this.prisma.passwordResetToken.create({
         data: {
           userId: user.id,
           tokenHash,
@@ -438,16 +442,35 @@ export class AuthService {
         },
       });
 
-      const currentEnv = this.configService.get<string>('NODE_ENV') ?? process.env.NODE_ENV;
-      if (currentEnv === 'test') {
-        debugResetToken = rawToken;
+      try {
+        await this.mailService.sendPasswordResetEmail({
+          toEmail: user.email,
+          fullName: user.fullName,
+          rawToken,
+          expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+        });
+      } catch (err: unknown) {
+        // Revoke orphaned unsent token + release cooldown slot on mail failure,
+        // and log sanitized diagnostics without leaking rawToken or user existence.
+        await this.prisma.passwordResetToken.deleteMany({
+          where: { id: createdToken.id },
+        });
+        await this.prisma.emailRateLimit.deleteMany({
+          where: { emailHash },
+        });
+        const reason = err instanceof Error ? err.message : 'Unknown mail error';
+        this.logger.error(
+          `Password reset email delivery failed for hash=${emailHash.slice(0, 12)}: ${reason}`,
+        );
       }
+    } else {
+      // Equalize baseline CPU latency when email does not exist to mitigate timing side-channels
+      await bcrypt.compare('webedu_forgot_password_pad', DUMMY_PASSWORD_HASH);
     }
 
     return {
       message: 'Nếu tài khoản tồn tại, hướng dẫn đã được gửi',
       cooldownSeconds: 60,
-      ...(debugResetToken ? { debugResetToken } : {}),
     };
   }
 
@@ -497,6 +520,17 @@ export class AuthService {
         throw new BadRequestException('Link đã hết hạn, vui lòng gửi lại');
       }
 
+      // Invalidate any other unused reset tokens belonging to this user
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: tokenRecord.userId,
+          usedAt: null,
+        },
+        data: {
+          usedAt: now,
+        },
+      });
+
       await tx.user.update({
         where: { id: tokenRecord.userId },
         data: {
@@ -509,9 +543,5 @@ export class AuthService {
     });
 
     return { message: 'Đặt lại mật khẩu thành công' };
-  }
-
-  clearCooldownsForTesting(): void {
-    this.cooldownByEmailHash.clear();
   }
 }

@@ -17,6 +17,7 @@ import { SystemSettingsService } from './system-settings.service.js';
 import {
   CreateSystemUserDto,
   ListAuditLogsQueryDto,
+  ListSystemUsersQueryDto,
   UpdateSystemConfigDto,
   UpdateUserRolesStatusDto,
 } from './dto/system-settings.dto.js';
@@ -35,8 +36,8 @@ export class SystemSettingsController {
   @Get('users')
   @Roles(Role.SUPERADMIN)
   @ApiOperation({ summary: 'Danh sách tài khoản hệ thống / quản trị (FUNC-013)' })
-  async listSystemUsers() {
-    return this.systemSettingsService.listSystemUsers();
+  async listSystemUsers(@Query() query: ListSystemUsersQueryDto) {
+    return this.systemSettingsService.listSystemUsers(query);
   }
 
   @Post('users')

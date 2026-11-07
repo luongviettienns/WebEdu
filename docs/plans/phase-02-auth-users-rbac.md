@@ -337,3 +337,29 @@ model SystemAuditLog {
 
 ### Slice 2.6: Kiểm Toán Bảo Mật & Phản Biện Độc Lập Cuối Phase (`akit-security` + `akit-critic`)
 - Triệu hồi song song `akit-security` và `akit-critic` để kiểm toán diff thực tế trước khi merge vào `develop`.
+
+
+---
+
+## 5. Nhật Ký Khắc Phục & Nghiệm Thu Cuối Phase 2 (`fix/phase-02-final-remediation`)
+
+Để đáp ứng đầy đủ các tiêu chí Exit Gates nghiệm thu thực tế trên PostgreSQL 16+ và trình duyệt thật, nhánh `fix/phase-02-final-remediation` đã hoàn thiện các hạng mục sau:
+
+1. **Khắc phục P0 Transaction Rollback khi đăng nhập sai (`FUNC-003`):**
+   - Trong `AuthService.login`, kết quả kiểm tra mật khẩu và cập nhật nguyên tử `failedLoginAttempts` / `lockedUntil` được trả về từ callback `prisma.$transaction` để **commit xuống PostgreSQL trước**, sau đó mới ném `UnauthorizedException` (`401`) hoặc `ForbiddenException` (`403`).
+2. **Toàn vẹn giao dịch, chống Deadlock `40P01` & Lost Update (`SEC-NEW-01`, `Critic Finding 1`):**
+   - Chuẩn hóa câu lệnh khóa dòng theo thứ tự khóa chính tăng dần: `SELECT id, roles, status FROM "users" WHERE id = ${targetId} OR ('SUPERADMIN' = ANY("roles") AND "status" = 'ACTIVE') ORDER BY id ASC FOR UPDATE` trên `SystemSettingsService`, `TeachersService`, `StudentsService` và `ProfileService`.
+   - Đọc lại bản ghi sau khi khóa dòng ngay bên trong transaction và chỉ cập nhật các cột thực sự có trong DTO (không ghi đè giá trị cũ của `status` hay `roles` từ bản chụp trước giao dịch).
+3. **Provider gửi Email khôi phục mật khẩu thật qua giao thức SMTP (`FUNC-005`):**
+   - Bổ sung `MailModule` (`EmailProvider` interface, `SmtpEmailProvider` qua `nodemailer`, `NoopEmailProvider` an toàn). Bắt buộc cấu hình `SMTP_HOST` khi `NODE_ENV=production` và `MAIL_PROVIDER=smtp`.
+   - Lưu cooldown 60 giây trong bảng PostgreSQL `email_rate_limits` (hash SHA-256), giải phóng cooldown và thu hồi `PasswordResetToken` nếu gửi SMTP thất bại, thêm dummy `bcrypt.compare` khi email không tồn tại, và xóa hoàn toàn mọi trường `debugResetToken` khỏi API response/log.
+4. **Liên kết khóa ngoại `Course` / `Class` / `Enrollment` cho quy trình Xếp lớp đầu tiên (`FUNC-008`, `DEC-024..026`):**
+   - Migration `20261107103000_phase02_final_remediation` tạo bảng nền `courses`, `classes`, `enrollments`, FK `student_profiles.current_class_id`, GIN index `users_roles_gin_idx` và Partial Unique Index `idx_unique_student_active_enrollment` (`WHERE status = 'ACTIVE'`).
+   - Loại bỏ danh sách lớp hardcoded trên Frontend; trang chờ xếp lớp tải danh sách lớp mở động từ `GET /api/v1/students/available-classes`.
+   - Chặn kích hoạt tài khoản học viên (`PENDING_CLASS -> ACTIVE`, `PENDING_CLASS -> INACTIVE -> ACTIVE`, và cả trường hợp HV đã rút lớp `DROPPED` `INACTIVE -> ACTIVE`) nếu không đi qua luồng xếp lớp hợp lệ hoặc chưa có bản ghi `Enrollment` `ACTIVE`/`COMPLETED`.
+   - Cưỡng chế nguyên tắc **Default-Deny** từ `roles-permissions.md`: các API và màn hình xếp lớp đầu tiên (`FUNC-008`) chỉ cấp cho `@Roles(Role.ADMIN)` (tài khoản `SUPERADMIN` thuần nhận `403`, trong khi tài khoản kiêm nhiệm `['SUPERADMIN', 'ADMIN']` vẫn có đầy đủ quyền).
+5. **Bảo mật Phiên Cookie-Only, CSRF & Phân quyền đối tượng Giáo viên (`SEC-NEW-02`, `SEC-NEW-03`, `Critic Finding 2`):**
+   - Loại bỏ hoàn toàn việc lưu JWT trong `localStorage` và loại bỏ `accessToken` khỏi JSON body; trình duyệt chỉ dùng cookie `HttpOnly; SameSite=Lax`.
+   - Khi quá 60 phút không hoạt động (`Idle Timeout`), `JwtAuthGuard` tăng `tokenVersion` nguyên tử và xóa cookie ngay trên response; đồng thời `AuthService.login` xoay vòng `tokenVersion` nếu phiên trước đã quá hạn nghỉ để chống hồi sinh cookie 7 ngày trên máy tính dùng chung.
+   - Tắt `express.urlencoded` (chỉ nhận `application/json` giới hạn `4mb` phục vụ upload logo PNG/JPG $\le 2\text{MB}$) và kiểm tra `Origin` trên cả các route `@Public()` thay đổi trạng thái.
+   - Giáo viên phụ trách lớp đang mở chỉ xem được hồ sơ học tập của học viên đang có `Enrollment.status = ACTIVE` tại lớp đó (tự động thu hồi quyền xem ngay khi học viên `TRANSFERRED` hoặc `DROPPED`).

@@ -80,3 +80,43 @@ export function formatDateTimeVn(date: Date | string, includeSeconds = false): s
   const d = typeof date === 'string' ? new Date(date) : date;
   return formatInTimeZone(d, VN_TIMEZONE, includeSeconds ? 'dd/MM/yyyy HH:mm:ss' : 'dd/MM/yyyy HH:mm');
 }
+
+/**
+ * Resolves a calendar date (@db.Date stored as UTC midnight YYYY-MM-DDT00:00:00.000Z)
+ * anchored to Asia/Ho_Chi_Minh timezone, rejecting invalid calendar rollovers (e.g. 2026-02-30).
+ * Returns null when dateInput is malformed or represents a nonexistent calendar day.
+ */
+export function resolveVnCalendarDateForDb(
+  dateInput?: string,
+  nowInstant: Date = new Date(),
+): Date | null {
+  if (dateInput === undefined || dateInput.trim() === '') {
+    const vnYmd = formatInTimeZone(nowInstant, VN_TIMEZONE, 'yyyy-MM-dd');
+    return new Date(`${vnYmd}T00:00:00.000Z`);
+  }
+
+  const trimmed = dateInput.trim();
+  const datePrefixMatch = /^(\d{4}-\d{2}-\d{2})(?:$|[T\s])/.exec(trimmed);
+  if (datePrefixMatch) {
+    const prefixYmd = datePrefixMatch[1]!;
+    const checkUtc = new Date(`${prefixYmd}T00:00:00.000Z`);
+    if (Number.isNaN(checkUtc.getTime())) {
+      return null;
+    }
+    const roundTrip = `${checkUtc.getUTCFullYear()}-${String(checkUtc.getUTCMonth() + 1).padStart(2, '0')}-${String(checkUtc.getUTCDate()).padStart(2, '0')}`;
+    if (roundTrip !== prefixYmd) {
+      return null;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return checkUtc;
+    }
+  }
+
+  const parsedInstant = new Date(trimmed);
+  if (Number.isNaN(parsedInstant.getTime())) {
+    return null;
+  }
+
+  const vnYmd = formatInTimeZone(parsedInstant, VN_TIMEZONE, 'yyyy-MM-dd');
+  return new Date(`${vnYmd}T00:00:00.000Z`);
+}

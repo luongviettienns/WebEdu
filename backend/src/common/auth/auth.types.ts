@@ -8,6 +8,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   tokenVersion: number;
+  rememberMe?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -21,6 +22,7 @@ export interface AuthenticatedUser {
   effectiveRole: Role;
   status: UserStatus;
   tokenVersion: number;
+  rememberMe?: boolean;
 }
 
 export interface AuthUserDto {

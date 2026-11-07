@@ -12,13 +12,17 @@ import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { MailService, type PasswordResetEmailInput } from '../../common/mail/mail.service.js';
 import { CONSENT_TEXT_V1_0, CONSENT_VERSION } from '../../common/auth/auth.types.js';
 
-describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
+describe('AuthService (FUNC-001..005 — Hardened Lockout & Mail Abstraction)', () => {
   let service: AuthService;
   let jwtService: JwtService;
   let signAsyncMock: ReturnType<typeof vi.fn>;
   let configService: ConfigService;
+  let mailService: MailService;
+  let sentResetEmails: PasswordResetEmailInput[];
+  let shouldFailEmailSend: boolean;
 
   interface MockUserRecord {
     id: string;
@@ -49,25 +53,31 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
     string,
     { id: string; userId: string; tokenHash: string; expiresAt: Date; usedAt: Date | null }
   >;
+  let emailRateLimitStore: Map<string, Date>;
   let mockPrisma: Record<string, unknown>;
 
   beforeEach(() => {
     usersStore = new Map();
     consentsStore = [];
     resetTokensStore = new Map();
+    emailRateLimitStore = new Map();
+    sentResetEmails = [];
+    shouldFailEmailSend = false;
 
     const userDelegate = {
-      findFirst: vi.fn(async ({ where }: { where: { OR?: Array<{ email?: string; phone?: string }> } }) => {
-        for (const u of usersStore.values()) {
-          if (where.OR) {
-            for (const cond of where.OR) {
-              if (cond.email && u.email === cond.email) return u;
-              if (cond.phone && u.phone === cond.phone) return u;
+      findFirst: vi.fn(
+        async ({ where }: { where: { OR?: Array<{ email?: string; phone?: string }> } }) => {
+          for (const u of usersStore.values()) {
+            if (where.OR) {
+              for (const cond of where.OR) {
+                if (cond.email && u.email === cond.email) return u;
+                if (cond.phone && u.phone === cond.phone) return u;
+              }
             }
           }
-        }
-        return null;
-      }),
+          return null;
+        },
+      ),
       findUnique: vi.fn(async ({ where }: { where: { id?: string; email?: string } }) => {
         if (where.id) {
           return usersStore.get(where.id) ?? null;
@@ -102,34 +112,37 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
         usersStore.set(id, record);
         return record;
       }),
-      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-        const record = usersStore.get(where.id);
-        if (!record) throw new Error('User not found');
-        if (typeof data.failedLoginAttempts === 'number') {
-          record.failedLoginAttempts = data.failedLoginAttempts;
-        }
-        if ('lockedUntil' in data) {
-          record.lockedUntil = (data.lockedUntil as Date | null) ?? null;
-        }
-        if (data.lastLoginAt instanceof Date) {
-          record.lastLoginAt = data.lastLoginAt;
-        }
-        if (data.lastActivityAt instanceof Date) {
-          record.lastActivityAt = data.lastActivityAt;
-        }
-        if (typeof data.passwordHash === 'string') {
-          record.passwordHash = data.passwordHash;
-        }
-        if (
-          data.tokenVersion &&
-          typeof data.tokenVersion === 'object' &&
-          'increment' in data.tokenVersion
-        ) {
-          record.tokenVersion += Number((data.tokenVersion as { increment: number }).increment);
-        }
-        record.updatedAt = new Date();
-        return record;
-      }),
+      update: vi.fn(
+        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+          const record = usersStore.get(where.id);
+          if (!record) throw new Error('User not found');
+          if (typeof data.failedLoginAttempts === 'number') {
+            record.failedLoginAttempts = data.failedLoginAttempts;
+          }
+          if ('lockedUntil' in data) {
+            record.lockedUntil = (data.lockedUntil as Date | null) ?? null;
+          }
+          if (data.lastLoginAt instanceof Date) {
+            record.lastLoginAt = data.lastLoginAt;
+          }
+          if (data.lastActivityAt instanceof Date) {
+            record.lastActivityAt = data.lastActivityAt;
+          }
+          if (typeof data.passwordHash === 'string') {
+            record.passwordHash = data.passwordHash;
+          }
+          if (
+            data.tokenVersion &&
+            typeof data.tokenVersion === 'object' &&
+            'increment' in data.tokenVersion
+          ) {
+            record.tokenVersion += Number(
+              (data.tokenVersion as { increment: number }).increment,
+            );
+          }
+          return record;
+        },
+      ),
     };
 
     const studentProfileDelegate = {
@@ -140,65 +153,156 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
           dateOfBirth: data.dateOfBirth as Date,
           guardianEmail: (data.guardianEmail as string | null) ?? null,
         };
-        const user = usersStore.get(profile.userId);
-        if (user) {
-          user.studentProfile = profile;
-        }
+        const u = usersStore.get(profile.userId);
+        if (u) u.studentProfile = profile;
         return profile;
       }),
     };
 
     const guardianConsentDelegate = {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const consent = { id: `gc-${consentsStore.length + 1}`, ...data };
-        consentsStore.push(consent);
-        return consent;
+        consentsStore.push(data);
+        return { id: `gc-${consentsStore.length}`, ...data };
       }),
     };
 
     const passwordResetTokenDelegate = {
-      create: vi.fn(
-        async ({ data }: { data: { userId: string; tokenHash: string; expiresAt: Date } }) => {
-          const item = {
-            id: `prt-${resetTokensStore.size + 1}`,
-            userId: data.userId,
-            tokenHash: data.tokenHash,
-            expiresAt: data.expiresAt,
-            usedAt: null,
-          };
-          resetTokensStore.set(data.tokenHash, item);
-          return item;
-        },
-      ),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const rec = {
+          id: `prt-${resetTokensStore.size + 1}`,
+          userId: data.userId as string,
+          tokenHash: data.tokenHash as string,
+          expiresAt: data.expiresAt as Date,
+          usedAt: null,
+        };
+        resetTokensStore.set(rec.tokenHash, rec);
+        return rec;
+      }),
       updateMany: vi.fn(
         async ({
           where,
           data,
         }: {
-          where: { tokenHash: string; usedAt: null; expiresAt: { gt: Date } };
+          where: {
+            tokenHash?: string;
+            userId?: string;
+            usedAt: null;
+            expiresAt?: { gt: Date };
+          };
           data: { usedAt: Date };
         }) => {
-          const item = resetTokensStore.get(where.tokenHash);
-          if (!item || item.usedAt !== null || item.expiresAt.getTime() <= where.expiresAt.gt.getTime()) {
+          if (where.tokenHash) {
+            const rec = resetTokensStore.get(where.tokenHash);
+            if (
+              rec &&
+              rec.usedAt === null &&
+              (!where.expiresAt || rec.expiresAt.getTime() > where.expiresAt.gt.getTime())
+            ) {
+              rec.usedAt = data.usedAt;
+              return { count: 1 };
+            }
             return { count: 0 };
           }
-          item.usedAt = data.usedAt;
-          return { count: 1 };
+          let count = 0;
+          if (where.userId) {
+            for (const rec of resetTokensStore.values()) {
+              if (rec.userId === where.userId && rec.usedAt === null) {
+                rec.usedAt = data.usedAt;
+                count += 1;
+              }
+            }
+          }
+          return { count };
         },
       ),
+      deleteMany: vi.fn(async ({ where }: { where: { id?: string } }) => {
+        let count = 0;
+        for (const [hash, rec] of resetTokensStore.entries()) {
+          if (!where.id || rec.id === where.id) {
+            resetTokensStore.delete(hash);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
       findUnique: vi.fn(async ({ where }: { where: { tokenHash: string } }) => {
         return resetTokensStore.get(where.tokenHash) ?? null;
       }),
     };
 
+    const emailRateLimitDelegate = {
+      deleteMany: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { emailHash?: string; lastRequestedAt?: { lt: Date } };
+        }) => {
+          let count = 0;
+          if (where.emailHash) {
+            if (emailRateLimitStore.delete(where.emailHash)) {
+              count += 1;
+            }
+            return { count };
+          }
+          if (where.lastRequestedAt?.lt) {
+            for (const [hash, ts] of emailRateLimitStore.entries()) {
+              if (ts.getTime() < where.lastRequestedAt.lt.getTime()) {
+                emailRateLimitStore.delete(hash);
+                count += 1;
+              }
+            }
+          }
+          return { count };
+        },
+      ),
+    };
+
+    // Serialize $transaction AND faithfully roll back store state if callback throws!
+    let txChain = Promise.resolve();
     mockPrisma = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: 'user-1' }]),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join('?');
+        if (sql.includes('email_rate_limits')) {
+          const emailHash = String(values[0]);
+          const now = values[1] as Date;
+          const cutoff = values[2] as Date;
+          const existing = emailRateLimitStore.get(emailHash);
+          if (!existing || existing.getTime() <= cutoff.getTime()) {
+            emailRateLimitStore.set(emailHash, now);
+            return [{ email_hash: emailHash }];
+          }
+          return [];
+        }
+        return [];
+      }),
       user: userDelegate,
       studentProfile: studentProfileDelegate,
       guardianConsent: guardianConsentDelegate,
       passwordResetToken: passwordResetTokenDelegate,
+      emailRateLimit: emailRateLimitDelegate,
       $transaction: vi.fn(async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
-        return cb(mockPrisma);
+        const prev = txChain;
+        let release!: () => void;
+        const curr = new Promise<void>((r) => {
+          release = r;
+        });
+        txChain = prev.then(() => curr);
+        await prev;
+
+        // Snapshot usersStore to catch accidental throw-inside-transaction rollback bugs!
+        const snapshot = new Map<string, MockUserRecord>();
+        for (const [id, u] of usersStore.entries()) {
+          snapshot.set(id, { ...u });
+        }
+
+        try {
+          return await cb(mockPrisma);
+        } catch (err) {
+          usersStore = snapshot;
+          throw err;
+        } finally {
+          release();
+        }
       }),
     };
 
@@ -215,10 +319,20 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       }),
     } as unknown as ConfigService;
 
+    mailService = {
+      sendPasswordResetEmail: vi.fn(async (input: PasswordResetEmailInput) => {
+        if (shouldFailEmailSend) {
+          throw new Error('SMTP connection refused');
+        }
+        sentResetEmails.push(input);
+      }),
+    } as unknown as MailService;
+
     service = new AuthService(
       mockPrisma as unknown as PrismaService,
       jwtService,
       configService,
+      mailService,
     );
   });
 
@@ -227,7 +341,7 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       await expect(
         service.register({
           fullName: 'Bé Nhỏ',
-          dateOfBirth: '2018-06-01', // 8 years old in 2026
+          dateOfBirth: '2018-06-01',
           phone: '0901112222',
           email: 'benho@example.com',
           password: 'Password123',
@@ -239,7 +353,7 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       await expect(
         service.register({
           fullName: 'Thiếu Niên',
-          dateOfBirth: '2012-05-10', // 14 years old in 2026
+          dateOfBirth: '2012-05-10',
           phone: '0901112223',
           email: 'thieunien@example.com',
           password: 'Password123',
@@ -314,7 +428,7 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
     });
   });
 
-  describe('FUNC-003: Login, Anti-Timing & Atomic 5-Strike Lockout', () => {
+  describe('FUNC-003: Login, Anti-Timing & Atomic Commit-Before-Throw 5-Strike Lockout', () => {
     it('runs dummy bcrypt comparison when user does not exist (SEC-05)', async () => {
       const compareSpy = vi.spyOn(bcrypt, 'compare');
       await expect(
@@ -325,7 +439,7 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       compareSpy.mockRestore();
     });
 
-    it('returns uniform 401 on wrong password for INACTIVE account and 403 only on right password (P1-3)', async () => {
+    it('returns uniform 401 on wrong password for INACTIVE account and 403 only on right password', async () => {
       const reg = await service.register({
         fullName: 'Học Viên Khóa',
         dateOfBirth: '2000-05-05',
@@ -336,12 +450,10 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       const rec = usersStore.get(reg.user.id)!;
       rec.status = UserStatus.INACTIVE;
 
-      // Wrong password on INACTIVE account -> uniform 401 (anti-enumeration)
       await expect(
         service.login({ email: 'inactive.user@example.com', password: 'WrongPassword999' }),
       ).rejects.toThrowError(new UnauthorizedException('Email hoặc mật khẩu không chính xác'));
 
-      // Correct password on INACTIVE account -> 403
       await expect(
         service.login({ email: 'inactive.user@example.com', password: 'CorrectPassword123' }),
       ).rejects.toThrowError(
@@ -349,7 +461,7 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       );
     });
 
-    it('honors rememberMe=true with 7-day JWT expiry and 3600s when omitted (P1-3)', async () => {
+    it('honors rememberMe=true with 7-day JWT expiry and 3600s when omitted', async () => {
       await service.register({
         fullName: 'Học Viên Ghi Nhớ',
         dateOfBirth: '2000-05-05',
@@ -371,13 +483,13 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       });
       expect(rememberLogin.expiresIn).toBe(7 * 24 * 60 * 60);
       expect(signAsyncMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ email: 'remember@example.com' }),
+        expect.objectContaining({ email: 'remember@example.com', rememberMe: true }),
         expect.objectContaining({ expiresIn: '7d' }),
       );
     });
 
-    it('locks account for 15 minutes on the 5th failed attempt and handles 6 concurrent wrong attempts atomically (SEC-04)', async () => {
-      await service.register({
+    it('commits failedLoginAttempts & lockedUntil BEFORE throwing on 6 concurrent wrong logins (P0-B1)', async () => {
+      const reg = await service.register({
         fullName: 'Học Viên Test Khóa',
         dateOfBirth: '2000-05-05',
         phone: '0905556666',
@@ -395,11 +507,15 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
         o.status === 'rejected' && o.reason instanceof HttpException ? o.reason.getStatus() : 200,
       );
 
-      // First 4 attempts fail with 401, attempt 5 and 6 fail with 403 locked
       expect(statuses.filter((s) => s === 401)).toHaveLength(4);
       expect(statuses.filter((s) => s === 403)).toHaveLength(2);
 
-      // Even with correct password, login is still blocked while lockedUntil > now
+      // Verify state actually committed in store (would be 0 if $transaction threw!)
+      const persisted = usersStore.get(reg.user.id)!;
+      expect(persisted.failedLoginAttempts).toBe(5);
+      expect(persisted.lockedUntil).toBeInstanceOf(Date);
+
+      // Correct password rejected while locked
       await expect(
         service.login({ email: 'locktest@example.com', password: 'CorrectPassword123' }),
       ).rejects.toThrowError(
@@ -408,18 +524,16 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
     });
   });
 
-  describe('FUNC-005: Forgot & Reset Password (Anti-Enumeration Cooldown & Single-Use Token)', () => {
-    it('enforces 60s cooldown even for non-existent emails (SEC-06) and consumes reset token once', async () => {
-      // Non-existent email call 1 -> 200
+  describe('FUNC-005: Forgot & Reset Password (DB Cooldown, Mail Abstraction & Zero Token Leak)', () => {
+    it('enforces 60s DB cooldown, delivers rawToken only via MailService, never leaks token in response, and consumes token once', async () => {
       const res1 = await service.forgotPassword({ email: 'ghost@example.com' });
       expect(res1.cooldownSeconds).toBe(60);
+      expect('debugResetToken' in res1).toBe(false);
 
-      // Immediate second call for non-existent email -> 429
       await expect(
         service.forgotPassword({ email: 'ghost@example.com' }),
       ).rejects.toThrowError('Vui lòng đợi trước khi gửi lại yêu cầu');
 
-      // Existing user flow
       await service.register({
         fullName: 'Học Viên Quên MK',
         dateOfBirth: '2001-02-02',
@@ -429,8 +543,10 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       });
 
       const forgotRes = await service.forgotPassword({ email: 'resetme@example.com' });
-      expect(forgotRes.debugResetToken).toBeDefined();
-      const rawToken = forgotRes.debugResetToken!;
+      expect('debugResetToken' in forgotRes).toBe(false);
+      expect(sentResetEmails).toHaveLength(1);
+      const rawToken = sentResetEmails[0]!.rawToken;
+      expect(rawToken).toHaveLength(64);
 
       const resetRes = await service.resetPassword({
         token: rawToken,
@@ -448,31 +564,24 @@ describe('AuthService (Slice 2.2 - FUNC-001..005)', () => {
       ).rejects.toThrowError(new BadRequestException('Link đã hết hạn, vui lòng gửi lại'));
     });
 
-    it('never leaks debugResetToken when NODE_ENV is development or production (SEC-F06)', async () => {
+    it('revokes orphaned token and preserves uniform anti-enumeration response when SMTP delivery fails', async () => {
       await service.register({
-        fullName: 'Học Viên Dev Env',
+        fullName: 'Học Viên Lỗi SMTP',
         dateOfBirth: '2001-02-02',
         phone: '0907779999',
-        email: 'devenv@example.com',
+        email: 'smtpfail@example.com',
         password: 'OldPassword123',
       });
 
-      const devConfigService = {
-        get: vi.fn((key: string, defaultVal?: string) => {
-          if (key === 'JWT_SECRET') return 'test-jwt-secret-key-minimum-32-chars';
-          if (key === 'NODE_ENV') return 'development';
-          return defaultVal;
-        }),
-      } as unknown as ConfigService;
+      shouldFailEmailSend = true;
+      const res = await service.forgotPassword({ email: 'smtpfail@example.com' });
 
-      const devAuthService = new AuthService(
-        mockPrisma as unknown as PrismaService,
-        jwtService,
-        devConfigService,
-      );
-
-      const devRes = await devAuthService.forgotPassword({ email: 'devenv@example.com' });
-      expect(devRes.debugResetToken).toBeUndefined();
+      expect(res).toEqual({
+        message: 'Nếu tài khoản tồn tại, hướng dẫn đã được gửi',
+        cooldownSeconds: 60,
+      });
+      // Orphaned token was deleted so unsent token never lingers in DB
+      expect(resetTokensStore.size).toBe(0);
     });
   });
 });

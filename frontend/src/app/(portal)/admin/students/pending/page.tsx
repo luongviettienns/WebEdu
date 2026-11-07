@@ -8,29 +8,17 @@ import { AppHeader } from '@/components/layout/AppHeader';
 import {
   assignStudentInitialClass,
   AuthUserDto,
+  AvailableClassDto,
   extractErrorMessage,
   formatDateDdMmYyyy,
   formatDateTimeVn,
+  listAvailableClasses,
   listPendingEnrollmentStudents,
   PendingStudentDto,
   Role,
 } from '@/lib/auth-api';
 
-const ALLOWED_ROLES: readonly Role[] = ['ADMIN', 'SUPERADMIN'];
-
-const AVAILABLE_CLASSES = [
-  { id: 'HSK1-K26-01', label: 'HSK1-K26-01 — HSK 1 Tiêu chuẩn (Đang học)' },
-  {
-    id: 'HSK1-K26-02',
-    label: 'HSK1-K26-02 — HSK 1 Tối 2-4-6 (Sắp khai giảng)',
-  },
-  { id: 'HSK2-K26-01', label: 'HSK2-K26-01 — HSK 2 Sơ trung cấp (Đang học)' },
-  {
-    id: 'HSK3-K26-01',
-    label: 'HSK3-K26-01 — HSK 3 Trung cấp (Sắp khai giảng)',
-  },
-  { id: 'GT-CB-01', label: 'GT-CB-01 — Giao tiếp cơ bản (Đang học)' },
-];
+const ALLOWED_ROLES: readonly Role[] = ['ADMIN'];
 
 function getTodayDateString(): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -40,6 +28,12 @@ function getTodayDateString(): string {
     day: '2-digit',
   });
   return formatter.format(new Date());
+}
+
+function formatAvailableClassOption(cls: AvailableClassDto): string {
+  const statusLabel =
+    cls.status === 'UPCOMING' ? 'Sắp khai giảng' : 'Đang học';
+  return `${cls.code} — ${cls.courseName} (${statusLabel} • GV: ${cls.teacherName})`;
 }
 
 interface PendingEnrollmentStudentsContentProps {
@@ -54,6 +48,9 @@ function PendingEnrollmentStudentsContent({
   const [pendingStudents, setPendingStudents] = useState<PendingStudentDto[]>(
     [],
   );
+  const [availableClasses, setAvailableClasses] = useState<AvailableClassDto[]>(
+    [],
+  );
   const [totalPending, setTotalPending] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorBanner, setErrorBanner] = useState<string>('');
@@ -63,9 +60,7 @@ function PendingEnrollmentStudentsContent({
   const [targetStudent, setTargetStudent] = useState<PendingStudentDto | null>(
     null,
   );
-  const [selectedClass, setSelectedClass] = useState<string>(
-    AVAILABLE_CLASSES[0]?.id ?? 'HSK1-K26-01',
-  );
+  const [selectedClass, setSelectedClass] = useState<string>('');
   const [enrolledAt, setEnrolledAt] = useState<string>('');
   const [assignError, setAssignError] = useState<string>('');
   const [assigning, setAssigning] = useState<boolean>(false);
@@ -74,10 +69,15 @@ function PendingEnrollmentStudentsContent({
     setLoading(true);
     setErrorBanner('');
     try {
-      const response = await listPendingEnrollmentStudents();
-      const items = response.items ?? [];
+      const [queueResp, classesResp] = await Promise.all([
+        listPendingEnrollmentStudents(),
+        listAvailableClasses(),
+      ]);
+      const items = queueResp.items ?? [];
+      const classes = classesResp.items ?? [];
       setPendingStudents(items);
-      setTotalPending(response.totalPending ?? items.length);
+      setAvailableClasses(classes);
+      setTotalPending(queueResp.totalPending ?? items.length);
     } catch (error) {
       if (onAuthError(error)) {
         return;
@@ -97,11 +97,16 @@ function PendingEnrollmentStudentsContent({
     let cancelled = false;
     void (async () => {
       try {
-        const response = await listPendingEnrollmentStudents();
+        const [queueResp, classesResp] = await Promise.all([
+          listPendingEnrollmentStudents(),
+          listAvailableClasses(),
+        ]);
         if (cancelled) return;
-        const items = response.items ?? [];
+        const items = queueResp.items ?? [];
+        const classes = classesResp.items ?? [];
         setPendingStudents(items);
-        setTotalPending(response.totalPending ?? items.length);
+        setAvailableClasses(classes);
+        setTotalPending(queueResp.totalPending ?? items.length);
       } catch (error) {
         if (cancelled) return;
         if (onAuthError(error)) {
@@ -127,7 +132,7 @@ function PendingEnrollmentStudentsContent({
 
   const openAssignModal = (student: PendingStudentDto) => {
     setTargetStudent(student);
-    setSelectedClass(AVAILABLE_CLASSES[0]?.id ?? 'HSK1-K26-01');
+    setSelectedClass(availableClasses[0]?.code ?? '');
     setEnrolledAt(getTodayDateString());
     setAssignError('');
   };
@@ -140,7 +145,7 @@ function PendingEnrollmentStudentsContent({
     setAssignError('');
 
     if (!selectedClass.trim()) {
-      setAssignError('Vui lòng chọn lớp học');
+      setAssignError('Vui lòng chọn lớp học hợp lệ trong hệ thống');
       return;
     }
     if (!enrolledAt) {
@@ -150,12 +155,12 @@ function PendingEnrollmentStudentsContent({
 
     setAssigning(true);
     try {
-      await assignStudentInitialClass(targetStudent.id, {
+      const result = await assignStudentInitialClass(targetStudent.id, {
         classNameOrId: selectedClass.trim(),
         enrolledAt,
       });
       setSuccessBanner(
-        `Đã xếp học viên ${targetStudent.fullName} vào lớp ${selectedClass} thành công. Trạng thái tài khoản đã chuyển sang Đang hoạt động.`,
+        `Đã xếp học viên ${targetStudent.fullName} vào lớp ${result.assignedClass ?? selectedClass} thành công. Trạng thái tài khoản đã chuyển sang Đang hoạt động.`,
       );
       setTargetStudent(null);
       await reloadPendingQueue();
@@ -363,19 +368,27 @@ function PendingEnrollmentStudentsContent({
                   Lớp học (Sắp khai giảng / Đang học){' '}
                   <span className="text-red-600">*</span>
                 </label>
-                <select
-                  id="assign-class-select"
-                  required
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
-                >
-                  {AVAILABLE_CLASSES.map((cls) => (
-                    <option key={cls.id} value={cls.id}>
-                      {cls.label}
-                    </option>
-                  ))}
-                </select>
+                {availableClasses.length === 0 ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-900">
+                    Hiện chưa có lớp học Sắp khai giảng hoặc Đang học trong hệ
+                    thống. Vui lòng khởi tạo lớp học trước khi xếp lớp cho học
+                    viên.
+                  </div>
+                ) : (
+                  <select
+                    id="assign-class-select"
+                    required
+                    value={selectedClass}
+                    onChange={(e) => setSelectedClass(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+                  >
+                    {availableClasses.map((cls) => (
+                      <option key={cls.id} value={cls.code}>
+                        {formatAvailableClassOption(cls)}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -406,7 +419,7 @@ function PendingEnrollmentStudentsContent({
                 </button>
                 <button
                   type="submit"
-                  disabled={assigning}
+                  disabled={assigning || availableClasses.length === 0}
                   className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
                 >
                   {assigning ? 'Đang xếp lớp...' : 'Xác nhận'}

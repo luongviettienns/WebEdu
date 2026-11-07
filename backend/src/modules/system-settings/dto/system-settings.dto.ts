@@ -2,6 +2,21 @@ import { IsArray, IsEnum, IsOptional, IsString, MaxLength } from 'class-validato
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role, UserStatus } from '@prisma/client';
 
+export class ListSystemUsersQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  page?: number | string;
+
+  @ApiPropertyOptional({ default: 50 })
+  @IsOptional()
+  limit?: number | string;
+}
+
 export class CreateSystemUserDto {
   @ApiProperty({ example: 'Lê Quản Trị' })
   @IsString()

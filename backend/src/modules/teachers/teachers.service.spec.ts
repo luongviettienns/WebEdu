@@ -156,6 +156,9 @@ describe('TeachersService (Slice 2.4 - FUNC-006)', () => {
           return data;
         }),
       },
+      class: {
+        count: vi.fn(async () => 0),
+      },
       $transaction: vi.fn(async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
         return cb(mockPrisma);
       }),

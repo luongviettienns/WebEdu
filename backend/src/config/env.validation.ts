@@ -1,6 +1,15 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, MinLength, validateSync } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MinLength,
+  ValidateIf,
+  validateSync,
+} from 'class-validator';
 
 export enum Environment {
   Development = 'development',
@@ -31,6 +40,42 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   CORS_ORIGIN: string = 'http://localhost:3000';
+
+  @IsString()
+  @IsOptional()
+  FRONTEND_APP_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  MAIL_PROVIDER: string = 'smtp';
+
+  @ValidateIf(
+    (o: EnvironmentVariables) =>
+      o.NODE_ENV === Environment.Production && o.MAIL_PROVIDER === 'smtp',
+  )
+  @IsString()
+  @IsNotEmpty()
+  SMTP_HOST?: string;
+
+  @IsNumber()
+  @IsOptional()
+  SMTP_PORT?: number;
+
+  @IsString()
+  @IsOptional()
+  SMTP_SECURE?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_USER?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASS?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_FROM?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

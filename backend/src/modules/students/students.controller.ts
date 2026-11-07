@@ -15,6 +15,7 @@ import { Role } from '@prisma/client';
 import { StudentsService } from './students.service.js';
 import {
   AssignInitialClassDto,
+  ListPendingEnrollmentQueryDto,
   ListStudentsQueryDto,
   UpdateStudentDto,
 } from './dto/students.dto.js';
@@ -38,10 +39,19 @@ export class StudentsController {
   }
 
   @Get('pending-enrollment')
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Danh sách học viên chờ xếp lớp mới nhất lên đầu (FUNC-008)' })
-  async getPendingEnrollmentQueue() {
-    return this.studentsService.getPendingEnrollmentQueue();
+  async getPendingEnrollmentQueue(@Query() query: ListPendingEnrollmentQueryDto) {
+    return this.studentsService.getPendingEnrollmentQueue(query);
+  }
+
+  @Get('available-classes')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Danh sách lớp học Sắp mở / Đang học phục vụ xếp lớp ban đầu (FUNC-008)',
+  })
+  async listAvailableClasses() {
+    return this.studentsService.listAvailableClasses();
   }
 
   @Get(':id')
@@ -67,7 +77,7 @@ export class StudentsController {
 
   @Post(':id/assign-initial-class')
   @HttpCode(HttpStatus.OK)
-  @Roles(Role.ADMIN, Role.SUPERADMIN)
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Xếp lớp ban đầu và kích hoạt tài khoản học viên (FUNC-008)' })
   async assignInitialClass(
     @CurrentUser() user: AuthenticatedUser,
