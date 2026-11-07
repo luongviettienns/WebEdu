@@ -131,3 +131,49 @@ export async function fetchApi<T>(
 export async function getSystemHealth(): Promise<HealthCheckResponse> {
   return fetchApi<HealthCheckResponse>('/health');
 }
+
+/**
+ * Tùy chọn chung cho các lời gọi API đọc dữ liệu: cho phép hủy request
+ * (AbortController) để tránh phản hồi cũ ghi đè phản hồi mới.
+ */
+export interface RequestOptions {
+  signal?: AbortSignal;
+}
+
+/**
+ * Ghép query string từ tham số; bỏ qua giá trị rỗng/falsy (undefined, '', 0).
+ * Trả về chuỗi rỗng hoặc chuỗi bắt đầu bằng '?'.
+ */
+export function buildQueryString(
+  params: Record<string, string | number | undefined>,
+): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) {
+      query.set(key, String(value));
+    }
+  }
+  const qs = query.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export function extractErrorMessage(
+  error: unknown,
+  fallback = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.',
+): string {
+  if (error instanceof ApiClientError) {
+    return error.problem.detail || error.message || fallback;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+export function isUnauthorizedError(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 401;
+}
+
+export function isForbiddenError(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 403;
+}

@@ -3,12 +3,9 @@
 import Link from 'next/link';
 import React from 'react';
 import { AppHeader } from '@/components/layout/AppHeader';
-import {
-  AuthUserDto,
-  getDefaultRouteForRole,
-  ROLE_LABELS,
-  Role,
-} from '@/lib/auth-api';
+import type { AuthUserDto } from '@/features/auth/api/auth.api';
+import { getDefaultRouteForRole } from '@/features/auth/roles';
+import { ROLE_LABELS, type Role } from '@/types/user';
 
 export interface AccessDeniedStateProps {
   currentUser?: AuthUserDto | null;

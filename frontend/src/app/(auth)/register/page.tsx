@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import React, { useMemo, useState } from 'react';
-import { PasswordInput } from '@/components/auth/PasswordInput';
+import { PasswordInput } from '@/components/ui/PasswordInput';
+import { registerStudent } from '@/features/auth/api/auth.api';
+import { extractErrorMessage } from '@/lib/api-client';
 import {
   calculateAgeInVnTimezone,
-  extractErrorMessage,
   formatDateDdMmYyyy,
-  registerStudent,
-} from '@/lib/auth-api';
+} from '@/lib/utils/date';
 
 interface FormErrors {
   fullName?: string;

@@ -7,29 +7,18 @@ import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react
 import {
   AuthUserDto,
   getCurrentUser,
-  getSystemConfig,
-  listPendingEnrollmentStudents,
   logoutUser,
-  ROLE_LABELS,
-  Role,
-  sanitizeBrandLogoSrc,
-  SYSTEM_CONFIG_UPDATED_EVENT,
-  SystemConfigDto,
-} from '@/lib/auth-api';
-
-const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60 phút
-const IDLE_WARNING_MS = 55 * 60 * 1000; // Cảnh báo ở phút 55 (trước 5 phút)
+} from '@/features/auth/api/auth.api';
+import { useIdleTimeout } from '@/features/auth/hooks/useIdleTimeout';
+import { usePendingEnrollmentCount } from '@/features/students/hooks/usePendingEnrollmentCount';
+import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
+import { ROLE_LABELS } from '@/types/user';
+import { getNavLinks } from './nav-links';
 
 export interface AppHeaderProps {
   currentUser?: AuthUserDto | null;
   pendingCountOverride?: number;
   authLoading?: boolean;
-}
-
-interface NavLinkItem {
-  href: string;
-  label: string;
-  badge?: number;
 }
 
 function AppHeaderInner({
@@ -41,99 +30,41 @@ function AppHeaderInner({
   const pathname = usePathname();
 
   const [fetchedUser, setFetchedUser] = useState<AuthUserDto | null>(null);
-  const [centerName, setCenterName] = useState<string>('Trung Tâm TD Hán Ngữ');
-  const [centerLogo, setCenterLogo] = useState<string | null>(null);
-  const [fetchedPendingCount, setFetchedPendingCount] = useState<number>(0);
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [loggingOut, setLoggingOut] = useState<boolean>(false);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const { centerName, centerLogo } = useBrandConfig();
 
   const user = externalUser !== undefined ? externalUser : fetchedUser;
+  const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
+  const fetchedPendingCount = usePendingEnrollmentCount(
+    pendingCountOverride === undefined && hasAdminRole,
+  );
   const pendingCount =
     pendingCountOverride !== undefined
       ? pendingCountOverride
       : fetchedPendingCount;
 
-  const lastActivityRef = useRef<number>(0);
-  const menuContainerRef = useRef<HTMLDivElement | null>(null);
-
   useEffect(() => {
-    let cancelled = false;
+    if (externalUser !== undefined || authLoading) return;
+    const controller = new AbortController();
 
     void (async () => {
       try {
-        const cfg = await getSystemConfig();
-        if (!cancelled && cfg?.centerName) {
-          setCenterName(cfg.centerName);
-          setCenterLogo(
-            sanitizeBrandLogoSrc(cfg.centerLogoBase64 ?? cfg.centerLogoUrl),
-          );
+        const me = await getCurrentUser({ signal: controller.signal });
+        if (!controller.signal.aborted) {
+          setFetchedUser(me);
         }
       } catch {
-        // Fallback mặc định khi chưa đăng nhập hoặc endpoint cấu hình không khả dụng
-      }
-
-      if (externalUser === undefined && !authLoading) {
-        try {
-          const me = await getCurrentUser();
-          if (!cancelled) {
-            setFetchedUser(me);
-          }
-        } catch {
-          // Người dùng chưa đăng nhập hoặc phiên hết hạn
-        }
+        // Người dùng chưa đăng nhập hoặc phiên hết hạn
       }
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [externalUser, authLoading]);
-
-  useEffect(() => {
-    function handleSystemConfigUpdated(event: Event) {
-      const customEvent = event as CustomEvent<SystemConfigDto>;
-      const updated = customEvent.detail;
-      if (!updated) return;
-      if (updated.centerName) {
-        setCenterName(updated.centerName);
-      }
-      setCenterLogo(
-        sanitizeBrandLogoSrc(updated.centerLogoBase64 ?? updated.centerLogoUrl),
-      );
-    }
-
-    window.addEventListener(
-      SYSTEM_CONFIG_UPDATED_EVENT,
-      handleSystemConfigUpdated,
-    );
-    return () => {
-      window.removeEventListener(
-        SYSTEM_CONFIG_UPDATED_EVENT,
-        handleSystemConfigUpdated,
-      );
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
-    if (pendingCountOverride === undefined && hasAdminRole) {
-      void (async () => {
-        try {
-          const res = await listPendingEnrollmentStudents();
-          if (!cancelled) {
-            setFetchedPendingCount(res.totalPending ?? res.items?.length ?? 0);
-          }
-        } catch {
-          // Bỏ qua lỗi khi không tải được badge
-        }
-      })();
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.roles, pendingCountOverride]);
 
   const handleLogout = useCallback(
     async (isIdleTimeout = false) => {
@@ -152,50 +83,10 @@ function AppHeaderInner({
     [loggingOut, router],
   );
 
-  // Theo dõi hoạt động người dùng cho Idle Timeout 60 phút (cảnh báo trước 5 phút)
-  useEffect(() => {
-    if (!user) return;
-    lastActivityRef.current = Date.now();
-
-    const recordActivity = () => {
-      const now = Date.now();
-      if (now - lastActivityRef.current < IDLE_WARNING_MS) {
-        lastActivityRef.current = now;
-      }
-    };
-
-    const events: Array<keyof WindowEventMap> = [
-      'mousemove',
-      'keydown',
-      'click',
-      'scroll',
-      'touchstart',
-    ];
-    events.forEach((evt) =>
-      window.addEventListener(evt, recordActivity, { passive: true }),
-    );
-
-    const intervalId = window.setInterval(() => {
-      const elapsed = Date.now() - lastActivityRef.current;
-      if (elapsed >= IDLE_TIMEOUT_MS) {
-        setRemainingSeconds(0);
-        void handleLogout(true);
-      } else if (elapsed >= IDLE_WARNING_MS) {
-        const left = Math.max(
-          1,
-          Math.ceil((IDLE_TIMEOUT_MS - elapsed) / 1000),
-        );
-        setRemainingSeconds(left);
-      } else {
-        setRemainingSeconds(null);
-      }
-    }, 1000);
-
-    return () => {
-      events.forEach((evt) => window.removeEventListener(evt, recordActivity));
-      window.clearInterval(intervalId);
-    };
-  }, [user, handleLogout]);
+  const { remainingSeconds, markActive } = useIdleTimeout(
+    Boolean(user),
+    () => void handleLogout(true),
+  );
 
   // Đóng menu khi click ra ngoài
   useEffect(() => {
@@ -213,8 +104,7 @@ function AppHeaderInner({
   }, []);
 
   const handleKeepSessionAlive = async () => {
-    lastActivityRef.current = Date.now();
-    setRemainingSeconds(null);
+    markActive();
     try {
       const refreshed = await getCurrentUser();
       setFetchedUser(refreshed);
@@ -223,61 +113,7 @@ function AppHeaderInner({
     }
   };
 
-  const getNavLinks = (
-    role?: Role,
-    assignedRoles?: readonly Role[],
-  ): NavLinkItem[] => {
-    const hasAdminRole = Boolean(assignedRoles?.includes('ADMIN'));
-    const hasTeacherRole = Boolean(assignedRoles?.includes('TEACHER'));
-    switch (role) {
-      case 'SUPERADMIN':
-        return [
-          { href: '/superadmin/settings', label: 'Vận hành hệ thống' },
-          { href: '/admin/students', label: 'Học viên' },
-          ...(hasAdminRole
-            ? [
-                {
-                  href: '/admin/students/pending',
-                  label: 'Chờ xếp lớp',
-                  badge: pendingCount,
-                },
-              ]
-            : []),
-          { href: '/admin/teachers', label: 'Giáo viên' },
-          ...(hasTeacherRole
-            ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách' }]
-            : []),
-          { href: '/profile', label: 'Hồ sơ cá nhân' },
-        ];
-      case 'ADMIN':
-        return [
-          { href: '/admin/students', label: 'Học viên' },
-          {
-            href: '/admin/students/pending',
-            label: 'Chờ xếp lớp',
-            badge: pendingCount,
-          },
-          { href: '/admin/teachers', label: 'Giáo viên' },
-          ...(hasTeacherRole
-            ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách' }]
-            : []),
-          { href: '/profile', label: 'Hồ sơ cá nhân' },
-        ];
-      case 'TEACHER':
-        return [
-          { href: '/teacher/classes', label: 'Lớp học phụ trách' },
-          { href: '/profile', label: 'Hồ sơ cá nhân' },
-        ];
-      case 'STUDENT':
-      default:
-        return [
-          { href: '/student/overview', label: 'Tình trạng học cá nhân' },
-          { href: '/profile', label: 'Hồ sơ cá nhân' },
-        ];
-    }
-  };
-
-  const navLinks = getNavLinks(user?.effectiveRole, user?.roles);
+  const navLinks = getNavLinks(user?.effectiveRole, user?.roles, pendingCount);
   const avatarInitials = user?.fullName
     ? user.fullName
         .trim()
