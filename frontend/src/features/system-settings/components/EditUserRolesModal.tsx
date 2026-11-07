@@ -56,11 +56,21 @@ export function EditUserRolesModal({
       return;
     }
 
+    const rolesChanged =
+      editRoles.length !== editingUser.roles.length ||
+      editRoles.some((r) => !editingUser.roles.includes(r));
+    const statusChanged = editStatus !== editingUser.status;
+
+    if (!rolesChanged && !statusChanged) {
+      onClose();
+      return;
+    }
+
     setSavingUser(true);
     try {
       await updateSystemUserRoles(editingUser.id, {
-        roles: editRoles,
-        status: editStatus,
+        ...(rolesChanged ? { roles: editRoles } : {}),
+        ...(statusChanged ? { status: editStatus } : {}),
       });
       onSuccess(editingUser.fullName);
     } catch (error) {

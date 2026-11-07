@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { EnrollmentStatus, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import {
@@ -74,6 +76,26 @@ export class UserRoleStatusService {
         await lockTargetUser(tx, targetUserId);
       }
 
+      // Re-verify actor inside transaction after locks are acquired to eliminate race window (F2)
+      const freshActor = await tx.user.findUnique({
+        where: { id: actor.id },
+        select: { id: true, roles: true, status: true, tokenVersion: true },
+      });
+      if (
+        !freshActor ||
+        freshActor.status !== UserStatus.ACTIVE ||
+        !freshActor.roles.includes(Role.SUPERADMIN)
+      ) {
+        throw new ForbiddenException(
+          'Chỉ Quản trị tối cao (Superadmin) mới có quyền phân quyền hoặc đổi trạng thái người dùng',
+        );
+      }
+      if (freshActor.tokenVersion !== actor.tokenVersion) {
+        throw new UnauthorizedException(
+          'Phiên đăng nhập đã hết hiệu lực, vui lòng đăng nhập lại',
+        );
+      }
+
       const targetUser = await tx.user.findUnique({
         where: { id: targetUserId },
         include: { studentProfile: true, teacherProfile: true },
@@ -87,6 +109,38 @@ export class UserRoleStatusService {
           ? Array.from(new Set(dto.roles))
           : targetUser.roles;
       const nextStatus = dto.status ?? targetUser.status;
+
+      // F3: Prevent stale form from granting ADMIN/SUPERADMIN while deactivating or to inactive user
+      const isGrantingAdminPrivilege =
+        dto.roles !== undefined &&
+        ((dto.roles.includes(Role.ADMIN) &&
+          !targetUser.roles.includes(Role.ADMIN)) ||
+          (dto.roles.includes(Role.SUPERADMIN) &&
+            !targetUser.roles.includes(Role.SUPERADMIN)));
+
+      if (nextStatus === UserStatus.INACTIVE && isGrantingAdminPrivilege) {
+        throw new BadRequestException(
+          'Không thể cấp quyền quản trị (ADMIN/SUPERADMIN) cho tài khoản bị vô hiệu hóa',
+        );
+      }
+
+      // F4: Prevent removing STUDENT role if user has an active class enrollment
+      if (
+        targetUser.roles.includes(Role.STUDENT) &&
+        !nextRoles.includes(Role.STUDENT)
+      ) {
+        const activeEnrollmentCount = await tx.enrollment.count({
+          where: {
+            studentId: targetUserId,
+            status: EnrollmentStatus.ACTIVE,
+          },
+        });
+        if (activeEnrollmentCount > 0) {
+          throw new BadRequestException(
+            'Không thể gỡ vai trò Học viên khi học viên đang có lớp học đang hoạt động',
+          );
+        }
+      }
 
       if (
         !nextRoles.includes(Role.STUDENT) &&
@@ -147,6 +201,17 @@ export class UserRoleStatusService {
           where: { userId: targetUserId },
           update: {},
           create: { userId: targetUserId, activeClassesCount: 0 },
+        });
+      }
+
+      if (nextRoles.includes(Role.STUDENT) && tx.studentProfile?.upsert) {
+        await tx.studentProfile.upsert({
+          where: { userId: targetUserId },
+          update: {},
+          create: {
+            userId: targetUserId,
+            dateOfBirth: new Date('2000-01-01'),
+          },
         });
       }
 

@@ -6,6 +6,7 @@ import {
   type AvailableClassDto,
   type PendingStudentDto,
 } from '@/features/students/api/students.api';
+import { notifyPendingEnrollmentUpdated } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage } from '@/lib/api-client';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
 
@@ -70,6 +71,7 @@ export function AssignInitialClassModal({
         classNameOrId: selectedClass.trim(),
         enrolledAt,
       });
+      notifyPendingEnrollmentUpdated();
       onSuccess(
         targetStudent.fullName,
         result.assignedClass ?? selectedClass,

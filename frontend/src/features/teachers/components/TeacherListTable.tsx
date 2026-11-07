@@ -10,6 +10,7 @@ interface TeacherListTableProps {
   page: number;
   total: number;
   pageLimit: number;
+  isSuperAdmin?: boolean;
   onPageChange: (newPage: number) => void;
   onView: (teacher: TeacherItemDto) => void;
   onEdit: (teacher: TeacherItemDto) => void;
@@ -22,6 +23,7 @@ export function TeacherListTable({
   page,
   total,
   pageLimit,
+  isSuperAdmin = false,
   onPageChange,
   onView,
   onEdit,
@@ -31,7 +33,12 @@ export function TeacherListTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-xs">
-      <div className="overflow-x-auto">
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Bảng danh sách giáo viên"
+      >
         <table className="min-w-full divide-y divide-[var(--line)] text-left text-sm">
           <thead className="bg-[var(--surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
             <tr>
@@ -118,26 +125,33 @@ export function TeacherListTable({
                         >
                           Xem
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => onEdit(teacher)}
-                          className="rounded-md px-2.5 py-1 text-xs font-semibold text-[var(--jade)] hover:bg-[var(--jade-soft)]"
-                        >
-                          Sửa
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onToggleStatus(teacher)}
-                          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${
-                            teacher.status === 'ACTIVE'
-                              ? 'text-[var(--red)] hover:bg-[var(--red-soft)]'
-                              : 'text-[var(--jade)] hover:bg-[var(--jade-soft)]'
-                          }`}
-                        >
-                          {teacher.status === 'ACTIVE'
-                            ? 'Vô hiệu hóa'
-                            : 'Kích hoạt'}
-                        </button>
+                        {(isSuperAdmin ||
+                          (!teacher.roles?.includes('ADMIN') &&
+                            !teacher.roles?.includes('SUPERADMIN') &&
+                            !teacher.isAdmin)) && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => onEdit(teacher)}
+                              className="rounded-md px-2.5 py-1 text-xs font-semibold text-[var(--jade)] hover:bg-[var(--jade-soft)]"
+                            >
+                              Sửa
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onToggleStatus(teacher)}
+                              className={`rounded-md px-2.5 py-1 text-xs font-semibold ${
+                                teacher.status === 'ACTIVE'
+                                  ? 'text-[var(--red)] hover:bg-[var(--red-soft)]'
+                                  : 'text-[var(--jade)] hover:bg-[var(--jade-soft)]'
+                              }`}
+                            >
+                              {teacher.status === 'ACTIVE'
+                                ? 'Vô hiệu hóa'
+                                : 'Kích hoạt'}
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

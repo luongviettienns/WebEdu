@@ -26,7 +26,7 @@ export function buildTeacherAuthorizedEnrollmentFilter(
         status: { in: [EnrollmentStatus.COMPLETED, EnrollmentStatus.ACTIVE] },
         class: {
           teacherId,
-          status: ClassStatus.COMPLETED,
+          status: { in: [ClassStatus.COMPLETED, ClassStatus.ARCHIVED] },
         },
       },
     ],

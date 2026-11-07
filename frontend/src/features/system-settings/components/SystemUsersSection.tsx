@@ -66,7 +66,12 @@ export function SystemUsersSection({
           </div>
         ) : null}
 
-        <div className="mt-4 overflow-x-auto">
+        <div
+          className="mt-4 overflow-x-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="Bảng người dùng hệ thống"
+        >
           <table className="min-w-full divide-y divide-[var(--line)] text-left text-sm">
             <thead className="bg-[var(--surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
               <tr>

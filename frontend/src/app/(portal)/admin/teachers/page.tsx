@@ -23,11 +23,12 @@ type ModalState = { mode: 'create' | 'edit' | 'view'; teacher: TeacherItemDto | 
 type BlockedAlert = { name: string; activeClassesCount: number } | null;
 
 interface AdminTeachersContentProps {
-  _currentUser?: AuthUserDto;
+  currentUser: AuthUserDto;
   onAuthError: (error: unknown) => boolean;
 }
 
 function AdminTeachersContent({
+  currentUser,
   onAuthError,
 }: AdminTeachersContentProps) {
   const [teachers, setTeachers] = useState<TeacherItemDto[]>([]);
@@ -193,6 +194,7 @@ function AdminTeachersContent({
         page={page}
         total={total}
         pageLimit={PAGE_LIMIT}
+        isSuperAdmin={currentUser.roles.includes('SUPERADMIN')}
         onPageChange={setPage}
         onView={(teacher) => setModalState({ mode: 'view', teacher })}
         onEdit={(teacher) => setModalState({ mode: 'edit', teacher })}
@@ -238,5 +240,10 @@ export default function AdminTeachersPage() {
     );
   }
 
-  return <AdminTeachersContent onAuthError={handleApiAuthError} />;
+  return (
+    <AdminTeachersContent
+      currentUser={user}
+      onAuthError={handleApiAuthError}
+    />
+  );
 }

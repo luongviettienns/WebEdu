@@ -7,7 +7,7 @@ import {
   updateTeacher,
   type TeacherItemDto,
 } from '@/features/teachers/api/teachers.api';
-import { extractErrorMessage } from '@/lib/api-client';
+import { extractErrorMessage, isUnauthorizedError } from '@/lib/api-client';
 import { type UserStatus } from '@/types/user';
 
 interface TeacherFormModalProps {
@@ -103,7 +103,8 @@ export function TeacherFormModal({
         onSuccess('Cập nhật thông tin giáo viên thành công');
       }
     } catch (error) {
-      if (onAuthError(error)) {
+      if (isUnauthorizedError(error)) {
+        onAuthError(error);
         return;
       }
       setFormError(

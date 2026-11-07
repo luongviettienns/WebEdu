@@ -109,6 +109,14 @@ export class SystemUsersService {
           });
         }
 
+        if (uniqueRoles.includes(Role.STUDENT) && tx.studentProfile?.upsert) {
+          await tx.studentProfile.upsert({
+            where: { userId: user.id },
+            update: {},
+            create: { userId: user.id, dateOfBirth: new Date('2000-01-01') },
+          });
+        }
+
         await writeAuditLog(tx, actor, {
           action: 'CREATE_SYSTEM_USER',
           targetType: 'User',

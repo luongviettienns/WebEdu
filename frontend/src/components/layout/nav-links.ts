@@ -17,7 +17,9 @@ export function getGroupedNavLinks(
   assignedRoles: readonly Role[] | undefined,
   pendingCount: number,
 ): NavGroup[] {
+  const hasAdminRole = Boolean(assignedRoles?.includes('ADMIN'));
   const hasTeacherRole = Boolean(assignedRoles?.includes('TEACHER'));
+  const hasStudentRole = Boolean(assignedRoles?.includes('STUDENT'));
 
   switch (role) {
     case 'SUPERADMIN':
@@ -27,12 +29,32 @@ export function getGroupedNavLinks(
           items: [
             { href: '/superadmin/settings', label: 'Vận hành hệ thống', han: '系统' },
             { href: '/admin/students', label: 'Học viên', han: '学员' },
+            ...(hasAdminRole
+              ? [
+                  {
+                    href: '/admin/students/pending',
+                    label: 'Chờ xếp lớp',
+                    han: '待分班',
+                    badge: pendingCount,
+                  },
+                ]
+              : []),
             { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
             ...(hasTeacherRole
               ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]
               : []),
           ],
         },
+        ...(hasStudentRole
+          ? [
+              {
+                title: 'HỌC TẬP',
+                items: [
+                  { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
+                ],
+              },
+            ]
+          : []),
         {
           title: 'TÀI KHOẢN',
           items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
@@ -57,6 +79,16 @@ export function getGroupedNavLinks(
               : []),
           ],
         },
+        ...(hasStudentRole
+          ? [
+              {
+                title: 'HỌC TẬP',
+                items: [
+                  { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
+                ],
+              },
+            ]
+          : []),
         {
           title: 'TÀI KHOẢN',
           items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
@@ -69,6 +101,16 @@ export function getGroupedNavLinks(
           title: 'GIẢNG DẠY',
           items: [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }],
         },
+        ...(hasStudentRole
+          ? [
+              {
+                title: 'HỌC TẬP',
+                items: [
+                  { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
+                ],
+              },
+            ]
+          : []),
         {
           title: 'TÀI KHOẢN',
           items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],

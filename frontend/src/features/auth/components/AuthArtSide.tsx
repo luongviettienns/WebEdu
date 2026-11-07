@@ -17,10 +17,12 @@ export function AuthArtSide() {
           <div className="font-bold text-base tracking-tight text-[var(--ink)] leading-tight group-hover:text-[var(--red)] transition-colors">
             TD Hán Ngữ
           </div>
-          <div className="text-xs text-[var(--ink-2)] mt-0.5 flex items-center gap-1.5 font-normal">
+          <div className="text-xs text-[var(--ink)] mt-0.5 flex items-center gap-1.5 font-medium">
             <span>Trung tâm tiếng Trung</span>
             <span className="text-[var(--ink-3)]">·</span>
-            <span className="font-han text-[13px] text-[var(--ink-2)]">汉语学习中心</span>
+            <span className="font-han text-[13px] font-semibold text-[var(--ink)] tracking-wider">
+              汉语学习中心
+            </span>
           </div>
         </div>
       </Link>
@@ -43,12 +45,12 @@ export function AuthArtSide() {
 
       {/* Lunyu Quote */}
       <div className="border-l-[3px] border-[var(--red)] pl-4 max-w-[44ch] z-10">
-        <p className="font-han text-xl font-medium tracking-wide text-[var(--ink)] mb-1.5 leading-snug">
+        <p className="font-han text-xl font-semibold tracking-wide text-[var(--ink)] mb-1.5 leading-snug">
           學而時習之，不亦說乎？
         </p>
-        <p className="text-xs font-normal text-[var(--ink-2)] leading-relaxed">
+        <p className="text-xs font-medium text-[var(--ink-2)] leading-relaxed">
           &ldquo;Học mà thường ôn luyện, chẳng phải vui sao?&rdquo; —{' '}
-          <span className="font-medium text-[var(--ink)]">Luận Ngữ (論語)</span>
+          <span className="font-semibold text-[var(--ink)]">Luận Ngữ (論語)</span>
         </p>
       </div>
     </div>

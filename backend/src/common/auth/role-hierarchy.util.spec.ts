@@ -8,6 +8,32 @@ import {
 } from './role-hierarchy.util.js';
 
 describe('Role Hierarchy & RBAC Utilities (FUNC-009 & FUNC-013)', () => {
+  const roleMatrix: [Role[], Role[]][] = [
+    [[], []],
+    [[Role.STUDENT], [Role.STUDENT]],
+    [[Role.TEACHER], [Role.TEACHER]],
+    [[Role.ADMIN], [Role.ADMIN, Role.TEACHER]],
+    [[Role.SUPERADMIN], [Role.SUPERADMIN]],
+    [[Role.STUDENT, Role.TEACHER], [Role.STUDENT, Role.TEACHER]],
+    [[Role.STUDENT, Role.ADMIN], [Role.STUDENT, Role.ADMIN, Role.TEACHER]],
+    [[Role.STUDENT, Role.SUPERADMIN], [Role.STUDENT, Role.SUPERADMIN]],
+    [[Role.TEACHER, Role.ADMIN], [Role.TEACHER, Role.ADMIN]],
+    [[Role.TEACHER, Role.SUPERADMIN], [Role.TEACHER, Role.SUPERADMIN]],
+    [[Role.ADMIN, Role.SUPERADMIN], [Role.ADMIN, Role.SUPERADMIN, Role.TEACHER]],
+    [[Role.STUDENT, Role.TEACHER, Role.ADMIN], [Role.STUDENT, Role.TEACHER, Role.ADMIN]],
+    [[Role.STUDENT, Role.TEACHER, Role.SUPERADMIN], [Role.STUDENT, Role.TEACHER, Role.SUPERADMIN]],
+    [[Role.STUDENT, Role.ADMIN, Role.SUPERADMIN], Object.values(Role)],
+    [[Role.TEACHER, Role.ADMIN, Role.SUPERADMIN], [Role.TEACHER, Role.ADMIN, Role.SUPERADMIN]],
+    [Object.values(Role), Object.values(Role)],
+  ];
+
+  it.each(roleMatrix)('maps assigned roles %j to capabilities %j', (assigned, expected) => {
+    expect(expandAuthorizedRoles(assigned)).toEqual(new Set(expected));
+    for (const role of Object.values(Role)) {
+      expect(hasRequiredRole(assigned, [role])).toBe(expected.includes(role));
+    }
+  });
+
   it('calculates effective highest role according to SUPERADMIN > ADMIN > TEACHER > STUDENT and defaults empty/null roles to STUDENT', () => {
     expect(getHighestRole([])).toBe(Role.STUDENT);
     expect(getHighestRole(undefined as unknown as Role[])).toBe(Role.STUDENT);

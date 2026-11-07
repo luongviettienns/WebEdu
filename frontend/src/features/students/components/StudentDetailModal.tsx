@@ -7,7 +7,7 @@ import {
   updateStudent,
   type StudentItemDto,
 } from '@/features/students/api/students.api';
-import { extractErrorMessage } from '@/lib/api-client';
+import { extractErrorMessage, isUnauthorizedError } from '@/lib/api-client';
 import {
   calculateAgeInVnTimezone,
   formatDateDdMmYyyy,
@@ -76,7 +76,13 @@ export function StudentDetailModal({
         setEditInternalNotes(fullDetail.internalNotes ?? '');
       } catch (error) {
         if (controller.signal.aborted) return;
-        onAuthError(error);
+        if (isUnauthorizedError(error)) {
+          onAuthError(error);
+          return;
+        }
+        setModalError(
+          extractErrorMessage(error, 'Không thể tải chi tiết học viên'),
+        );
       } finally {
         if (!controller.signal.aborted) {
           setDetailLoading(false);
@@ -152,7 +158,8 @@ export function StudentDetailModal({
       });
       onSuccess(trimmedName);
     } catch (error) {
-      if (onAuthError(error)) {
+      if (isUnauthorizedError(error)) {
+        onAuthError(error);
         return;
       }
       setModalError(extractErrorMessage(error, 'Không thể lưu hồ sơ học viên'));

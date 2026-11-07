@@ -28,7 +28,12 @@ export function StudentListTable({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-xs">
-      <div className="overflow-x-auto">
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Bảng danh sách học viên"
+      >
         <table className="min-w-full divide-y divide-[var(--line)] text-left text-sm">
           <thead className="bg-[var(--surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
             <tr>

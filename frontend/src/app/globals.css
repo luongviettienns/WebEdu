@@ -39,7 +39,7 @@
 
   /* Fonts */
   --f-ui: var(--font-be-vietnam-pro), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --f-han: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong", "SimSun", serif;
+  --f-han: "Noto Serif SC", "Source Han Serif SC", "Microsoft YaHei", "PingFang SC", "Songti SC", "STSong", "SimSun", serif;
 }
 
 @theme inline {

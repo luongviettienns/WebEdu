@@ -205,6 +205,21 @@ export class TeachersService {
           throw new NotFoundException('Không tìm thấy giáo viên');
         }
 
+        // Re-check actor permissions on freshly locked target roles to eliminate race window (F1)
+        assertActorMayModifyAccount(actor, targetUser.roles);
+        assertSuperadminNotSelfDeactivating(
+          actor,
+          { id: teacherId, roles: targetUser.roles },
+          nextStatus,
+        );
+        if (
+          isLeavingActiveSuperadmin(targetUser.roles, nextStatus) &&
+          !leavingSuperadmin
+        ) {
+          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, teacherId);
+          assertAnotherActiveSuperadminRemains(teacherId, lockedSuperadmins);
+        }
+
         const nextFullName =
           dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
         const nextEmail =

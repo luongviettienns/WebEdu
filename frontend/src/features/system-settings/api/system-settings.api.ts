@@ -28,7 +28,7 @@ export interface CreateSystemUserPayload {
 }
 
 export interface UpdateSystemUserRolesPayload {
-  roles: Role[];
+  roles?: Role[];
   status?: UserStatus;
 }
 

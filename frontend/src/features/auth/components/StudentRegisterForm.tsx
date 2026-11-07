@@ -158,7 +158,7 @@ export function StudentRegisterForm({
           />
           {(errors.dateOfBirth || isUnder12) && (
             <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
-              {errors.dateOfBirth || 'Học viên phải từ 12 tuổi trở lên'}
+              {isUnder12 ? 'Học viên phải từ 12 tuổi trở lên' : errors.dateOfBirth}
             </p>
           )}
         </div>

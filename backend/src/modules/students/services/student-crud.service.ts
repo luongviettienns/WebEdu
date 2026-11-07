@@ -111,6 +111,21 @@ export class StudentCrudService {
           throw new NotFoundException('Không tìm thấy học viên');
         }
 
+        // Re-check actor permissions on freshly locked target roles to eliminate race window (F1)
+        assertActorMayModifyAccount(actor, targetUser.roles);
+        assertSuperadminNotSelfDeactivating(
+          actor,
+          { id: studentId, roles: targetUser.roles },
+          nextStatus,
+        );
+        if (
+          isLeavingActiveSuperadmin(targetUser.roles, nextStatus) &&
+          !leavingSuperadmin
+        ) {
+          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, studentId);
+          assertAnotherActiveSuperadminRemains(studentId, lockedSuperadmins);
+        }
+
         const nextFullName =
           dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
         const nextEmail =

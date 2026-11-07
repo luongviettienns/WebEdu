@@ -40,8 +40,11 @@ export class StudentsController {
   @Get()
   @Roles(Role.ADMIN, Role.SUPERADMIN)
   @ApiOperation({ summary: 'Danh sách hồ sơ học viên' })
-  async listStudents(@Query() query: ListStudentsQueryDto) {
-    return this.queries.listStudents(query);
+  async listStudents(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query() query: ListStudentsQueryDto,
+  ) {
+    return this.queries.listStudents(actor, query);
   }
 
   @Get('pending-enrollment')
