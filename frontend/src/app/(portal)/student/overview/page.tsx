@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
@@ -84,57 +83,55 @@ function StudentOverviewContent({
   const isPendingClass = currentStatus === 'PENDING_CLASS' || !assignedClass;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader currentUser={profile} />
-
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-emerald-950">
-              Tình Trạng Học Tập Cá Nhân
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Không gian học tập riêng biệt — Học viên chỉ xem dữ liệu lớp học,
-              lịch học và kết quả của chính mình
-            </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E0DED5] pb-4">
+        <div>
+          <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
+            个人学情 · TÌNH TRẠNG HỌC TẬP
           </div>
-          <span
-            className={`inline-flex items-center rounded-full px-3.5 py-1 text-xs font-semibold ${
-              currentStatus === 'ACTIVE'
-                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                : currentStatus === 'PENDING_CLASS'
-                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                  : 'bg-slate-200 text-slate-700'
-            }`}
-          >
-            {STATUS_LABELS[currentStatus]}
-          </span>
+          <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
+            Tình Trạng Học Tập Cá Nhân
+          </h1>
+          <p className="mt-1 text-sm text-[#5A6460]">
+            Theo dõi thông tin lớp học, lịch học và tiến độ học tập tại Trung Tâm TD Hán Ngữ
+          </p>
         </div>
+        <span
+          className={`inline-flex items-center rounded-full px-3.5 py-1 text-xs font-semibold ${
+            currentStatus === 'ACTIVE'
+              ? 'bg-[#2B7760]/10 text-[#2B7760] border border-[#2B7760]/20'
+              : currentStatus === 'PENDING_CLASS'
+                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                : 'bg-[#EAECE6] text-[#5A6460]'
+          }`}
+        >
+          {STATUS_LABELS[currentStatus]}
+        </span>
+      </div>
 
-        {detailLoading ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
-            Đang tải dữ liệu học tập cá nhân...
-          </div>
-        ) : detailError ? (
-          <div
-            role="alert"
-            className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm font-medium text-red-700"
-          >
-            {detailError}
-          </div>
-        ) : !isStudentAccount ? (
-          <AdminAccessNotice />
-        ) : isPendingClass ? (
-          <PendingClassNotice />
-        ) : (
-          <ActiveStudentClassSection
-            profile={profile}
-            studentDetail={studentDetail}
-            assignedClass={assignedClass}
-            enrolledAt={enrolledAt}
-          />
-        )}
-      </main>
+      {detailLoading ? (
+        <div className="rounded-2xl border border-[#E0DED5] bg-white p-10 text-center text-sm text-[#5A6460]">
+          Đang tải dữ liệu học tập cá nhân...
+        </div>
+      ) : detailError ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-[#B5322A]/20 bg-[#B5322A]/10 p-6 text-sm font-medium text-[#B5322A]"
+        >
+          {detailError}
+        </div>
+      ) : !isStudentAccount ? (
+        <AdminAccessNotice />
+      ) : isPendingClass ? (
+        <PendingClassNotice />
+      ) : (
+        <ActiveStudentClassSection
+          profile={profile}
+          studentDetail={studentDetail}
+          assignedClass={assignedClass}
+          enrolledAt={enrolledAt}
+        />
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ export const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 /**
  * Calculates the deadline for teachers to edit attendance.
- * According to TD Hán Ngữ business rules (FUNC-037 & ATT-01):
+ * According to TD Hán Ngữ business rules:
  * Teachers may edit attendance until the end of the 2nd day following the lesson (23:59:59.999 in VN timezone).
  */
 export function calculateTeacherAttendanceDeadline(lessonDate: Date): Date {
@@ -29,7 +29,7 @@ export function isWithinTeacherAttendanceWindow(lessonDate: Date, now: Date = ne
 
 /**
  * Calculates integer age in years based on calendar date of birth (@db.Date in UTC)
- * compared against referenceInstant in Asia/Ho_Chi_Minh timezone (BR-04, BR-07, FUNC-001, FUNC-007).
+ * compared against referenceInstant in Asia/Ho_Chi_Minh timezone.
  * Handles 00:00-06:59 GMT+7 boundary and Feb 29 leap year birthdays accurately.
  */
 export function calculateAgeInVnTimezone(dob: Date | string, referenceInstant: Date = new Date()): number {

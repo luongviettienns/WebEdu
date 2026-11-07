@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { type AuthUserDto } from '@/features/auth/api/auth.api';
 import {
   listTeachers,
@@ -24,12 +23,11 @@ type ModalState = { mode: 'create' | 'edit' | 'view'; teacher: TeacherItemDto | 
 type BlockedAlert = { name: string; activeClassesCount: number } | null;
 
 interface AdminTeachersContentProps {
-  currentUser: AuthUserDto;
+  _currentUser?: AuthUserDto;
   onAuthError: (error: unknown) => boolean;
 }
 
 function AdminTeachersContent({
-  currentUser,
   onAuthError,
 }: AdminTeachersContentProps) {
   const [teachers, setTeachers] = useState<TeacherItemDto[]>([]);
@@ -83,38 +81,33 @@ function AdminTeachersContent({
   }, [debouncedSearch, statusFilter, page, refreshTick, onAuthError]);
 
   const handleToggleTeacherStatus = async (teacher: TeacherItemDto) => {
-    const nextStatus: UserStatus =
+    setErrorBanner('');
+    setSuccessBanner('');
+    const newStatus: UserStatus =
       teacher.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-
-    if (nextStatus === 'INACTIVE' && (teacher.activeClassesCount ?? 0) > 0) {
-      setBlockedTeacherAlert({
-        name: teacher.fullName,
-        activeClassesCount: teacher.activeClassesCount ?? 0,
-      });
-      return;
-    }
-
     try {
-      setErrorBanner('');
-      setSuccessBanner('');
-      await updateTeacher(teacher.id, { status: nextStatus });
+      await updateTeacher(teacher.id, { status: newStatus });
       setSuccessBanner(
-        `Đã ${nextStatus === 'ACTIVE' ? 'kích hoạt' : 'vô hiệu hóa'} giáo viên ${teacher.fullName}`,
+        newStatus === 'ACTIVE'
+          ? `Đã kích hoạt lại tài khoản của giáo viên ${teacher.fullName}.`
+          : `Đã vô hiệu hóa tài khoản của giáo viên ${teacher.fullName}.`,
       );
       setRefreshTick((t) => t + 1);
-    } catch (error) {
+    } catch (error: unknown) {
       if (onAuthError(error)) return;
       const apiMsg = extractErrorMessage(
         error,
         'Không thể cập nhật trạng thái giáo viên',
       );
       if (
-        apiMsg.toLowerCase().includes('đang phụ trách') ||
-        apiMsg.toLowerCase().includes('lớp')
+        newStatus === 'INACTIVE' &&
+        (apiMsg.includes('lớp') ||
+          apiMsg.includes('phụ trách') ||
+          apiMsg.includes('hoạt động'))
       ) {
         setBlockedTeacherAlert({
           name: teacher.fullName,
-          activeClassesCount: teacher.activeClassesCount || 1,
+          activeClassesCount: 1,
         });
       } else {
         setErrorBanner(apiMsg);
@@ -123,95 +116,97 @@ function AdminTeachersContent({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader currentUser={currentUser} />
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-emerald-950">
-              Quản Lý Tài Khoản Giáo Viên
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Quản lý danh sách giáo viên, chuyên môn và trạng thái giảng dạy.
-            </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+        <div>
+          <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+            教师管理 · ĐỘI NGŨ GIÁO VIÊN
           </div>
-          <button
-            type="button"
-            onClick={() => setModalState({ mode: 'create', teacher: null })}
-            className="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
-          >
-            + Tạo tài khoản giáo viên
-          </button>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
+            Quản Lý Tài Khoản Giáo Viên
+          </h1>
+          <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
+            Quản lý danh sách giáo viên, chuyên môn và trạng thái giảng dạy.
+          </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setModalState({ mode: 'create', teacher: null })}
+          className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] transition-colors active:scale-[0.98]"
+        >
+          + Tạo tài khoản giáo viên
+        </button>
+      </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="text"
-              placeholder="Tìm theo tên, email, SĐT..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-72 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            />
-            <select
-              value={statusFilter}
-              aria-label="Lọc theo trạng thái giáo viên"
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="">Tất cả trạng thái</option>
-              <option value="ACTIVE">Đang hoạt động</option>
-              <option value="INACTIVE">Vô hiệu hóa</option>
-            </select>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            placeholder="Tìm theo tên, email, SĐT..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+          />
+          <select
+            value={statusFilter}
+            aria-label="Lọc theo trạng thái giáo viên"
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="ACTIVE">Đang hoạt động</option>
+            <option value="INACTIVE">Vô hiệu hóa</option>
+          </select>
         </div>
+        <span className="text-xs font-medium text-[var(--ink-3)] num">
+          Tổng số: <strong>{total}</strong> giáo viên
+        </span>
+      </div>
 
-        {errorBanner ? (
-          <div
-            role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
-          >
-            {errorBanner}
-          </div>
-        ) : null}
+      {errorBanner && (
+        <div
+          role="alert"
+          className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-4 text-sm font-medium text-[var(--red-ink)]"
+        >
+          {errorBanner}
+        </div>
+      )}
 
-        {successBanner ? (
-          <div
-            role="status"
-            className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-800"
-          >
-            {successBanner}
-          </div>
-        ) : null}
+      {successBanner && (
+        <div
+          role="status"
+          className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-4 text-sm font-medium text-[var(--jade)]"
+        >
+          {successBanner}
+        </div>
+      )}
 
-        <TeacherListTable
-          teachers={teachers}
-          loading={loading}
-          page={page}
-          total={total}
-          pageLimit={PAGE_LIMIT}
-          onPageChange={setPage}
-          onView={(teacher) => setModalState({ mode: 'view', teacher })}
-          onEdit={(teacher) => setModalState({ mode: 'edit', teacher })}
-          onToggleStatus={handleToggleTeacherStatus}
-        />
-      </main>
+      <TeacherListTable
+        teachers={teachers}
+        loading={loading}
+        page={page}
+        total={total}
+        pageLimit={PAGE_LIMIT}
+        onPageChange={setPage}
+        onView={(teacher) => setModalState({ mode: 'view', teacher })}
+        onEdit={(teacher) => setModalState({ mode: 'edit', teacher })}
+        onToggleStatus={handleToggleTeacherStatus}
+      />
 
-      {blockedTeacherAlert ? (
+      {blockedTeacherAlert && (
         <BlockedTeacherDeactivationModal
           activeClassesCount={blockedTeacherAlert.activeClassesCount}
           onClose={() => setBlockedTeacherAlert(null)}
         />
-      ) : null}
+      )}
 
-      {modalState ? (
+      {modalState && (
         <TeacherFormModal
           key={`${modalState.mode}-${modalState.teacher?.id ?? 'new'}`}
           mode={modalState.mode}
@@ -224,7 +219,7 @@ function AdminTeachersContent({
             setRefreshTick((t) => t + 1);
           }}
         />
-      ) : null}
+      )}
     </div>
   );
 }
@@ -243,5 +238,5 @@ export default function AdminTeachersPage() {
     );
   }
 
-  return <AdminTeachersContent currentUser={user} onAuthError={handleApiAuthError} />;
+  return <AdminTeachersContent onAuthError={handleApiAuthError} />;
 }

@@ -8,7 +8,7 @@ const ROLE_PRIORITY: Record<Role, number> = {
 };
 
 /**
- * Returns the highest role from a user's assigned roles array (FUNC-009 & DEC-020).
+ * Returns the highest role from a user's assigned roles array.
  */
 export function getHighestRole(roles: Role[]): Role {
   if (!roles || roles.length === 0) {
@@ -20,9 +20,9 @@ export function getHighestRole(roles: Role[]): Role {
 }
 
 /**
- * Expands authorized capabilities while strictly enforcing FUNC-013 boundary:
- * - ADMIN inherits TEACHER operational capabilities (FUNC-009, FUNC-012).
- * - SUPERADMIN does NOT automatically inherit ADMIN/TEACHER/STUDENT learning data capabilities (FUNC-013).
+ * Expands authorized capabilities while strictly enforcing role boundaries:
+ * - ADMIN inherits TEACHER operational capabilities.
+ * - SUPERADMIN does NOT automatically inherit ADMIN/TEACHER/STUDENT learning data capabilities.
  */
 export function expandAuthorizedRoles(userRoles: Role[]): Set<Role> {
   const expanded = new Set<Role>(userRoles);
@@ -44,7 +44,7 @@ export function hasRequiredRole(userRoles: Role[], requiredRoles: Role[]): boole
 }
 
 /**
- * Default post-login navigation path based on effective role (FUNC-003).
+ * Default post-login navigation path based on effective role.
  */
 export function getDefaultRedirectByRole(effectiveRole: Role): string {
   switch (effectiveRole) {

@@ -26,7 +26,7 @@ function sanitizeAuditObject(
 }
 
 /**
- * Redacts sensitive fields from audit log metadata before persisting to DB (SEC-10, SEC-F04).
+ * Redacts sensitive fields from audit log metadata before persisting to DB.
  */
 export function sanitizeAuditMetadata(
   input: Record<string, unknown> | undefined | null,
@@ -37,7 +37,7 @@ export function sanitizeAuditMetadata(
   return sanitizeAuditObject(input);
 }
 
-export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024; // 2MB (FUNC-013)
+export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_BASE64_CHARS = Math.ceil(MAX_LOGO_SIZE_BYTES / 3) * 4 + 4;
 export const MAX_LOGO_WIDTH = 800; // max 800px width
 export const MAX_LOGO_HEIGHT = 800; // max 800px height
@@ -74,8 +74,8 @@ function extractJpegDimensions(buffer: Buffer): { width: number; height: number 
 
 /**
  * Validates that a base64 data URI or buffer is a genuine PNG or JPEG image
- * by inspecting Magic Bytes, preventing SVG/HTML XSS polyglots (SEC-09) and
- * checking image dimensions against decompression bombs (FIX-06).
+ * by inspecting Magic Bytes, preventing SVG/HTML XSS polyglots and
+ * checking image dimensions against decompression bombs.
  */
 export function validateLogoImageDataUri(dataUri: string): {
   valid: boolean;

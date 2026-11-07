@@ -24,6 +24,7 @@
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
+    "seed": "node prisma/seed.mjs",
     "check:loc": "node ../scripts/check-loc.js"
   },
   "dependencies": {

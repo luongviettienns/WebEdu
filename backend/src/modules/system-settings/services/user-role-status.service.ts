@@ -26,9 +26,9 @@ const LAST_SUPERADMIN_MESSAGE =
   'Không thể tự vô hiệu hóa chính mình hoặc gỡ vai trò Superadmin cuối cùng';
 
 /**
- * Role/status mutation for any account (FUNC-013). Enforces SEC-07 (always one
- * ACTIVE Superadmin), FUNC-008 (no activation bypass of class placement) and
- * FUNC-006 (no stripping a teacher who still leads classes). Every change
+ * Role/status mutation for any account. Enforces maintaining at least one
+ * ACTIVE Superadmin, preventing activation bypass of class placement, and
+ * preventing stripping a teacher who still leads classes. Every change
  * revokes sessions via a tokenVersion bump.
  */
 @Injectable()
@@ -62,7 +62,7 @@ export class UserRoleStatusService {
         throw new NotFoundException('Không tìm thấy tài khoản');
       }
 
-      // If target or requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC (SEC-07).
+      // If target or requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC.
       const touchesSuperadmin =
         preliminary.roles.includes(Role.SUPERADMIN) ||
         (dto.roles !== undefined && dto.roles.includes(Role.SUPERADMIN));
@@ -70,7 +70,7 @@ export class UserRoleStatusService {
       if (touchesSuperadmin) {
         await lockUserAndActiveSuperadmins(tx, targetUserId);
       } else {
-        // Normal user role/status change: lock only target row to prevent contention (FIX-05)
+        // Normal user role/status change: lock only target row to prevent contention
         await lockTargetUser(tx, targetUserId);
       }
 
@@ -97,7 +97,7 @@ export class UserRoleStatusService {
         );
       }
 
-      // FUNC-008: forbid bypassing initial enrollment or reactivating a dropped
+      // Forbid bypassing initial enrollment or reactivating a dropped
       // pure student without an active/completed enrollment
       const willBePureStudent =
         nextRoles.length === 1 && nextRoles[0] === Role.STUDENT;
@@ -117,7 +117,7 @@ export class UserRoleStatusService {
         }
       }
 
-      // FUNC-006: cannot deactivate or strip TEACHER while still leading active/upcoming classes
+      // Cannot deactivate or strip TEACHER while still leading active/upcoming classes
       const isDroppingActiveTeacher =
         targetUser.roles.includes(Role.TEACHER) &&
         (nextStatus === UserStatus.INACTIVE ||
@@ -166,7 +166,7 @@ export class UserRoleStatusService {
     });
   }
 
-  /** SEC-07: demoting/deactivating an active Superadmin requires another active one. */
+  /** Demoting/deactivating an active Superadmin requires another active one. */
   private async assertLastActiveSuperadminSurvives(
     tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
     targetUser: { id: string; roles: Role[]; status: UserStatus },

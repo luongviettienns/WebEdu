@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
 import { type UserProfileDto } from '@/features/profile/api/profile.api';
@@ -20,28 +19,27 @@ function ProfilePageContent({
   onAuthError,
 }: ProfilePageContentProps) {
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader currentUser={profile} />
-
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-emerald-950">
-            Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Quản lý thông tin liên hệ cá nhân và thiết lập mật khẩu đăng nhập
-          </p>
+    <div className="space-y-6">
+      <div className="border-b border-[#E0DED5] pb-4">
+        <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
+          个人档案 · HỒ SƠ CÁ NHÂN
         </div>
+        <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
+          Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản
+        </h1>
+        <p className="mt-1 text-sm text-[#5A6460]">
+          Quản lý thông tin liên hệ cá nhân và thiết lập mật khẩu đăng nhập an toàn
+        </p>
+      </div>
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-          <PersonalInfoSection
-            profile={profile}
-            onProfileUpdated={onProfileUpdated}
-            onAuthError={onAuthError}
-          />
-          <ChangePasswordSection onAuthError={onAuthError} />
-        </div>
-      </main>
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+        <PersonalInfoSection
+          profile={profile}
+          onProfileUpdated={onProfileUpdated}
+          onAuthError={onAuthError}
+        />
+        <ChangePasswordSection onAuthError={onAuthError} />
+      </div>
     </div>
   );
 }

@@ -118,11 +118,11 @@ export function TeacherFormModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs"
     >
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <h2 className="text-lg font-bold text-emerald-950">
+      <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+        <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+          <h2 className="text-lg font-bold text-[var(--ink)]">
             {mode === 'create'
               ? 'Tạo Tài Khoản Giáo Viên Mới'
               : mode === 'edit'
@@ -132,7 +132,7 @@ export function TeacherFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-sm font-medium text-slate-500 hover:text-slate-800"
+            className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]"
           >
             Đóng
           </button>
@@ -141,7 +141,7 @@ export function TeacherFormModal({
         {formError ? (
           <div
             role="alert"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+            className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {formError}
           </div>
@@ -155,9 +155,9 @@ export function TeacherFormModal({
           <div className="space-y-1.5">
             <label
               htmlFor="teacher-fullname"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
-              Họ và tên <span className="text-red-600">*</span>
+              Họ và tên <span className="text-[var(--red)]">*</span>
             </label>
             <input
               id="teacher-fullname"
@@ -167,7 +167,7 @@ export function TeacherFormModal({
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] disabled:bg-[var(--surface-2)] focus:border-[var(--blue)] focus:outline-none"
             />
           </div>
 
@@ -175,9 +175,9 @@ export function TeacherFormModal({
             <div className="space-y-1.5">
               <label
                 htmlFor="teacher-phone"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Số điện thoại <span className="text-red-600">*</span>
+                Số điện thoại <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="teacher-phone"
@@ -187,16 +187,16 @@ export function TeacherFormModal({
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] font-num disabled:bg-[var(--surface-2)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
 
             <div className="space-y-1.5">
               <label
                 htmlFor="teacher-email"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Email <span className="text-red-600">*</span>
+                Email <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="teacher-email"
@@ -205,7 +205,7 @@ export function TeacherFormModal({
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] disabled:bg-[var(--surface-2)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
           </div>
@@ -224,7 +224,7 @@ export function TeacherFormModal({
             <div className="space-y-1.5">
               <label
                 htmlFor="teacher-status"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
                 Trạng thái hoạt động
               </label>
@@ -233,7 +233,7 @@ export function TeacherFormModal({
                 disabled={mode === 'view'}
                 value={status}
                 onChange={(e) => setStatus(e.target.value as UserStatus)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] disabled:bg-[var(--surface-2)] focus:border-[var(--blue)] focus:outline-none"
               >
                 <option value="ACTIVE">Đang hoạt động</option>
                 <option value="INACTIVE">Vô hiệu hóa</option>
@@ -244,7 +244,7 @@ export function TeacherFormModal({
           <div className="space-y-1.5">
             <label
               htmlFor="teacher-notes"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
               Ghi chú chuyên môn
             </label>
@@ -255,15 +255,15 @@ export function TeacherFormModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Chứng chỉ HSK, ca dạy ưu tiên..."
-              className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
+              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] disabled:bg-[var(--surface-2)] focus:border-[var(--blue)] focus:outline-none"
             />
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
             >
               {mode === 'view' ? 'Đóng' : 'Hủy'}
             </button>
@@ -271,7 +271,7 @@ export function TeacherFormModal({
               <button
                 type="submit"
                 disabled={submitting}
-                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
               >
                 {submitting ? 'Đang lưu...' : 'Lưu thông tin'}
               </button>

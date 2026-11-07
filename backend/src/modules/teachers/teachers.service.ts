@@ -37,7 +37,7 @@ import {
   countEffectiveActiveClasses,
 } from '../../common/policies/teacher-invariants.policy.js';
 
-/** Teacher account management (FUNC-006). */
+/** Teacher account management. */
 @Injectable()
 export class TeachersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -170,12 +170,12 @@ export class TeachersService {
           throw new NotFoundException('Không tìm thấy giáo viên');
         }
 
-        // SEC-08: Check actor permissions before locking or evaluating pool state
+        // Check actor permissions before locking or evaluating pool state
         assertActorMayModifyAccount(actor, preliminary.roles);
 
         const nextStatus = dto.status ?? preliminary.status;
 
-        // SEC-07: Superadmin may not self-deactivate
+        // Superadmin may not self-deactivate
         assertSuperadminNotSelfDeactivating(
           actor,
           { id: teacherId, roles: preliminary.roles },
@@ -189,11 +189,11 @@ export class TeachersService {
 
         let lockedSuperadmins: LockedUserRow[] | undefined;
         if (leavingSuperadmin) {
-          // Lock all active superadmins in canonical ORDER BY id ASC to avoid 40P01 deadlocks (SEC-07)
+          // Lock all active superadmins in canonical ORDER BY id ASC to avoid 40P01 deadlocks
           lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, teacherId);
           assertAnotherActiveSuperadminRemains(teacherId, lockedSuperadmins);
         } else {
-          // Normal teacher update: lock only the target user row to avoid global contention (FIX-05)
+          // Normal teacher update: lock only the target user row to avoid global contention
           await lockTargetUser(tx, teacherId);
         }
 

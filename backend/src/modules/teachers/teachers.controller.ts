@@ -32,14 +32,14 @@ export class TeachersController {
   constructor(private readonly teachersService: TeachersService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Danh sách giáo viên sắp xếp A-Z (FUNC-006)' })
+  @ApiOperation({ summary: 'Danh sách tài khoản giáo viên' })
   async listTeachers(@Query() query: ListTeachersQueryDto) {
     return this.teachersService.listTeachers(query);
   }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Tạo tài khoản giáo viên mới với trạng thái ACTIVE (FUNC-006)' })
+  @ApiOperation({ summary: 'Tạo tài khoản giáo viên mới' })
   async createTeacher(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateTeacherDto,
@@ -48,7 +48,7 @@ export class TeachersController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Cập nhật thông tin / trạng thái giáo viên (FUNC-006)' })
+  @ApiOperation({ summary: 'Cập nhật thông tin và trạng thái giáo viên' })
   async updateTeacher(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

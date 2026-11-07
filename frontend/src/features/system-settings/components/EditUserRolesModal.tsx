@@ -82,13 +82,13 @@ export function EditUserRolesModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-emerald-950">
+      <div className="w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold text-[var(--ink)]">
           Gán Đa Vai Trò & Trạng Thái
         </h2>
-        <p className="mt-1 text-xs text-slate-600">
+        <p className="mt-1 text-xs text-[var(--ink-2)]">
           Tài khoản: <strong>{editingUser.fullName}</strong> (
           {editingUser.email})
         </p>
@@ -96,7 +96,7 @@ export function EditUserRolesModal({
         {editUserError ? (
           <div
             role="alert"
-            className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+            className="mt-3 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {editUserError}
           </div>
@@ -108,14 +108,14 @@ export function EditUserRolesModal({
           className="mt-4 space-y-4"
         >
           <div className="space-y-1.5">
-            <span className="block text-sm font-medium text-slate-800">
+            <span className="block text-sm font-medium text-[var(--ink)]">
               Vai trò (Chọn một hoặc nhiều vai trò)
             </span>
-            <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+            <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
               {ALL_ROLES.map((role) => (
                 <label
                   key={role}
-                  className="inline-flex items-center gap-2 text-xs font-semibold text-slate-800 cursor-pointer"
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--ink)] cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -123,7 +123,7 @@ export function EditUserRolesModal({
                     onChange={() =>
                       setEditRoles((prev) => toggleRoleInList(prev, role))
                     }
-                    className="h-4 w-4 rounded border-slate-300 text-emerald-700"
+                    className="h-4 w-4 rounded border-[var(--line-2)] accent-[var(--red)]"
                   />
                   <span>{ROLE_LABELS[role]}</span>
                 </label>
@@ -134,7 +134,7 @@ export function EditUserRolesModal({
           <div className="space-y-1.5">
             <label
               htmlFor="edit-sys-status"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
               Trạng thái tài khoản
             </label>
@@ -142,25 +142,25 @@ export function EditUserRolesModal({
               id="edit-sys-status"
               value={editStatus}
               onChange={(e) => setEditStatus(e.target.value as UserStatus)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
             >
               <option value="ACTIVE">Đang hoạt động</option>
               <option value="INACTIVE">Vô hiệu hóa</option>
             </select>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={savingUser}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
             >
               {savingUser ? 'Đang lưu...' : 'Lưu phân quyền'}
             </button>

@@ -72,33 +72,33 @@ export function StudentRegisterForm({
   onSubmit,
 }: StudentRegisterFormProps) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-8">
-      {successMessage ? (
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-8 shadow-xs sm:px-8">
+      {successMessage && (
         <div
           role="status"
-          className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-900"
+          className="mb-6 rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-4 text-sm font-medium text-[var(--jade)]"
         >
           {successMessage}
         </div>
-      ) : null}
+      )}
 
-      {serverError ? (
+      {serverError && (
         <div
           role="alert"
-          className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700"
+          className="mb-6 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-4 text-sm font-medium text-[var(--red-ink)]"
         >
           {serverError}
         </div>
-      ) : null}
+      )}
 
       <form onSubmit={onSubmit} noValidate className="space-y-4">
         {/* Họ và tên */}
         <div className="space-y-1.5">
           <label
             htmlFor="reg-fullname"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
-            Họ và tên <span className="text-red-600">*</span>
+            Họ và tên <span className="text-[var(--red)]">*</span>
           </label>
           <input
             id="reg-fullname"
@@ -114,17 +114,17 @@ export function StudentRegisterForm({
             }}
             placeholder="Nguyễn Văn An"
             aria-invalid={Boolean(errors.fullName)}
-            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${
+            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
               errors.fullName
-                ? 'border-red-500 bg-red-50/40 focus:border-red-600 focus:ring-red-500/20'
-                : 'border-slate-300 bg-white focus:border-emerald-700 focus:ring-emerald-600/20'
+                ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+                : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
             }`}
           />
-          {errors.fullName ? (
-            <p role="alert" className="text-xs font-medium text-red-600">
+          {errors.fullName && (
+            <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
               {errors.fullName}
             </p>
-          ) : null}
+          )}
         </div>
 
         {/* Ngày sinh */}
@@ -132,16 +132,16 @@ export function StudentRegisterForm({
           <div className="flex items-center justify-between">
             <label
               htmlFor="reg-dob"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
-              Ngày sinh (dd/mm/yyyy) <span className="text-red-600">*</span>
+              Ngày sinh (dd/mm/yyyy) <span className="text-[var(--red)]">*</span>
             </label>
-            {dateOfBirth && calculatedAge !== null ? (
-              <span className="text-xs font-medium text-slate-600">
+            {dateOfBirth && calculatedAge !== null && (
+              <span className="text-xs font-medium text-[var(--ink-3)]">
                 Định dạng: <strong>{formatDateDdMmYyyy(dateOfBirth)}</strong>{' '}
                 ({calculatedAge} tuổi)
               </span>
-            ) : null}
+            )}
           </div>
           <input
             id="reg-dob"
@@ -150,26 +150,26 @@ export function StudentRegisterForm({
             value={dateOfBirth}
             onChange={(e) => onDateOfBirthChange(e.target.value)}
             aria-invalid={Boolean(errors.dateOfBirth || isUnder12)}
-            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 ${
+            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-[var(--ink)] focus:outline-none focus:ring-2 ${
               errors.dateOfBirth || isUnder12
-                ? 'border-red-500 bg-red-50/40 focus:border-red-600 focus:ring-red-500/20'
-                : 'border-slate-300 bg-white focus:border-emerald-700 focus:ring-emerald-600/20'
+                ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+                : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
             }`}
           />
-          {errors.dateOfBirth || isUnder12 ? (
-            <p role="alert" className="text-xs font-medium text-red-600">
+          {(errors.dateOfBirth || isUnder12) && (
+            <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
               {errors.dateOfBirth || 'Học viên phải từ 12 tuổi trở lên'}
             </p>
-          ) : null}
+          )}
         </div>
 
         {/* Số điện thoại */}
         <div className="space-y-1.5">
           <label
             htmlFor="reg-phone"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
-            Số điện thoại <span className="text-red-600">*</span>
+            Số điện thoại <span className="text-[var(--red)]">*</span>
           </label>
           <input
             id="reg-phone"
@@ -186,26 +186,26 @@ export function StudentRegisterForm({
             }}
             placeholder="0912345678"
             aria-invalid={Boolean(errors.phone)}
-            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${
+            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
               errors.phone
-                ? 'border-red-500 bg-red-50/40 focus:border-red-600 focus:ring-red-500/20'
-                : 'border-slate-300 bg-white focus:border-emerald-700 focus:ring-emerald-600/20'
+                ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+                : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
             }`}
           />
-          {errors.phone ? (
-            <p role="alert" className="text-xs font-medium text-red-600">
+          {errors.phone && (
+            <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
               {errors.phone}
             </p>
-          ) : null}
+          )}
         </div>
 
         {/* Email đăng nhập */}
         <div className="space-y-1.5">
           <label
             htmlFor="reg-email"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
-            Email đăng nhập <span className="text-red-600">*</span>
+            Email đăng nhập <span className="text-[var(--red)]">*</span>
           </label>
           <input
             id="reg-email"
@@ -221,30 +221,30 @@ export function StudentRegisterForm({
             }}
             placeholder="hocvien@example.com"
             aria-invalid={Boolean(errors.email)}
-            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${
+            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
               errors.email
-                ? 'border-red-500 bg-red-50/40 focus:border-red-600 focus:ring-red-500/20'
-                : 'border-slate-300 bg-white focus:border-emerald-700 focus:ring-emerald-600/20'
+                ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+                : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
             }`}
           />
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-[var(--ink-3)]">
             Email này được sử dụng làm tên đăng nhập duy nhất của học viên.
           </p>
-          {errors.email ? (
-            <p role="alert" className="text-xs font-medium text-red-600">
+          {errors.email && (
+            <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
               {errors.email}
             </p>
-          ) : null}
+          )}
         </div>
 
         {/* Khối Đồng ý của cha mẹ/người giám hộ */}
-        {requiresGuardianConsent ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+        {requiresGuardianConsent && (
+          <div className="rounded-xl border border-[var(--blue)]/30 bg-[var(--blue-soft)]/40 p-4 space-y-3">
             <div>
-              <h2 className="text-sm font-semibold text-emerald-950">
+              <h2 className="text-sm font-semibold text-[var(--ink)]">
                 Xác nhận đồng ý của cha mẹ / người giám hộ
               </h2>
-              <p className="mt-0.5 text-xs text-slate-600">
+              <p className="mt-0.5 text-xs text-[var(--ink-2)]">
                 Học viên từ 12 đến dưới 16 tuổi cần cung cấp Email của cha
                 mẹ/người giám hộ và xác nhận đồng ý trước khi tạo tài khoản.
               </p>
@@ -253,10 +253,9 @@ export function StudentRegisterForm({
             <div className="space-y-1.5">
               <label
                 htmlFor="reg-guardian-email"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-xs font-semibold text-[var(--ink)]"
               >
-                Email của cha mẹ/người giám hộ{' '}
-                <span className="text-red-600">*</span>
+                Email cha mẹ / người giám hộ <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="reg-guardian-email"
@@ -274,23 +273,25 @@ export function StudentRegisterForm({
                 }}
                 placeholder="phuhuynh@example.com"
                 aria-invalid={Boolean(errors.guardianEmail)}
-                className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${
+                className={`w-full rounded-lg border px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
                   errors.guardianEmail
-                    ? 'border-red-500 bg-white focus:border-red-600 focus:ring-red-500/20'
-                    : 'border-emerald-300 bg-white focus:border-emerald-700 focus:ring-emerald-600/20'
+                    ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+                    : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
                 }`}
               />
-              {errors.guardianEmail ? (
-                <p role="alert" className="text-xs font-medium text-red-600">
+              {errors.guardianEmail && (
+                <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
                   {errors.guardianEmail}
                 </p>
-              ) : null}
+              )}
             </div>
 
-            <div className="space-y-1">
+            <div className="pt-1">
               <label className="flex items-start gap-2.5 cursor-pointer">
                 <input
+                  id="reg-guardian-consent"
                   type="checkbox"
+                  required
                   checked={guardianConsent}
                   onChange={(e) => {
                     setGuardianConsent(e.target.checked);
@@ -301,22 +302,22 @@ export function StudentRegisterForm({
                       }));
                     }
                   }}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
+                  className="mt-0.5 h-4 w-4 rounded border-[var(--line-2)] text-[var(--red)] focus:ring-[var(--red)]"
                 />
-                <span className="text-xs font-medium text-slate-800 leading-relaxed">
+                <span className="text-xs font-medium text-[var(--ink-2)] leading-relaxed">
                   Tôi xác nhận đã có sự đồng ý của cha mẹ/người giám hộ cho phép
                   đăng ký tài khoản học tập và xử lý dữ liệu cá nhân theo quy
                   định của Trung tâm.
                 </span>
               </label>
-              {errors.guardianConsent ? (
-                <p role="alert" className="text-xs font-medium text-red-600">
+              {errors.guardianConsent && (
+                <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
                   {errors.guardianConsent}
                 </p>
-              ) : null}
+              )}
             </div>
           </div>
-        ) : null}
+        )}
 
         {/* Mật khẩu & Xác nhận mật khẩu */}
         <PasswordInput
@@ -358,18 +359,18 @@ export function StudentRegisterForm({
         <button
           type="submit"
           disabled={submitting || isUnder12}
-          className="mt-2 flex w-full justify-center rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+          className="mt-2 flex w-full justify-center rounded-lg bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors active:scale-[0.98]"
         >
           {submitting ? 'Đang đăng ký...' : 'Đăng ký'}
         </button>
       </form>
 
-      <div className="mt-6 border-t border-slate-100 pt-5 text-center">
-        <p className="text-sm text-slate-600">
+      <div className="mt-6 border-t border-[var(--line)] pt-5 text-center">
+        <p className="text-sm text-[var(--ink-2)]">
           Đã có tài khoản?{' '}
           <Link
             href="/login"
-            className="font-semibold text-emerald-700 hover:text-emerald-800"
+            className="font-semibold text-[var(--red)] hover:text-[var(--red-ink)] transition-colors"
           >
             Đăng nhập
           </Link>

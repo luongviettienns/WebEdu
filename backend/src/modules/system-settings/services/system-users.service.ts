@@ -25,7 +25,7 @@ import {
   type SystemUserItemDto,
 } from '../mappers/system-user.mapper.js';
 
-/** Superadmin-facing account directory: list and create staff accounts (FUNC-013). */
+/** Superadmin-facing account directory: list and create staff accounts. */
 @Injectable()
 export class SystemUsersService {
   constructor(private readonly prisma: PrismaService) {}

@@ -13,10 +13,10 @@ import { EMAIL_REGEX } from '../../../common/utils/contact-validation.util.js';
 import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
 import type { ForgotPasswordDto, ResetPasswordDto } from '../dto/auth.dto.js';
 
-const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000; // 60 seconds (FUNC-005)
+const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000; // 60 seconds
 const RATE_LIMIT_RETENTION_MS = 10 * 60 * 1000; // 10 minutes cleanup window
 const RESET_TOKEN_TTL_MINUTES = 15;
-const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000; // 15 minutes (FUNC-005)
+const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000; // 15 minutes
 const MAX_FORGOT_REQUESTS_PER_IP = 5;
 const IP_FORGOT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -41,7 +41,7 @@ export class PasswordRecoveryService {
       throw new BadRequestException('Email không hợp lệ');
     }
 
-    // IP-based rate limiting across multi-instances without Redis (FIX-04)
+    // IP-based rate limiting across multi-instances without Redis
     if (clientIp) {
       await assertRateLimitNotExceeded(this.prisma, {
         key: `forgot:ip:${clientIp}`,
@@ -75,7 +75,7 @@ export class PasswordRecoveryService {
     }
 
     // Atomic PostgreSQL conditional upsert enforcing 60s cooldown across all instances
-    // regardless of whether the target email exists (SEC-06 anti-enumeration).
+    // regardless of whether the target email exists (anti-enumeration).
     const allowedRows = await this.prisma.$queryRaw<Array<{ email_hash: string }>>`
       INSERT INTO "email_rate_limits" ("email_hash", "last_requested_at")
       VALUES (${emailHash}, ${now})

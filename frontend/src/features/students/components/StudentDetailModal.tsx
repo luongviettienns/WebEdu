@@ -165,29 +165,29 @@ export function StudentDetailModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 overflow-y-auto backdrop-blur-xs"
     >
-      <div className="my-8 w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+      <div className="my-8 w-full max-w-2xl rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+        <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
           <div>
-            <h2 className="text-lg font-bold text-emerald-950">
+            <h2 className="text-lg font-bold text-[var(--ink)]">
               Hồ Sơ Chi Tiết Học Viên
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-[var(--ink-2)]">
               Quản lý thông tin cá nhân, trạng thái tài khoản và ghi chú nội bộ
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="text-sm font-medium text-slate-500 hover:text-slate-800"
+            className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]"
           >
             Đóng
           </button>
         </div>
 
         {detailLoading ? (
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-[var(--ink-2)]">
             Đang đồng bộ dữ liệu chi tiết...
           </p>
         ) : null}
@@ -195,7 +195,7 @@ export function StudentDetailModal({
         {modalError ? (
           <div
             role="alert"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+            className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {modalError}
           </div>
@@ -210,9 +210,9 @@ export function StudentDetailModal({
             <div className="space-y-1.5">
               <label
                 htmlFor="stu-fullname"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Họ và tên <span className="text-red-600">*</span>
+                Họ và tên <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="stu-fullname"
@@ -221,7 +221,7 @@ export function StudentDetailModal({
                 required
                 value={editFullName}
                 onChange={(e) => setEditFullName(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
 
@@ -229,12 +229,12 @@ export function StudentDetailModal({
               <div className="flex items-center justify-between">
                 <label
                   htmlFor="stu-dob"
-                  className="block text-sm font-medium text-slate-800"
+                  className="block text-sm font-medium text-[var(--ink)]"
                 >
                   Ngày sinh ({formatDateDdMmYyyy(editDateOfBirth)})
                 </label>
                 {computedAge !== null ? (
-                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">
+                  <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-xs font-semibold text-[var(--ink-2)] font-num">
                     Tuổi: {computedAge}
                   </span>
                 ) : null}
@@ -245,10 +245,10 @@ export function StudentDetailModal({
                 disabled={isGuardianConsentLocked}
                 value={editDateOfBirth}
                 onChange={(e) => setEditDateOfBirth(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] font-num disabled:cursor-not-allowed disabled:bg-[var(--surface-2)] disabled:text-[var(--ink-2)]"
               />
               {isGuardianConsentLocked ? (
-                <p className="text-[11px] font-medium text-amber-800">
+                <p className="text-[11px] font-medium text-[var(--amber)]">
                   Trường Ngày sinh đã khóa do học viên có xác nhận đồng ý của
                   cha mẹ.
                 </p>
@@ -260,9 +260,9 @@ export function StudentDetailModal({
             <div className="space-y-1.5">
               <label
                 htmlFor="stu-phone"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Số điện thoại <span className="text-red-600">*</span>
+                Số điện thoại <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="stu-phone"
@@ -271,16 +271,16 @@ export function StudentDetailModal({
                 required
                 value={editPhone}
                 onChange={(e) => setEditPhone(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
 
             <div className="space-y-1.5">
               <label
                 htmlFor="stu-email"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Email <span className="text-red-600">*</span>
+                Email <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="stu-email"
@@ -288,21 +288,21 @@ export function StudentDetailModal({
                 required
                 value={editEmail}
                 onChange={(e) => setEditEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
           </div>
 
           {selectedStudent.guardianConsent ||
           selectedStudent.hasGuardianConsent ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5">
-              <p className="text-xs font-semibold text-emerald-900">
+            <div className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5">
+              <p className="text-xs font-semibold text-[var(--jade)]">
                 Đã xác nhận đồng ý của cha mẹ –{' '}
                 {selectedStudent.guardianConsent?.consentedAt
                   ? formatDateTimeVn(selectedStudent.guardianConsent.consentedAt)
                   : 'Khi đăng ký'}
               </p>
-              <p className="mt-0.5 text-xs text-slate-600">
+              <p className="mt-0.5 text-xs text-[var(--ink-2)]">
                 Email phụ huynh:{' '}
                 <strong>
                   {selectedStudent.guardianConsent?.guardianEmail ||
@@ -315,16 +315,16 @@ export function StudentDetailModal({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <span className="block text-sm font-medium text-slate-800">
+              <span className="block text-sm font-medium text-[var(--ink)]">
                 Lớp đang học & Lịch sử lớp
               </span>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-sm text-slate-800">
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2 text-sm text-[var(--ink)]">
                 <p className="font-semibold">
                   Hiện tại: {selectedStudent.assignedClass || 'Chưa xếp lớp'}
                 </p>
                 {selectedStudent.classHistory &&
                 selectedStudent.classHistory.length > 0 ? (
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-[var(--ink-2)]">
                     Đã học: {selectedStudent.classHistory.join(', ')}
                   </p>
                 ) : null}
@@ -334,7 +334,7 @@ export function StudentDetailModal({
             <div className="space-y-1.5">
               <label
                 htmlFor="stu-status"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
                 Trạng thái tài khoản
               </label>
@@ -342,7 +342,7 @@ export function StudentDetailModal({
                 id="stu-status"
                 value={editStatus}
                 onChange={(e) => setEditStatus(e.target.value as UserStatus)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
               >
                 {!isSelectedStudentEnrolled ? (
                   <>
@@ -357,12 +357,12 @@ export function StudentDetailModal({
                 )}
               </select>
               {!isSelectedStudentEnrolled ? (
-                <p className="text-[11px] text-slate-600">
+                <p className="text-[11px] text-[var(--ink-2)]">
                   Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng
                   thực hiện tại{' '}
                   <Link
                     href="/admin/students/pending"
-                    className="font-semibold text-emerald-700 underline hover:text-emerald-800"
+                    className="font-semibold text-[var(--red)] underline hover:text-[var(--red-ink)]"
                   >
                     Danh sách chờ xếp lớp
                   </Link>
@@ -376,7 +376,7 @@ export function StudentDetailModal({
             <div className="space-y-1.5">
               <label
                 htmlFor="stu-internal-notes"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
                 Ghi chú nội bộ (Chỉ Admin xem)
               </label>
@@ -386,23 +386,23 @@ export function StudentDetailModal({
                 value={editInternalNotes}
                 onChange={(e) => setEditInternalNotes(e.target.value)}
                 placeholder="Ghi chú xếp lớp, nhu cầu học tập, lưu ý phụ huynh..."
-                className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
           ) : null}
 
-          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={saving || detailLoading}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
             >
               {saving ? 'Đang lưu...' : 'Lưu cập nhật'}
             </button>
