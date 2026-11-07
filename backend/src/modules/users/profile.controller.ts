@@ -39,7 +39,7 @@ export class ProfileController {
   ) {
     const result = await this.profileService.updateMyProfile(
       user.id,
-      dto as UpdateProfileDto & Record<string, unknown>,
+      dto,
       { rememberMe: user.rememberMe === true },
     );
 

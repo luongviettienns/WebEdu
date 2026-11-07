@@ -24,6 +24,10 @@ export class UpdateProfileDto {
   @IsString()
   @MaxLength(256)
   currentPassword?: string;
+
+  @ApiPropertyOptional({ description: 'Học viên không được phép tự sửa ngày sinh' })
+  @IsOptional()
+  dateOfBirth?: unknown;
 }
 
 export class ChangePasswordDto {
