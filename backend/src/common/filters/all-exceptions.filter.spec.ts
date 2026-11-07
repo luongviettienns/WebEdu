@@ -177,4 +177,82 @@ describe('AllExceptionsFilter (RFC 7807 Problem Details)', () => {
       }),
     );
   });
+
+  it('maps distinct Prisma P2002 targets to accurate RFC 7807 Conflict messages (FIX-09)', () => {
+    const filter = new AllExceptionsFilter();
+
+    const makeHost = (url: string) => {
+      const jsonMock = vi.fn();
+      const statusMock = vi.fn().mockReturnValue({ json: jsonMock });
+      const setHeaderMock = vi.fn().mockReturnValue({ status: statusMock });
+      const responseMock = { setHeader: setHeaderMock, status: statusMock } as unknown as Response;
+      const requestMock = { url } as unknown as Request;
+      const host: ArgumentsHost = {
+        switchToHttp: () => ({
+          getResponse: <T>() => responseMock as unknown as T,
+          getRequest: <T>() => requestMock as unknown as T,
+          getNext: vi.fn(),
+        }),
+        getArgs: vi.fn(),
+        getArgByIndex: vi.fn(),
+        switchToRpc: vi.fn(),
+        switchToWs: vi.fn(),
+        getType: vi.fn(),
+      };
+      return { host, jsonMock, statusMock };
+    };
+
+    // Course code conflict
+    const courseHost = makeHost('/api/v1/courses');
+    const courseErr = Object.assign(new Error('Unique constraint failed on the fields: (`code`)'), {
+      code: 'P2002',
+      meta: { target: ['code'], modelName: 'Course' },
+    });
+    filter.catch(courseErr, courseHost.host);
+    expect(courseHost.statusMock).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    expect(courseHost.jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: 'Mã khóa học đã tồn tại trong hệ thống',
+      }),
+    );
+
+    // Class code conflict
+    const classHost = makeHost('/api/v1/classes');
+    const classErr = Object.assign(new Error('Unique constraint failed on the constraint: (`classes_code_key`)'), {
+      code: 'P2002',
+      meta: { target: 'classes_code_key' },
+    });
+    filter.catch(classErr, classHost.host);
+    expect(classHost.jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: 'Mã lớp học đã tồn tại trong hệ thống',
+      }),
+    );
+
+    // Active enrollment index conflict
+    const enrollmentHost = makeHost('/api/v1/students/s-1/initial-class');
+    const enrollmentErr = Object.assign(new Error('Unique constraint failed on the constraint: (`idx_unique_student_active_enrollment`)'), {
+      code: 'P2002',
+      meta: { target: 'idx_unique_student_active_enrollment' },
+    });
+    filter.catch(enrollmentErr, enrollmentHost.host);
+    expect(enrollmentHost.jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: 'Học viên hiện đã có một lớp học đang hoạt động',
+      }),
+    );
+
+    // Generic fallback
+    const genericHost = makeHost('/api/v1/generic');
+    const genericErr = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+      meta: { target: ['some_custom_unique_col'] },
+    });
+    filter.catch(genericErr, genericHost.host);
+    expect(genericHost.jsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: 'Dữ liệu đã tồn tại trong hệ thống (vi phạm ràng buộc duy nhất)',
+      }),
+    );
+  });
 });

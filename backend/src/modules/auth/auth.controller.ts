@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { resolveClientIp } from '../../common/auth/auth-rate-limit.util.js';
 import { AuthLoginService } from './services/auth-login.service.js';
 import { AuthRegistrationService } from './services/auth-registration.service.js';
 import { AuthSessionService } from './services/auth-session.service.js';
@@ -58,9 +59,14 @@ export class AuthController {
   @ApiOperation({ summary: 'Đăng nhập bằng Email & Mật khẩu (FUNC-003)' })
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, ...publicResult } = await this.loginService.login(dto);
+    const clientIp = resolveClientIp(req);
+    const { accessToken, ...publicResult } = await this.loginService.login(
+      dto,
+      clientIp,
+    );
 
     res.cookie(AUTH_COOKIE_NAME, accessToken, {
       httpOnly: true,
@@ -100,8 +106,12 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Yêu cầu đặt lại mật khẩu qua Email (FUNC-005)' })
-  async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.passwordRecoveryService.forgotPassword(dto);
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Req() req: Request,
+  ) {
+    const clientIp = resolveClientIp(req);
+    return this.passwordRecoveryService.forgotPassword(dto, clientIp);
   }
 
   @Public()

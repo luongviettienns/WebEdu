@@ -6,13 +6,16 @@ import {
 import { Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
-import { lockUserAndActiveSuperadmins } from '../../../common/auth/superadmin-protection.policy.js';
+import {
+  lockTargetUser,
+  lockUserAndActiveSuperadmins,
+} from '../../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
-import { loadEnrollmentFacts } from '../../students/policies/student-enrollment-facts.policy.js';
+import { loadEnrollmentFacts } from '../../../common/policies/enrollment-invariants.policy.js';
 import {
   assertNoActiveClassesLed,
   countEffectiveActiveClasses,
-} from '../../teachers/policies/teacher-assignment.policy.js';
+} from '../../../common/policies/teacher-invariants.policy.js';
 import type { UpdateUserRolesStatusDto } from '../dto/system-settings.dto.js';
 import {
   toSystemUserDto,
@@ -50,8 +53,26 @@ export class UserRoleStatusService {
     }
 
     return this.prisma.$transaction(async (tx) => {
-      // SEC-07 & deadlock-free lock order: target user + all active Superadmins, ORDER BY id ASC
-      await lockUserAndActiveSuperadmins(tx, targetUserId);
+      // Determine locking strategy without acquiring out-of-order locks
+      const preliminary = await tx.user.findUnique({
+        where: { id: targetUserId },
+        select: { roles: true, status: true },
+      });
+      if (!preliminary) {
+        throw new NotFoundException('Không tìm thấy tài khoản');
+      }
+
+      // If target or requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC (SEC-07).
+      const touchesSuperadmin =
+        preliminary.roles.includes(Role.SUPERADMIN) ||
+        (dto.roles !== undefined && dto.roles.includes(Role.SUPERADMIN));
+
+      if (touchesSuperadmin) {
+        await lockUserAndActiveSuperadmins(tx, targetUserId);
+      } else {
+        // Normal user role/status change: lock only target row to prevent contention (FIX-05)
+        await lockTargetUser(tx, targetUserId);
+      }
 
       const targetUser = await tx.user.findUnique({
         where: { id: targetUserId },

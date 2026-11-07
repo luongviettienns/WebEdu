@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../common/audit/audit-log.util.js';
@@ -15,23 +14,16 @@ import {
   normalizeEmail,
 } from '../../common/utils/contact-validation.util.js';
 import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
-import { formatIsoDateUtc } from '../../common/utils/timezone.util.js';
 import type { JwtPayload } from '../../common/auth/auth.types.js';
 import { getHighestRole } from '../../common/auth/role-hierarchy.util.js';
 import type { ChangePasswordDto, UpdateProfileDto } from './dto/profile.dto.js';
+import {
+  PROFILE_USER_INCLUDE,
+  toUserProfileDto,
+  type UserProfileDto,
+} from './mappers/profile.mapper.js';
 
-export interface UserProfileDto {
-  id: string;
-  email: string;
-  fullName: string;
-  phone: string;
-  roles: Role[];
-  effectiveRole: Role;
-  status: UserStatus;
-  dateOfBirth?: string;
-  assignedClass?: string | null;
-  activeClassesCount?: number;
-}
+export { type UserProfileDto };
 
 export interface RotatedProfileResult {
   profile: UserProfileDto;
@@ -47,39 +39,6 @@ export interface ChangePasswordResult {
   expiresIn: number;
 }
 
-const PROFILE_USER_INCLUDE = {
-  studentProfile: true,
-  teacherProfile: true,
-  _count: {
-    select: {
-      taughtClasses: {
-        where: {
-          status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
-        },
-      },
-    },
-  },
-} satisfies Prisma.UserInclude;
-
-interface UserProfileSource {
-  id: string;
-  email: string;
-  fullName: string;
-  phone: string;
-  roles: Role[];
-  status: UserStatus;
-  studentProfile?: {
-    dateOfBirth: Date;
-    assignedClass?: string | null;
-  } | null;
-  teacherProfile?: {
-    activeClassesCount?: number;
-  } | null;
-  _count?: {
-    taughtClasses?: number;
-  };
-}
-
 @Injectable()
 export class ProfileService {
   constructor(
@@ -87,30 +46,6 @@ export class ProfileService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
-
-  private toUserProfileDto(user: UserProfileSource): UserProfileDto {
-    const activeClassesCount = Math.max(
-      user.teacherProfile?.activeClassesCount ?? 0,
-      user._count?.taughtClasses ?? 0,
-    );
-
-    return {
-      id: user.id,
-      email: user.email,
-      fullName: user.fullName,
-      phone: user.phone,
-      roles: user.roles,
-      effectiveRole: getHighestRole(user.roles),
-      status: user.status,
-      ...(user.studentProfile?.dateOfBirth
-        ? { dateOfBirth: formatIsoDateUtc(user.studentProfile.dateOfBirth) }
-        : {}),
-      ...(user.studentProfile
-        ? { assignedClass: user.studentProfile.assignedClass ?? null }
-        : {}),
-      ...(user.roles.includes(Role.TEACHER) ? { activeClassesCount } : {}),
-    };
-  }
 
   private async signFreshAccessToken(
     user: {
@@ -145,12 +80,12 @@ export class ProfileService {
       throw new NotFoundException('Tài khoản không tồn tại');
     }
 
-    return this.toUserProfileDto(user);
+    return toUserProfileDto(user);
   }
 
   async updateMyProfile(
     userId: string,
-    dto: UpdateProfileDto & Record<string, unknown>,
+    dto: UpdateProfileDto,
     options?: { rememberMe?: boolean },
   ): Promise<RotatedProfileResult> {
     if ('dateOfBirth' in dto && dto.dateOfBirth !== undefined) {
@@ -284,7 +219,7 @@ export class ProfileService {
         : undefined;
 
       return {
-        profile: this.toUserProfileDto(updated),
+        profile: toUserProfileDto(updated),
         ...(rotatedSession ? { rotatedSession } : {}),
       };
     } catch (err: unknown) {

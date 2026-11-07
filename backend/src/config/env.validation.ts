@@ -37,9 +37,12 @@ export class EnvironmentVariables {
   @IsOptional()
   TZ: string = 'Asia/Ho_Chi_Minh';
 
+  @ValidateIf((o: EnvironmentVariables) => o.NODE_ENV === Environment.Production)
+  @IsNotEmpty({
+    message: 'CORS_ORIGIN must be explicitly configured in production',
+  })
   @IsString()
-  @IsOptional()
-  CORS_ORIGIN: string = 'http://localhost:3000';
+  CORS_ORIGIN?: string;
 
   @IsString()
   @IsOptional()
@@ -79,7 +82,12 @@ export class EnvironmentVariables {
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {
-  const validatedConfig = plainToInstance(EnvironmentVariables, config, {
+  const effectiveConfig =
+    config.NODE_ENV !== Environment.Production && !config.CORS_ORIGIN
+      ? { ...config, CORS_ORIGIN: 'http://localhost:3000' }
+      : config;
+
+  const validatedConfig = plainToInstance(EnvironmentVariables, effectiveConfig, {
     enableImplicitConversion: true,
   });
   const errors = validateSync(validatedConfig, {

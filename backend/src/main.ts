@@ -26,9 +26,16 @@ async function bootstrap() {
 
   const port = configService.get<number>('PORT', 3001);
 
-  // Enable CORS safely without throwing raw 500 error before AllExceptionsFilter (P1-1)
-  const corsOriginEnv = configService.get<string>('CORS_ORIGIN', 'http://localhost:3000');
-  const allowedOrigins = corsOriginEnv
+  // Enable CORS safely with production fail-fast protection (FIX-07)
+  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+  const corsOriginEnv = configService.get<string>('CORS_ORIGIN');
+  if (nodeEnv === 'production' && !corsOriginEnv) {
+    throw new Error(
+      'CORS_ORIGIN must be explicitly configured in production environment',
+    );
+  }
+  const effectiveCors = corsOriginEnv || 'http://localhost:3000';
+  const allowedOrigins = effectiveCors
     .split(',')
     .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean);
@@ -67,7 +74,6 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
 
   // Swagger Documentation (only available in non-production)
-  const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   if (nodeEnv !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('WebEdu API — Trung Tâm TD Hán Ngữ')

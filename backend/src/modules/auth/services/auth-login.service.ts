@@ -7,6 +7,11 @@ import {
 import { UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import type { AuthUserDto } from '../../../common/auth/auth.types.js';
+import {
+  assertIpNotBlocked,
+  assertRateLimitNotExceeded,
+  resetRateLimitKey,
+} from '../../../common/auth/auth-rate-limit.util.js';
 import { IDLE_TIMEOUT_MS } from '../../../common/guards/jwt-auth.guard.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { EMAIL_REGEX } from '../../../common/utils/contact-validation.util.js';
@@ -27,12 +32,23 @@ export class AuthLoginService {
     private readonly sessionService: AuthSessionService,
   ) {}
 
-  async login(dto: LoginDto): Promise<{
+  async login(
+    dto: LoginDto,
+    clientIp?: string,
+  ): Promise<{
     accessToken: string;
     expiresIn: number;
     redirectTo: string;
     user: AuthUserDto;
   }> {
+    if (clientIp) {
+      await assertIpNotBlocked(
+        this.prisma,
+        `login:ip:${clientIp}`,
+        'Quá nhiều lần đăng nhập không thành công từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+      );
+    }
+
     const normalizedEmail = (dto.email ?? '').trim().toLowerCase();
     if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
       throw new BadRequestException('Vui lòng đăng nhập bằng địa chỉ email hợp lệ');
@@ -46,6 +62,16 @@ export class AuthLoginService {
 
     if (!initialUser) {
       await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      if (clientIp) {
+        await assertRateLimitNotExceeded(this.prisma, {
+          key: `login:ip:${clientIp}`,
+          maxPoints: 15,
+          windowMs: 60 * 1000,
+          blockDurationMs: 15 * 60 * 1000,
+          errorMessage:
+            'Quá nhiều lần đăng nhập không thành công từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+        });
+      }
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
@@ -133,6 +159,22 @@ export class AuthLoginService {
       return { kind: 'SUCCESS' as const, updatedUser };
     });
 
+    if (
+      txOutcome.kind === 'LOCKED_15M' ||
+      txOutcome.kind === 'INVALID_CREDENTIALS'
+    ) {
+      if (clientIp) {
+        await assertRateLimitNotExceeded(this.prisma, {
+          key: `login:ip:${clientIp}`,
+          maxPoints: 15,
+          windowMs: 60 * 1000,
+          blockDurationMs: 15 * 60 * 1000,
+          errorMessage:
+            'Quá nhiều lần đăng nhập không thành công từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+        });
+      }
+    }
+
     if (txOutcome.kind === 'LOCKED_15M') {
       throw new ForbiddenException(
         'Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần',
@@ -145,6 +187,10 @@ export class AuthLoginService {
 
     if (txOutcome.kind === 'INACTIVE') {
       throw new ForbiddenException('Tài khoản đã bị khóa, vui lòng liên hệ trung tâm');
+    }
+
+    if (clientIp) {
+      await resetRateLimitKey(this.prisma, `login:ip:${clientIp}`).catch(() => {});
     }
 
     return this.sessionService.issueLoginSession(

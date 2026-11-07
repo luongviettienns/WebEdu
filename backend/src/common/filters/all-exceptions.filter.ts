@@ -49,6 +49,39 @@ function isPrismaUniqueConstraintError(err: unknown): boolean {
   );
 }
 
+export function resolvePrismaUniqueConstraintDetail(err: unknown): string {
+  if (typeof err !== 'object' || err === null) {
+    return 'Dữ liệu đã tồn tại trong hệ thống (vi phạm ràng buộc duy nhất)';
+  }
+  const meta = (err as { meta?: { target?: unknown }; message?: unknown }).meta;
+  const target = meta?.target;
+  let targetStr = '';
+  if (Array.isArray(target)) {
+    targetStr = target.map(String).join(' ');
+  } else if (typeof target === 'string') {
+    targetStr = target;
+  } else if (typeof (err as { message?: unknown }).message === 'string') {
+    targetStr = (err as { message: string }).message;
+  }
+
+  const lower = targetStr.toLowerCase();
+
+  if (lower.includes('course') || (lower.includes('code') && !lower.includes('class'))) {
+    return 'Mã khóa học đã tồn tại trong hệ thống';
+  }
+  if (lower.includes('class') && lower.includes('code')) {
+    return 'Mã lớp học đã tồn tại trong hệ thống';
+  }
+  if (lower.includes('enrollment') || lower.includes('student_id')) {
+    return 'Học viên hiện đã có một lớp học đang hoạt động';
+  }
+  if (lower.includes('email') || lower.includes('phone')) {
+    return 'Dữ liệu email hoặc số điện thoại đã tồn tại trong hệ thống';
+  }
+
+  return 'Dữ liệu đã tồn tại trong hệ thống (vi phạm ràng buộc duy nhất)';
+}
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
@@ -88,7 +121,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (isPrismaUniqueConstraintError(exception)) {
       status = HttpStatus.CONFLICT;
       title = HTTP_ERROR_TITLES[HttpStatus.CONFLICT] ?? 'Conflict';
-      detail = 'Dữ liệu email hoặc số điện thoại đã tồn tại trong hệ thống';
+      detail = resolvePrismaUniqueConstraintDetail(exception);
     } else if (exception instanceof Error) {
       this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
     }

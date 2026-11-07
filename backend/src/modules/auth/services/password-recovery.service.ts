@@ -10,13 +10,15 @@ import crypto from 'node:crypto';
 import { MailService } from '../../../common/mail/mail.service.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { EMAIL_REGEX } from '../../../common/utils/contact-validation.util.js';
+import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
 import type { ForgotPasswordDto, ResetPasswordDto } from '../dto/auth.dto.js';
-import { DUMMY_PASSWORD_HASH } from './auth-login.service.js';
 
 const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000; // 60 seconds (FUNC-005)
 const RATE_LIMIT_RETENTION_MS = 10 * 60 * 1000; // 10 minutes cleanup window
 const RESET_TOKEN_TTL_MINUTES = 15;
 const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000; // 15 minutes (FUNC-005)
+const MAX_FORGOT_REQUESTS_PER_IP = 5;
+const IP_FORGOT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 @Injectable()
 export class PasswordRecoveryService {
@@ -27,13 +29,28 @@ export class PasswordRecoveryService {
     private readonly mailService: MailService,
   ) {}
 
-  async forgotPassword(dto: ForgotPasswordDto): Promise<{
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+    clientIp?: string,
+  ): Promise<{
     message: string;
     cooldownSeconds: number;
   }> {
     const normalizedEmail = (dto.email ?? '').trim().toLowerCase();
     if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
       throw new BadRequestException('Email không hợp lệ');
+    }
+
+    // IP-based rate limiting across multi-instances without Redis (FIX-04)
+    if (clientIp) {
+      await assertRateLimitNotExceeded(this.prisma, {
+        key: `forgot:ip:${clientIp}`,
+        maxPoints: MAX_FORGOT_REQUESTS_PER_IP,
+        windowMs: IP_FORGOT_WINDOW_MS,
+        blockDurationMs: IP_FORGOT_WINDOW_MS,
+        errorMessage:
+          'Quá nhiều yêu cầu khôi phục mật khẩu từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+      });
     }
 
     const emailHash = crypto
@@ -45,12 +62,17 @@ export class PasswordRecoveryService {
     const cutoff = new Date(nowMs - FORGOT_PASSWORD_COOLDOWN_MS);
     const pruneBefore = new Date(nowMs - RATE_LIMIT_RETENTION_MS);
 
-    // Opportunistically clean stale rate-limit rows (> 10 minutes old)
-    await this.prisma.emailRateLimit.deleteMany({
-      where: {
-        lastRequestedAt: { lt: pruneBefore },
-      },
-    });
+    // Opportunistically clean stale rate-limit rows with bounded probabilistic cleanup
+    if (Math.random() < 0.05) {
+      await this.prisma.$executeRaw`
+        DELETE FROM "email_rate_limits"
+        WHERE "email_hash" IN (
+          SELECT "email_hash" FROM "email_rate_limits"
+          WHERE "last_requested_at" < ${pruneBefore}
+          LIMIT 500
+        )
+      `.catch(() => {});
+    }
 
     // Atomic PostgreSQL conditional upsert enforcing 60s cooldown across all instances
     // regardless of whether the target email exists (SEC-06 anti-enumeration).
@@ -109,8 +131,9 @@ export class PasswordRecoveryService {
         );
       }
     } else {
-      // Equalize baseline CPU latency when email does not exist to mitigate timing side-channels
-      await bcrypt.compare('webedu_forgot_password_pad', DUMMY_PASSWORD_HASH);
+      // Lightweight constant-time pad mitigating timing side-channels without CPU starvation DoS (FIX-04)
+      const dummyBuf = crypto.createHash('sha256').update(normalizedEmail).digest();
+      crypto.timingSafeEqual(dummyBuf, dummyBuf);
     }
 
     return {

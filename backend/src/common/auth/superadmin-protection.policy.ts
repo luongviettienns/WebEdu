@@ -15,6 +15,23 @@ export interface LockedUserRow {
 }
 
 /**
+ * Locks only the target user row in the transaction.
+ * Used for ordinary student/teacher mutations where Superadmin
+ * demotion or deactivation is not at stake, eliminating global lock contention.
+ */
+export async function lockTargetUser(
+  tx: Prisma.TransactionClient,
+  targetUserId: string,
+): Promise<LockedUserRow | null> {
+  const rows = await tx.$queryRaw<LockedUserRow[]>`
+    SELECT id, roles, status FROM "users"
+    WHERE id = ${targetUserId}
+    FOR UPDATE
+  `;
+  return rows[0] ?? null;
+}
+
+/**
  * Locks the target user plus every ACTIVE Superadmin in ONE statement with a
  * deterministic `ORDER BY id ASC FOR UPDATE`. Acquiring locks in ascending
  * primary-key order across all services makes AB-BA deadlocks (40P01)
@@ -88,7 +105,7 @@ export function assertAnotherActiveSuperadminRemains(
         row.roles.includes(Role.SUPERADMIN) && row.status === UserStatus.ACTIVE
       );
     }
-    return true;
+    return row.roles === undefined;
   }).length;
 
   if (otherActiveCount < 1) {

@@ -190,6 +190,7 @@ function createSafeTruncateFn(
         "enrollments",
         "classes",
         "courses",
+        "auth_rate_limits",
         "email_rate_limits",
         "password_reset_tokens",
         "guardian_consents",

@@ -180,9 +180,8 @@ describe('TeachersService (Slice 2.4 - FUNC-006)', () => {
     expect(created.roles).toEqual([Role.TEACHER]);
     expect(created.isAdmin).toBe(false);
     expect(auditLogs).toHaveLength(1);
-    expect((auditLogs[0]?.metadata as Record<string, unknown>)?.initialPassword).toBe(
-      '[REDACTED]',
-    );
+    expect((auditLogs[0]?.metadata as Record<string, unknown>)?.initialPassword).toBeUndefined();
+    expect((auditLogs[0]?.metadata as Record<string, unknown>)?.hasInitialCredentials).toBe(true);
   });
 
   it('returns isAdmin=true flag for dual-role TEACHER+ADMIN in teacher list (Cleanup #16)', async () => {

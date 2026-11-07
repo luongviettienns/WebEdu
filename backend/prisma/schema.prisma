@@ -151,7 +151,18 @@ model EmailRateLimit {
   emailHash       String   @id @map("email_hash") @db.VarChar(64)
   lastRequestedAt DateTime @map("last_requested_at") @db.Timestamptz(3)
 
+  @@index([lastRequestedAt])
   @@map("email_rate_limits")
+}
+
+model AuthRateLimit {
+  key           String    @id @map("key") @db.VarChar(128)
+  points        Int       @default(1)
+  lastAttemptAt DateTime  @map("last_attempt_at") @db.Timestamptz(3)
+  blockedUntil  DateTime? @map("blocked_until") @db.Timestamptz(3)
+
+  @@index([lastAttemptAt])
+  @@map("auth_rate_limits")
 }
 
 model Course {
