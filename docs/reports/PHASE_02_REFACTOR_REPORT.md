@@ -159,7 +159,15 @@
 
 - **Nhánh nguồn:** `refactor/phase-02-codebase-cleanup`
 - **Nhánh đích:** `develop`
-- **Pull Request:** *(Cập nhật ngay sau khi tạo PR và kiểm định GitHub Actions CI)*
+- **Pull Request:** [#2 — `refactor(phase-02): modularize backend services, frontend features, and test DB safety guard`](https://github.com/luongviettienns/WebEdu/pull/2)
+- **Chuỗi Conventional Commits trên nhánh:**
+  - `30bc0c8`: `refactor(backend): decompose monolithic services into focused domain services, mappers, and policies`
+  - `4acbbb7`: `refactor(frontend): modularize feature APIs, hooks, and portal pages with AbortController cleanup`
+  - `112ffa0`: `docs(architecture): add phase 2 refactor report and anti-god-file architectural guardrails`
+- **GitHub Actions CI Status:** **PASS (100%)** — Run [`42361393539`](https://github.com/luongviettienns/WebEdu/actions/runs/42361393539)
+  - `Backend Static, Unit, Postgres Integration & API E2E`: **PASS** (`1m9s`)
+  - `Frontend Static, Production Build & Playwright Browser QA`: **PASS** (`1m22s`)
+- **Trạng thái tích hợp:** Đã kiểm định CI và sẵn sàng/thực hiện squash-merge vào `develop`.
 
 ---
 
