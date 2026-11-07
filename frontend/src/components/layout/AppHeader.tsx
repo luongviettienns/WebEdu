@@ -117,11 +117,8 @@ function AppHeaderInner({
 
   useEffect(() => {
     let cancelled = false;
-    const effective = user?.effectiveRole;
-    if (
-      pendingCountOverride === undefined &&
-      (effective === 'ADMIN' || effective === 'SUPERADMIN')
-    ) {
+    const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
+    if (pendingCountOverride === undefined && hasAdminRole) {
       void (async () => {
         try {
           const res = await listPendingEnrollmentStudents();
@@ -136,7 +133,7 @@ function AppHeaderInner({
     return () => {
       cancelled = true;
     };
-  }, [user?.effectiveRole, pendingCountOverride]);
+  }, [user?.roles, pendingCountOverride]);
 
   const handleLogout = useCallback(
     async (isIdleTimeout = false) => {
@@ -230,17 +227,22 @@ function AppHeaderInner({
     role?: Role,
     assignedRoles?: readonly Role[],
   ): NavLinkItem[] => {
+    const hasAdminRole = Boolean(assignedRoles?.includes('ADMIN'));
     const hasTeacherRole = Boolean(assignedRoles?.includes('TEACHER'));
     switch (role) {
       case 'SUPERADMIN':
         return [
           { href: '/superadmin/settings', label: 'Vận hành hệ thống' },
           { href: '/admin/students', label: 'Học viên' },
-          {
-            href: '/admin/students/pending',
-            label: 'Chờ xếp lớp',
-            badge: pendingCount,
-          },
+          ...(hasAdminRole
+            ? [
+                {
+                  href: '/admin/students/pending',
+                  label: 'Chờ xếp lớp',
+                  badge: pendingCount,
+                },
+              ]
+            : []),
           { href: '/admin/teachers', label: 'Giáo viên' },
           ...(hasTeacherRole
             ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách' }]

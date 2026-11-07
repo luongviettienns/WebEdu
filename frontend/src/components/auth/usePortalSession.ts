@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useState } from 'react';
 import { PortalGuardStatus } from '@/components/auth/AccessDeniedState';
-import { setStoredAccessToken } from '@/lib/api-client';
+import { purgeLegacyWebStorageTokens } from '@/lib/api-client';
 import {
   AuthUserDto,
   extractErrorMessage,
@@ -36,7 +36,7 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
   const handleApiAuthError = useCallback(
     (error: unknown): boolean => {
       if (isUnauthorizedError(error)) {
-        setStoredAccessToken(null);
+        purgeLegacyWebStorageTokens();
         setStatus('unauthorized');
         router.replace('/login');
         return true;
@@ -73,7 +73,7 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
         if (cancelled) return;
 
         if (isUnauthorizedError(error)) {
-          setStoredAccessToken(null);
+          purgeLegacyWebStorageTokens();
           setStatus('unauthorized');
           router.replace('/login');
           return;

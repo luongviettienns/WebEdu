@@ -29,29 +29,20 @@ const API_BASE_URL =
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = 'webedu_access_token';
 
 /**
- * Chỉ giữ accessToken trong bộ nhớ RAM của tab hiện tại (không lưu Web Storage)
- * để loại bỏ rủi ro đánh cắp JWT bền vững qua XSS; phiên chính dựa trên Cookie HttpOnly.
+ * Xóa triệt để mọi khóa token cũ nếu từng tồn tại trong Web Storage.
+ * Phiên xác thực trình duyệt sử dụng duy nhất Cookie HttpOnly (SameSite=Lax),
+ * không bao giờ lưu trữ JWT trong localStorage, sessionStorage hay biến JS.
  */
-let inMemoryAccessToken: string | null = null;
-
-function purgeLegacyWebStorageToken(): void {
+export function purgeLegacyWebStorageTokens(): void {
   if (typeof window === 'undefined') {
     return;
   }
   try {
     window.localStorage.removeItem(LEGACY_ACCESS_TOKEN_STORAGE_KEY);
+    window.sessionStorage.removeItem(LEGACY_ACCESS_TOKEN_STORAGE_KEY);
   } catch {
     // Bỏ qua nếu trình duyệt hạn chế quyền truy cập Storage
   }
-}
-
-export function getStoredAccessToken(): string | null {
-  return inMemoryAccessToken;
-}
-
-export function setStoredAccessToken(token: string | null): void {
-  inMemoryAccessToken = token ?? null;
-  purgeLegacyWebStorageToken();
 }
 
 function normalizeHeaders(headersInit?: HeadersInit): Record<string, string> {
@@ -100,17 +91,13 @@ export async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
+  purgeLegacyWebStorageTokens();
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const defaultHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Requested-With': 'XMLHttpRequest',
   };
-
-  const token = getStoredAccessToken();
-  if (token) {
-    defaultHeaders['Authorization'] = `Bearer ${token}`;
-  }
 
   const response = await fetch(url, {
     ...options,
