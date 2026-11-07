@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   VN_TIMEZONE,
   calculateTeacherAttendanceDeadline,
@@ -86,5 +86,24 @@ describe('Timezone Utilities (Asia/Ho_Chi_Minh)', () => {
     expect(resolveVnCalendarDateForDb('2026-02-30')).toBeNull();
     expect(resolveVnCalendarDateForDb('2026-02-30T10:00:00Z')).toBeNull();
     expect(resolveVnCalendarDateForDb('invalid-date')).toBeNull();
+  });
+
+  it('evaluates 23:59:59 GMT+7 vs 00:00:00 GMT+7 and leap year Feb 29 boundaries using fake clock', () => {
+    vi.useFakeTimers();
+    try {
+      // Set clock to 2028-02-28 23:59:59 GMT+7 (leap year 2028)
+      vi.setSystemTime(new Date('2028-02-28T23:59:59+07:00'));
+      const leapStudent2012 = new Date('2012-02-29T00:00:00.000Z');
+      expect(calculateAgeInVnTimezone(leapStudent2012)).toBe(15);
+
+      // Advance 1 second to 2028-02-29 00:00:00 GMT+7 -> turns 16 (no longer needs guardianConsent!)
+      vi.setSystemTime(new Date('2028-02-29T00:00:00+07:00'));
+      expect(calculateAgeInVnTimezone(leapStudent2012)).toBe(16);
+      expect(resolveVnCalendarDateForDb(undefined)?.toISOString()).toBe(
+        '2028-02-29T00:00:00.000Z',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

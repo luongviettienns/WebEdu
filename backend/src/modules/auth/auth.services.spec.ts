@@ -722,5 +722,202 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         ),
       );
     });
+
+    it('validates resetPassword token, password length, and confirmPassword mismatch', async () => {
+      await expect(
+        service.resetPassword({ token: '', newPassword: 'ValidPassword123' }),
+      ).rejects.toThrowError(new BadRequestException('Link đã hết hạn, vui lòng gửi lại'));
+
+      await expect(
+        service.resetPassword({ token: 'abc', newPassword: 'short' }),
+      ).rejects.toThrowError(new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự'));
+
+      await expect(
+        service.resetPassword({ token: 'abc', newPassword: 'A'.repeat(73) }),
+      ).rejects.toThrowError(
+        new BadRequestException('Mật khẩu không được vượt quá 72 ký tự'),
+      );
+
+      await expect(
+        service.resetPassword({
+          token: 'abc',
+          newPassword: 'ValidPassword123',
+          confirmPassword: 'DifferentPassword123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Xác nhận mật khẩu không khớp'));
+    });
+  });
+
+  describe('FUNC-004: AuthSessionService getMe, logout & Registration Contact Validation', () => {
+    it('returns AuthUserDto on getMe, throws NotFoundException on unknown id, and increments tokenVersion on logout', async () => {
+      const reg = await service.register({
+        fullName: 'Học Viên Phiên',
+        dateOfBirth: '2002-04-15',
+        phone: '0904445555',
+        email: 'session@example.com',
+        password: 'Password123',
+      });
+
+      const me = await service.getMe(reg.user.id);
+      expect(me.email).toBe('session@example.com');
+      expect(me.effectiveRole).toBe(Role.STUDENT);
+
+      await expect(service.getMe('nonexistent-id')).rejects.toThrowError(
+        'Tài khoản không tồn tại',
+      );
+
+      const logoutRes = await service.logout(reg.user.id);
+      expect(logoutRes.message).toBe('Đăng xuất thành công');
+      expect(usersStore.get(reg.user.id)?.tokenVersion).toBe(1);
+    });
+
+    it('validates fullName, email, phone, password length, confirmPassword, and guardianEmail during registration', async () => {
+      await expect(
+        service.register({
+          fullName: '   ',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Họ và tên không được để trống'));
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'not-an-email',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Email không hợp lệ'));
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '12345',
+          email: 'valid@example.com',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0'),
+      );
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'short',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự'));
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'P'.repeat(73),
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Mật khẩu không được vượt quá 72 ký tự'),
+      );
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'Password123',
+          confirmPassword: 'MismatchPassword123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Xác nhận mật khẩu không khớp'));
+
+      await expect(
+        service.register({
+          fullName: 'Thiếu Niên',
+          dateOfBirth: '2012-05-10',
+          phone: '0901112222',
+          email: 'teen@example.com',
+          password: 'Password123',
+          guardianEmail: 'invalid-guardian-email',
+          guardianConsent: true,
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Vui lòng xác nhận đã có sự đồng ý của cha mẹ'),
+      );
+    });
+
+    it('enforces exact 15m lockout expiry, 60s forgot-password cooldown, and 15m reset token TTL under fake clock (Bước 3.D)', async () => {
+      await service.register({
+        fullName: 'Học Viên Đồng Hồ',
+        dateOfBirth: '2000-01-01',
+        phone: '0906667777',
+        email: 'clock@example.com',
+        password: 'CorrectPassword123',
+      });
+
+      vi.useFakeTimers();
+      try {
+        const baseNow = new Date('2026-11-07T23:59:59+07:00');
+        vi.setSystemTime(baseNow);
+
+        // 1. Trigger 5 wrong logins -> locked for 15 minutes
+        for (let i = 0; i < 5; i++) {
+          await expect(
+            service.login({ email: 'clock@example.com', password: 'WrongPassword!' }),
+          ).rejects.toThrow();
+        }
+
+        // At +14m 59s -> still locked
+        vi.setSystemTime(new Date(baseNow.getTime() + (14 * 60 + 59) * 1000));
+        await expect(
+          service.login({ email: 'clock@example.com', password: 'CorrectPassword123' }),
+        ).rejects.toThrowError('Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần');
+
+        // At +15m 01s -> lockout expired, login succeeds!
+        vi.setSystemTime(new Date(baseNow.getTime() + (15 * 60 + 1) * 1000));
+        const unlockedLogin = await service.login({
+          email: 'clock@example.com',
+          password: 'CorrectPassword123',
+        });
+        expect(unlockedLogin.user.email).toBe('clock@example.com');
+
+        // 2. Forgot password 60s cooldown & 15m token TTL
+        const t0 = new Date('2026-11-08T10:00:00+07:00');
+        vi.setSystemTime(t0);
+        await service.forgotPassword({ email: 'clock@example.com' });
+        const firstToken = sentResetEmails[sentResetEmails.length - 1]!.rawToken;
+
+        // At +59s -> still in cooldown
+        vi.setSystemTime(new Date(t0.getTime() + 59 * 1000));
+        await expect(
+          service.forgotPassword({ email: 'clock@example.com' }),
+        ).rejects.toThrowError('Vui lòng đợi trước khi gửi lại yêu cầu');
+
+        // At +61s -> cooldown expired, can request again
+        vi.setSystemTime(new Date(t0.getTime() + 61 * 1000));
+        await service.forgotPassword({ email: 'clock@example.com' });
+        const secondToken = sentResetEmails[sentResetEmails.length - 1]!.rawToken;
+
+        // Advance to t0 + 15m 01s -> firstToken (issued at t0) has expired (> 15m TTL)!
+        vi.setSystemTime(new Date(t0.getTime() + (15 * 60 + 1) * 1000));
+        await expect(
+          service.resetPassword({ token: firstToken, newPassword: 'NewPassword456' }),
+        ).rejects.toThrowError('Link đã hết hạn, vui lòng gửi lại');
+
+        // Advance to t0 + 61s + 15m 01s -> secondToken (issued at t0 + 61s) has also expired!
+        vi.setSystemTime(new Date(t0.getTime() + (61 + 15 * 60 + 1) * 1000));
+        await expect(
+          service.resetPassword({ token: secondToken, newPassword: 'NewPassword456' }),
+        ).rejects.toThrowError('Link đã hết hạn, vui lòng gửi lại');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 });

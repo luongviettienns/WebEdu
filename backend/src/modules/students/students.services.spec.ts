@@ -939,4 +939,70 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
       ),
     );
   });
+
+  it('lists students with filters and evaluates verifyClassLearningAccess for Admin, Teacher, and Superadmin', async () => {
+    const listed = await service.listStudents({
+      status: UserStatus.PENDING_CLASS,
+      className: 'HSK1-K20',
+      search: 'Student',
+      page: 1,
+      limit: 10,
+    });
+    expect(listed.total).toBe(2);
+
+    const teacherActor: AuthenticatedUser = {
+      id: 'teacher-1',
+      email: 'teacher1@webedu.vn',
+      fullName: 'Teacher 1',
+      phone: '0904444444',
+      roles: [Role.TEACHER],
+      effectiveRole: Role.TEACHER,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    expect(
+      service.verifyClassLearningAccess(adminActor, {
+        classId: 'cls-k21',
+        assignedTeacherId: 'teacher-1',
+        classStatus: 'ACTIVE',
+      }),
+    ).toEqual({ allowed: true, mode: 'FULL' });
+
+    expect(
+      service.verifyClassLearningAccess(teacherActor, {
+        classId: 'cls-k21',
+        assignedTeacherId: 'teacher-1',
+        classStatus: 'ACTIVE',
+      }),
+    ).toEqual({ allowed: true, mode: 'FULL' });
+
+    expect(
+      service.verifyClassLearningAccess(teacherActor, {
+        classId: 'cls-completed',
+        assignedTeacherId: 'teacher-1',
+        classStatus: 'COMPLETED',
+      }),
+    ).toEqual({ allowed: true, mode: 'READ_ONLY' });
+
+    expect(() =>
+      service.verifyClassLearningAccess(teacherActor, {
+        classId: 'cls-k21',
+        assignedTeacherId: 'other-teacher',
+        classStatus: 'ACTIVE',
+      }),
+    ).toThrow(
+      new ForbiddenException(
+        'Giáo viên đã được thay thế không còn quyền truy cập lớp học này',
+      ),
+    );
+
+    expect(() =>
+      service.verifyClassLearningAccess(studentActorA, {
+        classId: 'cls-k21',
+        assignedTeacherId: 'teacher-1',
+        classStatus: 'ACTIVE',
+      }),
+    ).toThrow(new ForbiddenException('Bạn không có quyền truy cập'));
+  });
 });

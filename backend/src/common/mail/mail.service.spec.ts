@@ -4,6 +4,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { MailService } from './mail.service.js';
 import { SmtpEmailProvider } from './smtp-email.provider.js';
 import type { EmailProvider, SendEmailPayload } from './mail.types.js';
+import { resolvePagination } from '../utils/pagination.util.js';
 
 describe('MailService & SmtpEmailProvider (FUNC-005)', () => {
   it('builds URL-encoded reset link from FRONTEND_APP_URL and escapes HTML entities', async () => {
@@ -62,5 +63,58 @@ describe('MailService & SmtpEmailProvider (FUNC-005)', () => {
       if (prevProvider !== undefined) process.env.MAIL_PROVIDER = prevProvider;
       else delete process.env.MAIL_PROVIDER;
     }
+  });
+
+  it('falls back to CORS_ORIGIN or localhost:3000 when FRONTEND_APP_URL is unset and defaults empty fullName', async () => {
+    const prevFrontend = process.env.FRONTEND_APP_URL;
+    delete process.env.FRONTEND_APP_URL;
+    try {
+      const sentPayloads: SendEmailPayload[] = [];
+      const fakeProvider: EmailProvider = {
+        sendEmail: vi.fn(async (payload: SendEmailPayload) => {
+          sentPayloads.push(payload);
+        }),
+      };
+
+      const configWithCors = {
+        get: vi.fn((key: string) =>
+          key === 'CORS_ORIGIN' ? 'http://localhost:3005,http://localhost:3006' : undefined,
+        ),
+      } as unknown as ConfigService;
+
+      const mailWithCors = new MailService(fakeProvider, configWithCors);
+      expect(mailWithCors.buildPasswordResetLink('tok-1')).toBe(
+        'http://localhost:3005/reset-password?token=tok-1',
+      );
+
+      const configEmpty = {
+        get: vi.fn(() => undefined),
+      } as unknown as ConfigService;
+
+      const mailDefault = new MailService(fakeProvider, configEmpty);
+      await mailDefault.sendPasswordResetEmail({
+        toEmail: 'anon@example.com',
+        fullName: '',
+        rawToken: 'tok-2',
+        expiresInMinutes: 15,
+      });
+
+      expect(sentPayloads[0]?.text).toContain('Xin chào bạn,');
+      expect(sentPayloads[0]?.html).toContain('Học viên / Giảng viên');
+      expect(sentPayloads[0]?.text).toContain('http://localhost:3000/reset-password?token=tok-2');
+    } finally {
+      if (prevFrontend !== undefined) process.env.FRONTEND_APP_URL = prevFrontend;
+    }
+  });
+
+  it('normalizes boundary pagination values (page <= 0, negative limit, limit > 100)', () => {
+    expect(resolvePagination(undefined)).toEqual({ page: 1, limit: 20, skip: 0 });
+    expect(resolvePagination({ page: 0, limit: 0 })).toEqual({ page: 1, limit: 20, skip: 0 });
+    expect(resolvePagination({ page: -5, limit: -10 })).toEqual({ page: 1, limit: 1, skip: 0 });
+    expect(resolvePagination({ page: 3, limit: 5000 })).toEqual({
+      page: 3,
+      limit: 100,
+      skip: 200,
+    });
   });
 });

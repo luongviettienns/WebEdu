@@ -2,26 +2,39 @@ import { describe, it, expect, vi } from 'vitest';
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Role, UserStatus } from '@prisma/client';
+import { ROLES_KEY } from '../decorators/roles.decorator.js';
 import { RolesGuard } from './roles.guard.js';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 
 describe('RolesGuard', () => {
+  const handlerDummy = () => {};
+  const classDummy = class {};
+
   const createMockContext = (user?: AuthenticatedUser): ExecutionContext => {
     return {
-      getHandler: vi.fn(),
-      getClass: vi.fn(),
+      getHandler: () => handlerDummy,
+      getClass: () => classDummy,
       switchToHttp: () => ({
         getRequest: () => ({ user }),
       }),
     } as unknown as ExecutionContext;
   };
 
-  it('allows access when no @Roles metadata is specified on route', () => {
+  it('allows access when no @Roles metadata or empty @Roles() array is specified on route', () => {
+    const getAllAndOverride = vi
+      .fn()
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce([]);
     const reflector = {
-      getAllAndOverride: vi.fn().mockReturnValue(undefined),
+      getAllAndOverride,
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
 
+    expect(guard.canActivate(createMockContext())).toBe(true);
+    expect(getAllAndOverride).toHaveBeenCalledWith(ROLES_KEY, [
+      handlerDummy,
+      classDummy,
+    ]);
     expect(guard.canActivate(createMockContext())).toBe(true);
   });
 
@@ -45,11 +58,15 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(createMockContext(adminUser))).toBe(true);
   });
 
-  it('blocks SUPERADMIN from accessing route restricted to TEACHER/STUDENT learning data (FUNC-013)', () => {
+  it('blocks missing user or SUPERADMIN from accessing route restricted to TEACHER/STUDENT learning data (FUNC-013)', () => {
     const reflector = {
       getAllAndOverride: vi.fn().mockReturnValue([Role.TEACHER]),
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
+
+    expect(() => guard.canActivate(createMockContext(undefined))).toThrow(
+      new ForbiddenException('Bạn không có quyền truy cập'),
+    );
 
     const superadminUser: AuthenticatedUser = {
       id: 'u-sa',
@@ -62,6 +79,8 @@ describe('RolesGuard', () => {
       tokenVersion: 0,
     };
 
-    expect(() => guard.canActivate(createMockContext(superadminUser))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(createMockContext(superadminUser))).toThrow(
+      new ForbiddenException('Bạn không có quyền truy cập'),
+    );
   });
 });
