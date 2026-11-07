@@ -103,4 +103,7 @@ Phase 2 đã tạo sẵn nền tảng CSDL chuẩn xác (`courses`, `classes`, `
   - `bugfix/p0-foundation-remediation` (`cd78c8c`) — ancestor của `develop`
   - `feature/phase-02-auth-rbac` (`99884c6`) — trùng commit đầu của `develop` trước đợt nghiệm thu này
 - **Trạng thái nhánh `main`:** Giữ nguyên tại `7fa2bbf` (tuyệt đối không tự động merge `develop` vào `main`).
-- **Pull Request & CI Status:** Đang cập nhật URL PR thực tế & trạng thái GitHub Actions CI (`WebEdu Quality Gates`) ngay bước tích hợp PR bên dưới.
+- **Pull Request tích hợp:** **PR #1** — `https://github.com/luongviettienns/WebEdu/pull/1` (`fix(phase-02): final remediation and acceptance hardening`, `fix/phase-02-final-remediation` → `develop`, cơ chế tích hợp: Squash Merge).
+- **Commits trên nhánh remediation trước khi Squash Merge:** `d432c89`, `46b8a43`, `f45db19`, `68e6dab`, `df20830`, `1a21a35`, `d490cf5` (+ commit liên kết PR/CI này).
+- **GitHub Actions CI Status (`WebEdu Quality Gates`):** **`PASS` 100%** (Run `42341159902` — cả 2 jobs `Backend Static, Unit, Postgres Integration & API E2E` và `Frontend Static, Production Build & Playwright Browser QA` đều đạt `pass` trên `ubuntu-latest` + `postgres:16-alpine`).
+- **Trạng thái các nhánh sau tích hợp:** `fix/phase-02-final-remediation` được Squash Merge sạch vào `develop` (xác nhận `git log -1 develop` cho Merge Commit SHA chính thức); các nhánh lịch sử Phase 1–2 (`feature/phase-01-foundation`, `bugfix/p0-foundation-remediation`, `feature/phase-02-auth-rbac`) đều đã nằm trong lịch sử tổ tiên của `develop`, không còn nhánh tính năng dở dang nào chưa tích hợp.
