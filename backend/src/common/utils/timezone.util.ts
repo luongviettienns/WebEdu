@@ -120,3 +120,14 @@ export function resolveVnCalendarDateForDb(
   const vnYmd = formatInTimeZone(parsedInstant, VN_TIMEZONE, 'yyyy-MM-dd');
   return new Date(`${vnYmd}T00:00:00.000Z`);
 }
+
+/**
+ * Formats the UTC calendar parts of a Date as `YYYY-MM-DD`.
+ * Used for Prisma `@db.Date` columns, which are stored as UTC midnight.
+ */
+export function formatIsoDateUtc(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}

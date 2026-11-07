@@ -2,15 +2,11 @@
 
 import Link from 'next/link';
 import React from 'react';
-import { PortalGuardView } from '@/components/auth/AccessDeniedState';
-import { usePortalProfileSession } from '@/components/auth/usePortalSession';
 import { AppHeader } from '@/components/layout/AppHeader';
-import {
-  ROLE_LABELS,
-  Role,
-  STATUS_LABELS,
-  UserProfileDto,
-} from '@/lib/auth-api';
+import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
+import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
+import type { UserProfileDto } from '@/features/profile/api/profile.api';
+import { ROLE_LABELS, STATUS_LABELS, type Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['TEACHER', 'ADMIN'];
 

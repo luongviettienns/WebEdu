@@ -18,11 +18,20 @@ import {
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { PrismaService } from '../src/common/prisma/prisma.service.js';
-import { AuthService } from '../src/modules/auth/auth.service.js';
-import { StudentsService } from '../src/modules/students/students.service.js';
+import {
+  resolveAuthServices,
+  type AuthServicesHandle,
+} from './helpers/auth-services.js';
+import {
+  resolveStudentServices,
+  type StudentServicesHandle,
+} from './helpers/student-services.js';
 import { TeachersService } from '../src/modules/teachers/teachers.service.js';
 import { ProfileService } from '../src/modules/users/profile.service.js';
-import { SystemSettingsService } from '../src/modules/system-settings/system-settings.service.js';
+import {
+  resolveSystemSettingsServices,
+  type SystemSettingsServicesHandle,
+} from './helpers/system-settings-services.js';
 import { calculateAgeInVnTimezone } from '../src/common/utils/timezone.util.js';
 import type { AuthenticatedUser } from '../src/common/auth/auth.types.js';
 import {
@@ -46,11 +55,11 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
   let smtpServer: LocalSmtpTestServer;
   let moduleRef: TestingModule;
   let prisma: PrismaService;
-  let authService: AuthService;
-  let studentsService: StudentsService;
+  let authService: AuthServicesHandle;
+  let studentsService: StudentServicesHandle;
   let teachersService: TeachersService;
   let profileService: ProfileService;
-  let systemSettingsService: SystemSettingsService;
+  let systemSettingsService: SystemSettingsServicesHandle;
 
   async function bootNestModule(): Promise<TestingModule> {
     const { AppModule } = await import('../src/app.module.js');
@@ -78,11 +87,11 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
 
     moduleRef = await bootNestModule();
     prisma = moduleRef.get(PrismaService);
-    authService = moduleRef.get(AuthService);
-    studentsService = moduleRef.get(StudentsService);
+    authService = resolveAuthServices(moduleRef);
+    studentsService = resolveStudentServices(moduleRef);
     teachersService = moduleRef.get(TeachersService);
     profileService = moduleRef.get(ProfileService);
-    systemSettingsService = moduleRef.get(SystemSettingsService);
+    systemSettingsService = resolveSystemSettingsServices(moduleRef);
   });
 
   afterAll(async () => {
@@ -150,11 +159,11 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     await moduleRef.close();
     moduleRef = await bootNestModule();
     prisma = moduleRef.get(PrismaService);
-    authService = moduleRef.get(AuthService);
-    studentsService = moduleRef.get(StudentsService);
+    authService = resolveAuthServices(moduleRef);
+    studentsService = resolveStudentServices(moduleRef);
     teachersService = moduleRef.get(TeachersService);
     profileService = moduleRef.get(ProfileService);
-    systemSettingsService = moduleRef.get(SystemSettingsService);
+    systemSettingsService = resolveSystemSettingsServices(moduleRef);
 
     // After restart, correct password is STILL rejected while lockedUntil > now
     await expect(
@@ -210,7 +219,7 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     });
 
     const secondInstance = await bootNestModule();
-    const secondAuthService = secondInstance.get(AuthService);
+    const secondAuthService = resolveAuthServices(secondInstance);
 
     try {
       const outcomes = await Promise.allSettled(

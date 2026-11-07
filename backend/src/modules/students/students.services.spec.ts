@@ -11,12 +11,38 @@ import {
   Role,
   UserStatus,
 } from '@prisma/client';
-import { StudentsService } from './students.service.js';
+import { StudentAccessService } from './services/student-access.service.js';
+import { StudentCrudService } from './services/student-crud.service.js';
+import { StudentEnrollmentService } from './services/student-enrollment.service.js';
+import { StudentQueryService } from './services/student-query.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 
-describe('StudentsService (FUNC-007, 008, 010, DEC-024..026)', () => {
-  let service: StudentsService;
+/**
+ * Test-local composition of the Students module services (access -> query ->
+ * crud/enrollment) wired exactly like the Nest module, exposing one handle so
+ * the business-rule assertions below stay unchanged.
+ */
+function composeStudentServices(prisma: PrismaService) {
+  const access = new StudentAccessService(prisma);
+  const queries = new StudentQueryService(prisma, access);
+  const crud = new StudentCrudService(prisma, access, queries);
+  const enrollment = new StudentEnrollmentService(prisma, queries);
+  return {
+    getStudentById: queries.getStudentById.bind(queries),
+    listStudents: queries.listStudents.bind(queries),
+    getPendingEnrollmentQueue: queries.getPendingEnrollmentQueue.bind(queries),
+    getStudentLearningRecords: queries.getStudentLearningRecords.bind(queries),
+    getStudentClassHistory: queries.getStudentClassHistory.bind(queries),
+    updateStudent: crud.updateStudent.bind(crud),
+    listAvailableClasses: enrollment.listAvailableClasses.bind(enrollment),
+    assignInitialClass: enrollment.assignInitialClass.bind(enrollment),
+    verifyClassLearningAccess: access.verifyClassLearningAccess.bind(access),
+  };
+}
+
+describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
+  let service: ReturnType<typeof composeStudentServices>;
 
   interface MockStudentUser {
     id: string;
@@ -473,7 +499,7 @@ describe('StudentsService (FUNC-007, 008, 010, DEC-024..026)', () => {
       }),
     };
 
-    service = new StudentsService(mockPrisma as unknown as PrismaService);
+    service = composeStudentServices(mockPrisma as unknown as PrismaService);
   });
 
   it('enforces IDOR protection: Student A cannot view Student B profile or learning records (FUNC-010)', async () => {

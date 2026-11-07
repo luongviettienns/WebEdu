@@ -11,7 +11,10 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
-import { AuthService } from './auth.service.js';
+import { AuthLoginService } from './services/auth-login.service.js';
+import { AuthRegistrationService } from './services/auth-registration.service.js';
+import { AuthSessionService } from './services/auth-session.service.js';
+import { PasswordRecoveryService } from './services/password-recovery.service.js';
 import {
   ForgotPasswordDto,
   LoginDto,
@@ -28,7 +31,12 @@ import { RolesGuard } from '../../common/guards/roles.guard.js';
 @Controller('auth')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly registrationService: AuthRegistrationService,
+    private readonly loginService: AuthLoginService,
+    private readonly sessionService: AuthSessionService,
+    private readonly passwordRecoveryService: PasswordRecoveryService,
+  ) {}
 
   @Public()
   @Post(['register', 'register/student'])
@@ -41,7 +49,7 @@ export class AuthController {
         ? req.headers['user-agent']
         : undefined;
 
-    return this.authService.register(dto, { ipAddress, userAgent });
+    return this.registrationService.register(dto, { ipAddress, userAgent });
   }
 
   @Public()
@@ -52,7 +60,7 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, ...publicResult } = await this.authService.login(dto);
+    const { accessToken, ...publicResult } = await this.loginService.login(dto);
 
     res.cookie(AUTH_COOKIE_NAME, accessToken, {
       httpOnly: true,
@@ -68,7 +76,7 @@ export class AuthController {
   @Get('me')
   @ApiOperation({ summary: 'Lấy thông tin người dùng hiện tại' })
   async getMe(@CurrentUser() user: AuthenticatedUser) {
-    return this.authService.getMe(user.id);
+    return this.sessionService.getMe(user.id);
   }
 
   @Post('logout')
@@ -78,7 +86,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.logout(user.id);
+    const result = await this.sessionService.logout(user.id);
     res.clearCookie(AUTH_COOKIE_NAME, {
       httpOnly: true,
       sameSite: 'lax',
@@ -93,7 +101,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Yêu cầu đặt lại mật khẩu qua Email (FUNC-005)' })
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.authService.forgotPassword(dto);
+    return this.passwordRecoveryService.forgotPassword(dto);
   }
 
   @Public()
@@ -101,6 +109,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Đặt lại mật khẩu bằng token một lần (FUNC-005)' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto);
+    return this.passwordRecoveryService.resetPassword(dto);
   }
 }

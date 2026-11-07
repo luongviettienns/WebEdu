@@ -11,11 +11,109 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
 
+const ALLOWED_TEST_DB_HOSTS = new Set([
+  '127.0.0.1',
+  'localhost',
+  '::1',
+  '[::1]',
+  'postgres',
+]);
+
+const FORBIDDEN_ENV_KEYWORDS = /(?:^|[_.\-/])(prod|production|staging|live)(?:$|[_.\-/])/i;
+
 export interface IsolatedPostgresHarness {
   databaseUrl: string;
   isEphemeralCluster: boolean;
   truncateAllTables: (prisma: PrismaClient) => Promise<void>;
   stop: () => Promise<void>;
+}
+
+/**
+ * Fail-closed guard preventing accidental schema migrations or TRUNCATE TABLE
+ * execution against non-test, staging, production, or remote databases.
+ */
+export function assertSafeTestDatabaseUrl(
+  databaseUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  const nodeEnv = (env.NODE_ENV ?? '').trim().toLowerCase();
+  const explicitTestFlag = (env.ALLOW_TEST_DB_TRUNCATE ?? '').trim().toLowerCase() === 'true';
+
+  if (nodeEnv === 'production' || nodeEnv === 'prod' || nodeEnv === 'staging') {
+    throw new Error(
+      `[TestDbSafetyGuard] Refusing destructive test DB operation when NODE_ENV="${env.NODE_ENV}"`,
+    );
+  }
+
+  if (nodeEnv !== 'test' && !explicitTestFlag) {
+    throw new Error(
+      `[TestDbSafetyGuard] Refusing destructive test DB operation: NODE_ENV must be "test" (got "${env.NODE_ENV ?? ''}")`,
+    );
+  }
+
+  for (const [envName, envUrl] of [
+    ['DATABASE_URL', env.DATABASE_URL],
+    ['TEST_DATABASE_URL', env.TEST_DATABASE_URL],
+  ] as const) {
+    if (envUrl && FORBIDDEN_ENV_KEYWORDS.test(envUrl)) {
+      throw new Error(
+        `[TestDbSafetyGuard] Refusing destructive test DB operation: ${envName} contains forbidden production/staging keyword`,
+      );
+    }
+  }
+
+  const trimmed = (databaseUrl ?? '').trim();
+  if (!trimmed) {
+    throw new Error(
+      '[TestDbSafetyGuard] Refusing destructive test DB operation: databaseUrl is empty',
+    );
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error(
+      '[TestDbSafetyGuard] Refusing destructive test DB operation: databaseUrl is not a valid URL',
+    );
+  }
+
+  if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
+    throw new Error(
+      `[TestDbSafetyGuard] Refusing destructive test DB operation: unsupported protocol "${parsed.protocol}"`,
+    );
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (!ALLOWED_TEST_DB_HOSTS.has(hostname)) {
+    throw new Error(
+      `[TestDbSafetyGuard] Refusing destructive test DB operation on non-local host "${parsed.hostname}"`,
+    );
+  }
+
+  const dbName = decodeURIComponent(parsed.pathname.replace(/^\/+/, '')).trim();
+  if (!dbName) {
+    throw new Error(
+      '[TestDbSafetyGuard] Refusing destructive test DB operation: database name is missing in URL',
+    );
+  }
+
+  if (
+    FORBIDDEN_ENV_KEYWORDS.test(trimmed) ||
+    FORBIDDEN_ENV_KEYWORDS.test(hostname) ||
+    FORBIDDEN_ENV_KEYWORDS.test(dbName) ||
+    /prod|production|staging/i.test(dbName)
+  ) {
+    throw new Error(
+      `[TestDbSafetyGuard] Refusing destructive test DB operation: database "${dbName}" contains forbidden production/staging keyword`,
+    );
+  }
+
+  if (!/(?:^|[_-])(test|qa)(?:$|[_-])/i.test(dbName)) {
+    throw new Error(
+      `[TestDbSafetyGuard] Refusing destructive test DB operation: database "${dbName}" must explicitly include "test" or "qa" in its name`,
+    );
+  }
 }
 
 function resolvePostgresBinDir(): string {
@@ -57,6 +155,8 @@ async function findFreeLocalPort(): Promise<number> {
 }
 
 function runPrismaMigrateDeploy(databaseUrl: string): void {
+  assertSafeTestDatabaseUrl(databaseUrl, process.env);
+
   const prismaCliJs = path.join(
     BACKEND_ROOT,
     'node_modules',
@@ -75,10 +175,15 @@ function runPrismaMigrateDeploy(databaseUrl: string): void {
   });
 }
 
-export async function startIsolatedPostgresTestDb(): Promise<IsolatedPostgresHarness> {
-  const externalTestDbUrl = process.env.TEST_DATABASE_URL?.trim();
+function createSafeTruncateFn(
+  targetDatabaseUrl: string,
+): (prisma: PrismaClient) => Promise<void> {
+  return async (prisma: PrismaClient): Promise<void> => {
+    assertSafeTestDatabaseUrl(targetDatabaseUrl, process.env);
+    if (process.env.DATABASE_URL) {
+      assertSafeTestDatabaseUrl(process.env.DATABASE_URL, process.env);
+    }
 
-  const truncateAllTables = async (prisma: PrismaClient): Promise<void> => {
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
         "system_audit_logs",
@@ -95,13 +200,18 @@ export async function startIsolatedPostgresTestDb(): Promise<IsolatedPostgresHar
       RESTART IDENTITY CASCADE
     `);
   };
+}
+
+export async function startIsolatedPostgresTestDb(): Promise<IsolatedPostgresHarness> {
+  const externalTestDbUrl = process.env.TEST_DATABASE_URL?.trim();
 
   if (externalTestDbUrl) {
+    assertSafeTestDatabaseUrl(externalTestDbUrl, process.env);
     runPrismaMigrateDeploy(externalTestDbUrl);
     return {
       databaseUrl: externalTestDbUrl,
       isEphemeralCluster: false,
-      truncateAllTables,
+      truncateAllTables: createSafeTruncateFn(externalTestDbUrl),
       stop: async () => {
         // Managed externally (e.g. GitHub Actions postgres service or docker-compose.test.yml)
       },
@@ -163,13 +273,14 @@ export async function startIsolatedPostgresTestDb(): Promise<IsolatedPostgresHar
     );
 
     const databaseUrl = `postgresql://postgres@127.0.0.1:${port}/webedu_test?schema=public`;
+    assertSafeTestDatabaseUrl(databaseUrl, process.env);
     runPrismaMigrateDeploy(databaseUrl);
 
     let stopped = false;
     return {
       databaseUrl,
       isEphemeralCluster: true,
-      truncateAllTables,
+      truncateAllTables: createSafeTruncateFn(databaseUrl),
       stop: async () => {
         if (stopped) return;
         stopped = true;

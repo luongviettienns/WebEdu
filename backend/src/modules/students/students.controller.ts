@@ -12,7 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { StudentsService } from './students.service.js';
+import { StudentCrudService } from './services/student-crud.service.js';
+import { StudentEnrollmentService } from './services/student-enrollment.service.js';
+import { StudentQueryService } from './services/student-query.service.js';
 import {
   AssignInitialClassDto,
   ListPendingEnrollmentQueryDto,
@@ -29,20 +31,24 @@ import { RolesGuard } from '../../common/guards/roles.guard.js';
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StudentsController {
-  constructor(private readonly studentsService: StudentsService) {}
+  constructor(
+    private readonly queries: StudentQueryService,
+    private readonly crud: StudentCrudService,
+    private readonly enrollment: StudentEnrollmentService,
+  ) {}
 
   @Get()
   @Roles(Role.ADMIN, Role.SUPERADMIN)
   @ApiOperation({ summary: 'Danh sách học viên (FUNC-007)' })
   async listStudents(@Query() query: ListStudentsQueryDto) {
-    return this.studentsService.listStudents(query);
+    return this.queries.listStudents(query);
   }
 
   @Get('pending-enrollment')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Danh sách học viên chờ xếp lớp mới nhất lên đầu (FUNC-008)' })
   async getPendingEnrollmentQueue(@Query() query: ListPendingEnrollmentQueryDto) {
-    return this.studentsService.getPendingEnrollmentQueue(query);
+    return this.queries.getPendingEnrollmentQueue(query);
   }
 
   @Get('available-classes')
@@ -51,7 +57,7 @@ export class StudentsController {
     summary: 'Danh sách lớp học Sắp mở / Đang học phục vụ xếp lớp ban đầu (FUNC-008)',
   })
   async listAvailableClasses() {
-    return this.studentsService.listAvailableClasses();
+    return this.enrollment.listAvailableClasses();
   }
 
   @Get(':id')
@@ -61,7 +67,7 @@ export class StudentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    return this.studentsService.getStudentById(user, id);
+    return this.queries.getStudentById(user, id);
   }
 
   @Patch(':id')
@@ -72,7 +78,7 @@ export class StudentsController {
     @Param('id') id: string,
     @Body() dto: UpdateStudentDto,
   ) {
-    return this.studentsService.updateStudent(user, id, dto);
+    return this.crud.updateStudent(user, id, dto);
   }
 
   @Post(':id/assign-initial-class')
@@ -84,7 +90,7 @@ export class StudentsController {
     @Param('id') id: string,
     @Body() dto: AssignInitialClassDto,
   ) {
-    return this.studentsService.assignInitialClass(user, id, dto);
+    return this.enrollment.assignInitialClass(user, id, dto);
   }
 
   @Get(':id/learning-records')
@@ -97,7 +103,7 @@ export class StudentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    return this.studentsService.getStudentLearningRecords(user, id);
+    return this.queries.getStudentLearningRecords(user, id);
   }
 
   @Get(':id/class-history')
@@ -110,6 +116,6 @@ export class StudentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ) {
-    return this.studentsService.getStudentClassHistory(user, id);
+    return this.queries.getStudentClassHistory(user, id);
   }
 }

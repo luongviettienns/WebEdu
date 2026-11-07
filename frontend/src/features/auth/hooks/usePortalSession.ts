@@ -2,19 +2,24 @@
 
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useState } from 'react';
-import { PortalGuardStatus } from '@/components/auth/AccessDeniedState';
-import { purgeLegacyWebStorageTokens } from '@/lib/api-client';
+import { PortalGuardStatus } from '@/features/auth/components/AccessDeniedState';
 import {
   AuthUserDto,
-  extractErrorMessage,
   getCurrentUser,
+} from '@/features/auth/api/auth.api';
+import { userHasAnyRole } from '@/features/auth/roles';
+import {
   getMyProfile,
+  UserProfileDto,
+} from '@/features/profile/api/profile.api';
+import {
+  extractErrorMessage,
   isForbiddenError,
   isUnauthorizedError,
-  Role,
-  userHasAnyRole,
-  UserProfileDto,
-} from '@/lib/auth-api';
+  purgeLegacyWebStorageTokens,
+  type RequestOptions,
+} from '@/lib/api-client';
+import type { Role } from '@/types/user';
 
 export interface PortalSessionState<TUser extends AuthUserDto> {
   status: PortalGuardStatus;
@@ -25,7 +30,7 @@ export interface PortalSessionState<TUser extends AuthUserDto> {
 }
 
 function usePortalSessionBase<TUser extends AuthUserDto>(
-  fetchSessionUser: () => Promise<TUser>,
+  fetchSessionUser: (options?: RequestOptions) => Promise<TUser>,
   allowedRoles?: readonly Role[],
 ): PortalSessionState<TUser> {
   const router = useRouter();
@@ -51,12 +56,12 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
   );
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     void (async () => {
       try {
-        const current = await fetchSessionUser();
-        if (cancelled) return;
+        const current = await fetchSessionUser({ signal: controller.signal });
+        if (controller.signal.aborted) return;
 
         setUser(current);
         if (
@@ -70,17 +75,9 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
 
         setStatus('authorized');
       } catch (error) {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
 
-        if (isUnauthorizedError(error)) {
-          purgeLegacyWebStorageTokens();
-          setStatus('unauthorized');
-          router.replace('/login');
-          return;
-        }
-
-        if (isForbiddenError(error)) {
-          setStatus('forbidden');
+        if (handleApiAuthError(error)) {
           return;
         }
 
@@ -95,9 +92,10 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [fetchSessionUser, allowedRoles, router]);
+  }, [fetchSessionUser, allowedRoles, handleApiAuthError]);
+
 
   return {
     status,

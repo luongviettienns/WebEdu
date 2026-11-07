@@ -1,21 +1,19 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { PortalGuardView } from '@/components/auth/AccessDeniedState';
-import { PasswordInput } from '@/components/auth/PasswordInput';
-import { usePortalSession } from '@/components/auth/usePortalSession';
+import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
+import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { AppHeader } from '@/components/layout/AppHeader';
+import { type AuthUserDto } from '@/features/auth/api/auth.api';
 import {
-  AuthUserDto,
-  createTeacher,
-  extractErrorMessage,
   listTeachers,
-  Role,
-  STATUS_LABELS,
-  TeacherItemDto,
   updateTeacher,
-  UserStatus,
-} from '@/lib/auth-api';
+  type TeacherItemDto,
+} from '@/features/teachers/api/teachers.api';
+import { BlockedTeacherDeactivationModal } from '@/features/teachers/components/BlockedTeacherDeactivationModal';
+import { TeacherFormModal } from '@/features/teachers/components/TeacherFormModal';
+import { extractErrorMessage } from '@/lib/api-client';
+import { STATUS_LABELS, type Role, type UserStatus } from '@/types/user';
 
 const PAGE_LIMIT = 20;
 const ALLOWED_ROLES: readonly Role[] = ['ADMIN', 'SUPERADMIN'];
@@ -39,47 +37,37 @@ function AdminTeachersContent({
   const [errorBanner, setErrorBanner] = useState<string>('');
   const [successBanner, setSuccessBanner] = useState<string>('');
 
-  // Modal Tạo / Sửa / Xem Giáo viên
-  const [modalOpen, setModalOpen] = useState<boolean>(false);
-  const [modalMode, setModalMode] = useState<'create' | 'edit' | 'view'>(
-    'create',
-  );
-  const [selectedTeacher, setSelectedTeacher] =
-    useState<TeacherItemDto | null>(null);
+  const [modalState, setModalState] = useState<{
+    mode: 'create' | 'edit' | 'view';
+    teacher: TeacherItemDto | null;
+  } | null>(null);
 
-  const [fullName, setFullName] = useState<string>('');
-  const [phone, setPhone] = useState<string>('');
-  const [email, setEmail] = useState<string>('');
-  const [initialPassword, setInitialPassword] = useState<string>('');
-  const [status, setStatus] = useState<UserStatus>('ACTIVE');
-  const [notes, setNotes] = useState<string>('');
-  const [formError, setFormError] = useState<string>('');
-  const [submitting, setSubmitting] = useState<boolean>(false);
-
-  // Popup chặn vô hiệu hóa GV đang phụ trách lớp
   const [blockedTeacherAlert, setBlockedTeacherAlert] = useState<{
     name: string;
     activeClassesCount: number;
   } | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
-        const response = await listTeachers({
-          search: search.trim() || undefined,
-          status: statusFilter || undefined,
-          page,
-          limit: PAGE_LIMIT,
-        });
-        if (cancelled) return;
+        const response = await listTeachers(
+          {
+            search: search.trim() || undefined,
+            status: statusFilter || undefined,
+            page,
+            limit: PAGE_LIMIT,
+          },
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
         setTeachers(response.items ?? []);
         setTotal(
           response.total ?? (response.items ? response.items.length : 0),
         );
         setErrorBanner('');
       } catch (error) {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         if (onAuthError(error)) {
           return;
         }
@@ -87,124 +75,16 @@ function AdminTeachersContent({
           extractErrorMessage(error, 'Không thể tải danh sách giáo viên'),
         );
       } finally {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setLoading(false);
         }
       }
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [search, statusFilter, page, refreshTick, onAuthError]);
-
-  const openCreateModal = () => {
-    setModalMode('create');
-    setSelectedTeacher(null);
-    setFullName('');
-    setPhone('');
-    setEmail('');
-    setInitialPassword('');
-    setStatus('ACTIVE');
-    setNotes('');
-    setFormError('');
-    setModalOpen(true);
-  };
-
-  const openTeacherModal = (
-    teacher: TeacherItemDto,
-    mode: 'edit' | 'view',
-  ) => {
-    setModalMode(mode);
-    setSelectedTeacher(teacher);
-    setFullName(teacher.fullName);
-    setPhone(teacher.phone);
-    setEmail(teacher.email);
-    setInitialPassword('');
-    setStatus(teacher.status);
-    setNotes(teacher.notes ?? '');
-    setFormError('');
-    setModalOpen(true);
-  };
-
-  const handleSaveTeacher = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (modalMode === 'view') {
-      setModalOpen(false);
-      return;
-    }
-
-    setFormError('');
-    const trimmedName = fullName.trim();
-    const trimmedPhone = phone.trim();
-    const trimmedEmail = email.trim().toLowerCase();
-
-    if (!trimmedName || trimmedName.length > 100) {
-      setFormError('Họ và tên bắt buộc và tối đa 100 ký tự');
-      return;
-    }
-    if (!/^0\d{9}$/.test(trimmedPhone)) {
-      setFormError(
-        'Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng số 0',
-      );
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setFormError('Định dạng Email không hợp lệ');
-      return;
-    }
-
-    if (modalMode === 'create') {
-      if (!initialPassword || initialPassword.length < 8) {
-        setFormError('Mật khẩu khởi tạo bắt buộc và tối thiểu 8 ký tự');
-        return;
-      }
-    } else if (
-      selectedTeacher &&
-      status === 'INACTIVE' &&
-      selectedTeacher.activeClassesCount > 0
-    ) {
-      setFormError(
-        `Giáo viên đang phụ trách ${selectedTeacher.activeClassesCount} lớp. Vui lòng phân công giáo viên khác`,
-      );
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      if (modalMode === 'create') {
-        await createTeacher({
-          fullName: trimmedName,
-          phone: trimmedPhone,
-          email: trimmedEmail,
-          initialPassword,
-          notes: notes.trim() || undefined,
-        });
-        setSuccessBanner('Tạo tài khoản giáo viên mới thành công');
-      } else if (selectedTeacher) {
-        await updateTeacher(selectedTeacher.id, {
-          fullName: trimmedName,
-          phone: trimmedPhone,
-          email: trimmedEmail,
-          status,
-          notes: notes.trim(),
-        });
-        setSuccessBanner('Cập nhật thông tin giáo viên thành công');
-      }
-      setModalOpen(false);
-      setLoading(true);
-      setRefreshTick((t) => t + 1);
-    } catch (error) {
-      if (onAuthError(error)) {
-        return;
-      }
-      setFormError(
-        extractErrorMessage(error, 'Không thể lưu thông tin giáo viên'),
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleToggleTeacherStatus = async (teacher: TeacherItemDto) => {
     setErrorBanner('');
@@ -262,14 +142,13 @@ function AdminTeachersContent({
           </div>
           <button
             type="button"
-            onClick={openCreateModal}
+            onClick={() => setModalState({ mode: 'create', teacher: null })}
             className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
           >
             + Tạo tài khoản giáo viên
           </button>
         </div>
 
-        {/* Bộ lọc & Tìm kiếm */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-1 flex-wrap items-center gap-3">
             <input
@@ -321,7 +200,6 @@ function AdminTeachersContent({
           </div>
         ) : null}
 
-        {/* Bảng danh sách Giáo viên */}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
@@ -407,14 +285,18 @@ function AdminTeachersContent({
                           <div className="inline-flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => openTeacherModal(teacher, 'view')}
+                              onClick={() =>
+                                setModalState({ mode: 'view', teacher })
+                              }
                               className="rounded-md px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                             >
                               Xem
                             </button>
                             <button
                               type="button"
-                              onClick={() => openTeacherModal(teacher, 'edit')}
+                              onClick={() =>
+                                setModalState({ mode: 'edit', teacher })
+                              }
                               className="rounded-md px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
                             >
                               Sửa
@@ -444,7 +326,6 @@ function AdminTeachersContent({
             </table>
           </div>
 
-          {/* Phân trang 20 dòng/trang */}
           <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
             <span>
               Trang {page} / {totalPages} (Hiển thị tối đa {PAGE_LIMIT}{' '}
@@ -478,202 +359,27 @@ function AdminTeachersContent({
         </div>
       </main>
 
-      {/* Popup cảnh báo chặn vô hiệu hóa GV đang phụ trách lớp */}
       {blockedTeacherAlert ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-        >
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-bold text-slate-900">
-              Không thể vô hiệu hóa giáo viên
-            </h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Giáo viên đang phụ trách{' '}
-              <strong>{blockedTeacherAlert.activeClassesCount}</strong> lớp. Vui
-              lòng phân công giáo viên khác.
-            </p>
-            <div className="mt-5 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setBlockedTeacherAlert(null)}
-                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
-              >
-                Đã hiểu
-              </button>
-            </div>
-          </div>
-        </div>
+        <BlockedTeacherDeactivationModal
+          activeClassesCount={blockedTeacherAlert.activeClassesCount}
+          onClose={() => setBlockedTeacherAlert(null)}
+        />
       ) : null}
 
-      {/* Modal Tạo / Sửa / Xem Giáo viên */}
-      {modalOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
-        >
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h2 className="text-lg font-bold text-emerald-950">
-                {modalMode === 'create'
-                  ? 'Tạo Tài Khoản Giáo Viên Mới'
-                  : modalMode === 'edit'
-                    ? 'Cập Nhật Thông Tin Giáo Viên'
-                    : 'Chi Tiết Hồ Sơ Giáo Viên'}
-              </h2>
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="text-sm font-medium text-slate-500 hover:text-slate-800"
-              >
-                Đóng
-              </button>
-            </div>
-
-            {formError ? (
-              <div
-                role="alert"
-                className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
-              >
-                {formError}
-              </div>
-            ) : null}
-
-            <form
-              onSubmit={(e) => void handleSaveTeacher(e)}
-              noValidate
-              className="mt-4 space-y-4"
-            >
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="teacher-fullname"
-                  className="block text-sm font-medium text-slate-800"
-                >
-                  Họ và tên <span className="text-red-600">*</span>
-                </label>
-                <input
-                  id="teacher-fullname"
-                  type="text"
-                  maxLength={100}
-                  disabled={modalMode === 'view'}
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="teacher-phone"
-                    className="block text-sm font-medium text-slate-800"
-                  >
-                    Số điện thoại <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="teacher-phone"
-                    type="tel"
-                    maxLength={10}
-                    disabled={modalMode === 'view'}
-                    required
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="teacher-email"
-                    className="block text-sm font-medium text-slate-800"
-                  >
-                    Email <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="teacher-email"
-                    type="email"
-                    disabled={modalMode === 'view'}
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                  />
-                </div>
-              </div>
-
-              {modalMode === 'create' ? (
-                <PasswordInput
-                  id="teacher-init-password"
-                  label="Mật khẩu khởi tạo"
-                  required
-                  value={initialPassword}
-                  onChange={(e) => setInitialPassword(e.target.value)}
-                  placeholder="Tối thiểu 8 ký tự"
-                  hint="Hệ thống sẽ kích hoạt tài khoản với mật khẩu khởi tạo này"
-                />
-              ) : (
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="teacher-status"
-                    className="block text-sm font-medium text-slate-800"
-                  >
-                    Trạng thái hoạt động
-                  </label>
-                  <select
-                    id="teacher-status"
-                    disabled={modalMode === 'view'}
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as UserStatus)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                  >
-                    <option value="ACTIVE">Đang hoạt động</option>
-                    <option value="INACTIVE">Vô hiệu hóa</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="teacher-notes"
-                  className="block text-sm font-medium text-slate-800"
-                >
-                  Ghi chú chuyên môn
-                </label>
-                <textarea
-                  id="teacher-notes"
-                  rows={3}
-                  disabled={modalMode === 'view'}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Chứng chỉ HSK, ca dạy ưu tiên..."
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 disabled:bg-slate-100"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setModalOpen(false)}
-                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  {modalMode === 'view' ? 'Đóng' : 'Hủy'}
-                </button>
-                {modalMode !== 'view' ? (
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
-                  >
-                    {submitting ? 'Đang lưu...' : 'Lưu thông tin'}
-                  </button>
-                ) : null}
-              </div>
-            </form>
-          </div>
-        </div>
+      {modalState ? (
+        <TeacherFormModal
+          key={`${modalState.mode}-${modalState.teacher?.id ?? 'new'}`}
+          mode={modalState.mode}
+          selectedTeacher={modalState.teacher}
+          onClose={() => setModalState(null)}
+          onAuthError={onAuthError}
+          onSuccess={(bannerMessage) => {
+            setModalState(null);
+            setSuccessBanner(bannerMessage);
+            setLoading(true);
+            setRefreshTick((t) => t + 1);
+          }}
+        />
       ) : null}
     </div>
   );

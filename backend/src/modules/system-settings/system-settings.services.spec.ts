@@ -1,12 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
-import { SystemSettingsService } from './system-settings.service.js';
+import { SystemConfigService } from './services/system-config.service.js';
+import { SystemUsersService } from './services/system-users.service.js';
+import { UserRoleStatusService } from './services/user-role-status.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 
-describe('SystemSettingsService (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)', () => {
-  let service: SystemSettingsService;
+interface SystemSettingsTestFacade {
+  listSystemUsers: SystemUsersService['listSystemUsers'];
+  createSystemUser: SystemUsersService['createSystemUser'];
+  updateUserRolesAndStatus: UserRoleStatusService['updateUserRolesAndStatus'];
+  getSystemConfig: SystemConfigService['getSystemConfig'];
+  updateSystemConfig: SystemConfigService['updateSystemConfig'];
+  listAuditLogs: SystemConfigService['listAuditLogs'];
+}
+
+describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)', () => {
+  let service: SystemSettingsTestFacade;
 
   interface MockSysUser {
     id: string;
@@ -200,7 +211,20 @@ describe('SystemSettingsService (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)',
       })(),
     };
 
-    service = new SystemSettingsService(mockPrisma as unknown as PrismaService);
+    const prisma = mockPrisma as unknown as PrismaService;
+    const usersService = new SystemUsersService(prisma);
+    const roleStatusService = new UserRoleStatusService(prisma);
+    const configService = new SystemConfigService(prisma);
+
+    service = {
+      listSystemUsers: usersService.listSystemUsers.bind(usersService),
+      createSystemUser: usersService.createSystemUser.bind(usersService),
+      updateUserRolesAndStatus:
+        roleStatusService.updateUserRolesAndStatus.bind(roleStatusService),
+      getSystemConfig: configService.getSystemConfig.bind(configService),
+      updateSystemConfig: configService.updateSystemConfig.bind(configService),
+      listAuditLogs: configService.listAuditLogs.bind(configService),
+    };
   });
 
   it('prevents Superadmin from self-deactivating or self-removing SUPERADMIN role (FUNC-013)', async () => {

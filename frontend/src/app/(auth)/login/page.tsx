@@ -3,22 +3,18 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import React, { Suspense, useEffect, useState } from 'react';
-import { PasswordInput } from '@/components/auth/PasswordInput';
-import {
-  extractErrorMessage,
-  getDefaultRouteForRole,
-  getSystemConfig,
-  loginWithEmail,
-  sanitizeBrandLogoSrc,
-} from '@/lib/auth-api';
+import React, { Suspense, useState } from 'react';
+import { PasswordInput } from '@/components/ui/PasswordInput';
+import { loginWithEmail } from '@/features/auth/api/auth.api';
+import { getDefaultRouteForRole } from '@/features/auth/roles';
+import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
+import { extractErrorMessage } from '@/lib/api-client';
 
 function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [centerName, setCenterName] = useState<string>('Trung Tâm TD Hán Ngữ');
-  const [centerLogo, setCenterLogo] = useState<string | null>(null);
+  const { centerName, centerLogo } = useBrandConfig();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -32,25 +28,6 @@ function LoginFormContent() {
   const registeredSuccess = searchParams.get('registered') === '1';
   const resetSuccess = searchParams.get('reset') === '1';
   const idleTimeout = searchParams.get('reason') === 'idle_timeout';
-
-  useEffect(() => {
-    let mounted = true;
-    getSystemConfig()
-      .then((cfg) => {
-        if (mounted && cfg?.centerName) {
-          setCenterName(cfg.centerName);
-          setCenterLogo(
-            sanitizeBrandLogoSrc(cfg.centerLogoBase64 ?? cfg.centerLogoUrl),
-          );
-        }
-      })
-      .catch(() => {
-        // Giữ thông tin thương hiệu mặc định
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const validateForm = (): boolean => {
     let valid = true;

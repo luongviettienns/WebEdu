@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
-import { extractErrorMessage, requestPasswordReset } from '@/lib/auth-api';
+import { requestPasswordReset } from '@/features/auth/api/auth.api';
+import { extractErrorMessage } from '@/lib/api-client';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState<string>('');

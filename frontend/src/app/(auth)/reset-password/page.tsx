@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useState } from 'react';
-import { PasswordInput } from '@/components/auth/PasswordInput';
-import { extractErrorMessage, resetPassword } from '@/lib/auth-api';
+import { PasswordInput } from '@/components/ui/PasswordInput';
+import { resetPassword } from '@/features/auth/api/auth.api';
+import { extractErrorMessage } from '@/lib/api-client';
 
 function ResetPasswordFormContent() {
   const router = useRouter();

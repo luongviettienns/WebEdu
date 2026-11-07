@@ -2,19 +2,17 @@
 
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
-import { PortalGuardView } from '@/components/auth/AccessDeniedState';
-import { usePortalProfileSession } from '@/components/auth/usePortalSession';
 import { AppHeader } from '@/components/layout/AppHeader';
-import { ApiClientError } from '@/lib/api-client';
+import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
+import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
+import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import {
-  extractErrorMessage,
-  formatDateDdMmYyyy,
   getStudentDetail,
-  Role,
-  STATUS_LABELS,
-  StudentItemDto,
-  UserProfileDto,
-} from '@/lib/auth-api';
+  type StudentItemDto,
+} from '@/features/students/api/students.api';
+import { ApiClientError, extractErrorMessage } from '@/lib/api-client';
+import { formatDateDdMmYyyy } from '@/lib/utils/date';
+import { STATUS_LABELS, type Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['STUDENT', 'ADMIN'];
 
@@ -40,17 +38,19 @@ function StudentOverviewContent({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
 
     void (async () => {
       try {
-        const detail = await getStudentDetail(profile.id);
-        if (!cancelled) {
+        const detail = await getStudentDetail(profile.id, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
           setStudentDetail(detail);
           setDetailError('');
         }
       } catch (error) {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         if (onAuthError(error)) {
           return;
         }
@@ -66,16 +66,17 @@ function StudentOverviewContent({
           );
         }
       } finally {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setDetailLoading(false);
         }
       }
     })();
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [isStudentAccount, profile.id, onAuthError]);
+
 
   const currentStatus = studentDetail?.status ?? profile.status;
   const assignedClass =

@@ -61,3 +61,33 @@
 4. **Multi-tenant & Object-level Authorization Tests:** Có bài test chứng minh Học viên A không đọc/sửa được dữ liệu Học viên B, Giáo viên lớp X không can thiệp được lớp Y.
 5. **Prototype Cleanup Check:** Loại bỏ hoàn toàn 16 thành phần chỉ dùng để demo trong `prototype-review.md` khi lên giao diện thật.
 6. **Independent Code Review:** Thực hiện review độc lập qua `akit-critic` và `akit-security` trước khi đóng Phase.
+
+---
+
+## 4. Quy Chuẩn Phân Rã Module & Chống "God File" (Post-Phase-2 Modular Guardrails — Bắt Buộc Từ Phase 3)
+
+Để tuyệt đối không lặp lại tình trạng phình to file (`>500–1.000 LOC`) và không phải thực hiện refactor quy mô lớn ở các Phase tiếp theo (`Phase 3..9`), mọi tính năng mới bắt buộc tuân thủ cấu trúc phân rã ngay từ khi khởi tạo:
+
+1. **Ngưỡng Quy Mô Tệp (Hard LOC Ceiling):**
+   - **Backend Service / Policy / Mapper:** Mỗi file tối đa **`350 LOC`** (cảnh báo khi vượt `300 LOC`). Cấm gom Query, CRUD, State/Workflow Transition, Object-Level Authorization và DTO Mapping vào chung một `<domain>.service.ts` đơn khối.
+   - **Frontend Route Page (`app/**/page.tsx`):** Chỉ đóng vai trò **Thin Route Orchestration Shell** (tối đa **`250 LOC`**), uỷ quyền toàn bộ bảng dữ liệu, bộ lọc, form và modal cho `src/features/<domain>/components/*`.
+   - **Frontend Feature Component / Hook / API Module:** Mỗi file tối đa **`300 LOC`**, một trách nhiệm duy nhất (Single Responsibility Principle).
+
+2. **Cấu Trúc Chuẩn Cho Mọi Module Backend (`backend/src/modules/<domain>/`):**
+   - `dto/`: Class-validator request/query DTOs.
+   - `mappers/`: Pure functions chuyển đổi Prisma entity $\rightarrow$ Response DTO (ẩn các trường nhạy cảm như `internalNotes` theo vai trò).
+   - `policies/`: Quy tắc nghiệp vụ & bất biến miền (business invariants, state-machine guards, lock ordering).
+   - `services/`: Tách riêng theo trách nhiệm:
+     - `<domain>-query.service.ts` (danh sách, tìm kiếm, phân trang, chi tiết đọc).
+     - `<domain>-crud.service.ts` (khởi tạo, cập nhật, đổi trạng thái).
+     - `<domain>-workflow.service.ts` / `<domain>-enrollment.service.ts` (giao dịch đa bảng, chuyển trạng thái phức tạp).
+     - `<domain>-access.service.ts` (kiểm tra quyền mức bản ghi — Object-Level RBAC / BOLA guard).
+   - Dùng chung các tiện ích lõi tại `backend/src/common/`: `resolvePagination`, `buildUserSearchFilter`, `assertValidContactFields`, `writeAuditLog`, `superadmin-protection.policy.ts`, `formatIsoDateUtc`.
+
+3. **Cấu Trúc Chuẩn Cho Mọi Module Frontend (`frontend/src/features/<domain>/`):**
+   - `api/<domain>.api.ts`: Chỉ gọi `fetchApi` / `buildQueryString` từ `@/lib/api-client`, hỗ trợ `options?: RequestOptions` (`AbortSignal`). **Cấm tuyệt đối** thêm hàm mới vào `src/lib/auth-api.ts` (chỉ giữ làm barrel tương thích ngược).
+   - `hooks/`: Custom hooks quản lý truy vấn/phiên có gắn `AbortController` khi unmount hoặc đổi dependency để chống race condition / memory leak.
+   - `components/`: Tách riêng từng Modal, Section, Table theo đúng một nhiệm vụ giao diện.
+
+4. **An Toàn Hạ Tầng Kiểm Thử (`postgres-test-container.ts`):**
+   - Mọi thao tác nguy hiểm trong test (`TRUNCATE TABLE`, `migrate deploy`) bắt buộc đi qua `assertSafeTestDatabaseUrl` (fail-closed nếu `NODE_ENV !== 'test'`, host không phải local/loopback, hoặc tên DB thiếu hậu tố `test`/`qa` hay chứa `prod`/`production`/`staging`).
