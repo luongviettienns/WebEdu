@@ -105,6 +105,15 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Xóa sạch 100% mã `FUNC-xxx`, `DEC-xxx`, `SEC-xxx`, `BR-xxx`, `INV-xxx` khỏi toàn bộ mã nguồn Production (`backend/src/**` & `frontend/src/**`).
   - Loại bỏ chuông thông báo giả trên `PortalTopbar.tsx`, thẻ giải thích lộ trình tĩnh trên `teacher/classes/page.tsx`, và chuẩn hóa toàn bộ 16 inner feature components sang bảng màu Thư họa Á Đông chính thức (`0` class `emerald-*` / `slate-*`).
   - Tách biệt CSDL kiểm thử `webedu_test` cho Playwright E2E và làm sạch CSDL chính thức `webedu`.
+- [x] **Slice 2.12 (Hardening Toàn Diện, Kiểm Kê API/UI & Chứng Minh Độ Tin Cậy Phase 2 — `test/hardening-phase-02`)**:
+  - **Kiểm kê 100% API & UI**: Lập bảng kiểm kê đầy đủ **28 HTTP API Endpoints** (`docs/test-inventory-api.md`) và **12 Trang Giao Diện** (`docs/test-inventory-ui.md`).
+  - **Kiểm thử Tự Động Đối Soát Endpoint**: Viết test E2E `api-inventory-and-rbac-matrix.e2e-spec.ts` tự động trích xuất Express routes từ NestJS và so khớp với danh mục kiểm kê; tự động báo FAIL nếu có endpoint mới chưa khai báo.
+  - **Ma Trận Phân Quyền & Bất Biến DB Thật**: Kiểm chứng ma trận `Vai trò × Endpoint × Trạng thái` (Unauthenticated, Revoked, Inactive, Student, Teacher 4 trạng thái, Admin, Superadmin thuần, Multi-role) + Kiểm tra chống Race Condition xếp lớp/đăng ký trùng trên PostgreSQL 16 thật.
+  - **Coverage Gate Vượt Ngưỡng**: Nâng ngưỡng kiểm soát trong `vitest.config.ts` và CI (`.github/workflows/ci.yml`) lên Lines $\ge 85\%$, Branches $\ge 80\%$; kết quả thực tế đạt **93.72% Lines** và **82.23% Branches** (101 Unit tests).
+  - **Mutation Testing (Stryker)**: Thiết lập `stryker.config.mjs` chạy đột biến 16 tệp nguồn cốt lõi (1.766 mutants); bổ sung 29 unit test chuyên sâu kiểm tra chặt chẽ giá trị biên thời gian (23:59:59 GMT+7, năm nhuận 29/02, 60s cooldown, 15m lockout, 60m idle timeout).
+  - **Khả Năng Tiếp Cận (WCAG 2.1 AA) & Phát Hiện Lỗi Thật**: Tích hợp `@axe-core/playwright`; phát hiện và sửa tối thiểu 2 lỗi thật nghiêm trọng: sửa thẻ `<Link>` nằm trong khối `aria-hidden="true"` tại `AuthArtSide.tsx` và nâng cấp tỷ lệ tương phản màu chữ/badge tại `globals.css` ($\ge 4.5:1$).
+  - **Chứng Minh Độ Ổn Định 3 Lần Chạy Liên Tiếp**: 100% lệnh kiểm thử chạy qua 3 lượt độc lập trên PostgreSQL 16 thật (Backend: 101 unit + 11 integration + 23 E2E = 135 tests; Frontend: 20 Playwright E2E tests) **đạt 100% PASS, 0 flaky tests**.
+  - **Xuất Bản Báo Cáo Nghiệm Thu**: Hoàn thành Báo Cáo Kiểm Thử Toàn Diện & Chứng Minh Độ Tin Cậy Phase 2 bằng tiếng Việt tại [`docs/test-report-phase-02.md`](./docs/test-report-phase-02.md).
 
 ### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
 - [x] **Chốt Quyết định Nghiệp vụ Tiền Đề (`DEC-027`, `DEC-028`)**:
