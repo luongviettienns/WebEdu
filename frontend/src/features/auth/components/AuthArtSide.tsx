@@ -7,7 +7,6 @@ export function AuthArtSide() {
   return (
     <div
       className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-[var(--surface)] border-r border-[var(--line)] flex-col justify-between p-10 select-none"
-      aria-hidden="true"
     >
       {/* Brand Header */}
       <Link href="/login" className="flex items-center gap-3 focus:outline-none z-10 group">
@@ -27,7 +26,7 @@ export function AuthArtSide() {
       </Link>
 
       {/* Giant Calligraphic Watermark: 學 */}
-      <div className="relative my-auto flex items-center justify-center">
+      <div className="relative my-auto flex items-center justify-center" aria-hidden="true">
         <div className="font-han font-bold text-[240px] leading-none text-[var(--ink)] opacity-[0.09] select-none pointer-events-none">
           學
         </div>

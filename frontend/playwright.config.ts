@@ -4,16 +4,16 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   workers: 1,
-  retries: 0,
+  retries: process.env.CI ? 1 : 0,
   timeout: 60_000,
   expect: {
     timeout: 10_000,
   },
-  reporter: [['list']],
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:3000',
-    trace: 'off',
-    screenshot: 'off',
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
   projects: [
     {
@@ -48,7 +48,7 @@ export default defineConfig({
     {
       command: 'npm run start -- --port 3000',
       url: 'http://localhost:3000/login',
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 60_000,
       env: {
         NEXT_PUBLIC_API_URL: 'http://localhost:3001/api/v1',

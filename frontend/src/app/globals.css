@@ -9,24 +9,24 @@
   --line: #E2E4DC;
   --line-2: #CDD1C6;
 
-  /* Ink: Mực tàu & phân cấp tương phản WCAG AA */
+  /* Ink: Mực tàu & phân cấp tương phản WCAG AA (>= 4.5:1 trên mọi bề mặt) */
   --ink: #1C2320;
   --ink-2: #4A524C;
-  --ink-3: #7A817B;
+  --ink-3: #5D645E;
 
-  /* Vermilion / Son triện 朱砂 */
-  --red: #B5322A;
-  --red-ink: #9C2A23;
+  /* Vermilion / Son triện 朱砂 (WCAG AA >= 4.5:1 trên cả nền trắng và --red-soft) */
+  --red: #9E2820;
+  --red-ink: #821F18;
   --red-soft: #F8E8E5;
 
-  /* Semantic Accents: Ngọc bích, Chàm, Hổ phách */
-  --jade: #2B7760;
+  /* Semantic Accents: Ngọc bích, Chàm, Hổ phách (WCAG AA >= 4.5:1 trên nền -soft) */
+  --jade: #1F634E;
   --jade-soft: #E3F1EA;
-  --blue: #31578A;
+  --blue: #264875;
   --blue-soft: #E6EDF6;
-  --amber: #9A6410;
+  --amber: #82520A;
   --amber-soft: #FAEFD9;
-  --grey: #6B716C;
+  --grey: #525853;
   --grey-soft: #ECEDE8;
 
   /* Elevation & Scrim */
