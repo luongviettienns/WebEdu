@@ -66,6 +66,10 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     { id: string; userId: string; tokenHash: string; expiresAt: Date; usedAt: Date | null }
   >;
   let emailRateLimitStore: Map<string, Date>;
+  let authRateLimitStore: Map<
+    string,
+    { points: number; lastAttemptAt: Date; blockedUntil: Date | null }
+  >;
   let mockPrisma: Record<string, unknown>;
 
   beforeEach(() => {
@@ -73,6 +77,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     consentsStore = [];
     resetTokensStore = new Map();
     emailRateLimitStore = new Map();
+    authRateLimitStore = new Map();
     sentResetEmails = [];
     shouldFailEmailSend = false;
 
@@ -285,7 +290,59 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           }
           return [];
         }
+        if (sql.includes('auth_rate_limits')) {
+          if (sql.includes('SELECT "blocked_until" FROM "auth_rate_limits"')) {
+            const key = String(values[0]);
+            const now = values[1] as Date;
+            const rec = authRateLimitStore.get(key);
+            if (rec?.blockedUntil && rec.blockedUntil.getTime() > now.getTime()) {
+              return [{ blocked_until: rec.blockedUntil }];
+            }
+            return [];
+          }
+          if (sql.includes('INSERT INTO "auth_rate_limits"')) {
+            const key = String(values[0]);
+            const now = values[1] as Date;
+            const windowStart = values[3] as Date;
+            const maxPoints = Number(values[6]);
+            const blockUntil = values[7] as Date;
+            let rec = authRateLimitStore.get(key);
+            if (!rec) {
+              rec = { points: 1, lastAttemptAt: now, blockedUntil: null };
+              authRateLimitStore.set(key, rec);
+            } else {
+              if (rec.blockedUntil && rec.blockedUntil.getTime() > now.getTime()) {
+                // keep blocked
+              } else if (rec.lastAttemptAt.getTime() < windowStart.getTime()) {
+                rec.points = 1;
+                rec.blockedUntil = null;
+              } else {
+                rec.points += 1;
+                if (rec.points > maxPoints) {
+                  rec.blockedUntil = blockUntil;
+                }
+              }
+              rec.lastAttemptAt = now;
+            }
+            return [
+              {
+                key,
+                points: rec.points,
+                last_attempt_at: rec.lastAttemptAt,
+                blocked_until: rec.blockedUntil,
+              },
+            ];
+          }
+        }
         return [];
+      }),
+      $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join('?');
+        if (sql.includes('DELETE FROM "auth_rate_limits"')) {
+          const key = String(values[0]);
+          authRateLimitStore.delete(key);
+        }
+        return 1;
       }),
       user: userDelegate,
       studentProfile: studentProfileDelegate,
@@ -602,6 +659,56 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       });
       // Orphaned token was deleted so unsent token never lingers in DB
       expect(resetTokensStore.size).toBe(0);
+    });
+
+    it('enforces IP rate limiting on repeated failed logins (FIX-03)', async () => {
+      const clientIp = '198.51.100.42';
+
+      // Simulate 15 consecutive wrong passwords from the same IP
+      for (let i = 0; i < 15; i++) {
+        await expect(
+          service.login(
+            { email: 'nonexistent@example.com', password: 'WrongPassword' },
+            clientIp,
+          ),
+        ).rejects.toThrowError(UnauthorizedException);
+      }
+
+      // The 16th request from this IP must be blocked with 429 Too Many Requests
+      await expect(
+        service.login(
+          { email: 'nonexistent@example.com', password: 'WrongPassword' },
+          clientIp,
+        ),
+      ).rejects.toThrowError(
+        new HttpException(
+          'Quá nhiều lần đăng nhập không thành công từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+          429,
+        ),
+      );
+    });
+
+    it('enforces IP rate limiting on repeated forgot password requests (FIX-04)', async () => {
+      const clientIp = '198.51.100.99';
+
+      // 5 requests with different emails from same IP
+      for (let i = 1; i <= 5; i++) {
+        const res = await service.forgotPassword(
+          { email: `victim${i}@example.com` },
+          clientIp,
+        );
+        expect(res.cooldownSeconds).toBe(60);
+      }
+
+      // 6th request from this IP must be throttled with 429 Too Many Requests
+      await expect(
+        service.forgotPassword({ email: 'victim6@example.com' }, clientIp),
+      ).rejects.toThrowError(
+        new HttpException(
+          'Quá nhiều yêu cầu khôi phục mật khẩu từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+          429,
+        ),
+      );
     });
   });
 });
