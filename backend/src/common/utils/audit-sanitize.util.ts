@@ -39,10 +39,43 @@ export function sanitizeAuditMetadata(
 
 export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024; // 2MB (FUNC-013)
 const MAX_LOGO_BASE64_CHARS = Math.ceil(MAX_LOGO_SIZE_BYTES / 3) * 4 + 4;
+export const MAX_LOGO_WIDTH = 800; // max 800px width
+export const MAX_LOGO_HEIGHT = 800; // max 800px height
+export const MAX_LOGO_PIXELS = 640_000; // max 800x800 = 640k pixels
+
+function extractJpegDimensions(buffer: Buffer): { width: number; height: number } | null {
+  let offset = 2; // after 0xFF 0xD8
+  while (offset < buffer.byteLength - 8) {
+    if (buffer[offset] !== 0xff) {
+      break;
+    }
+    const marker = buffer[offset + 1];
+    if (marker === 0xd9) break; // End of image
+    if (marker === 0xd8 || (marker >= 0xd0 && marker <= 0xd7)) {
+      offset += 2;
+      continue;
+    }
+    const isSof =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf);
+    if (isSof && offset + 8 < buffer.byteLength) {
+      const height = buffer.readUInt16BE(offset + 5);
+      const width = buffer.readUInt16BE(offset + 7);
+      return { width, height };
+    }
+    const segmentLength = buffer.readUInt16BE(offset + 2);
+    if (segmentLength < 2) break;
+    offset += 2 + segmentLength;
+  }
+  return null;
+}
 
 /**
  * Validates that a base64 data URI or buffer is a genuine PNG or JPEG image
- * by inspecting Magic Bytes, preventing SVG/HTML XSS polyglots (SEC-09).
+ * by inspecting Magic Bytes, preventing SVG/HTML XSS polyglots (SEC-09) and
+ * checking image dimensions against decompression bombs (FIX-06).
  */
 export function validateLogoImageDataUri(dataUri: string): {
   valid: boolean;
@@ -94,9 +127,44 @@ export function validateLogoImageDataUri(dataUri: string): {
     buffer[2] === 0xff;
 
   if (isPng) {
+    if (buffer.byteLength >= 24) {
+      const isIhdr =
+        buffer[12] === 0x49 &&
+        buffer[13] === 0x48 &&
+        buffer[14] === 0x44 &&
+        buffer[15] === 0x52;
+      if (isIhdr) {
+        const width = buffer.readUInt32BE(16);
+        const height = buffer.readUInt32BE(20);
+        if (
+          width > MAX_LOGO_WIDTH ||
+          height > MAX_LOGO_HEIGHT ||
+          width * height > MAX_LOGO_PIXELS
+        ) {
+          return {
+            valid: false,
+            reason: `Kích thước ảnh Logo vượt quá giới hạn tối đa cho phép (tối đa ${MAX_LOGO_WIDTH}x${MAX_LOGO_HEIGHT} pixel)`,
+          };
+        }
+      }
+    }
     return { valid: true, mimeType: 'image/png' };
   }
+
   if (isJpeg) {
+    const dimensions = extractJpegDimensions(buffer);
+    if (dimensions) {
+      if (
+        dimensions.width > MAX_LOGO_WIDTH ||
+        dimensions.height > MAX_LOGO_HEIGHT ||
+        dimensions.width * dimensions.height > MAX_LOGO_PIXELS
+      ) {
+        return {
+          valid: false,
+          reason: `Kích thước ảnh Logo vượt quá giới hạn tối đa cho phép (tối đa ${MAX_LOGO_WIDTH}x${MAX_LOGO_HEIGHT} pixel)`,
+        };
+      }
+    }
     return { valid: true, mimeType: 'image/jpeg' };
   }
 
