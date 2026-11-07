@@ -13,6 +13,7 @@ import { SystemSettingsModule } from './modules/system-settings/system-settings.
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
       validate: validateEnv,
     }),
     PrismaModule,

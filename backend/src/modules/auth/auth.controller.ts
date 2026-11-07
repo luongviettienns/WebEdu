@@ -52,17 +52,17 @@ export class AuthController {
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.login(dto);
+    const { accessToken, ...publicResult } = await this.authService.login(dto);
 
-    res.cookie(AUTH_COOKIE_NAME, result.accessToken, {
+    res.cookie(AUTH_COOKIE_NAME, accessToken, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
-      maxAge: result.expiresIn * 1000,
+      maxAge: publicResult.expiresIn * 1000,
     });
 
-    return result;
+    return publicResult;
   }
 
   @Get('me')
