@@ -34,4 +34,8 @@ trigger: always_on
 
 ## 6. Quy tắc Git Flow Chuyên nghiệp & Chủ động Khuyến nghị (`akit-git`)
 - Khi bắt đầu tính năng mới, sửa lỗi hoặc làm việc trên repository, Agent **chủ động recommend và hỏi người dùng** (qua `ask_question` hoặc gợi ý ngắn gọn) xem có muốn áp dụng **Git Flow chuyên nghiệp** không (`main`, `develop`, `feature/<slug>`, `bugfix/<slug>`, `release/vX.Y.Z`, `hotfix/<slug>`, chuẩn **Conventional Commits** `feat(scope):` / `fix(scope):` / `test(scope):`, và cô lập nhánh bằng `.worktrees/`).
+
+## 7. Quy Chuẩn Phân Rã Module & Chống "God File" (WebEdu Anti-God-File Guardrails)
+- **Backend (`backend/src/modules/<domain>/`):** Cấm tạo `<domain>.service.ts` đơn khối vượt `350 LOC`. Bắt buộc tách ngay từ đầu thành `services/{query,crud,workflow,access}.service.ts`, `mappers/<domain>.mapper.ts`, và `policies/<domain>.policy.ts`; tái sử dụng `common/utils/*`, `common/audit/audit-log.util.ts`, và `common/auth/superadmin-protection.policy.ts`.
+- **Frontend (`frontend/src/`):** Mọi route `app/**/page.tsx` chỉ là thin orchestration shell (`<= 250 LOC`). Toàn bộ API client theo miền, custom hooks (bắt buộc có `AbortController` cho `useEffect` gọi API) và Modal/Section/Table phải đặt tại `src/features/<domain>/{api,hooks,components}/`. Không thêm code mới vào `src/lib/auth-api.ts`.
 <!-- AKIT:END -->
