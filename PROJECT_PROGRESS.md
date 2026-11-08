@@ -126,6 +126,10 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **F9 (P2 - Frontend)**: Ẩn nút "Sửa" và "Vô hiệu hóa" đối với giáo viên kiêm nhiệm tài khoản đặc quyền (`ADMIN`/`SUPERADMIN`) trong giao diện Admin; hiển thị lỗi 403 cục bộ trong modal mà không làm sập toàn bộ trang sang `AccessDeniedState`.
   - **Mobile Accessibility & Typography Hardening**: Bổ sung `tabIndex={0} role="region" aria-label="..."` cho toàn bộ vùng cuộn bảng trên mobile (`scrollable-region-focusable` đạt 0 lỗi Axe); khắc phục font chữ Hán và độ tương phản trong `globals.css` và `AuthArtSide.tsx`.
   - **Kiểm Chứng Toàn Diện 100% PASS**: Bộ audit độc lập `rbac-phase3.audit-spec.ts` 9/9 tests PASS; Unit test 117/117 tests PASS (92.77% Lines, 81.55% Branches); Integration 11/11 tests PASS; E2E Backend 23/23 tests PASS; Playwright E2E 20/20 tests PASS (Desktop & Mobile); LOC Guardrails 0 vi phạm.
+- [x] **Slice 2.14 (Kiểm Chứng Trực Quan Trình Duyệt Thật Đa Người Dùng — Live Chromium Cross-User Verification)**:
+  - Tự động hóa kiểm thử trực tiếp trên Chromium có giao diện đồ họa thực tế tương tác chéo giữa 4 vai trò (Học viên 14 tuổi, Admin, Giáo viên, Superadmin).
+  - Hoàn thành trọn vẹn 6/6 kịch bản cross-user: (1) Học viên vị thành niên đăng ký kèm phụ huynh, (2) Đăng nhập chờ lớp & Chặn 403 khi vào Admin, (3) Phản chiếu tức thời sang Hàng đợi Admin, (4) Chặn vô hiệu hóa GV đang phụ trách lớp hoạt động, (5) Giáo viên chỉ thấy lớp được giao & Chặn vào Superadmin, (6) Superadmin đổi thương hiệu trung tâm & đồng bộ thời gian thực sang Học viên (`cache: 'no-store'`).
+  - Đạt 100% PASS trên cả 6 kịch bản, xuất bản Báo Cáo Kiểm Thử Trực Tiếp kèm 10 ảnh chụp minh chứng tại `live_cross_user_test_report.md`.
 
 ### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
 - [x] **Chốt Quyết định Nghiệp vụ Tiền Đề (`DEC-027`, `DEC-028`)**:

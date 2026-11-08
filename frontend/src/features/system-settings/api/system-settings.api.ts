@@ -117,6 +117,7 @@ export async function getSystemConfig(
   return fetchApi<SystemConfigDto>('/system-settings/config', {
     method: 'GET',
     signal: options?.signal,
+    cache: 'no-store',
   });
 }
 
