@@ -29,7 +29,7 @@ export function AuthArtSide() {
 
       {/* Giant Calligraphic Watermark: 學 */}
       <div className="relative my-auto flex items-center justify-center" aria-hidden="true">
-        <div className="font-han font-bold text-[240px] leading-none text-[var(--ink)] opacity-90 select-none pointer-events-none">
+        <div className="font-han font-bold text-[240px] leading-none text-[var(--jade)] opacity-85 select-none pointer-events-none">
           學
         </div>
 
