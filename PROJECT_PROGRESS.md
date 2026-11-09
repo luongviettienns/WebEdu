@@ -113,6 +113,9 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Layout 2 cột: Desktop Sidebar 252px cố định + Topbar `<header>` duy nhất; Mobile/Tablet Off-canvas Drawer.
   - Màn hình Auth 2 cột với `AuthArtSide` chữ `學` 240px, con dấu triện nghiêng -7deg, Luận Ngữ; an toàn trên mobile 375px (`scrollWidth - innerWidth <= 2`).
   - Đạt 100% PASS: Typecheck 0 errors, Lint 0 errors/warnings, Playwright E2E 14/14 tests PASS, 15/15 Backend Services và 12/12 Frontend Pages đạt chuẩn Anti-God-File LOC.
+- [x] **Slice 2.11 (Resend SMTP Configuration & Mail Verification Tooling)**:
+  - Cấu hình template chuẩn Resend SMTP Relay (`smtp.resend.com:465`, SSL) vào `backend/.env` & `backend/.env.example`.
+  - Tạo công cụ kiểm thử đường truyền `scripts/test-smtp.mjs` tích hợp lệnh `npm run test:mail` để xác thực kết nối và gửi thử email thật trực tiếp từ CLI.
 - [x] **Slice 2.11 (Production Cleanup, Zero `FUNC-xxx` / Dev Artifacts & Test DB Isolation `webedu_test`)**:
   - Xóa sạch 100% mã `FUNC-xxx`, `DEC-xxx`, `SEC-xxx`, `BR-xxx`, `INV-xxx` khỏi toàn bộ mã nguồn Production (`backend/src/**` & `frontend/src/**`).
   - Loại bỏ chuông thông báo giả trên `PortalTopbar.tsx`, thẻ giải thích lộ trình tĩnh trên `teacher/classes/page.tsx`, và chuẩn hóa toàn bộ 16 inner feature components sang bảng màu Thư họa Á Đông chính thức (`0` class `emerald-*` / `slate-*`).

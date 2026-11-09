@@ -16,6 +16,7 @@
     "test:frontend": "npm --prefix frontend run test:e2e",
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:migrate": "npm --prefix backend run prisma:migrate",
-    "seed": "npm --prefix backend run seed"
+    "seed": "npm --prefix backend run seed",
+    "test:mail": "node scripts/test-smtp.mjs"
   }
 }
