@@ -351,6 +351,7 @@ export function StudentRegisterForm({
         </div>
 
         <button
+          id="reg-submit-btn"
           type="submit"
           disabled={submitting || isUnder12}
           className="mt-1 flex w-full justify-center rounded-lg bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors active:scale-[0.98]"

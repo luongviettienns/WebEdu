@@ -98,11 +98,14 @@ export default function RegisterPage() {
     }
 
     if (requiresGuardianConsent) {
-      const cleanGuardian = guardianEmail.trim();
+      const cleanGuardian = guardianEmail.trim().toLowerCase();
       if (!cleanGuardian) {
         newErrors.guardianEmail = 'Vui lòng nhập email của cha mẹ hoặc người giám hộ';
       } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanGuardian)) {
         newErrors.guardianEmail = 'Email người giám hộ không đúng định dạng';
+      } else if (cleanGuardian === cleanEmail.toLowerCase()) {
+        newErrors.guardianEmail =
+          'Email người giám hộ không được trùng với email học viên';
       }
 
       if (!guardianConsent) {

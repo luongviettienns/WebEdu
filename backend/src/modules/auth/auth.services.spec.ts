@@ -454,6 +454,22 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       );
     });
 
+    it('rejects registration when guardianEmail is identical to student email', async () => {
+      await expect(
+        service.register({
+          fullName: 'Thiếu Niên Tự Khai',
+          dateOfBirth: '2012-05-10',
+          phone: '0901112224',
+          email: 'thieunien2@example.com',
+          password: 'Password123',
+          guardianEmail: 'thieunien2@example.com',
+          guardianConsent: true,
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Email người giám hộ không được trùng với email học viên'),
+      );
+    });
+
     it('allows two siblings aged 12-15 to share the same guardianEmail and records GuardianConsent snapshot (AUTH-01, AUTH-03)', async () => {
       const sibling1 = await service.register(
         {

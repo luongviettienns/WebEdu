@@ -55,6 +55,13 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Chuẩn hóa padding thẻ Card (`py-5` / `py-6`), khoảng cách field (`space-y-3` / `space-y-3.5`), chiều cao input (`py-2`) trên toàn bộ 4 trang xác thực và 5 Modal nghiệp vụ (`TeacherFormModal`, `CreateSystemUserModal`, `EditUserRolesModal`, `AssignInitialClassModal`, `StudentDetailModal`).
   - Trang bị an toàn `max-h-[90vh] overflow-y-auto` cho 100% Modal, chống che khuất nút Lưu/Đóng trên màn hình nhỏ hoặc zoom lớn.
 - [x] **Xây dựng Tài liệu Kịch bản Kiểm thử Toàn diện ([`docs/TEST_SCENARIOS_COMPREHENSIVE.md`](./docs/TEST_SCENARIOS_COMPREHENSIVE.md))**: Bao phủ đầy đủ 8 luồng nghiệp vụ E2E, 4 cấp phân quyền RBAC, các case biên, bảo mật Rate limit/Lockout, bất biến nghiệp vụ, kiểm tra công thái học UI/UX và khả năng tiếp cận WCAG AA.
+- [x] **Bổ sung Bộ Kiểm Thử E2E Phủ Kín 100% Edge Cases & Công Thái Học Giao Diện ([`frontend/e2e/phase2-edge-cases.spec.ts`](./frontend/e2e/phase2-edge-cases.spec.ts))**:
+  - `EC-1`: Đo đạc Bounding Box form đăng ký và nút bấm `#reg-submit-btn` nằm trọn vẹn trong Viewport ban đầu (Above the Fold) không cần cuộn, xác minh chữ Hán nghệ thuật `學` mang sắc ngọc bích chuẩn `--jade: #2B7760` với độ đậm hiển thị mỹ cảm (opacity-85).
+  - `EC-2`: Kiểm tra chặn và phản hồi tức thời khi Mật khẩu xác nhận không khớp (`Mật khẩu xác nhận không khớp`).
+  - `EC-3`: Ràng buộc bảo mật và bất biến dữ liệu đối với học viên < 16 tuổi: Bắt buộc email người giám hộ và chặn tuyệt đối học viên khai email người giám hộ trùng với chính email của mình trên cả Client và Server.
+  - `EC-4`: Kiểm tra bảo mật đổi mật khẩu cá nhân: Nhập sai mật khẩu hiện tại bị chặn và trả về cảnh báo an toàn.
+  - `EC-5`: Kiểm tra cơ chế tự bảo vệ của Superadmin trên giao diện: Khi tự chỉnh sửa chính mình trong Quản trị hệ thống, ô chọn vai trò `SUPERADMIN` và dropdown trạng thái bị khóa cứng (`disabled`), hiển thị rõ ràng thông báo không thể tự vô hiệu hóa tài khoản của chính mình.
+  - Đạt 100% PASS trên **10/10 test cases Playwright** (trên cả môi trường Desktop Chromium 1440x900 và Mobile Chromium 375x812).
 
 ---
 

@@ -90,6 +90,11 @@ export class AuthRegistrationService {
       if (!EMAIL_REGEX.test(candidateGuardian) || dto.guardianConsent !== true) {
         throw new BadRequestException('Vui lòng xác nhận đã có sự đồng ý của cha mẹ');
       }
+      if (candidateGuardian === email) {
+        throw new BadRequestException(
+          'Email người giám hộ không được trùng với email học viên',
+        );
+      }
       normalizedGuardianEmail = candidateGuardian;
     }
 

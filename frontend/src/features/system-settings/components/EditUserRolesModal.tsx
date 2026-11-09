@@ -25,6 +25,7 @@ export function EditUserRolesModal({
   onSuccess,
   onAuthError,
 }: EditUserRolesModalProps) {
+  const isSelf = editingUser.id === currentUserId;
   const [editRoles, setEditRoles] = useState<Role[]>([...editingUser.roles]);
   const [editStatus, setEditStatus] = useState<UserStatus>(editingUser.status);
   const [editUserError, setEditUserError] = useState<string>('');
@@ -46,7 +47,6 @@ export function EditUserRolesModal({
       return;
     }
 
-    const isSelf = editingUser.id === currentUserId;
     if (isSelf && editStatus === 'INACTIVE') {
       setEditUserError('Không thể tự vô hiệu hóa chính mình');
       return;
@@ -122,22 +122,35 @@ export function EditUserRolesModal({
               Vai trò (Chọn một hoặc nhiều vai trò)
             </span>
             <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
-              {ALL_ROLES.map((role) => (
-                <label
-                  key={role}
-                  className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--ink)] cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={editRoles.includes(role)}
-                    onChange={() =>
-                      setEditRoles((prev) => toggleRoleInList(prev, role))
-                    }
-                    className="h-4 w-4 rounded border-[var(--line-2)] accent-[var(--red)]"
-                  />
-                  <span>{ROLE_LABELS[role]}</span>
-                </label>
-              ))}
+              {ALL_ROLES.map((role) => {
+                const isSuperadminSelf = isSelf && role === 'SUPERADMIN';
+                return (
+                  <label
+                    key={role}
+                    className={`inline-flex items-center gap-2 text-xs font-semibold text-[var(--ink)] ${
+                      isSuperadminSelf
+                        ? 'cursor-not-allowed opacity-60'
+                        : 'cursor-pointer'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editRoles.includes(role)}
+                      disabled={isSuperadminSelf}
+                      onChange={() =>
+                        setEditRoles((prev) => toggleRoleInList(prev, role))
+                      }
+                      className="h-4 w-4 rounded border-[var(--line-2)] accent-[var(--red)] disabled:cursor-not-allowed"
+                    />
+                    <span>{ROLE_LABELS[role]}</span>
+                    {isSuperadminSelf && (
+                      <span className="text-[10px] text-[var(--ink-2)] font-normal">
+                        (Khóa)
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -151,12 +164,18 @@ export function EditUserRolesModal({
             <select
               id="edit-sys-status"
               value={editStatus}
+              disabled={isSelf}
               onChange={(e) => setEditStatus(e.target.value as UserStatus)}
-              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
+              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:text-[var(--ink-2)]"
             >
               <option value="ACTIVE">Đang hoạt động</option>
               <option value="INACTIVE">Vô hiệu hóa</option>
             </select>
+            {isSelf && (
+              <p className="text-[11px] text-[var(--ink-2)]">
+                Bạn không thể tự vô hiệu hóa tài khoản của chính mình.
+              </p>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
