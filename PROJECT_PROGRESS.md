@@ -50,6 +50,10 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
     - Frontend: Typecheck 0 errors, Lint 0 errors/warnings, Turbopack Build 15/15 static pages.
     - Playwright E2E (`webedu_test`): **14/14 tests PASS (100%)** trên cả `desktop-chromium` và `mobile-chromium`.
     - Script `scripts/check-loc.js`: 15/15 services Backend $\le 350$ LOC, 12/12 pages Frontend $\le 250$ LOC.
+- [x] **Tối Ưu Công Thái Học Form & Chống Tràn Cuộn (Form Compactness & Ergonomics)**:
+  - Tái cấu trúc form Đăng ký (`StudentRegisterForm`) từ xếp dọc 1 cột kéo dài thành Grid 2 cột responsive (`Ngày sinh` + `SĐT`, `Mật khẩu` + `Xác nhận`), giảm chiều cao từ 788px xuống ~480px, hiển thị trọn vẹn trong màn hình (Above the Fold) không cần cuộn chuột.
+  - Chuẩn hóa padding thẻ Card (`py-5` / `py-6`), khoảng cách field (`space-y-3` / `space-y-3.5`), chiều cao input (`py-2`) trên toàn bộ 4 trang xác thực và 5 Modal nghiệp vụ (`TeacherFormModal`, `CreateSystemUserModal`, `EditUserRolesModal`, `AssignInitialClassModal`, `StudentDetailModal`).
+  - Trang bị an toàn `max-h-[90vh] overflow-y-auto` cho 100% Modal, chống che khuất nút Lưu/Đóng trên màn hình nhỏ hoặc zoom lớn.
 
 ---
 
