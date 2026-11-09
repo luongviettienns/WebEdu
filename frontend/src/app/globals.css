@@ -63,6 +63,7 @@
   --color-amber-soft: var(--amber-soft);
   --font-sans: var(--f-ui);
   --font-serif: var(--f-han);
+  --font-han: var(--f-han);
 }
 
 body {
@@ -111,7 +112,8 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' viewBox='0 0 20 10'%3E%3Cpath d='M0 9h4V3h8v4H8V5' fill='none' stroke='%23B5322A' stroke-width='1.2'/%3E%3Cpath d='M12 9h8' stroke='%23B5322A' stroke-width='1.2'/%3E%3C/svg%3E");
 }
 
-.han {
+.han,
+.font-han {
   font-family: var(--f-han);
 }
 
