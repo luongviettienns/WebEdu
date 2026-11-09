@@ -54,6 +54,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Tái cấu trúc form Đăng ký (`StudentRegisterForm`) từ xếp dọc 1 cột kéo dài thành Grid 2 cột responsive (`Ngày sinh` + `SĐT`, `Mật khẩu` + `Xác nhận`), giảm chiều cao từ 788px xuống ~480px, hiển thị trọn vẹn trong màn hình (Above the Fold) không cần cuộn chuột.
   - Chuẩn hóa padding thẻ Card (`py-5` / `py-6`), khoảng cách field (`space-y-3` / `space-y-3.5`), chiều cao input (`py-2`) trên toàn bộ 4 trang xác thực và 5 Modal nghiệp vụ (`TeacherFormModal`, `CreateSystemUserModal`, `EditUserRolesModal`, `AssignInitialClassModal`, `StudentDetailModal`).
   - Trang bị an toàn `max-h-[90vh] overflow-y-auto` cho 100% Modal, chống che khuất nút Lưu/Đóng trên màn hình nhỏ hoặc zoom lớn.
+- [x] **Xây dựng Tài liệu Kịch bản Kiểm thử Toàn diện ([`docs/TEST_SCENARIOS_COMPREHENSIVE.md`](./docs/TEST_SCENARIOS_COMPREHENSIVE.md))**: Bao phủ đầy đủ 8 luồng nghiệp vụ E2E, 4 cấp phân quyền RBAC, các case biên, bảo mật Rate limit/Lockout, bất biến nghiệp vụ, kiểm tra công thái học UI/UX và khả năng tiếp cận WCAG AA.
 
 ---
 
