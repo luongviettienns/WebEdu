@@ -119,9 +119,9 @@ export function TeacherFormModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
           <h2 className="text-lg font-bold text-[var(--ink)]">
             {mode === 'create'

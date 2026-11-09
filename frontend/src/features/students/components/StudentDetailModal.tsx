@@ -174,7 +174,7 @@ export function StudentDetailModal({
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 overflow-y-auto backdrop-blur-xs"
     >
-      <div className="my-8 w-full max-w-2xl rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+      <div className="my-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
           <div>
             <h2 className="text-lg font-bold text-[var(--ink)]">

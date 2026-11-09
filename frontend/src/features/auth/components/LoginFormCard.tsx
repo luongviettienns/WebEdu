@@ -42,7 +42,7 @@ export function LoginFormCard({
   onSubmit,
 }: LoginFormCardProps) {
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-8 shadow-xs sm:px-8">
+    <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-6 shadow-xs sm:px-7 sm:py-6">
       {registeredSuccess && (
         <div
           role="status"
@@ -81,7 +81,7 @@ export function LoginFormCard({
         </div>
       )}
 
-      <form onSubmit={onSubmit} noValidate className="space-y-5">
+      <form onSubmit={onSubmit} noValidate className="space-y-3.5">
         <div className="space-y-1.5">
           <label
             htmlFor="login-email"
@@ -102,7 +102,7 @@ export function LoginFormCard({
             }}
             placeholder="nhap-email@example.com"
             aria-invalid={Boolean(emailError)}
-            className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] transition-colors focus:outline-none focus:ring-2 ${
+            className={`w-full rounded-lg border px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] transition-colors focus:outline-none focus:ring-2 ${
               emailError
                 ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
                 : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
@@ -158,7 +158,7 @@ export function LoginFormCard({
         </button>
       </form>
 
-      <div className="mt-6 border-t border-[var(--line)] pt-5 text-center">
+      <div className="mt-4 border-t border-[var(--line)] pt-3.5 text-center">
         <p className="text-sm text-[var(--ink-2)]">
           Chưa có tài khoản học viên?{' '}
           <Link

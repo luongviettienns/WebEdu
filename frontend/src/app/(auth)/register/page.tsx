@@ -158,17 +158,17 @@ export default function RegisterPage() {
       <AuthArtSide />
 
       {/* Cột Phải Form Đăng Ký */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 lg:p-12 overflow-y-auto">
-        <div className="w-full max-w-[480px]">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-6 overflow-y-auto">
+        <div className="w-full max-w-[540px]">
           {/* Header Đăng Ký */}
-          <div className="mb-6 text-center lg:text-left">
+          <div className="mb-3.5 text-center lg:text-left">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
               注册 · HỌC VIÊN HSK
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[var(--ink)]">
               Đăng Ký Tài Khoản Học Viên
             </h1>
-            <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
+            <p className="mt-0.5 text-xs sm:text-sm text-[var(--ink-2)] font-normal">
               Học viện Hán Ngữ & Luyện thi HSK Trực Tuyến
             </p>
           </div>

@@ -91,10 +91,10 @@ function LoginFormContent() {
       <AuthArtSide />
 
       {/* Cột Phải Form Đăng Nhập */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 lg:p-12">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-[420px]">
           {/* Mobile-only Branding Header */}
-          <div className="lg:hidden flex flex-col items-center text-center mb-6">
+          <div className="lg:hidden flex flex-col items-center text-center mb-4">
             <Link href="/" className="flex items-center gap-2 mb-2">
               {centerLogo ? (
                 <Image
@@ -118,7 +118,7 @@ function LoginFormContent() {
           </div>
 
           {/* Desktop Heading with Hanzi eyebrow */}
-          <div className="hidden lg:block mb-6">
+          <div className="hidden lg:block mb-4">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
               登录 · HỆ THỐNG HSK
             </div>

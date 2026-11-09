@@ -63,9 +63,9 @@ export default function ForgotPasswordPage() {
       <AuthArtSide />
 
       {/* Cột Phải Form Khôi Phục */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 lg:p-12">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-[420px]">
-          <div className="mb-6 text-center lg:text-left">
+          <div className="mb-4 text-center lg:text-left">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
               找回密码 · KHÔI PHỤC MẬT KHẨU
             </div>
@@ -77,7 +77,7 @@ export default function ForgotPasswordPage() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-8 shadow-xs sm:px-8">
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-6 shadow-xs sm:px-7 sm:py-6">
             {infoMessage && (
               <div
                 role="status"
@@ -99,7 +99,7 @@ export default function ForgotPasswordPage() {
             <form
               onSubmit={(e) => void handleSubmit(e)}
               noValidate
-              className="space-y-5"
+              className="space-y-3.5"
             >
               <div className="space-y-1.5">
                 <label
@@ -120,7 +120,7 @@ export default function ForgotPasswordPage() {
                   }}
                   placeholder="nhap-email@example.com"
                   aria-invalid={Boolean(emailError)}
-                  className={`w-full rounded-lg border px-3.5 py-2.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
+                  className={`w-full rounded-lg border px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
                     emailError
                       ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
                       : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
@@ -148,7 +148,7 @@ export default function ForgotPasswordPage() {
               </button>
             </form>
 
-            <div className="mt-6 border-t border-[var(--line)] pt-5 text-center">
+            <div className="mt-4 border-t border-[var(--line)] pt-3.5 text-center">
               <Link
                 href="/login"
                 className="text-sm font-semibold text-[var(--red)] hover:text-[var(--red-ink)] transition-colors"

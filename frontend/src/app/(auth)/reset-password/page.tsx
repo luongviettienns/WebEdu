@@ -84,9 +84,9 @@ function ResetPasswordFormContent() {
       <AuthArtSide />
 
       {/* Cột Phải Form Đặt Lại Mật Khẩu */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-8 lg:p-12">
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-[420px]">
-          <div className="mb-6 text-center lg:text-left">
+          <div className="mb-4 text-center lg:text-left">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
               重置密码 · ĐẶT LẠI MẬT KHẨU
             </div>
@@ -98,7 +98,7 @@ function ResetPasswordFormContent() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-8 shadow-xs sm:px-8">
+          <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-6 shadow-xs sm:px-7 sm:py-6">
             {successMessage && (
               <div
                 role="status"
@@ -126,7 +126,7 @@ function ResetPasswordFormContent() {
             <form
               onSubmit={(e) => void handleSubmit(e)}
               noValidate
-              className="space-y-5"
+              className="space-y-3.5"
             >
               {!tokenFromUrl && (
                 <div className="space-y-1.5">
@@ -146,7 +146,7 @@ function ResetPasswordFormContent() {
                       if (tokenError) setTokenError('');
                     }}
                     placeholder="Dán mã token nhận được trong email"
-                    className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+                    className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
                   />
                   {tokenError && (
                     <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
@@ -194,7 +194,7 @@ function ResetPasswordFormContent() {
               </button>
             </form>
 
-            <div className="mt-6 border-t border-[var(--line)] pt-5 text-center">
+            <div className="mt-4 border-t border-[var(--line)] pt-3.5 text-center">
               <Link
                 href="/login"
                 className="text-sm font-semibold text-[var(--red)] hover:text-[var(--red-ink)] transition-colors"
