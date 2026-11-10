@@ -46,7 +46,7 @@ const ENROLLMENT_STATUS_META: Record<
 };
 
 function canReopenWithin7Days(closedAt: string | null): boolean {
-  if (!closedAt) return true;
+  if (!closedAt) return false;
   const closedTime = new Date(closedAt).getTime();
   if (Number.isNaN(closedTime)) return false;
   return Date.now() - closedTime <= SEVEN_DAYS_MS;

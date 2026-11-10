@@ -147,7 +147,7 @@ function CompleteClassModalContent({
             <textarea
               id="complete-reason"
               rows={2}
-              maxLength={500}
+              maxLength={255}
               placeholder="Hoàn thành khóa học..."
               value={reason}
               onChange={(e) => setReason(e.target.value)}
