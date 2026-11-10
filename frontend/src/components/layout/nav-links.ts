@@ -37,6 +37,7 @@ export function getGroupedNavLinks(
                     han: '待分班',
                     badge: pendingCount,
                   },
+                  { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
                 ]
               : []),
             { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
@@ -73,6 +74,7 @@ export function getGroupedNavLinks(
               han: '待分班',
               badge: pendingCount,
             },
+            { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
             { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
             ...(hasTeacherRole
               ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]

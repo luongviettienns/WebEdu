@@ -37,6 +37,9 @@
 | 27 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/config` | `FUNC-013` | `@Public()` (hiển thị thương hiệu & logo trung tâm) | — | `200 OK`: `SystemConfigDto` (`centerName`, `logoDataUri`, `updatedAt`, `updatedBy`) |
 | 28 | `SystemSettingsController` | `PUT` | `/api/v1/system-settings/config` | `FUNC-013`, `SEC-10`, `FIX-06` | Chỉ `SUPERADMIN` | `UpdateSystemConfigDto` (`centerName`, `logoDataUri?`) | `200 OK`: `SystemConfigDto` (kiểm tra magic bytes PNG/JPG, kích thước `<= 2MB`, chống decompression bomb `<= 2048x2048`) |
 | 29 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/audit-logs` | `FUNC-011`, `FUNC-012`, `FUNC-013`, `SEC-09` | Chỉ `SUPERADMIN` | `ListAuditLogsQueryDto` (`action?`, `page?`, `limit?`) | `200 OK`: `{ items: SystemAuditLogItemDto[], total, page, limit }` |
+| 30 | `CoursesController` | `GET` | `/api/v1/courses` | `FUNC-014`, `COURSE-01` | `ADMIN`, `TEACHER` (`SUPERADMIN` thuần và `STUDENT` nhận `403`) | `ListCoursesQueryDto` (`activeOnly?`, `search?`, `level?`) | `200 OK`: `{ items: CourseItemDto[], total }` |
+| 31 | `CoursesController` | `POST` | `/api/v1/courses` | `FUNC-014`, `COURSE-01`, `COURSE-02` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `CreateCourseDto` (`code`, `name`, `level`, `defaultSessions?`, `description?`, `isActive?`) | `201 Created`: `CourseItemDto` |
+| 32 | `CoursesController` | `PATCH` | `/api/v1/courses/:id` | `FUNC-014`, `COURSE-01`, `COURSE-03` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `UpdateCourseDto` (`code?`, `name?`, `level?`, `defaultSessions?`, `description?`, `isActive?`) | `200 OK`: `CourseItemDto` |
 
 ---
 

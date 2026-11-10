@@ -128,6 +128,8 @@ export async function fetchApi<T>(
   return response.json() as Promise<T>;
 }
 
+export const requestJson = fetchApi;
+
 export async function getSystemHealth(): Promise<HealthCheckResponse> {
   return fetchApi<HealthCheckResponse>('/health');
 }
