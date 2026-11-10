@@ -26,9 +26,10 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
 }> = [
   // HealthController (1)
   { method: 'GET', path: '/api/v1/health', isPublic: true },
-  // AuthController (7)
+  // AuthController (8)
   { method: 'POST', path: '/api/v1/auth/register', isPublic: true },
   { method: 'POST', path: '/api/v1/auth/register/student', isPublic: true },
+  { method: 'POST', path: '/api/v1/auth/send-verification-code', isPublic: true },
   { method: 'POST', path: '/api/v1/auth/login', isPublic: true },
   { method: 'POST', path: '/api/v1/auth/forgot-password', isPublic: true },
   { method: 'POST', path: '/api/v1/auth/reset-password', isPublic: true },
@@ -151,7 +152,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(28);
+    expect(actualRoutes).toHaveLength(29);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
