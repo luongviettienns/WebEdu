@@ -63,6 +63,16 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'GET', path: '/api/v1/courses', isPublic: false },
   { method: 'POST', path: '/api/v1/courses', isPublic: false },
   { method: 'PATCH', path: '/api/v1/courses/:id', isPublic: false },
+  // ClassesController (9)
+  { method: 'GET', path: '/api/v1/classes', isPublic: false },
+  { method: 'GET', path: '/api/v1/classes/:id', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/classes/:id', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/enrollments', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/enrollments/:studentId/transfer', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/enrollments/:studentId/drop', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/complete', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/reopen', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -156,7 +166,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(32);
+    expect(actualRoutes).toHaveLength(41);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -404,6 +414,15 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'get', url: '/api/v1/courses' },
       { method: 'post', url: '/api/v1/courses' },
       { method: 'patch', url: `/api/v1/courses/${course.id}` },
+      { method: 'get', url: '/api/v1/classes' },
+      { method: 'get', url: `/api/v1/classes/${activeClass.id}` },
+      { method: 'post', url: '/api/v1/classes' },
+      { method: 'patch', url: `/api/v1/classes/${activeClass.id}` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments/${studentA.id}/transfer` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments/${studentA.id}/drop` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/complete` },
+      { method: 'post', url: `/api/v1/classes/${completedClass.id}/reopen` },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -435,6 +454,8 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       `/api/v1/students/${studentPending.id}/learning-records`,
       '/api/v1/teachers',
       '/api/v1/courses',
+      '/api/v1/classes',
+      `/api/v1/classes/${activeClass.id}`,
       '/api/v1/system-settings/users',
       '/api/v1/system-settings/audit-logs',
     ]) {
@@ -500,6 +521,8 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       '/api/v1/students/pending-enrollment',
       '/api/v1/students/available-classes',
       '/api/v1/courses',
+      '/api/v1/classes',
+      `/api/v1/classes/${activeClass.id}`,
       `/api/v1/students/${studentA.id}/class-history`,
       `/api/v1/students/${studentA.id}/learning-records`,
     ]) {

@@ -938,6 +938,21 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
         'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
       ),
     );
+
+    // When a dropped/completed student is already in PENDING_CLASS, editing internalNotes while keeping status = PENDING_CLASS succeeds
+    usersStore.get('student-dropped')!.status = UserStatus.PENDING_CLASS;
+    const updatedDropped = await service.updateStudent(
+      adminActor,
+      'student-dropped',
+      {
+        status: UserStatus.PENDING_CLASS,
+        internalNotes: 'Bảo lưu chờ khóa HSK2 tháng sau',
+      },
+    );
+    expect(updatedDropped.status).toBe(UserStatus.PENDING_CLASS);
+    expect(updatedDropped.internalNotes).toBe(
+      'Bảo lưu chờ khóa HSK2 tháng sau',
+    );
   });
 
   it('lists students with filters and evaluates verifyClassLearningAccess for Admin, Teacher, and Superadmin', async () => {

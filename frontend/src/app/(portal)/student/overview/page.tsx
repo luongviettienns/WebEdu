@@ -123,7 +123,7 @@ function StudentOverviewContent({
       ) : !isStudentAccount ? (
         <AdminAccessNotice />
       ) : isPendingClass ? (
-        <PendingClassNotice />
+        <PendingClassNotice pastClasses={studentDetail?.pastClasses} />
       ) : (
         <ActiveStudentClassSection
           profile={profile}
