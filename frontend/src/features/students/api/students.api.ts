@@ -21,6 +21,21 @@ export interface GuardianConsentInfoDto {
   formattedDisplay?: string;
 }
 
+export interface PastClassRecordDto {
+  enrollmentId: string;
+  classId: string;
+  classCode: string;
+  courseCode?: string;
+  courseName: string;
+  teacherName?: string | null;
+  enrollmentStatus: 'TRANSFERRED' | 'COMPLETED' | 'DROPPED' | 'ACTIVE';
+  enrolledDate: string;
+  leftDate: string | null;
+  reason?: string | null;
+}
+
+export type PastClassItemDto = PastClassRecordDto;
+
 export interface StudentItemDto {
   id: string;
   fullName: string;
@@ -38,6 +53,7 @@ export interface StudentItemDto {
   internalNotes?: string | null;
   enrolledAt?: string | null;
   classHistory?: string[];
+  pastClasses?: PastClassRecordDto[];
 }
 
 export interface StudentListResponse {
@@ -187,4 +203,22 @@ export async function assignStudentInitialClass(
       body: JSON.stringify(payload),
     },
   );
+}
+
+export async function getStudentClassHistory(
+  studentId: string,
+  options?: RequestOptions,
+): Promise<{
+  studentId: string;
+  currentClass: string | null;
+  pastClasses: PastClassRecordDto[];
+}> {
+  return fetchApi<{
+    studentId: string;
+    currentClass: string | null;
+    pastClasses: PastClassRecordDto[];
+  }>(`/students/${encodeURIComponent(studentId)}/class-history`, {
+    method: 'GET',
+    signal: options?.signal,
+  });
 }

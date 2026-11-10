@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import {
+  getStudentClassHistory,
   getStudentDetail,
   updateStudent,
   type StudentItemDto,
 } from '@/features/students/api/students.api';
+import { PastClassesHistoryList } from '@/features/students/components/StudentOverviewCards';
 import { extractErrorMessage, isUnauthorizedError } from '@/lib/api-client';
 import {
   calculateAgeInVnTimezone,
@@ -27,6 +29,10 @@ interface StudentDetailModalProps {
   onSuccess: (updatedFullName: string) => void;
   onAuthError: (error: unknown) => boolean;
 }
+
+const INPUT_CLS =
+  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
+const LABEL_CLS = 'block text-sm font-medium text-[var(--ink)]';
 
 export function StudentDetailModal({
   initialStudent,
@@ -65,8 +71,22 @@ export function StudentDetailModal({
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
+
+        let pastClasses = fullDetail.pastClasses;
+        if (!pastClasses) {
+          try {
+            const historyRes = await getStudentClassHistory(initialStudent.id, {
+              signal: controller.signal,
+            });
+            pastClasses = historyRes.pastClasses;
+          } catch {
+            // Bỏ qua nếu role hiện tại không gọi riêng endpoint lịch sử lớp
+          }
+        }
+        if (controller.signal.aborted) return;
+
         const detailDob = normalizeIsoDateForInput(fullDetail.dateOfBirth);
-        setSelectedStudent(fullDetail);
+        setSelectedStudent({ ...fullDetail, pastClasses });
         setEditFullName(fullDetail.fullName);
         setOriginalDateOfBirth(detailDob);
         setEditDateOfBirth(detailDob);
@@ -137,11 +157,12 @@ export function StudentDetailModal({
     const hasDateOfBirthChanged =
       !isGuardianConsentLocked && normalizedEditDob !== originalDateOfBirth;
 
-    if (hasDateOfBirthChanged) {
-      if (!normalizedEditDob || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedEditDob)) {
-        setModalError('Định dạng Ngày sinh không hợp lệ');
-        return;
-      }
+    if (
+      hasDateOfBirthChanged &&
+      (!normalizedEditDob || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedEditDob))
+    ) {
+      setModalError('Định dạng Ngày sinh không hợp lệ');
+      return;
     }
 
     setSaving(true);
@@ -169,75 +190,38 @@ export function StudentDetailModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 overflow-y-auto backdrop-blur-xs"
-    >
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 overflow-y-auto backdrop-blur-xs">
       <div className="my-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
           <div>
-            <h2 className="text-lg font-bold text-[var(--ink)]">
-              Hồ Sơ Chi Tiết Học Viên
-            </h2>
+            <h2 className="text-lg font-bold text-[var(--ink)]">Hồ Sơ Chi Tiết Học Viên</h2>
             <p className="text-xs text-[var(--ink-2)]">
               Quản lý thông tin cá nhân, trạng thái tài khoản và ghi chú nội bộ
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]"
-          >
-            Đóng
-          </button>
+          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]">Đóng</button>
         </div>
 
         {detailLoading ? (
-          <p className="mt-3 text-xs text-[var(--ink-2)]">
-            Đang đồng bộ dữ liệu chi tiết...
-          </p>
+          <p className="mt-3 text-xs text-[var(--ink-2)]">Đang đồng bộ dữ liệu chi tiết...</p>
         ) : null}
 
         {modalError ? (
-          <div
-            role="alert"
-            className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
-          >
-            {modalError}
-          </div>
+          <div role="alert" className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]">{modalError}</div>
         ) : null}
 
-        <form
-          onSubmit={(e) => void handleSaveStudent(e)}
-          noValidate
-          className="mt-4 space-y-4"
-        >
+        <form onSubmit={(e) => void handleSaveStudent(e)} noValidate className="mt-4 space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="stu-fullname"
-                className="block text-sm font-medium text-[var(--ink)]"
-              >
+              <label htmlFor="stu-fullname" className={LABEL_CLS}>
                 Họ và tên <span className="text-[var(--red)]">*</span>
               </label>
-              <input
-                id="stu-fullname"
-                type="text"
-                maxLength={100}
-                required
-                value={editFullName}
-                onChange={(e) => setEditFullName(e.target.value)}
-                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
-              />
+              <input id="stu-fullname" type="text" maxLength={100} required value={editFullName} onChange={(e) => setEditFullName(e.target.value)} className={INPUT_CLS} />
             </div>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label
-                  htmlFor="stu-dob"
-                  className="block text-sm font-medium text-[var(--ink)]"
-                >
+                <label htmlFor="stu-dob" className={LABEL_CLS}>
                   Ngày sinh ({formatDateDdMmYyyy(editDateOfBirth)})
                 </label>
                 {computedAge !== null ? (
@@ -252,12 +236,11 @@ export function StudentDetailModal({
                 disabled={isGuardianConsentLocked}
                 value={editDateOfBirth}
                 onChange={(e) => setEditDateOfBirth(e.target.value)}
-                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] font-num disabled:cursor-not-allowed disabled:bg-[var(--surface-2)] disabled:text-[var(--ink-2)]"
+                className={`${INPUT_CLS} font-num disabled:cursor-not-allowed disabled:bg-[var(--surface-2)] disabled:text-[var(--ink-2)]`}
               />
               {isGuardianConsentLocked ? (
                 <p className="text-[11px] font-medium text-[var(--amber)]">
-                  Trường Ngày sinh đã khóa do học viên có xác nhận đồng ý của
-                  cha mẹ.
+                  Trường Ngày sinh đã khóa do học viên có xác nhận đồng ý của cha mẹ.
                 </p>
               ) : null}
             </div>
@@ -265,43 +248,21 @@ export function StudentDetailModal({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label
-                htmlFor="stu-phone"
-                className="block text-sm font-medium text-[var(--ink)]"
-              >
+              <label htmlFor="stu-phone" className={LABEL_CLS}>
                 Số điện thoại <span className="text-[var(--red)]">*</span>
               </label>
-              <input
-                id="stu-phone"
-                type="tel"
-                maxLength={10}
-                required
-                value={editPhone}
-                onChange={(e) => setEditPhone(e.target.value)}
-                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none"
-              />
+              <input id="stu-phone" type="tel" maxLength={10} required value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${INPUT_CLS} font-num`} />
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="stu-email"
-                className="block text-sm font-medium text-[var(--ink)]"
-              >
+              <label htmlFor="stu-email" className={LABEL_CLS}>
                 Email <span className="text-[var(--red)]">*</span>
               </label>
-              <input
-                id="stu-email"
-                type="email"
-                required
-                value={editEmail}
-                onChange={(e) => setEditEmail(e.target.value)}
-                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
-              />
+              <input id="stu-email" type="email" required value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className={INPUT_CLS} />
             </div>
           </div>
 
-          {selectedStudent.guardianConsent ||
-          selectedStudent.hasGuardianConsent ? (
+          {selectedStudent.guardianConsent || selectedStudent.hasGuardianConsent ? (
             <div className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5">
               <p className="text-xs font-semibold text-[var(--jade)]">
                 Đã xác nhận đồng ý của cha mẹ –{' '}
@@ -322,34 +283,25 @@ export function StudentDetailModal({
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <span className="block text-sm font-medium text-[var(--ink)]">
-                Lớp đang học & Lịch sử lớp
-              </span>
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2 text-sm text-[var(--ink)]">
+              <span className={LABEL_CLS}>Lớp đang học & Lịch sử lớp</span>
+              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-sm text-[var(--ink)]">
                 <p className="font-semibold">
                   Hiện tại: {selectedStudent.assignedClass || 'Chưa xếp lớp'}
                 </p>
-                {selectedStudent.classHistory &&
-                selectedStudent.classHistory.length > 0 ? (
-                  <p className="mt-1 text-xs text-[var(--ink-2)]">
-                    Đã học: {selectedStudent.classHistory.join(', ')}
-                  </p>
-                ) : null}
+                <PastClassesHistoryList
+                  pastClasses={selectedStudent.pastClasses}
+                  classHistory={selectedStudent.classHistory}
+                />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label
-                htmlFor="stu-status"
-                className="block text-sm font-medium text-[var(--ink)]"
-              >
-                Trạng thái tài khoản
-              </label>
+              <label htmlFor="stu-status" className={LABEL_CLS}>Trạng thái tài khoản</label>
               <select
                 id="stu-status"
                 value={editStatus}
                 onChange={(e) => setEditStatus(e.target.value as UserStatus)}
-                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
+                className={INPUT_CLS}
               >
                 {!isSelectedStudentEnrolled ? (
                   <>
@@ -365,8 +317,7 @@ export function StudentDetailModal({
               </select>
               {!isSelectedStudentEnrolled ? (
                 <p className="text-[11px] text-[var(--ink-2)]">
-                  Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng
-                  thực hiện tại{' '}
+                  Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng thực hiện tại{' '}
                   <Link
                     href="/admin/students/pending"
                     className="font-semibold text-[var(--red)] underline hover:text-[var(--red-ink)]"
@@ -381,10 +332,7 @@ export function StudentDetailModal({
 
           {canManageInternalNotes ? (
             <div className="space-y-1.5">
-              <label
-                htmlFor="stu-internal-notes"
-                className="block text-sm font-medium text-[var(--ink)]"
-              >
+              <label htmlFor="stu-internal-notes" className={LABEL_CLS}>
                 Ghi chú nội bộ (Chỉ Admin xem)
               </label>
               <textarea
@@ -393,24 +341,14 @@ export function StudentDetailModal({
                 value={editInternalNotes}
                 onChange={(e) => setEditInternalNotes(e.target.value)}
                 placeholder="Ghi chú xếp lớp, nhu cầu học tập, lưu ý phụ huynh..."
-                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
+                className={INPUT_CLS}
               />
             </div>
           ) : null}
 
           <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={saving || detailLoading}
-              className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
-            >
+            <button type="button" onClick={onClose} className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]">Hủy</button>
+            <button type="submit" disabled={saving || detailLoading} className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50">
               {saving ? 'Đang lưu...' : 'Lưu cập nhật'}
             </button>
           </div>

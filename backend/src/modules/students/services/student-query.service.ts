@@ -127,7 +127,29 @@ export class StudentQueryService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: studentId },
-      include: { studentProfile: { include: { consent: true } } },
+      include: {
+        studentProfile: { include: { consent: true } },
+        enrollments: {
+          where: {
+            status: {
+              in: [
+                EnrollmentStatus.TRANSFERRED,
+                EnrollmentStatus.COMPLETED,
+                EnrollmentStatus.DROPPED,
+              ],
+            },
+          },
+          include: {
+            class: {
+              include: {
+                course: true,
+                teacher: { select: { fullName: true } },
+              },
+            },
+          },
+          orderBy: { enrolledDate: 'desc' },
+        },
+      },
     });
 
     if (!user || !user.roles.includes(Role.STUDENT)) {
@@ -198,7 +220,14 @@ export class StudentQueryService {
           ],
         },
       },
-      include: { class: { include: { course: true } } },
+      include: {
+        class: {
+          include: {
+            course: true,
+            teacher: { select: { fullName: true } },
+          },
+        },
+      },
       orderBy: { enrolledDate: 'desc' },
     });
 

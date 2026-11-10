@@ -1005,4 +1005,41 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
       }),
     ).toThrow(new ForbiddenException('Bạn không có quyền truy cập'));
   });
+
+  it('enriches getStudentClassHistory and toStudentDetailDto with courseCode, teacherName, reason, classHistory, and pastClasses', async () => {
+    const pastEnr = {
+      id: 'enr-past-1',
+      classId: 'cls-completed',
+      studentId: 'student-a',
+      status: EnrollmentStatus.COMPLETED,
+      enrolledDate: new Date('2026-01-01T00:00:00.000Z'),
+      leftDate: new Date('2026-03-30T00:00:00.000Z'),
+      reason: 'Hoàn thành khóa học',
+      class: classesStore.get('cls-completed')!,
+    };
+    enrollmentsStore.push(pastEnr);
+    Object.assign(usersStore.get('student-a')!, {
+      enrollments: [pastEnr],
+    });
+
+    const history = await service.getStudentClassHistory(adminActor, 'student-a');
+    expect(history.pastClasses).toEqual([
+      {
+        enrollmentId: 'enr-past-1',
+        classId: 'cls-completed',
+        classCode: 'HSK1-OLD',
+        courseCode: 'HSK1',
+        courseName: 'Tiếng Trung HSK 1',
+        teacherName: 'Cô Giáo Lan',
+        enrollmentStatus: EnrollmentStatus.COMPLETED,
+        enrolledDate: '2026-01-01',
+        leftDate: '2026-03-30',
+        reason: 'Hoàn thành khóa học',
+      },
+    ]);
+
+    const detail = await service.getStudentById(adminActor, 'student-a');
+    expect(detail.classHistory).toEqual(['HSK1-OLD']);
+    expect(detail.pastClasses).toEqual(history.pastClasses);
+  });
 });

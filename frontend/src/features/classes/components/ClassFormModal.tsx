@@ -7,7 +7,7 @@ import {
 } from '@/features/classes/api/classes.api';
 import {
   QUICK_SCHEDULE_PRESETS, WEEKDAY_OPTIONS, calculateExpectedEndDateIso,
-  formatSchedulePreviewText, normalizeScheduleDays, validateClassFormInput,
+  formatSchedulePreviewText, getTodayVnIsoDate, normalizeScheduleDays, validateClassFormInput,
 } from '@/features/classes/utils/schedule.util';
 import { extractErrorMessage } from '@/lib/api-client';
 
@@ -35,7 +35,7 @@ export function ClassFormModal(props: ClassFormModalProps) {
 function ClassFormModalContent({
   mode, initialData, courses, teachers, onClose, onSuccess,
 }: ClassFormModalProps) {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = getTodayVnIsoDate();
   const availableCourses = courses.filter(
     (c) => c.isActive || (mode === 'edit' && c.id === initialData?.courseId),
   );

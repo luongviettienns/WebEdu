@@ -52,6 +52,15 @@ export const CLASS_STATUS_LABELS: Record<ClassStatus, string> = {
   ARCHIVED: 'Lưu trữ',
 };
 
+export function getTodayVnIsoDate(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
 export function normalizeScheduleDays(days: readonly number[]): number[] {
   const uniqueValid = Array.from(
     new Set(days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)),
