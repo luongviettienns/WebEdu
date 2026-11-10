@@ -35,3 +35,25 @@ export function assertNoActiveClassesLed(effectiveCount: number): void {
     );
   }
 }
+
+export async function syncTeacherActiveClassesCount(
+  tx: Prisma.TransactionClient,
+  teacherId: string,
+): Promise<number> {
+  const activeCount = tx.class?.count
+    ? await tx.class.count({
+        where: {
+          teacherId,
+          status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+        },
+      })
+    : 0;
+  if (tx.teacherProfile?.updateMany) {
+    await tx.teacherProfile.updateMany({
+      where: { userId: teacherId },
+      data: { activeClassesCount: activeCount },
+    });
+  }
+  return activeCount;
+}
+
