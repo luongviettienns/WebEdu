@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 2 & ĐỢT ĐẠI TU UI/UX PROTOTYPE Á ĐÔNG HOÀN TẤT & ĐÃ RÀ SOÁT TOÀN DIỆN (100% GATES PASS) — SẴN SÀNG KHỞI ĐỘNG PHASE 3 (Khóa học HSK & Quản lý Lớp học)**
+* **Giai đoạn hiện tại**: **Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học — ĐANG THỰC THI (IN_PROGRESS)**
 
 ---
 
@@ -157,16 +157,18 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Đồng Bộ Checklist Kiểm Thử & Kiểm Kê API**: Cập nhật tệp Excel `WebEdu_Checklist_KiemThu_TrucQuan.xlsx` (sheet `CHECKLIST`, các ca `REG-01`, `REG-02`, `REG-03`, `REG-04`, `REG-07`, `REG-08`, `REG-09`, `REG-10`) và tài liệu `docs/TEST_SCENARIOS_COMPREHENSIVE.md` phản ánh chính xác luồng 1 Email duy nhất, xác thực OTP 6 số, thông báo 409 tách bạch và checkbox cam kết phụ huynh. Đồng thời đồng bộ danh mục 29 endpoints trong `docs/test-inventory-api.md` và kiểm thử tự động `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts` (100% E2E PASS).
   - **100% Cổng Kỹ Thuật Đạt Chuẩn**: Unit tests 120/120 PASS, Typecheck Backend & Frontend 0 lỗi, Lint Backend (OxLint) & Frontend (ESLint) 0 warnings/errors, Anti-God-File LOC 15/15 Backend Services và 12/12 Frontend Pages đạt chuẩn.
 
-### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
-- [x] **Chốt Quyết định Nghiệp vụ Tiền Đề (`DEC-027`, `DEC-028`)**:
+### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`) *(ĐANG THỰC THI)*
+- [x] **Chốt Quyết định Nghiệp vụ Tiền Đề (`DEC-027`, `DEC-028`, `DEC-029`, `DEC-030`)**:
   - `DEC-027`: Mỗi lớp học chỉ có duy nhất **1 Giáo viên chính thức phụ trách** tại một thời điểm (không có trợ giảng).
   - `DEC-028`: Tại một thời điểm, mỗi Học viên chỉ được ở trạng thái `ACTIVE` trong **tối đa 1 lớp học duy nhất** (muốn học lớp khác phải `COMPLETED` hoặc `TRANSFERRED`).
-- [ ] Lập Sub-Plan `docs/plans/phase-03-courses-and-classes.md` & chốt Open Issues `COURSE-01`, `CLASS-02`.
-- [ ] **Slice 3.1**: Mở rộng CRUD Danh mục Khóa học HSK1–HSK4 & Giao tiếp cơ bản (`FUNC-014`) + Tạo/Sửa Lớp học, Phân công 1 GV trên nền bảng `courses` & `classes` đã khởi tạo (`FUNC-016..018`).
-- [ ] **Slice 3.2**: Nghiệp vụ `Enrollment` mở rộng: Thêm HV vào lớp (`FUNC-020`) trên nền bảng `enrollments` & Partial Unique Index `idx_unique_student_active_enrollment`.
-- [ ] **Slice 3.3**: Chuyển lớp (`FUNC-022`), Rút học viên khỏi lớp (`FUNC-077`), Xem lịch sử các lớp đã học (`FUNC-023`) bảo toàn 100% lịch sử.
-- [ ] **Slice 3.4**: Kết thúc/Lưu trữ lớp (`FUNC-079`) & Xem danh sách/chi tiết lớp theo quyền (`FUNC-024`).
-- [ ] **Slice 3.5**: Giao diện Quản lý Khóa HSK, Lớp học, Xếp/Chuyển lớp & E2E tests.
+  - `DEC-029` (`COURSE-01`): Số buổi mặc định (`defaultSessions`) của từng khóa HSK được Admin tự cấu hình linh hoạt, tự điền làm gợi ý khi tạo lớp mới; khóa đã gắn lớp không xóa vật lý mà chuyển sang `Ngừng sử dụng` (`isActive = false`).
+  - `DEC-030` (`CLASS-02`): Khi đóng/kết thúc lớp (`FUNC-079`), chuyển lớp sang `COMPLETED` (`READ_ONLY`), bảo toàn 100% lịch sử học tập và giải phóng trạng thái lớp hiện tại của học viên để có thể xếp lên lớp HSK cấp tiếp theo; hỗ trợ mở lại lớp trong 7 ngày.
+- [x] Lập Sub-Plan [`docs/plans/phase-03-courses-and-classes.md`](./docs/plans/phase-03-courses-and-classes.md) (tích hợp Superpowers Subagent TDD & Hội đồng Phản biện Đa Agent trước nghiệm thu) & chốt Open Issues `COURSE-01`, `CLASS-02`.
+- [/] **Slice 3.1**: Schema Migration (`20261110120000_phase03_courses_and_classes`) & Module 02 — Danh mục Khóa học HSK1–HSK4 & Giao tiếp cơ bản (`FUNC-014`, Backend `CoursesModule` + Frontend `/admin/courses`).
+- [ ] **Slice 3.2**: Tạo/Sửa Lớp học, tự tính `expectedEndDate`, cảnh báo trùng lịch dạy & Phân công 1 Giáo viên kèm lịch sử `ClassTeacherAssignment` (`FUNC-016..018`).
+- [ ] **Slice 3.3**: Vòng đời Ghi danh Học viên: Thêm 1/nhiều HV vào lớp (`FUNC-020`), Chuyển lớp (`FUNC-022`), Rút học viên khỏi lớp (`FUNC-077`), Xem lịch sử các lớp đã học (`FUNC-023`) bảo toàn 100% lịch sử.
+- [ ] **Slice 3.4**: Danh sách/Chi tiết lớp theo phân quyền (`FUNC-024`, `DEC-025`) & Kết thúc/Lưu trữ lớp chuyển sang `READ_ONLY` + Mở lại trong 7 ngày (`FUNC-079`, `DEC-030`).
+- [ ] **Slice 3.5**: Kiểm kê API/UI, E2E Suite (`phase3-courses-classes.e2e-spec.ts`) & Hội đồng Phản biện Đa Agent (`akit-debater`, `akit-critic`, `akit-security`, `akit-judge`) trước nghiệm thu.
 
 ### Phase 4: Module 04 & 05 — Lịch học, Buổi học & Điểm danh (`FUNC-026..032`, `FUNC-034..037`)
 - [ ] Lập Sub-Plan `docs/plans/phase-04-schedule-and-attendance.md` & chốt Open Issues `SCHED-01`, `ATT-01`.
