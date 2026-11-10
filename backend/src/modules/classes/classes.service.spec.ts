@@ -212,6 +212,9 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
     };
 
     mockPrisma = {
+      $queryRaw: vi.fn(async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+        return [{ id: values[0] }];
+      }),
       course: {
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
           return coursesStore.get(where.id) ?? null;
@@ -387,6 +390,21 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
         ),
       },
       classTeacherAssignment: {
+        findFirst: vi.fn(
+          async ({
+            where,
+          }: {
+            where: { classId: string; assignedTo?: null };
+          }) => {
+            return (
+              assignmentsStore.find(
+                (a) =>
+                  a.classId === where.classId &&
+                  (where.assignedTo === null ? a.assignedTo === null : true),
+              ) ?? null
+            );
+          },
+        ),
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           const item: MockAssignmentRecord = {
             id: `assign-${assignmentsStore.length + 1}`,
@@ -433,6 +451,9 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
             return { count: 1 };
           },
         ),
+      },
+      studentProfile: {
+        updateMany: vi.fn(async () => ({ count: 1 })),
       },
       systemAuditLog: {
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -750,6 +771,41 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
         auditLogs.some((l) => l.action === 'CLASS_TEACHER_CHANGED'),
       ).toBe(true);
       expect(auditLogs.some((l) => l.action === 'CLASS_UPDATED')).toBe(true);
+    });
+
+    it('syncs StudentProfile.assignedClass when renaming Class.code and rejects teacherAssignedFrom < openAssignment.assignedFrom', async () => {
+      const created = await service.createClass(adminActor, {
+        code: 'HSK1-RENAME-OLD',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+      });
+
+      const renamed = await service.updateClass(adminActor, created.id, {
+        code: 'hsk1-rename-new',
+      });
+      expect(renamed.code).toBe('HSK1-RENAME-NEW');
+      expect(
+        (mockPrisma.studentProfile as { updateMany: ReturnType<typeof vi.fn> })
+          .updateMany,
+      ).toHaveBeenCalledWith({
+        where: { currentClassId: created.id },
+        data: { assignedClass: 'HSK1-RENAME-NEW' },
+      });
+
+      await expect(
+        service.updateClass(adminActor, created.id, {
+          teacherId: 'teacher-02',
+          teacherAssignedFrom: '2026-10-25', // before openAssignment.assignedFrom (2026-11-02)
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException(
+          'Ngày bàn giao giáo viên mới không được nhỏ hơn ngày bắt đầu phân công hiện tại',
+        ),
+      );
     });
   });
 });

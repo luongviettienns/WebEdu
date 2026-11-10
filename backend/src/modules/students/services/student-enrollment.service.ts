@@ -68,6 +68,33 @@ export class StudentEnrollmentService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        const isUuid = UUID_REGEX.test(classNameOrId);
+        const foundClass = await tx.class.findFirst({
+          where: isUuid
+            ? { OR: [{ id: classNameOrId }, { code: classNameOrId }] }
+            : { code: classNameOrId },
+        });
+        if (!foundClass) {
+          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
+        }
+
+        // Lock Hierarchy: lock "classes" before "users" to prevent cross-table deadlocks
+        await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${foundClass.id} FOR UPDATE`;
+        const targetClass = await tx.class.findFirst({
+          where: { OR: [{ id: foundClass.id }] },
+        });
+        if (!targetClass) {
+          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
+        }
+        if (
+          targetClass.status !== ClassStatus.UPCOMING &&
+          targetClass.status !== ClassStatus.ACTIVE
+        ) {
+          throw new BadRequestException(
+            'Chỉ có thể xếp học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
+          );
+        }
+
         // Row-lock the student row to serialize concurrent initial enrollment requests
         await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${studentId} FOR UPDATE`;
 
@@ -84,24 +111,6 @@ export class StudentEnrollmentService {
         if (targetUser.status !== UserStatus.PENDING_CLASS) {
           throw new BadRequestException(
             'Chỉ có thể xếp lớp lần đầu cho học viên đang ở trạng thái Chờ xếp lớp',
-          );
-        }
-
-        const isUuid = UUID_REGEX.test(classNameOrId);
-        const targetClass = await tx.class.findFirst({
-          where: isUuid
-            ? { OR: [{ id: classNameOrId }, { code: classNameOrId }] }
-            : { code: classNameOrId },
-        });
-        if (!targetClass) {
-          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
-        }
-        if (
-          targetClass.status !== ClassStatus.UPCOMING &&
-          targetClass.status !== ClassStatus.ACTIVE
-        ) {
-          throw new BadRequestException(
-            'Chỉ có thể xếp học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
           );
         }
 

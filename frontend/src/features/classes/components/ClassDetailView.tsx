@@ -318,7 +318,7 @@ export function ClassDetailView({
         </div>
       </section>
 
-      {isAdmin ? (
+      {isFullAccess ? (
         <>
           <ClassFormModal isOpen={editModalOpen} mode="edit" initialData={detail} courses={courses} teachers={teachers} onClose={() => setEditModalOpen(false)} onSuccess={() => { setEditModalOpen(false); onRefresh?.(`Đã cập nhật thông tin lớp ${detail.code}.`); }} />
           <AddStudentsToClassModal isOpen={addStudentsOpen} classId={detail.id} classCode={detail.code} onClose={() => setAddStudentsOpen(false)} onSuccess={(count) => { setAddStudentsOpen(false); onRefresh?.(`Đã thêm ${count} học viên vào lớp ${detail.code}.`); }} />

@@ -178,3 +178,57 @@ export function assertOpenClassStatus(status: ClassStatus): void {
     );
   }
 }
+
+export function resolveUpdatedClassSchedule(
+  existing: {
+    scheduleDays: number[];
+    scheduleStartTime: string;
+    scheduleEndTime: string;
+    startDate: Date;
+    totalSessions: number;
+    status: ClassStatus;
+    notes: string | null;
+  },
+  dto: {
+    scheduleDays?: number[];
+    scheduleStartTime?: string;
+    scheduleEndTime?: string;
+    startDate?: string;
+    totalSessions?: number;
+    status?: ClassStatus;
+    notes?: string | null;
+  },
+  validateSessions: (value: number) => number,
+) {
+  const nextScheduleDays =
+    dto.scheduleDays !== undefined
+      ? normalizeScheduleDays(dto.scheduleDays)
+      : existing.scheduleDays;
+  const { startTime: nextStartTime, endTime: nextEndTime } = assertValidTimeRange(
+    dto.scheduleStartTime ?? existing.scheduleStartTime,
+    dto.scheduleEndTime ?? existing.scheduleEndTime,
+  );
+  const nextStartDate =
+    dto.startDate !== undefined
+      ? parseRequiredCalendarDate(dto.startDate, 'Ngày khai giảng không hợp lệ')
+      : existing.startDate;
+  const nextTotalSessions =
+    dto.totalSessions !== undefined
+      ? validateSessions(dto.totalSessions)
+      : existing.totalSessions;
+  const nextExpectedEndDate = calculateExpectedEndDate(
+    nextStartDate,
+    nextScheduleDays,
+    nextTotalSessions,
+  );
+  return {
+    nextScheduleDays,
+    nextStartTime,
+    nextEndTime,
+    nextStartDate,
+    nextTotalSessions,
+    nextExpectedEndDate,
+    nextStatus: dto.status ?? existing.status,
+    nextNotes: dto.notes !== undefined ? dto.notes?.trim() || null : existing.notes,
+  };
+}

@@ -1052,7 +1052,10 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
 
     const fulfilledCross = crossRace.filter((r) => r.status === 'fulfilled');
     const rejectedCross = crossRace.filter(
-      (r) => r.status === 'rejected' && r.reason instanceof BadRequestException,
+      (r) =>
+        r.status === 'rejected' &&
+        (r.reason instanceof BadRequestException ||
+          r.reason instanceof ForbiddenException),
     );
     expect(fulfilledCross).toHaveLength(1);
     expect(rejectedCross).toHaveLength(1);

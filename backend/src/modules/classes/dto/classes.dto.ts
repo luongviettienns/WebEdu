@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEnum,
@@ -90,6 +91,7 @@ export class CreateClassDto {
   @ApiProperty({ example: [1, 3, 5] })
   @IsArray()
   @ArrayMinSize(1, { message: 'Vui lòng chọn ít nhất 1 ngày học trong tuần' })
+  @ArrayMaxSize(7, { message: 'Lịch học trong tuần tối đa 7 ngày' })
   @IsInt({ each: true })
   scheduleDays!: number[];
 
@@ -168,6 +170,7 @@ export class UpdateClassDto {
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(7, { message: 'Lịch học trong tuần tối đa 7 ngày' })
   @IsInt({ each: true })
   scheduleDays?: number[];
 
@@ -210,6 +213,7 @@ export class EnrollStudentsDto {
   @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayMinSize(1, { message: 'Vui lòng chọn ít nhất 1 học viên để ghi danh' })
+  @ArrayMaxSize(100, { message: 'Mỗi lần chỉ có thể thêm tối đa 100 học viên vào lớp' })
   @IsString({ each: true })
   studentIds!: string[];
 

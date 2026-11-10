@@ -53,10 +53,7 @@ export class StudentQueryService {
 
     const { page, limit, skip } = resolvePagination(query);
 
-    const canViewClassData =
-      !actor ||
-      actor.roles.includes(Role.ADMIN) ||
-      actor.roles.includes(Role.TEACHER);
+    const canViewClassData = !actor || actor.roles.includes(Role.ADMIN);
 
     const className = query.className?.trim();
     const where: Prisma.UserWhereInput = {
@@ -125,32 +122,42 @@ export class StudentQueryService {
   ): Promise<StudentDetailDto> {
     this.access.assertCanViewProfile(actor, studentId);
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: studentId },
-      include: {
-        studentProfile: { include: { consent: true } },
-        enrollments: {
-          where: {
-            status: {
-              in: [
-                EnrollmentStatus.TRANSFERRED,
-                EnrollmentStatus.COMPLETED,
-                EnrollmentStatus.DROPPED,
-              ],
-            },
-          },
+    const includeEnrollments =
+      actor.roles.includes(Role.ADMIN) || actor.id === studentId;
+
+    const user = await (includeEnrollments
+      ? this.prisma.user.findUnique({
+          where: { id: studentId },
           include: {
-            class: {
-              include: {
-                course: true,
-                teacher: { select: { fullName: true } },
+            studentProfile: { include: { consent: true } },
+            enrollments: {
+              where: {
+                status: {
+                  in: [
+                    EnrollmentStatus.TRANSFERRED,
+                    EnrollmentStatus.COMPLETED,
+                    EnrollmentStatus.DROPPED,
+                  ],
+                },
               },
+              include: {
+                class: {
+                  include: {
+                    course: true,
+                    teacher: { select: { fullName: true } },
+                  },
+                },
+              },
+              orderBy: [{ enrolledDate: 'desc' }, { createdAt: 'desc' }],
             },
           },
-          orderBy: { enrolledDate: 'desc' },
-        },
-      },
-    });
+        })
+      : this.prisma.user.findUnique({
+          where: { id: studentId },
+          include: {
+            studentProfile: { include: { consent: true } },
+          },
+        }));
 
     if (!user || !user.roles.includes(Role.STUDENT)) {
       throw new NotFoundException('Không tìm thấy học viên');
@@ -228,7 +235,7 @@ export class StudentQueryService {
           },
         },
       },
-      orderBy: { enrolledDate: 'desc' },
+      orderBy: [{ enrolledDate: 'desc' }, { createdAt: 'desc' }],
     });
 
     return {

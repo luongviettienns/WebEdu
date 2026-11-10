@@ -179,9 +179,12 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
 
     mockPrisma = {
       $queryRaw: vi.fn(
-        async (_strings: TemplateStringsArray, ...values: string[]) => {
+        async (strings: TemplateStringsArray, ...values: string[]) => {
           const lockedId = values[0] ?? '';
-          lockedUserIdsOrder.push(lockedId);
+          const sql = strings.join('?');
+          if (sql.includes('"users"')) {
+            lockedUserIdsOrder.push(lockedId);
+          }
           return [{ id: lockedId }];
         },
       ),
@@ -586,6 +589,43 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
       expect(auditLogs.some((l) => l.action === 'CLASS_STUDENT_DROPPED')).toBe(
         true,
       );
+    });
+
+    it('preserves User.status = ACTIVE when dropping a dual-role [STUDENT, TEACHER] account so the teacher is not locked out', async () => {
+      usersStore.set('student-teacher-dual', {
+        id: 'student-teacher-dual',
+        fullName: 'Giáo Viên Kiêm Học Viên',
+        email: 'dual@webedu.vn',
+        phone: '0901000088',
+        roles: [Role.STUDENT, Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        studentProfile: {
+          userId: 'student-teacher-dual',
+          assignedClass: null,
+          currentClassId: null,
+          enrolledAt: null,
+        },
+      });
+
+      await service.enrollStudents(adminActor, 'class-hsk2', {
+        studentIds: ['student-teacher-dual'],
+        enrolledDate: '2026-11-02',
+      });
+
+      await service.dropStudent(
+        adminActor,
+        'class-hsk2',
+        'student-teacher-dual',
+        {
+          leftDate: '2026-11-12',
+          reason: 'Bận lịch dạy, tạm dừng học lớp nội bộ',
+        },
+      );
+
+      const dualUser = usersStore.get('student-teacher-dual')!;
+      expect(dualUser.status).toBe(UserStatus.ACTIVE);
+      expect(dualUser.studentProfile?.currentClassId).toBeNull();
+      expect(dualUser.studentProfile?.assignedClass).toBeNull();
     });
 
     it('rejects dropping from a COMPLETED class or when leftDate < enrolledDate', async () => {

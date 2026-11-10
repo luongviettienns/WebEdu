@@ -534,8 +534,9 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
 
     mockPrisma = {
       $queryRaw: vi.fn(
-        async (_strings: TemplateStringsArray, ...values: unknown[]) => {
-          if (typeof values[0] === 'string') {
+        async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          if (sql.includes('"users"') && typeof values[0] === 'string') {
             lockedUserIdsOrder.push(values[0]);
           }
           return [{ id: values[0] }];
@@ -636,13 +637,28 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
           async ({
             where,
           }: {
-            where: { studentId: string; status: EnrollmentStatus };
+            where: {
+              studentId: string;
+              status?: EnrollmentStatus;
+              classId?: { not?: string };
+              enrolledDate?: { gte?: Date };
+            };
           }) => {
             return (
-              enrollmentsStore.find(
-                (e) =>
-                  e.studentId === where.studentId && e.status === where.status,
-              ) ?? null
+              enrollmentsStore.find((e) => {
+                if (e.studentId !== where.studentId) return false;
+                if (where.status && e.status !== where.status) return false;
+                if (where.classId?.not && e.classId === where.classId.not) {
+                  return false;
+                }
+                if (
+                  where.enrolledDate?.gte &&
+                  e.enrolledDate.getTime() < where.enrolledDate.gte.getTime()
+                ) {
+                  return false;
+                }
+                return true;
+              }) ?? null
             );
           },
         ),
@@ -1113,6 +1129,49 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
 
       expect(teacherActiveCounts.get('teacher-01')).toBe(1);
       expect(auditLogs.some((l) => l.action === 'CLASS_REOPENED')).toBe(true);
+    });
+
+    it('keeps dual-role [STUDENT, TEACHER] user status ACTIVE on completeClass and does NOT pull back a student who enrolled into and then dropped a newer class on reopenClass', async () => {
+      // Make student-01 a dual-role [STUDENT, TEACHER] user
+      usersStore.get('student-01')!.roles = [Role.STUDENT, Role.TEACHER];
+
+      await lifecycleService.completeClass(adminActor, 'class-active-1', {
+        actualEndDate: '2026-11-28',
+      });
+
+      // Dual-role student-01 keeps User.status = ACTIVE while StudentProfile is cleared
+      expect(usersStore.get('student-01')?.status).toBe(UserStatus.ACTIVE);
+      expect(usersStore.get('student-01')?.studentProfile?.currentClassId).toBeNull();
+      expect(usersStore.get('student-04')?.status).toBe(UserStatus.PENDING_CLASS);
+
+      // Suppose student-04 enrolled in a newer class on 2026-11-29 and then DROPPED it on 2026-11-30
+      enrollmentsStore.push({
+        id: 'enr-newer-dropped',
+        classId: 'class-other',
+        studentId: 'student-04',
+        status: EnrollmentStatus.DROPPED,
+        enrolledDate: new Date('2026-11-29T00:00:00.000Z'),
+        leftDate: new Date('2026-11-30T00:00:00.000Z'),
+        reason: 'Bảo lưu ở lớp mới',
+      });
+
+      const closedAt = classesStore.get('class-active-1')!.closedAt!;
+      const twoDaysLater = new Date(
+        closedAt.getTime() + 2 * 24 * 60 * 60 * 1000,
+      );
+
+      await lifecycleService.reopenClass(
+        adminActor,
+        'class-active-1',
+        { reason: 'Mở lại lớp kiểm tra bảo vệ lịch sử học viên đã học lớp mới' },
+        twoDaysLater,
+      );
+
+      // student-04 had a newer enrollment in another class (even though DROPPED) -> must NOT be pulled back to ACTIVE in class-active-1
+      const enr4 = enrollmentsStore.find((e) => e.id === 'enr-active-4')!;
+      expect(enr4.status).toBe(EnrollmentStatus.COMPLETED);
+      expect(usersStore.get('student-04')?.status).toBe(UserStatus.PENDING_CLASS);
+      expect(usersStore.get('student-04')?.studentProfile?.currentClassId).toBeNull();
     });
   });
 });

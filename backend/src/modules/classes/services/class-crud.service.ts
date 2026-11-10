@@ -1,17 +1,9 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { ClassStatus, Role, UserStatus } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
-import {
-  formatIsoDateUtc,
-  resolveVnCalendarDateForDb,
-} from '../../../common/utils/timezone.util.js';
+import { formatIsoDateUtc, resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
 import { syncTeacherActiveClassesCount } from '../../../common/policies/teacher-invariants.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { CreateClassDto, UpdateClassDto } from '../dto/classes.dto.js';
@@ -24,6 +16,7 @@ import {
   calculateExpectedEndDate,
   normalizeScheduleDays,
   parseRequiredCalendarDate,
+  resolveUpdatedClassSchedule,
 } from '../policies/class-schedule.util.js';
 import {
   CLASS_ITEM_INCLUDE,
@@ -47,15 +40,11 @@ export class ClassCrudService {
     assertOpenClassStatus(status);
 
     const course = await this.assertValidActiveCourse(dto.courseId);
-    const totalSessions = validateClassTotalSessions(
-      dto.totalSessions ?? course.defaultSessions ?? 24,
-    );
+    const totalSessions = validateClassTotalSessions(dto.totalSessions ?? course.defaultSessions ?? 24);
     await this.assertValidActiveTeacher(dto.teacherId);
 
     const duplicate = await this.prisma.class.findUnique({ where: { code } });
-    if (duplicate) {
-      throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
-    }
+    if (duplicate) throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
 
     const expectedEndDate = calculateExpectedEndDate(startDate, scheduleDays, totalSessions);
     const notes = dto.notes?.trim() || null;
@@ -67,6 +56,9 @@ export class ClassCrudService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${dto.teacherId} FOR UPDATE`;
+        await this.assertValidActiveTeacher(dto.teacherId, tx);
+
         const cls = (await tx.class.create({
           data: {
             code,
@@ -118,83 +110,68 @@ export class ClassCrudService {
     }
   }
 
-  async updateClass(
-    actor: AuthenticatedUser,
-    classId: string,
-    dto: UpdateClassDto,
-  ): Promise<ClassItemDto> {
-    const existing = (await this.prisma.class.findUnique({
-      where: { id: classId },
-      include: CLASS_ITEM_INCLUDE,
-    })) as unknown as ClassItemEntity | null;
-    if (!existing) throw new NotFoundException('Không tìm thấy lớp học');
-
-    assertClassIsEditable(existing.status);
+  async updateClass(actor: AuthenticatedUser, classId: string, dto: UpdateClassDto): Promise<ClassItemDto> {
     if (dto.status !== undefined) assertOpenClassStatus(dto.status);
 
-    const nextCode =
-      dto.code !== undefined ? normalizeAndValidateClassCode(dto.code) : existing.code;
-    if (nextCode !== existing.code) {
-      const duplicate = await this.prisma.class.findFirst({
-        where: { code: nextCode, id: { not: classId } },
-      });
-      if (duplicate) throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
-    }
-
-    let nextCourseId = existing.courseId;
-    if (dto.courseId !== undefined && dto.courseId !== existing.courseId) {
-      const hasEnrollments =
-        (existing.enrollments?.length ?? 0) > 0 || (existing._count?.enrollments ?? 0) > 0;
-      if (hasEnrollments || existing.status === ClassStatus.ACTIVE) {
-        throw new BadRequestException(
-          'Không thể đổi khóa học HSK khi lớp đã có học viên hoặc đang diễn ra',
-        );
-      }
-      nextCourseId = (await this.assertValidActiveCourse(dto.courseId)).id;
-    }
-
-    const nextTeacherId = dto.teacherId ?? existing.teacherId;
-    const teacherChanged = nextTeacherId !== existing.teacherId;
-    let assignedFromDate: Date | null = null;
-    if (teacherChanged) {
-      await this.assertValidActiveTeacher(nextTeacherId);
-      assignedFromDate = resolveVnCalendarDateForDb(dto.teacherAssignedFrom);
-      if (!assignedFromDate) {
-        throw new BadRequestException('Ngày bàn giao giáo viên không hợp lệ (YYYY-MM-DD)');
-      }
-    }
-
-    const nextScheduleDays =
-      dto.scheduleDays !== undefined
-        ? normalizeScheduleDays(dto.scheduleDays)
-        : existing.scheduleDays;
-    const { startTime: nextStartTime, endTime: nextEndTime } = assertValidTimeRange(
-      dto.scheduleStartTime ?? existing.scheduleStartTime,
-      dto.scheduleEndTime ?? existing.scheduleEndTime,
-    );
-    const nextStartDate =
-      dto.startDate !== undefined
-        ? parseRequiredCalendarDate(dto.startDate, 'Ngày khai giảng không hợp lệ')
-        : existing.startDate;
-    const nextTotalSessions =
-      dto.totalSessions !== undefined
-        ? validateClassTotalSessions(dto.totalSessions)
-        : existing.totalSessions;
-    const nextExpectedEndDate = calculateExpectedEndDate(
-      nextStartDate,
-      nextScheduleDays,
-      nextTotalSessions,
-    );
-    const nextStatus = dto.status ?? existing.status;
-    const nextNotes = dto.notes !== undefined ? dto.notes?.trim() || null : existing.notes;
-    const scheduleConflictWarning = await this.findTeacherScheduleWarning(
-      nextTeacherId,
-      { scheduleDays: nextScheduleDays, scheduleStartTime: nextStartTime, scheduleEndTime: nextEndTime },
-      classId,
-    );
-
     try {
-      const updated = await this.prisma.$transaction(async (tx) => {
+      const { updated, warning } = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
+        const existing = (await tx.class.findUnique({
+          where: { id: classId },
+          include: CLASS_ITEM_INCLUDE,
+        })) as unknown as ClassItemEntity | null;
+        if (!existing) throw new NotFoundException('Không tìm thấy lớp học');
+
+        assertClassIsEditable(existing.status);
+
+        const nextCode = dto.code !== undefined ? normalizeAndValidateClassCode(dto.code) : existing.code;
+        if (nextCode !== existing.code) {
+          const duplicate = await tx.class.findFirst({ where: { code: nextCode, id: { not: classId } } });
+          if (duplicate) throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
+        }
+
+        let nextCourseId = existing.courseId;
+        if (dto.courseId !== undefined && dto.courseId !== existing.courseId) {
+          const hasEnrollments =
+            (existing.enrollments?.length ?? 0) > 0 || (existing._count?.enrollments ?? 0) > 0;
+          if (hasEnrollments || existing.status === ClassStatus.ACTIVE) {
+            throw new BadRequestException(
+              'Không thể đổi khóa học HSK khi lớp đã có học viên hoặc đang diễn ra',
+            );
+          }
+          nextCourseId = (await this.assertValidActiveCourse(dto.courseId, tx)).id;
+        }
+
+        const nextTeacherId = dto.teacherId ?? existing.teacherId;
+        const teacherChanged = nextTeacherId !== existing.teacherId;
+        const assignedFromDate = teacherChanged
+          ? await this.validateAndLockTeacherReassignment(
+              tx,
+              classId,
+              existing.teacherId,
+              nextTeacherId,
+              dto.teacherAssignedFrom,
+            )
+          : null;
+
+        const {
+          nextScheduleDays,
+          nextStartTime,
+          nextEndTime,
+          nextStartDate,
+          nextTotalSessions,
+          nextExpectedEndDate,
+          nextStatus,
+          nextNotes,
+        } = resolveUpdatedClassSchedule(existing, dto, validateClassTotalSessions);
+
+        const scheduleWarning = await this.findTeacherScheduleWarning(
+          nextTeacherId,
+          { scheduleDays: nextScheduleDays, scheduleStartTime: nextStartTime, scheduleEndTime: nextEndTime },
+          classId,
+          tx,
+        );
+
         const reason = dto.teacherChangeReason?.trim() || 'Thay đổi giáo viên phụ trách lớp';
         if (teacherChanged && assignedFromDate) {
           await tx.classTeacherAssignment.updateMany({
@@ -202,13 +179,7 @@ export class ClassCrudService {
             data: { assignedTo: assignedFromDate },
           });
           await tx.classTeacherAssignment.create({
-            data: {
-              classId,
-              teacherId: nextTeacherId,
-              assignedFrom: assignedFromDate,
-              changedById: actor.id,
-              reason,
-            },
+            data: { classId, teacherId: nextTeacherId, assignedFrom: assignedFromDate, changedById: actor.id, reason },
           });
         }
 
@@ -229,6 +200,13 @@ export class ClassCrudService {
           },
           include: CLASS_ITEM_INCLUDE,
         })) as unknown as ClassItemEntity;
+
+        if (nextCode !== existing.code) {
+          await tx.studentProfile.updateMany({
+            where: { currentClassId: classId },
+            data: { assignedClass: nextCode },
+          });
+        }
 
         if (teacherChanged && assignedFromDate) {
           await syncTeacherActiveClassesCount(tx, existing.teacherId);
@@ -261,9 +239,9 @@ export class ClassCrudService {
             expectedEndDate: formatIsoDateUtc(nextExpectedEndDate),
           },
         });
-        return cls;
+        return { updated: cls, warning: scheduleWarning };
       });
-      return toClassItemDto(updated, scheduleConflictWarning);
+      return toClassItemDto(updated, warning);
     } catch (err: unknown) {
       if (isPrismaUniqueConstraintError(err)) {
         throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
@@ -272,10 +250,39 @@ export class ClassCrudService {
     }
   }
 
+  private async validateAndLockTeacherReassignment(
+    tx: Prisma.TransactionClient,
+    classId: string,
+    previousTeacherId: string,
+    nextTeacherId: string,
+    rawAssignedFrom?: string,
+  ): Promise<Date> {
+    const assignedFromDate = resolveVnCalendarDateForDb(rawAssignedFrom);
+    if (!assignedFromDate) {
+      throw new BadRequestException('Ngày bàn giao giáo viên không hợp lệ (YYYY-MM-DD)');
+    }
+    const sortedTeachers = [previousTeacherId, nextTeacherId].sort((a, b) => a.localeCompare(b));
+    for (const tid of sortedTeachers) {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${tid} FOR UPDATE`;
+    }
+    await this.assertValidActiveTeacher(nextTeacherId, tx);
+
+    const openAssignment = await tx.classTeacherAssignment.findFirst({
+      where: { classId, assignedTo: null },
+    });
+    if (openAssignment && assignedFromDate.getTime() < openAssignment.assignedFrom.getTime()) {
+      throw new BadRequestException(
+        'Ngày bàn giao giáo viên mới không được nhỏ hơn ngày bắt đầu phân công hiện tại',
+      );
+    }
+    return assignedFromDate;
+  }
+
   private async assertValidActiveCourse(
     courseId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<{ id: string; defaultSessions: number | null }> {
-    const course = await this.prisma.course.findUnique({ where: { id: courseId } });
+    const course = await db.course.findUnique({ where: { id: courseId } });
     if (!course) throw new NotFoundException('Không tìm thấy khóa học');
     if (!course.isActive) {
       throw new BadRequestException('Khóa học đã ngừng sử dụng, không thể mở lớp mới');
@@ -283,41 +290,32 @@ export class ClassCrudService {
     return course;
   }
 
-  private async assertValidActiveTeacher(teacherId: string): Promise<void> {
-    const teacher = await this.prisma.user.findUnique({
+  private async assertValidActiveTeacher(
+    teacherId: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<void> {
+    const teacher = await db.user.findUnique({
       where: { id: teacherId },
       select: { id: true, roles: true, status: true },
     });
-    if (
-      !teacher ||
-      !teacher.roles.includes(Role.TEACHER) ||
-      teacher.status !== UserStatus.ACTIVE
-    ) {
+    if (!teacher || !teacher.roles.includes(Role.TEACHER) || teacher.status !== UserStatus.ACTIVE) {
       throw new BadRequestException('Giáo viên phụ trách không hợp lệ hoặc đã ngừng hoạt động');
     }
   }
 
   private async findTeacherScheduleWarning(
     teacherId: string,
-    candidate: {
-      scheduleDays: readonly number[];
-      scheduleStartTime: string;
-      scheduleEndTime: string;
-    },
+    candidate: { scheduleDays: readonly number[]; scheduleStartTime: string; scheduleEndTime: string },
     excludeClassId?: string,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<string | null> {
-    const otherActiveClasses = await this.prisma.class.findMany({
+    const otherActiveClasses = await db.class.findMany({
       where: {
         teacherId,
         ...(excludeClassId ? { id: { not: excludeClassId } } : {}),
         status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
       },
-      select: {
-        code: true,
-        scheduleDays: true,
-        scheduleStartTime: true,
-        scheduleEndTime: true,
-      },
+      select: { code: true, scheduleDays: true, scheduleStartTime: true, scheduleEndTime: true },
     });
     return buildScheduleConflictWarning(candidate, otherActiveClasses);
   }

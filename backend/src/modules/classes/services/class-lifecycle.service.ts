@@ -29,6 +29,8 @@ export class ClassLifecycleService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
+
       const targetClass = await tx.class.findUnique({ where: { id: classId } });
       if (!targetClass) throw new NotFoundException('Không tìm thấy lớp học');
 
@@ -68,10 +70,17 @@ export class ClassLifecycleService {
           where: { userId: sid },
           data: { currentClassId: null, assignedClass: null, enrolledAt: null },
         });
-        await tx.user.updateMany({
-          where: { id: sid, status: UserStatus.ACTIVE },
-          data: { status: UserStatus.PENDING_CLASS },
-        });
+        const studentUser = await tx.user.findUnique({ where: { id: sid } });
+        const isPureStudent =
+          studentUser !== null &&
+          studentUser.roles.length === 1 &&
+          studentUser.roles[0] === Role.STUDENT;
+        if (isPureStudent) {
+          await tx.user.updateMany({
+            where: { id: sid, status: UserStatus.ACTIVE },
+            data: { status: UserStatus.PENDING_CLASS },
+          });
+        }
       }
 
       await tx.classTeacherAssignment.updateMany({
@@ -117,6 +126,8 @@ export class ClassLifecycleService {
     now: Date = new Date(),
   ): Promise<ClassDetailDto> {
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
+
       const targetClass = await tx.class.findUnique({
         where: { id: classId },
         include: { teacher: true },
@@ -141,16 +152,6 @@ export class ClassLifecycleService {
         );
       }
 
-      if (
-        !targetClass.teacher ||
-        !targetClass.teacher.roles.includes(Role.TEACHER) ||
-        targetClass.teacher.status !== UserStatus.ACTIVE
-      ) {
-        throw new BadRequestException(
-          'Giáo viên phụ trách lớp hiện đã ngừng hoạt động, không thể mở lại lớp học',
-        );
-      }
-
       const completedEnrollments = await tx.enrollment.findMany({
         where: { classId, status: EnrollmentStatus.COMPLETED },
       });
@@ -158,20 +159,55 @@ export class ClassLifecycleService {
         a.studentId.localeCompare(b.studentId),
       );
 
-      for (const enr of sortedCompleted) {
-        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${enr.studentId} FOR UPDATE`;
+      const userIdsToLock = Array.from(
+        new Set([
+          targetClass.teacherId,
+          ...sortedCompleted.map((enr) => enr.studentId),
+        ]),
+      ).sort((a, b) => a.localeCompare(b));
+
+      for (const uid of userIdsToLock) {
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${uid} FOR UPDATE`;
+      }
+
+      const lockedTeacher = await tx.user.findUnique({
+        where: { id: targetClass.teacherId },
+      });
+      if (
+        !lockedTeacher ||
+        !lockedTeacher.roles.includes(Role.TEACHER) ||
+        lockedTeacher.status !== UserStatus.ACTIVE
+      ) {
+        throw new BadRequestException(
+          'Giáo viên phụ trách lớp hiện đã ngừng hoạt động, không thể mở lại lớp học',
+        );
       }
 
       for (const enr of sortedCompleted) {
+        const completedAtClassClose =
+          !targetClass.actualEndDate ||
+          (enr.leftDate !== null &&
+            enr.leftDate.getTime() === targetClass.actualEndDate.getTime());
+
         const studentUser = await tx.user.findUnique({ where: { id: enr.studentId } });
         const otherActiveEnrollment = await tx.enrollment.findFirst({
           where: { studentId: enr.studentId, status: EnrollmentStatus.ACTIVE },
         });
+        const newerOtherEnrollment = await tx.enrollment.findFirst({
+          where: {
+            studentId: enr.studentId,
+            classId: { not: classId },
+            enrolledDate: { gte: targetClass.actualEndDate ?? enr.enrolledDate },
+          },
+        });
 
         if (
+          completedAtClassClose &&
           studentUser &&
+          studentUser.roles.includes(Role.STUDENT) &&
           studentUser.status !== UserStatus.INACTIVE &&
-          !otherActiveEnrollment
+          !otherActiveEnrollment &&
+          !newerOtherEnrollment
         ) {
           await tx.enrollment.update({
             where: { id: enr.id },

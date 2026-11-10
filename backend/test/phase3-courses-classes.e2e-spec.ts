@@ -902,4 +902,104 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
       .send({ reason: 'Thử mở lại sau 8 ngày' })
       .expect(400);
   });
+
+  it('Scenario 5: Composite [SUPERADMIN, TEACHER] BOLA academic data masking & Class code rename syncs StudentProfile.assignedClass', async () => {
+    const { server, teacher1, student1, adminToken } = await seedActors();
+    const passwordHash = await bcrypt.hash('Password123', 10);
+
+    // Create a composite [SUPERADMIN, TEACHER] user (without ADMIN role)
+    const compositeSaTeacher = await harness.prisma.user.create({
+      data: {
+        email: 'p3.sateacher@webedu.vn',
+        phone: '0930000099',
+        fullName: 'Composite SA Teacher',
+        passwordHash,
+        roles: [Role.SUPERADMIN, Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        teacherProfile: { create: { activeClassesCount: 0 } },
+      },
+    });
+
+    const compositeLogin = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email: compositeSaTeacher.email, password: 'Password123' })
+      .expect(200);
+    const compositeToken = extractAuthCookie(compositeLogin).jwtToken;
+
+    const hsk1 = await request(server)
+      .post('/api/v1/courses')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1',
+        name: 'Tiếng Trung HSK 1',
+        level: CourseLevel.HSK1,
+        defaultSessions: 24,
+      })
+      .expect(201);
+
+    const classA = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-K26-01',
+        courseId: hsk1.body.id,
+        teacherId: teacher1.id,
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    // Enroll student1 into Class A, drop, then re-enroll into Class A so student1 has both active class and pastClasses
+    await request(server)
+      .post(`/api/v1/classes/${classA.body.id}/enrollments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ studentIds: [student1.id], enrolledDate: '2026-11-02' })
+      .expect(200);
+
+    await request(server)
+      .post(`/api/v1/classes/${classA.body.id}/enrollments/${student1.id}/drop`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ leftDate: '2026-11-05', reason: 'Tạm nghỉ ngắn hạn' })
+      .expect(200);
+
+    await request(server)
+      .post(`/api/v1/classes/${classA.body.id}/enrollments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ studentIds: [student1.id], enrolledDate: '2026-11-09' })
+      .expect(200);
+
+    // 1. Composite [SUPERADMIN, TEACHER] calls GET /api/v1/students/:id -> academic class fields are masked
+    const compositeStudentDetail = await request(server)
+      .get(`/api/v1/students/${student1.id}`)
+      .set('Authorization', `Bearer ${compositeToken}`)
+      .expect(200);
+
+    expect(compositeStudentDetail.body.assignedClass).toBeNull();
+    expect(compositeStudentDetail.body.currentClassId).toBeNull();
+    expect(compositeStudentDetail.body.enrolledAt).toBeNull();
+    expect(compositeStudentDetail.body.pastClasses).toBeUndefined();
+    expect(compositeStudentDetail.body.classHistory).toBeUndefined();
+
+    // 2. ADMIN renames Class A code via PATCH /api/v1/classes/:id -> StudentProfile.assignedClass is synced
+    const renamedClass = await request(server)
+      .patch(`/api/v1/classes/${classA.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ code: 'HSK1-K26-VIP' })
+      .expect(200);
+
+    expect(renamedClass.body.code).toBe('HSK1-K26-VIP');
+
+    const adminStudentDetail = await request(server)
+      .get(`/api/v1/students/${student1.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    expect(adminStudentDetail.body.assignedClass).toBe('HSK1-K26-VIP');
+    expect(adminStudentDetail.body.currentClassId).toBe(classA.body.id);
+    expect(adminStudentDetail.body.pastClasses).toHaveLength(1);
+    expect(adminStudentDetail.body.pastClasses[0]?.classCode).toBe('HSK1-K26-VIP');
+  });
 });

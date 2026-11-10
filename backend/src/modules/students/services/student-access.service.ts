@@ -129,16 +129,13 @@ export class StudentAccessService {
 
   /**
    * FULL only while the enrollment is ACTIVE in an UPCOMING/ACTIVE
-   * class; any teacher-visible completed-class record is READ_ONLY.
-   * Non-teacher actors (Admin / the student) always get FULL.
+   * class; any completed/archived class or non-ACTIVE enrollment is READ_ONLY
+   * for all actors (Admin, Teacher, and Student).
    */
   resolveAccessMode(
-    scope: LearningRecordScope,
+    _scope: LearningRecordScope,
     enrollment: { status: EnrollmentStatus; class: { status: ClassStatus } },
   ): LearningAccessMode {
-    if (!scope.restrictToTeacherId) {
-      return 'FULL';
-    }
     const isOngoing =
       enrollment.status === EnrollmentStatus.ACTIVE &&
       (enrollment.class.status === ClassStatus.UPCOMING ||
@@ -148,7 +145,7 @@ export class StudentAccessService {
 
   /**
    * Kiểm tra quyền truy cập dữ liệu lớp học của Giáo viên / Admin:
-   * - Admin: có toàn quyền truy cập & thao tác nghiệp vụ đào tạo.
+   * - Admin: có quyền truy cập tất cả lớp học (FULL khi UPCOMING/ACTIVE, READ_ONLY khi COMPLETED/ARCHIVED).
    * - Superadmin thuần: bị chặn truy cập dữ liệu học tập.
    * - Giáo viên:
    *   + Lớp UPCOMING / ACTIVE do GV đang phụ trách -> FULL.
@@ -163,8 +160,13 @@ export class StudentAccessService {
       classStatus: ClassLifecycleStatus;
     },
   ): { allowed: true; mode: LearningAccessMode } {
+    const isEditableLifecycle =
+      classContext.classStatus === 'UPCOMING' ||
+      classContext.classStatus === 'ACTIVE';
+    const mode: LearningAccessMode = isEditableLifecycle ? 'FULL' : 'READ_ONLY';
+
     if (actor.roles.includes(Role.ADMIN)) {
-      return { allowed: true, mode: 'FULL' };
+      return { allowed: true, mode };
     }
 
     if (actor.roles.includes(Role.TEACHER)) {
@@ -173,12 +175,9 @@ export class StudentAccessService {
           'Giáo viên đã được thay thế không còn quyền truy cập lớp học này',
         );
       }
-      const isEditableLifecycle =
-        classContext.classStatus === 'UPCOMING' ||
-        classContext.classStatus === 'ACTIVE';
       return {
         allowed: true,
-        mode: isEditableLifecycle ? 'FULL' : 'READ_ONLY',
+        mode,
       };
     }
 

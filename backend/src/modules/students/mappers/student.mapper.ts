@@ -58,8 +58,7 @@ export function toStudentDetailDto(
   const consent = profile?.consent ?? null;
   const canViewInternalNotes = actorRoles.includes(Role.ADMIN);
   const isSelf = actorId !== undefined && actorId === user.id;
-  const canViewClassData =
-    isSelf || actorRoles.includes(Role.ADMIN) || actorRoles.includes(Role.TEACHER);
+  const canViewClassData = isSelf || actorRoles.includes(Role.ADMIN);
 
   // Cleanup #13: Strictly omit createdAt / registeredAt ("Đăng ký lúc") on Student Detail DTO
   return {
@@ -78,7 +77,9 @@ export function toStudentDetailDto(
     enrolledAt: canViewClassData && profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
     ...(canViewClassData && user.enrollments
       ? {
-          classHistory: user.enrollments.map((e) => e.class.code),
+          classHistory: Array.from(
+            new Set(user.enrollments.map((e) => e.class.code)),
+          ),
           pastClasses: user.enrollments.map(toPastClassRecord),
         }
       : {}),

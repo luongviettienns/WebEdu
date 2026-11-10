@@ -29,9 +29,7 @@ export class ClassEnrollmentService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        for (const sid of sortedIds) {
-          await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${sid} FOR UPDATE`;
-        }
+        await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
 
         const targetClass = await tx.class.findUnique({ where: { id: classId } });
         if (!targetClass) throw new NotFoundException('Không tìm thấy lớp học');
@@ -39,6 +37,10 @@ export class ClassEnrollmentService {
           throw new BadRequestException(
             'Chỉ có thể thêm học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
           );
+        }
+
+        for (const sid of sortedIds) {
+          await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${sid} FOR UPDATE`;
         }
 
         const users = await tx.user.findMany({
@@ -135,7 +137,12 @@ export class ClassEnrollmentService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        const student = await this.lockAndVerifyStudent(tx, actor, studentId);
+        const sortedClassIds = [sourceClassId, targetClassId].sort((a, b) =>
+          a.localeCompare(b),
+        );
+        for (const cid of sortedClassIds) {
+          await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${cid} FOR UPDATE`;
+        }
 
         const [sourceClass, targetClass] = await Promise.all([
           tx.class.findUnique({ where: { id: sourceClassId } }),
@@ -148,6 +155,8 @@ export class ClassEnrollmentService {
         if (targetClass.status !== ClassStatus.UPCOMING && targetClass.status !== ClassStatus.ACTIVE) {
           throw new BadRequestException('Chỉ có thể chuyển học viên sang lớp Sắp mở hoặc Đang học');
         }
+
+        const student = await this.lockAndVerifyStudent(tx, actor, studentId);
 
         const activeEnrollment = await tx.enrollment.findFirst({
           where: { classId: sourceClassId, studentId, status: EnrollmentStatus.ACTIVE },
@@ -228,13 +237,15 @@ export class ClassEnrollmentService {
     if (!leftDate) throw new BadRequestException('Ngày rời lớp không hợp lệ');
 
     return this.prisma.$transaction(async (tx) => {
-      const student = await this.lockAndVerifyStudent(tx, actor, studentId);
+      await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
 
       const targetClass = await tx.class.findUnique({ where: { id: classId } });
       if (!targetClass) throw new NotFoundException('Không tìm thấy lớp học');
       if (targetClass.status === ClassStatus.COMPLETED || targetClass.status === ClassStatus.ARCHIVED) {
         throw new BadRequestException('Không thể rút học viên khỏi lớp đã kết thúc hoặc lưu trữ');
       }
+
+      const student = await this.lockAndVerifyStudent(tx, actor, studentId);
 
       const activeEnrollment = await tx.enrollment.findFirst({
         where: { classId, studentId, status: EnrollmentStatus.ACTIVE },
@@ -257,8 +268,14 @@ export class ClassEnrollmentService {
         },
       });
 
+      const isPureStudent =
+        student.roles.length === 1 && student.roles[0] === Role.STUDENT;
       const nextStatus =
-        student.status === UserStatus.INACTIVE ? UserStatus.INACTIVE : UserStatus.PENDING_CLASS;
+        student.status === UserStatus.INACTIVE
+          ? UserStatus.INACTIVE
+          : isPureStudent
+            ? UserStatus.PENDING_CLASS
+            : student.status;
 
       await tx.user.update({ where: { id: studentId }, data: { status: nextStatus } });
       if (student.studentProfile) {
