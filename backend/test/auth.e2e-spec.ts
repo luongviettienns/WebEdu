@@ -98,14 +98,14 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       .expect(400);
   });
 
-  it('requires guardianEmail & guardianConsent for student aged 12-15 and allows two siblings to share parent guardianEmail in PostgreSQL (FUNC-002, DEC-023)', async () => {
+  it('requires guardianConsent for student aged 12-15 and records parent email in GuardianConsent snapshot (FUNC-002)', async () => {
     const missingConsentRes = await request(harness.app.getHttpServer())
       .post('/api/v1/auth/register/student')
       .send({
         fullName: 'Học Viên 14 Tuổi',
         dateOfBirth: DOB_TEEN_14,
         phone: '0901110002',
-        email: 'teen.missing@example.com',
+        email: 'parent.missing@example.com',
         password: 'Password@123',
       })
       .expect(400);
@@ -120,9 +120,8 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
         fullName: 'Nguyễn Minh Anh',
         dateOfBirth: DOB_TEEN_14,
         phone: '0901110003',
-        email: 'anh.sibling@example.com',
+        email: 'parent.shared1@example.com',
         password: 'Password@123',
-        guardianEmail: 'parent.shared@example.com',
         guardianConsent: true,
       })
       .expect(201);
@@ -133,9 +132,8 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
         fullName: 'Nguyễn Minh Em',
         dateOfBirth: DOB_TEEN_13,
         phone: '0901110004',
-        email: 'em.sibling@example.com',
+        email: 'parent.shared2@example.com',
         password: 'Password@123',
-        guardianEmail: 'parent.shared@example.com',
         guardianConsent: true,
       })
       .expect(201);
@@ -156,7 +154,7 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       .expect(409);
 
     expect((dupRes.body as ProblemBody).detail).toBe(
-      'Email/Số điện thoại đã được sử dụng',
+      'Số điện thoại này đã được đăng ký',
     );
   });
 

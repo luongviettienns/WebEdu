@@ -20,7 +20,16 @@ describe('ProfileService (FUNC-078)', () => {
     roles: Role[];
     status: UserStatus;
     tokenVersion: number;
-    studentProfile: { dateOfBirth: Date; assignedClass: string | null } | null;
+    studentProfile: {
+      dateOfBirth: Date;
+      assignedClass: string | null;
+      guardianEmail?: string | null;
+      consent?: {
+        consentedAt: Date;
+        guardianEmail: string;
+        consentVersion: string;
+      } | null;
+    } | null;
     teacherProfile: { activeClassesCount: number } | null;
     _count: { taughtClasses: number };
   };
@@ -112,6 +121,33 @@ describe('ProfileService (FUNC-078)', () => {
     expect(userState.tokenVersion).toBe(3);
     expect(auditLogs).toHaveLength(1);
     expect(auditLogs[0]?.action).toBe('UPDATE_MY_PROFILE');
+  });
+
+  it('preserves immutable GuardianConsent history when student turns 16 and updates to personal email (FUNC-078)', async () => {
+    // Initial state: registered at age 14 with parent's email
+    userState.email = 'parent.phuhuynh@example.com';
+    userState.studentProfile = {
+      dateOfBirth: new Date('2010-05-15'),
+      assignedClass: null,
+      guardianEmail: 'parent.phuhuynh@example.com',
+      consent: {
+        consentedAt: new Date('2024-05-15'),
+        guardianEmail: 'parent.phuhuynh@example.com',
+        consentVersion: 'v1.0',
+      },
+    };
+
+    // Student turns 16 and updates to their personal email
+    const result = await service.updateMyProfile('u-1', {
+      email: 'student.truongthanh@example.com',
+      currentPassword: 'CurrentPass123',
+    });
+
+    expect(result.profile.email).toBe('student.truongthanh@example.com');
+    // GuardianConsent must remain untouched and strictly preserve original parent email
+    expect(userState.studentProfile?.consent?.guardianEmail).toBe(
+      'parent.phuhuynh@example.com',
+    );
   });
 
   it('maps P2002 unique violation during concurrent profile update to 409 Conflict', async () => {

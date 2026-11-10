@@ -9,6 +9,12 @@ export interface PasswordResetEmailInput {
   expiresInMinutes: number;
 }
 
+export interface VerificationCodeEmailInput {
+  toEmail: string;
+  code: string;
+  expiresInMinutes: number;
+}
+
 function escapeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')
@@ -64,6 +70,37 @@ export class MailService {
       `  <p><a href="${safeLink}" style="display: inline-block; padding: 10px 18px; background: #991b1b; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600;">Đặt lại mật khẩu</a></p>`,
       `  <p style="font-size: 13px; color: #57534e; word-break: break-all;">Hoặc sao chép đường dẫn: ${safeLink}</p>`,
       '  <p style="font-size: 13px; color: #57534e;">Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.</p>',
+      '</div>',
+    ].join('\n');
+
+    await this.emailProvider.sendEmail({
+      to: input.toEmail,
+      subject,
+      text,
+      html,
+    });
+  }
+
+  async sendVerificationCodeEmail(input: VerificationCodeEmailInput): Promise<void> {
+    const safeCode = escapeHtml(input.code);
+    const subject = `[TD Hán Ngữ] Mã xác thực đăng ký tài khoản: ${input.code}`;
+    const text = [
+      'Xin chào bạn,',
+      '',
+      `Mã xác thực đăng ký tài khoản của bạn tại Trung Tâm TD Hán Ngữ là: ${input.code}`,
+      `Mã có hiệu lực trong ${input.expiresInMinutes} phút.`,
+      '',
+      'Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email này.',
+    ].join('\n');
+
+    const html = [
+      '<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1c1917; max-width: 560px;">',
+      '  <p>Xin chào bạn,</p>',
+      '  <p>Cảm ơn bạn đã đăng ký tài khoản tại <strong>Trung Tâm TD Hán Ngữ</strong>.</p>',
+      '  <p>Mã xác thực tài khoản của bạn là:</p>',
+      `  <div style="margin: 16px 0; padding: 12px 24px; background: #f5f5f4; border: 1px solid #e7e5e4; border-radius: 8px; font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #991b1b; text-align: center; display: inline-block;">${safeCode}</div>`,
+      `  <p style="font-size: 13px; color: #57534e;">Mã xác thực có hiệu lực trong <strong>${input.expiresInMinutes} phút</strong>.</p>`,
+      '  <p style="font-size: 13px; color: #57534e;">Nếu bạn không yêu cầu mã này, vui lòng bỏ qua email.</p>',
       '</div>',
     ].join('\n');
 

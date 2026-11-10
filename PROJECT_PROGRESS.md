@@ -115,7 +115,9 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Đạt 100% PASS: Typecheck 0 errors, Lint 0 errors/warnings, Playwright E2E 14/14 tests PASS, 15/15 Backend Services và 12/12 Frontend Pages đạt chuẩn Anti-God-File LOC.
 - [x] **Slice 2.11 (Resend SMTP Configuration & Mail Verification Tooling)**:
   - Cấu hình template chuẩn Resend SMTP Relay (`smtp.resend.com:465`, SSL) vào `backend/.env` & `backend/.env.example`.
-  - Tạo công cụ kiểm thử đường truyền `scripts/test-smtp.mjs` tích hợp lệnh `npm run test:mail` để xác thực kết nối và gửi thử email thật trực tiếp từ CLI.
+  - Tạo công cụ kiểm thử đường truyền `scripts/test-smtp.mjs` tích hợp lệnh `npm run test:mail` để xác thực kết nối và gửi thử email thật trực tiếp từ CLI; đã cấp phát API Key Resend và gửi email thực tế tới `luongviettienns@gmail.com` với trạng thái `delivered` (Message ID: `01a1c114-f2df-7df4-b3bf-c221da46374d`).
+  - Đồng bộ và rà soát toàn diện cấu hình môi trường: CSDL PostgreSQL `DATABASE_URL` hoạt động chuẩn xác (5 migrations up to date), `JWT_SECRET` đạt chuẩn bảo mật $\ge 32$ ký tự, bổ sung `frontend/.env.example` và `frontend/.env.local` (`NEXT_PUBLIC_API_URL`), 100% Unit tests (118/118) và Builds (Backend & Frontend) đạt PASS tuyệt đối.
+  - Khắc phục lỗi bắt nhầm thông điệp Ngày sinh trên form Đăng ký (`StudentRegisterForm`): Lắng nghe cờ HTML5 `validity.badInput` khi người dùng nhập ngày không tồn tại trên lịch (như 31/02), phân biệt chính xác giữa `"Ngày sinh không hợp lệ"` và `"Ngày sinh không được để trống"`.
 - [x] **Slice 2.11 (Production Cleanup, Zero `FUNC-xxx` / Dev Artifacts & Test DB Isolation `webedu_test`)**:
   - Xóa sạch 100% mã `FUNC-xxx`, `DEC-xxx`, `SEC-xxx`, `BR-xxx`, `INV-xxx` khỏi toàn bộ mã nguồn Production (`backend/src/**` & `frontend/src/**`).
   - Loại bỏ chuông thông báo giả trên `PortalTopbar.tsx`, thẻ giải thích lộ trình tĩnh trên `teacher/classes/page.tsx`, và chuẩn hóa toàn bộ 16 inner feature components sang bảng màu Thư họa Á Đông chính thức (`0` class `emerald-*` / `slate-*`).
@@ -145,6 +147,14 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Tự động hóa kiểm thử trực tiếp trên Chromium có giao diện đồ họa thực tế tương tác chéo giữa 4 vai trò (Học viên 14 tuổi, Admin, Giáo viên, Superadmin).
   - Hoàn thành trọn vẹn 6/6 kịch bản cross-user: (1) Học viên vị thành niên đăng ký kèm phụ huynh, (2) Đăng nhập chờ lớp & Chặn 403 khi vào Admin, (3) Phản chiếu tức thời sang Hàng đợi Admin, (4) Chặn vô hiệu hóa GV đang phụ trách lớp hoạt động, (5) Giáo viên chỉ thấy lớp được giao & Chặn vào Superadmin, (6) Superadmin đổi thương hiệu trung tâm & đồng bộ thời gian thực sang Học viên (`cache: 'no-store'`).
   - Đạt 100% PASS trên cả 6 kịch bản, xuất bản Báo Cáo Kiểm Thử Trực Tiếp kèm 10 ảnh chụp minh chứng tại `live_cross_user_test_report.md`.
+
+- [x] **Slice 2.15 (Tối ưu Đăng ký Dưới 16 tuổi: 1 Email Duy nhất, Checkbox Cam kết, OTP Xác minh & Bảo tồn Lịch sử Giám hộ — `feature/auth-email-verification-and-consent`)**:
+  - **1 Trường Email Duy Nhất & Đơn Giản Hóa Form**: Gỡ bỏ hoàn toàn ô "Email phụ huynh" riêng trên form đăng ký. Thống nhất 1 trường `email` duy nhất dùng cho cả Đăng nhập (`FUNC-003`) và Quên mật khẩu (`FUNC-005`): Học viên $< 16$ tuổi nhập email cha mẹ/người giám hộ; học viên $\ge 16$ tuổi nhập email cá nhân.
+  - **Cam Kết Giám Hộ Bằng Checkbox**: Học viên 12–15 tuổi chỉ cần tích chọn checkbox cam kết đồng ý của cha mẹ (`guardianConsent: true`), hệ thống lưu vết pháp lý bất biến (`GuardianConsent` kèm IP, User Agent, snapshot văn bản cam kết và thời gian).
+  - **Xác Minh Quyền Sở Hữu Email Bằng Mã OTP 6 Số**: Bổ sung bảng `email_verifications` (`20261110100000_create_email_verifications`), endpoint `POST /api/v1/auth/send-verification-code` gửi mã OTP 6 số ngẫu nhiên qua SMTP (hiệu lực 10 phút, mã hóa SHA-256, rate limit 60 giây chống spam mail), và kiểm tra mã OTP hợp lệ khi hoàn tất đăng ký.
+  - **Chống Trùng Email/SĐT & Race Condition (409 Conflict)**: Phân loại thông báo lỗi cụ thể (trùng Email, trùng SĐT, hoặc cả hai) thay vì gộp chung; bắt mã lỗi PostgreSQL `P2002` chuẩn RFC 7807 Problem Details; bổ sung kiểm thử tự động đa luồng 5 requests đồng thời.
+  - **Bảo Tồn Lịch Sử Giám Hộ Tuyệt Đối**: Ràng buộc bất biến đảm bảo khi học viên đủ 16 tuổi tự cập nhật email cá nhân (`FUNC-078` `ProfileService.updateMyProfile`), hệ thống chỉ cập nhật `User.email`, **tuyệt đối không ghi đè** lên bản ghi `GuardianConsent.guardianEmail` ban đầu.
+  - **100% Cổng Kỹ Thuật Đạt Chuẩn**: Unit tests 120/120 PASS, Typecheck Backend & Frontend 0 lỗi, Lint Backend (OxLint) & Frontend (ESLint) 0 warnings/errors, Anti-God-File LOC 15/15 Backend Services và 12/12 Frontend Pages đạt chuẩn.
 
 ### Phase 3: Module 02 & 03 — Khóa học HSK & Quản lý Lớp học (`FUNC-014`, `FUNC-016..024`, `077`, `079`)
 - [x] **Chốt Quyết định Nghiệp vụ Tiền Đề (`DEC-027`, `DEC-028`)**:

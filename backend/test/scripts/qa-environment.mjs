@@ -226,6 +226,7 @@ async function seedQaFixtures(databaseUrl) {
         "courses",
         "auth_rate_limits",
         "email_rate_limits",
+        "email_verifications",
         "password_reset_tokens",
         "guardian_consents",
         "teacher_profiles",

@@ -10,9 +10,9 @@ export interface FormErrors {
   dateOfBirth?: string;
   phone?: string;
   email?: string;
+  verificationCode?: string;
   password?: string;
   confirmPassword?: string;
-  guardianEmail?: string;
   guardianConsent?: string;
 }
 
@@ -20,17 +20,20 @@ interface StudentRegisterFormProps {
   fullName: string;
   setFullName: (val: string) => void;
   dateOfBirth: string;
-  onDateOfBirthChange: (val: string) => void;
+  onDateOfBirthChange: (val: string, isBadInput?: boolean) => void;
   phone: string;
   setPhone: (val: string) => void;
   email: string;
   setEmail: (val: string) => void;
+  verificationCode: string;
+  setVerificationCode: (val: string) => void;
+  onSendVerificationCode: () => void;
+  isSendingCode: boolean;
+  codeCooldown: number;
   password: string;
   setPassword: (val: string) => void;
   confirmPassword: string;
   setConfirmPassword: (val: string) => void;
-  guardianEmail: string;
-  setGuardianEmail: (val: string) => void;
   guardianConsent: boolean;
   setGuardianConsent: (val: boolean) => void;
   calculatedAge: number | null;
@@ -53,12 +56,15 @@ export function StudentRegisterForm({
   setPhone,
   email,
   setEmail,
+  verificationCode,
+  setVerificationCode,
+  onSendVerificationCode,
+  isSendingCode,
+  codeCooldown,
   password,
   setPassword,
   confirmPassword,
   setConfirmPassword,
-  guardianEmail,
-  setGuardianEmail,
   guardianConsent,
   setGuardianConsent,
   calculatedAge,
@@ -103,7 +109,6 @@ export function StudentRegisterForm({
           <input
             id="reg-fullname"
             type="text"
-            maxLength={100}
             required
             value={fullName}
             onChange={(e) => {
@@ -131,25 +136,20 @@ export function StudentRegisterForm({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Ngày sinh */}
           <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor="reg-dob"
-                className="block text-sm font-medium text-[var(--ink)]"
-              >
-                Ngày sinh <span className="text-[var(--red)]">*</span>
-              </label>
-              {dateOfBirth && calculatedAge !== null && (
-                <span className="text-[11px] font-medium text-[var(--ink-3)]">
-                  {formatDateDdMmYyyy(dateOfBirth)} ({calculatedAge}t)
-                </span>
-              )}
-            </div>
+            <label
+              htmlFor="reg-dob"
+              className="block text-sm font-medium text-[var(--ink)]"
+            >
+              Ngày sinh <span className="text-[var(--red)]">*</span>
+            </label>
             <input
               id="reg-dob"
               type="date"
               required
               value={dateOfBirth}
-              onChange={(e) => onDateOfBirthChange(e.target.value)}
+              onChange={(e) =>
+                onDateOfBirthChange(e.target.value, e.target.validity.badInput)
+              }
               aria-invalid={Boolean(errors.dateOfBirth || isUnder12)}
               className={`w-full rounded-lg border px-3 py-2 text-sm text-[var(--ink)] focus:outline-none focus:ring-2 ${
                 errors.dateOfBirth || isUnder12
@@ -157,9 +157,22 @@ export function StudentRegisterForm({
                   : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
               }`}
             />
-            {(errors.dateOfBirth || isUnder12) && (
-              <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
-                {isUnder12 ? 'Học viên phải từ 12 tuổi trở lên' : errors.dateOfBirth}
+            {/* Cảnh báo lỗi dưới 12 tuổi */}
+            {errors.dateOfBirth && (
+              <p
+                role="alert"
+                className="text-xs font-medium text-[var(--red-ink)]"
+              >
+                {errors.dateOfBirth}
+              </p>
+            )}
+            {/* Badge hiển thị tuổi & ngày định dạng chuẩn VN */}
+            {calculatedAge !== null && !errors.dateOfBirth && (
+              <p className="text-xs text-[var(--ink-2)]">
+                {formatDateDdMmYyyy(dateOfBirth)} ·{' '}
+                <span className="font-semibold text-[var(--ink)]">
+                  {calculatedAge} tuổi
+                </span>
               </p>
             )}
           </div>
@@ -175,8 +188,6 @@ export function StudentRegisterForm({
             <input
               id="reg-phone"
               type="tel"
-              inputMode="numeric"
-              maxLength={10}
               required
               value={phone}
               onChange={(e) => {
@@ -194,7 +205,10 @@ export function StudentRegisterForm({
               }`}
             />
             {errors.phone && (
-              <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
+              <p
+                role="alert"
+                className="text-xs font-medium text-[var(--red-ink)]"
+              >
                 {errors.phone}
               </p>
             )}
@@ -207,7 +221,16 @@ export function StudentRegisterForm({
             htmlFor="reg-email"
             className="block text-sm font-medium text-[var(--ink)]"
           >
-            Email đăng nhập <span className="text-[var(--red)]">*</span>
+            {requiresGuardianConsent ? (
+              <>
+                Email cha mẹ / người giám hộ{' '}
+                <span className="text-[var(--red)]">*</span>
+              </>
+            ) : (
+              <>
+                Email đăng nhập <span className="text-[var(--red)]">*</span>
+              </>
+            )}
           </label>
           <input
             id="reg-email"
@@ -221,7 +244,11 @@ export function StudentRegisterForm({
                 setErrors((prev) => ({ ...prev, email: undefined }));
               }
             }}
-            placeholder="hocvien@example.com"
+            placeholder={
+              requiresGuardianConsent
+                ? 'phuhuynh@example.com'
+                : 'hocvien@example.com'
+            }
             aria-invalid={Boolean(errors.email)}
             className={`w-full rounded-lg border px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
               errors.email
@@ -229,6 +256,12 @@ export function StudentRegisterForm({
                 : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
             }`}
           />
+          {requiresGuardianConsent && (
+            <p className="text-xs text-[var(--ink-2)] mt-0.5">
+              * Học viên dưới 16 tuổi: vui lòng nhập email của cha mẹ hoặc người
+              giám hộ để đăng nhập và nhận thông báo học tập.
+            </p>
+          )}
           {errors.email && (
             <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
               {errors.email}
@@ -236,49 +269,68 @@ export function StudentRegisterForm({
           )}
         </div>
 
+        {/* Xác minh Email (Mã OTP 6 số) */}
+        <div className="space-y-1">
+          <label
+            htmlFor="reg-verification-code"
+            className="block text-sm font-medium text-[var(--ink)]"
+          >
+            Mã xác thực email (6 số) <span className="text-[var(--red)]">*</span>
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="reg-verification-code"
+              type="text"
+              maxLength={6}
+              required
+              value={verificationCode}
+              onChange={(e) => {
+                setVerificationCode(e.target.value.replace(/\D/g, ''));
+                if (errors.verificationCode) {
+                  setErrors((prev) => ({
+                    ...prev,
+                    verificationCode: undefined,
+                  }));
+                }
+              }}
+              placeholder="Nhập 6 chữ số"
+              aria-invalid={Boolean(errors.verificationCode)}
+              className={`w-full rounded-lg border px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 font-mono tracking-widest ${
+                errors.verificationCode
+                  ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+                  : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
+              }`}
+            />
+            <button
+              type="button"
+              onClick={onSendVerificationCode}
+              disabled={isSendingCode || codeCooldown > 0}
+              className="shrink-0 rounded-lg border border-[var(--blue)]/30 bg-[var(--blue-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--blue-soft)]/80 disabled:opacity-50 transition-colors"
+            >
+              {isSendingCode
+                ? 'Đang gửi...'
+                : codeCooldown > 0
+                  ? `Gửi lại (${codeCooldown}s)`
+                  : 'Gửi mã'}
+            </button>
+          </div>
+          {errors.verificationCode && (
+            <p
+              role="alert"
+              className="text-xs font-medium text-[var(--red-ink)]"
+            >
+              {errors.verificationCode}
+            </p>
+          )}
+        </div>
+
         {/* Khối Đồng ý của cha mẹ/người giám hộ */}
         {requiresGuardianConsent && (
-          <div className="rounded-xl border border-[var(--blue)]/30 bg-[var(--blue-soft)]/40 p-3 space-y-2">
+          <div className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)]/40 p-3 space-y-2">
             <div>
               <h2 className="text-xs font-semibold text-[var(--ink)]">
                 Xác nhận đồng ý của cha mẹ / người giám hộ (Học viên &lt; 16 tuổi)
               </h2>
-            </div>
-
-            <div className="space-y-1">
-              <label
-                htmlFor="reg-guardian-email"
-                className="block text-xs font-medium text-[var(--ink)]"
-              >
-                Email cha mẹ / người giám hộ <span className="text-[var(--red)]">*</span>
-              </label>
-              <input
-                id="reg-guardian-email"
-                type="email"
-                required
-                value={guardianEmail}
-                onChange={(e) => {
-                  setGuardianEmail(e.target.value);
-                  if (errors.guardianEmail) {
-                    setErrors((prev) => ({
-                      ...prev,
-                      guardianEmail: undefined,
-                    }));
-                  }
-                }}
-                placeholder="phuhuynh@example.com"
-                aria-invalid={Boolean(errors.guardianEmail)}
-                className={`w-full rounded-lg border px-3 py-1.5 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 ${
-                  errors.guardianEmail
-                    ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
-                    : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
-                }`}
-              />
-              {errors.guardianEmail && (
-                <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
-                  {errors.guardianEmail}
-                </p>
-              )}
             </div>
 
             <div className="pt-0.5">
@@ -300,11 +352,16 @@ export function StudentRegisterForm({
                   className="mt-0.5 h-3.5 w-3.5 rounded border-[var(--line-2)] text-[var(--red)] focus:ring-[var(--red)]"
                 />
                 <span className="text-xs font-normal text-[var(--ink-2)] leading-tight">
-                  Tôi xác nhận đã có sự đồng ý của cha mẹ/người giám hộ cho phép đăng ký tài khoản.
+                  Tôi xác nhận đã có sự đồng ý của cha mẹ/người giám hộ cho phép
+                  đăng ký tài khoản và đồng ý sử dụng email này để đăng nhập, nhận
+                  thông báo học tập.
                 </span>
               </label>
               {errors.guardianConsent && (
-                <p role="alert" className="text-xs font-medium text-[var(--red-ink)]">
+                <p
+                  role="alert"
+                  className="text-xs font-medium text-[var(--red-ink)]"
+                >
                   {errors.guardianConsent}
                 </p>
               )}
@@ -350,27 +407,26 @@ export function StudentRegisterForm({
           />
         </div>
 
+        {/* Nút Submit Đăng Ký */}
         <button
-          id="reg-submit-btn"
           type="submit"
-          disabled={submitting || isUnder12}
-          className="mt-1 flex w-full justify-center rounded-lg bg-[var(--red)] px-4 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors active:scale-[0.98]"
+          disabled={submitting}
+          className="w-full mt-2 rounded-xl bg-[var(--red)] py-2.5 text-center text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:opacity-50 transition-colors"
         >
-          {submitting ? 'Đang đăng ký...' : 'Đăng ký'}
+          {submitting ? 'Đang xử lý đăng ký...' : 'Đăng Ký Tài Khoản'}
         </button>
-      </form>
 
-      <div className="mt-4 border-t border-[var(--line)] pt-3 text-center">
-        <p className="text-sm text-[var(--ink-2)]">
-          Đã có tài khoản?{' '}
+        {/* Chuyển hướng Đăng Nhập */}
+        <div className="pt-2 text-center text-xs text-[var(--ink-2)]">
+          Đã có tài khoản học viên?{' '}
           <Link
             href="/login"
-            className="font-semibold text-[var(--red)] hover:text-[var(--red-ink)] transition-colors"
+            className="font-semibold text-[var(--red)] hover:underline"
           >
-            Đăng nhập
+            Đăng nhập ngay
           </Link>
-        </p>
-      </div>
+        </div>
+      </form>
     </div>
   );
 }

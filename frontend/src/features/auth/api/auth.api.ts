@@ -24,8 +24,14 @@ export interface RegisterStudentPayload {
   email: string;
   password: string;
   confirmPassword?: string;
+  verificationCode?: string;
   guardianEmail?: string;
   guardianConsent?: boolean;
+}
+
+export interface SendVerificationCodeResponse {
+  message: string;
+  expiresInSeconds: number;
 }
 
 export interface RegisterStudentResponse {
@@ -59,6 +65,17 @@ export interface ResetPasswordPayload {
 // ============================================================================
 // Authentication APIs (/auth/*)
 // ============================================================================
+
+export async function sendVerificationCode(
+  email: string,
+  options?: RequestOptions,
+): Promise<SendVerificationCodeResponse> {
+  return fetchApi<SendVerificationCodeResponse>('/auth/send-verification-code', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+    ...options,
+  });
+}
 
 export async function registerStudent(
   payload: RegisterStudentPayload,

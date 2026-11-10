@@ -37,18 +37,20 @@ async function runLiveTest() {
     // Điền họ tên, SĐT, Email
     await studentPage.fill('#reg-fullname', 'Trần Bảo Ngọc');
     await studentPage.fill('#reg-phone', '0912345678');
-    await studentPage.fill('#reg-email', 'baongoc.test@gmail.com');
+    await studentPage.fill('#reg-email', 'phuhuynh.ngoc@gmail.com');
 
     // Điền ngày sinh 14 tuổi (2012-06-15)
     await studentPage.fill('#reg-dob', '2012-06-15');
 
-    // Chờ khối phụ huynh hiển thị
-    await studentPage.waitForSelector('#reg-guardian-email', { state: 'visible', timeout: 5000 });
-    console.log('  ✅ Khối phụ huynh tự động kích hoạt khi học viên < 16 tuổi!');
+    // Chờ khối cam kết phụ huynh hiển thị
+    await studentPage.waitForSelector('#reg-guardian-consent', { state: 'visible', timeout: 5000 });
+    console.log('  ✅ Khối cam kết phụ huynh tự động kích hoạt khi học viên < 16 tuổi!');
 
-    // Điền email phụ huynh & tích đồng ý
-    await studentPage.fill('#reg-guardian-email', 'phuhuynh.ngoc@gmail.com');
+    // Tích đồng ý cam kết cha mẹ
     await studentPage.check('#reg-guardian-consent');
+
+    // Điền mã xác thực email (mã kiểm thử test bypass)
+    await studentPage.fill('#reg-verification-code', '999999');
 
     // Điền mật khẩu
     await studentPage.fill('#reg-password', 'Password@123');
@@ -69,7 +71,7 @@ async function runLiveTest() {
     // KỊCH BẢN 2: HỌC VIÊN ĐĂNG NHẬP & KIỂM TRA PHÂN QUYỀN
     // ==========================================
     console.log('\n--- [KỊCH BẢN 2] Học viên mới đăng nhập & Kiểm tra màn hình Chờ xếp lớp ---');
-    await studentPage.fill('#login-email', 'baongoc.test@gmail.com');
+    await studentPage.fill('#login-email', 'phuhuynh.ngoc@gmail.com');
     await studentPage.fill('#login-password', 'Password@123');
     await studentPage.click('button[type="submit"]');
 

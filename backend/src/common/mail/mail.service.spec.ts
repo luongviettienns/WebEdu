@@ -107,6 +107,31 @@ describe('MailService & SmtpEmailProvider (FUNC-005)', () => {
     }
   });
 
+  it('sends verification code email with 6-digit OTP and expiration notice', async () => {
+    const sentPayloads: SendEmailPayload[] = [];
+    const fakeProvider: EmailProvider = {
+      sendEmail: vi.fn(async (payload: SendEmailPayload) => {
+        sentPayloads.push(payload);
+      }),
+    };
+    const configService = { get: vi.fn(() => undefined) } as unknown as ConfigService;
+    const mailService = new MailService(fakeProvider, configService);
+
+    await mailService.sendVerificationCodeEmail({
+      toEmail: 'parent@example.com',
+      code: '824915',
+      expiresInMinutes: 10,
+    });
+
+    expect(sentPayloads).toHaveLength(1);
+    const mail = sentPayloads[0]!;
+    expect(mail.to).toBe('parent@example.com');
+    expect(mail.subject).toContain('824915');
+    expect(mail.text).toContain('824915');
+    expect(mail.text).toContain('10 phút');
+    expect(mail.html).toContain('824915');
+  });
+
   it('normalizes boundary pagination values (page <= 0, negative limit, limit > 100)', () => {
     expect(resolvePagination(undefined)).toEqual({ page: 1, limit: 20, skip: 0 });
     expect(resolvePagination({ page: 0, limit: 0 })).toEqual({ page: 1, limit: 20, skip: 0 });

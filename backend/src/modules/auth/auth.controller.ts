@@ -21,6 +21,7 @@ import {
   LoginDto,
   RegisterDto,
   ResetPasswordDto,
+  SendVerificationCodeDto,
 } from './dto/auth.dto.js';
 import { Public } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
@@ -38,6 +39,14 @@ export class AuthController {
     private readonly sessionService: AuthSessionService,
     private readonly passwordRecoveryService: PasswordRecoveryService,
   ) {}
+
+  @Public()
+  @Post('send-verification-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Gửi mã xác thực OTP qua Email' })
+  async sendVerificationCode(@Body() dto: SendVerificationCodeDto) {
+    return this.registrationService.sendVerificationCode(dto.email);
+  }
 
   @Public()
   @Post(['register', 'register/student'])
