@@ -38,3 +38,36 @@ ALTER TABLE "class_teacher_assignments" ADD CONSTRAINT "class_teacher_assignment
 
 -- AddForeignKey
 ALTER TABLE "class_teacher_assignments" ADD CONSTRAINT "class_teacher_assignments_changed_by_id_fkey" FOREIGN KEY ("changed_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Backfill initial teacher assignment history for pre-existing classes
+INSERT INTO "class_teacher_assignments" (
+    "id",
+    "class_id",
+    "teacher_id",
+    "assigned_from",
+    "assigned_to",
+    "reason",
+    "created_at"
+)
+SELECT
+    gen_random_uuid()::text,
+    c."id",
+    c."teacher_id",
+    c."start_date",
+    CASE
+        WHEN c."status" IN ('COMPLETED', 'ARCHIVED') THEN COALESCE(c."actual_end_date", c."expected_end_date", c."start_date")
+        ELSE NULL
+    END,
+    'Khởi tạo lịch sử phân công giáo viên ban đầu từ dữ liệu lớp học hiện có',
+    CURRENT_TIMESTAMP
+FROM "classes" c
+WHERE c."teacher_id" IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM "class_teacher_assignments" cta
+      WHERE cta."class_id" = c."id"
+  );
+
+-- CreateIndex: Enforce at most one currently active teacher assignment per class
+CREATE UNIQUE INDEX "class_teacher_assignments_active_unique_idx"
+    ON "class_teacher_assignments"("class_id")
+    WHERE "assigned_to" IS NULL;

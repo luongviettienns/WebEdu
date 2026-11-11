@@ -1185,4 +1185,109 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       expect(createRes.value.code).toBe('PG-CLS-RACE');
     }
   });
+
+  it('Scenario 15: Enforces DB-level partial unique index class_teacher_assignments_active_unique_idx (at most 1 active teacher per class)', async () => {
+    const [{ CoursesService }, { ClassCrudService }] = await Promise.all([
+      import('../src/modules/courses/services/courses.service.js'),
+      import('../src/modules/classes/services/class-crud.service.js'),
+    ]);
+    const coursesService = moduleRef.get(CoursesService);
+    const classCrudService = moduleRef.get(ClassCrudService);
+
+    const adminUser = await prisma.user.create({
+      data: {
+        email: 'pg.cta.admin@webedu.vn',
+        phone: '0907999111',
+        fullName: 'PG CTA Admin',
+        passwordHash: 'hash',
+        roles: [Role.ADMIN],
+        status: UserStatus.ACTIVE,
+      },
+    });
+    const adminActor: AuthenticatedUser = {
+      id: adminUser.id,
+      email: adminUser.email,
+      fullName: adminUser.fullName,
+      phone: adminUser.phone,
+      roles: adminUser.roles,
+      effectiveRole: Role.ADMIN,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    const teacherA = await prisma.user.create({
+      data: {
+        email: 'teacher.assign.alpha@test.com',
+        phone: '0907111222',
+        fullName: 'Teacher Assignment Alpha',
+        passwordHash: 'hash',
+        roles: [Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        teacherProfile: { create: { activeClassesCount: 0 } },
+      },
+    });
+
+    const teacherB = await prisma.user.create({
+      data: {
+        email: 'teacher.assign.beta@test.com',
+        phone: '0907111333',
+        fullName: 'Teacher Assignment Beta',
+        passwordHash: 'hash',
+        roles: [Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        teacherProfile: { create: { activeClassesCount: 0 } },
+      },
+    });
+
+    // 1. Create a course
+    const course = await coursesService.createCourse(adminActor, {
+      code: 'PG-HSK3-CTA',
+      name: 'PG HSK 3 Active Teacher Unique Test',
+      level: CourseLevel.HSK3,
+      defaultSessions: 20,
+    });
+
+    // 2. Create class with teacherA (creates 1st active assignment with assignedTo = null)
+    const cls = await classCrudService.createClass(adminActor, {
+      code: 'PG-CLS-CTA1',
+      courseId: course.id,
+      teacherId: teacherA.id,
+      scheduleDays: [2, 4],
+      scheduleStartTime: '18:00',
+      scheduleEndTime: '19:30',
+      startDate: '2026-11-01',
+    });
+
+    // 3. Attempting to insert a 2nd active assignment with assignedTo = null must fail at PostgreSQL index level
+    await expect(
+      prisma.classTeacherAssignment.create({
+        data: {
+          classId: cls.id,
+          teacherId: teacherB.id,
+          assignedFrom: new Date('2026-11-05T00:00:00.000Z'),
+          assignedTo: null,
+          reason: 'Bypass attempt: duplicate active teacher assignment',
+        },
+      }),
+    ).rejects.toThrow();
+
+    // 4. Closing the active assignment and inserting a new active assignment succeeds
+    await prisma.classTeacherAssignment.updateMany({
+      where: { classId: cls.id, assignedTo: null },
+      data: { assignedTo: new Date('2026-11-05T00:00:00.000Z') },
+    });
+
+    const newAssignment = await prisma.classTeacherAssignment.create({
+      data: {
+        classId: cls.id,
+        teacherId: teacherB.id,
+        assignedFrom: new Date('2026-11-05T00:00:00.000Z'),
+        assignedTo: null,
+        reason: 'Valid handover to teacherB',
+      },
+    });
+
+    expect(newAssignment.teacherId).toBe(teacherB.id);
+    expect(newAssignment.assignedTo).toBeNull();
+  });
 });
