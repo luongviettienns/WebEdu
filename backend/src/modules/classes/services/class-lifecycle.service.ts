@@ -30,8 +30,9 @@ export class ClassLifecycleService {
     }
     assertEffectiveDateNotInFuture(actualEndDate, 'Ngày kết thúc thực tế');
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
 
       const targetClass = await tx.class.findUnique({ where: { id: classId } });
       if (!targetClass) throw new NotFoundException('Không tìm thấy lớp học');
@@ -71,19 +72,24 @@ export class ClassLifecycleService {
         data: { status: EnrollmentStatus.COMPLETED, leftDate: actualEndDate },
       });
 
-      for (const sid of sortedStudentIds) {
+      if (sortedStudentIds.length > 0) {
         await tx.studentProfile.updateMany({
-          where: { userId: sid },
+          where: { userId: { in: sortedStudentIds } },
           data: { currentClassId: null, assignedClass: null, enrolledAt: null },
         });
-        const studentUser = await tx.user.findUnique({ where: { id: sid } });
-        const isPureStudent =
-          studentUser !== null &&
-          studentUser.roles.length === 1 &&
-          studentUser.roles[0] === Role.STUDENT;
-        if (isPureStudent) {
+
+        const students = await tx.user.findMany({
+          where: { id: { in: sortedStudentIds } },
+          select: { id: true, roles: true },
+        });
+
+        const pureStudentIds = students
+          .filter((s) => s.roles.length === 1 && s.roles[0] === Role.STUDENT)
+          .map((s) => s.id);
+
+        if (pureStudentIds.length > 0) {
           await tx.user.updateMany({
-            where: { id: sid, status: UserStatus.ACTIVE },
+            where: { id: { in: pureStudentIds }, status: UserStatus.ACTIVE },
             data: { status: UserStatus.PENDING_CLASS },
           });
         }
@@ -118,7 +124,7 @@ export class ClassLifecycleService {
           reason: dto.reason?.trim() ?? null,
         },
       });
-    });
+    }, { timeout: 15000, maxWait: 5000 });
 
     return this.queryService.getClassById(actor, classId, {
       includeInactiveEnrollments: true,
@@ -131,8 +137,9 @@ export class ClassLifecycleService {
     dto?: ReopenClassDto,
     now: Date = new Date(),
   ): Promise<ClassDetailDto> {
-    const reopenSummary = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
+    const reopenSummary = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
 
       const targetClass = await tx.class.findUnique({
         where: { id: classId },
@@ -290,7 +297,7 @@ export class ClassLifecycleService {
         restoredStudentsCount,
         skippedStudentsCount: sortedCompleted.length - restoredStudentsCount,
       };
-    });
+    }, { timeout: 15000, maxWait: 5000 });
 
     const detail = await this.queryService.getClassById(actor, classId, {
       includeInactiveEnrollments: true,

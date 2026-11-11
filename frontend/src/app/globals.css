@@ -74,6 +74,24 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Accessibility & Focus Indicators (WCAG 2.4.7 Focus Visible) */
+:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+/* Reduced Motion Preference (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Asian Calligraphic & Cultural Ornament Utilities */
 .seal {
   width: 36px;

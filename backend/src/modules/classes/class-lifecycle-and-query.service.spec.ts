@@ -738,19 +738,31 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
           return usersStore.get(where.id) ?? null;
         }),
+        findMany: vi.fn(async ({ where }: { where?: { id?: { in?: string[] } } }) => {
+          const ids = where?.id?.in ?? [];
+          return ids.map((id) => usersStore.get(id)).filter(Boolean);
+        }),
         updateMany: vi.fn(
           async ({
             where,
             data,
           }: {
-            where: { id: string; status?: UserStatus };
+            where: { id?: string | { in?: string[] }; status?: UserStatus };
             data: { status: UserStatus };
           }) => {
-            const u = usersStore.get(where.id);
-            if (!u) return { count: 0 };
-            if (where.status && u.status !== where.status) return { count: 0 };
-            u.status = data.status;
-            return { count: 1 };
+            const targetIds =
+              typeof where.id === 'string'
+                ? [where.id]
+                : where.id?.in ?? [];
+            let count = 0;
+            for (const id of targetIds) {
+              const u = usersStore.get(id);
+              if (u && (!where.status || u.status === where.status)) {
+                u.status = data.status;
+                count++;
+              }
+            }
+            return { count };
           },
         ),
         update: vi.fn(
@@ -774,19 +786,28 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
             where,
             data,
           }: {
-            where: { userId: string };
+            where: { userId?: string | { in?: string[] } };
             data: {
               currentClassId: string | null;
               assignedClass: string | null;
               enrolledAt: Date | null;
             };
           }) => {
-            const u = usersStore.get(where.userId);
-            if (!u?.studentProfile) return { count: 0 };
-            u.studentProfile.currentClassId = data.currentClassId;
-            u.studentProfile.assignedClass = data.assignedClass;
-            u.studentProfile.enrolledAt = data.enrolledAt;
-            return { count: 1 };
+            const targetIds =
+              typeof where.userId === 'string'
+                ? [where.userId]
+                : where.userId?.in ?? [];
+            let count = 0;
+            for (const uid of targetIds) {
+              const u = usersStore.get(uid);
+              if (u?.studentProfile) {
+                u.studentProfile.currentClassId = data.currentClassId;
+                u.studentProfile.assignedClass = data.assignedClass;
+                u.studentProfile.enrolledAt = data.enrolledAt;
+                count++;
+              }
+            }
+            return { count };
           },
         ),
         update: vi.fn(

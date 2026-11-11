@@ -20,6 +20,7 @@ export class ListClassesQueryDto {
   @ApiPropertyOptional({ description: 'Tìm theo mã lớp học hoặc giáo viên' })
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
 
   @ApiPropertyOptional({ description: 'Lọc theo ID khóa học' })
