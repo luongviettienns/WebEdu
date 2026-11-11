@@ -307,4 +307,122 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
     // Cleanup #15: Strictly no timezone property in system config response
     expect('timezone' in config).toBe(false);
   });
+
+  it('lists and creates system users while blocking empty roles, pure STUDENT creation, and duplicate contacts (FUNC-013)', async () => {
+    const initialList = await service.listSystemUsers({ search: 'sa1', page: 1, limit: 10 });
+    expect(initialList.total).toBe(2);
+
+    await expect(
+      service.createSystemUser(superadminA, {
+        fullName: 'Nhân Sự Rỗng Vai Trò',
+        phone: '0988111222',
+        email: 'empty.roles@webedu.vn',
+        initialPassword: 'Password@123',
+        roles: [],
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Phải chọn ít nhất một vai trò'),
+    );
+
+    await expect(
+      service.createSystemUser(superadminA, {
+        fullName: 'Học Viên Trái Luồng',
+        phone: '0988111223',
+        email: 'pure.student@webedu.vn',
+        initialPassword: 'Password@123',
+        roles: [Role.STUDENT],
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Tài khoản Học viên phải được tạo qua luồng Đăng ký học viên để kiểm tra độ tuổi và đồng ý phụ huynh',
+      ),
+    );
+
+    const createdDual = await service.createSystemUser(superadminA, {
+      fullName: 'Admin Kiêm Giáo Viên',
+      phone: '0988111224',
+      email: 'dual.admin.teacher@webedu.vn',
+      initialPassword: 'Password@123',
+      roles: [Role.ADMIN, Role.TEACHER],
+    });
+    expect(createdDual.effectiveRole).toBe(Role.ADMIN);
+    expect(createdDual.roles).toEqual([Role.ADMIN, Role.TEACHER]);
+  });
+
+  it('enforces role/status invariants for non-student PENDING_CLASS, pure student activation bypass, and active teacher demotion', async () => {
+    const createdTeacher = await service.createSystemUser(superadminA, {
+      fullName: 'Giáo Viên Đang Dạy',
+      phone: '0988111225',
+      email: 'active.teacher@webedu.vn',
+      initialPassword: 'Password@123',
+      roles: [Role.TEACHER],
+    });
+
+    await expect(
+      service.updateUserRolesAndStatus(superadminA, createdTeacher.id, {
+        status: UserStatus.PENDING_CLASS,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Trạng thái Chờ xếp lớp chỉ áp dụng cho tài khoản Học viên',
+      ),
+    );
+
+    (mockPrisma.class as { count: ReturnType<typeof vi.fn> }).count.mockResolvedValueOnce(2);
+    await expect(
+      service.updateUserRolesAndStatus(superadminA, createdTeacher.id, {
+        roles: [Role.ADMIN],
+      }),
+    ).rejects.toThrowError(/Giáo viên đang phụ trách 2 lớp/);
+
+    usersStore.set('pending-student-1', {
+      id: 'pending-student-1',
+      email: 'pending1@webedu.vn',
+      phone: '0988111226',
+      fullName: 'Học Viên Chờ Lớp',
+      roles: [Role.STUDENT],
+      status: UserStatus.PENDING_CLASS,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      service.updateUserRolesAndStatus(superadminA, 'pending-student-1', {
+        status: UserStatus.ACTIVE,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+      ),
+    );
+  });
+
+  it('rejects timezone and empty centerName on updateSystemConfig and paginates audit logs', async () => {
+    await expect(
+      service.updateSystemConfig(superadminA, {
+        centerName: 'Trung Tâm TD Hán Ngữ',
+        timezone: 'Asia/Bangkok',
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Trường múi giờ đã bị loại bỏ khỏi cấu hình hệ thống',
+      ),
+    );
+
+    await expect(
+      service.updateSystemConfig(superadminA, {
+        centerName: '   ',
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Tên trung tâm không được để trống'),
+    );
+
+    await service.updateSystemConfig(superadminA, {
+      centerName: 'Trung Tâm TD Hán Ngữ',
+      centerLogoUrl: null,
+    });
+    const logs = await service.listAuditLogs({ page: 1, limit: 10 });
+    expect(logs.total).toBeGreaterThanOrEqual(1);
+  });
 });

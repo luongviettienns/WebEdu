@@ -22,7 +22,7 @@ export const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
   'webedu_dummy_anti_timing_secret_2026',
   10,
 );
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes (FUNC-003)
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 
 @Injectable()

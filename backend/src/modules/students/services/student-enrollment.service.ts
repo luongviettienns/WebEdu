@@ -23,9 +23,8 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Initial class placement workflow (FUNC-008): the only legitimate way to move
- * a student from PENDING_CLASS to ACTIVE. Phase 3 will extend enrollment
- * (transfer / drop / complete) — keep those flows in this service.
+ * Initial class placement workflow: the only legitimate way to move
+ * a student from PENDING_CLASS to ACTIVE.
  */
 @Injectable()
 export class StudentEnrollmentService {

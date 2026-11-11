@@ -39,14 +39,17 @@ export class StudentsController {
 
   @Get()
   @Roles(Role.ADMIN, Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Danh sách học viên (FUNC-007)' })
-  async listStudents(@Query() query: ListStudentsQueryDto) {
-    return this.queries.listStudents(query);
+  @ApiOperation({ summary: 'Danh sách hồ sơ học viên' })
+  async listStudents(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query() query: ListStudentsQueryDto,
+  ) {
+    return this.queries.listStudents(actor, query);
   }
 
   @Get('pending-enrollment')
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Danh sách học viên chờ xếp lớp mới nhất lên đầu (FUNC-008)' })
+  @ApiOperation({ summary: 'Danh sách học viên chờ xếp lớp' })
   async getPendingEnrollmentQueue(@Query() query: ListPendingEnrollmentQueryDto) {
     return this.queries.getPendingEnrollmentQueue(query);
   }
@@ -54,7 +57,7 @@ export class StudentsController {
   @Get('available-classes')
   @Roles(Role.ADMIN)
   @ApiOperation({
-    summary: 'Danh sách lớp học Sắp mở / Đang học phục vụ xếp lớp ban đầu (FUNC-008)',
+    summary: 'Danh sách lớp học đang mở phục vụ xếp lớp ban đầu',
   })
   async listAvailableClasses() {
     return this.enrollment.listAvailableClasses();
@@ -62,7 +65,7 @@ export class StudentsController {
 
   @Get(':id')
   @Roles(Role.STUDENT, Role.ADMIN, Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Chi tiết hồ sơ học viên (FUNC-007, FUNC-010)' })
+  @ApiOperation({ summary: 'Chi tiết hồ sơ học viên' })
   async getStudentById(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -72,7 +75,7 @@ export class StudentsController {
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Cập nhật hồ sơ học viên kèm bất biến khóa ngày sinh (FUNC-007)' })
+  @ApiOperation({ summary: 'Cập nhật hồ sơ học viên' })
   async updateStudent(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -84,7 +87,7 @@ export class StudentsController {
   @Post(':id/assign-initial-class')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Xếp lớp ban đầu và kích hoạt tài khoản học viên (FUNC-008)' })
+  @ApiOperation({ summary: 'Xếp lớp ban đầu và kích hoạt tài khoản học viên' })
   async assignInitialClass(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -96,8 +99,7 @@ export class StudentsController {
   @Get(':id/learning-records')
   @Roles(Role.STUDENT, Role.TEACHER, Role.ADMIN)
   @ApiOperation({
-    summary:
-      'Dữ liệu học tập học viên — chặn tuyệt đối SUPERADMIN theo FUNC-013 và chặn IDOR theo FUNC-010',
+    summary: 'Dữ liệu học tập của học viên',
   })
   async getStudentLearningRecords(
     @CurrentUser() user: AuthenticatedUser,
@@ -109,8 +111,7 @@ export class StudentsController {
   @Get(':id/class-history')
   @Roles(Role.STUDENT, Role.TEACHER, Role.ADMIN)
   @ApiOperation({
-    summary:
-      'Lịch sử lớp học của học viên — HV xem của mình, Admin xem tất cả, chặn GV xem lịch sử lớp cũ (DEC-024)',
+    summary: 'Lịch sử các lớp đã học của học viên',
   })
   async getStudentClassHistory(
     @CurrentUser() user: AuthenticatedUser,

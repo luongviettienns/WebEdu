@@ -104,18 +104,18 @@ export function PersonalInfoSection({
   };
 
   return (
-    <section className="lg:col-span-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-900">
+    <section className="lg:col-span-7 rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+      <h2 className="text-lg font-semibold text-[var(--ink)]">
         Thông tin cá nhân
       </h2>
-      <p className="mt-0.5 text-xs text-slate-500">
+      <p className="mt-0.5 text-xs text-[var(--ink-2)]">
         Các trường Ngày sinh, Vai trò và Lớp học được quản lý bởi Trung tâm
       </p>
 
       {profileSuccess ? (
         <div
           role="status"
-          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-900"
+          className="mt-4 rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5 text-sm font-medium text-[var(--jade)]"
         >
           {profileSuccess}
         </div>
@@ -124,7 +124,7 @@ export function PersonalInfoSection({
       {profileError ? (
         <div
           role="alert"
-          className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700"
+          className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3.5 text-sm font-medium text-[var(--red-ink)]"
         >
           {profileError}
         </div>
@@ -138,9 +138,9 @@ export function PersonalInfoSection({
         <div className="space-y-1.5">
           <label
             htmlFor="profile-fullname"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
-            Họ và tên <span className="text-red-600">*</span>
+            Họ và tên <span className="text-[var(--red)]">*</span>
           </label>
           <input
             id="profile-fullname"
@@ -149,7 +149,7 @@ export function PersonalInfoSection({
             required
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+            className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
           />
         </div>
 
@@ -157,7 +157,7 @@ export function PersonalInfoSection({
           <div className="space-y-1.5">
             <label
               htmlFor="profile-dob"
-              className="block text-sm font-medium text-slate-700"
+              className="block text-sm font-medium text-[var(--ink-2)]"
             >
               Ngày sinh (Chỉ xem)
             </label>
@@ -167,16 +167,16 @@ export function PersonalInfoSection({
               readOnly
               disabled
               value={formatDateDdMmYyyy(profile.dateOfBirth)}
-              className="w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3.5 py-2.5 text-sm text-slate-600"
+              className="w-full cursor-not-allowed rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-sm text-[var(--ink-2)] font-num"
             />
           </div>
 
           <div className="space-y-1.5">
             <label
               htmlFor="profile-phone"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
-              Số điện thoại <span className="text-red-600">*</span>
+              Số điện thoại <span className="text-[var(--red)]">*</span>
             </label>
             <input
               id="profile-phone"
@@ -185,7 +185,7 @@ export function PersonalInfoSection({
               required
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
             />
           </div>
         </div>
@@ -193,9 +193,9 @@ export function PersonalInfoSection({
         <div className="space-y-1.5">
           <label
             htmlFor="profile-email"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
-            Email đăng nhập <span className="text-red-600">*</span>
+            Email đăng nhập <span className="text-[var(--red)]">*</span>
           </label>
           <input
             id="profile-email"
@@ -203,12 +203,12 @@ export function PersonalInfoSection({
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+            className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
           />
         </div>
 
         {emailChanged ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5">
+          <div className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3.5">
             <PasswordInput
               id="profile-email-confirm-password"
               label="Nhập mật khẩu hiện tại để xác nhận đổi Email"
@@ -220,16 +220,16 @@ export function PersonalInfoSection({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 border-t border-[var(--line)] pt-4 sm:grid-cols-3">
           <div>
-            <span className="block text-xs font-medium text-slate-500">
+            <span className="block text-xs font-medium text-[var(--ink-2)]">
               Vai trò
             </span>
             <div className="mt-1 flex flex-wrap gap-1">
               {(profile.roles ?? []).map((r) => (
                 <span
                   key={r}
-                  className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 border border-emerald-200"
+                  className="inline-flex rounded-md bg-[var(--jade-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--jade)] border border-[var(--jade)]/20"
                 >
                   {ROLE_LABELS[r] ?? r}
                 </span>
@@ -238,19 +238,19 @@ export function PersonalInfoSection({
           </div>
 
           <div>
-            <span className="block text-xs font-medium text-slate-500">
+            <span className="block text-xs font-medium text-[var(--ink-2)]">
               Trạng thái tài khoản
             </span>
-            <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-800">
+            <span className="mt-1 inline-flex rounded-md bg-[var(--surface-2)] px-2.5 py-0.5 text-xs font-semibold text-[var(--ink)]">
               {profile.status ? STATUS_LABELS[profile.status] : 'Đang hoạt động'}
             </span>
           </div>
 
           <div>
-            <span className="block text-xs font-medium text-slate-500">
+            <span className="block text-xs font-medium text-[var(--ink-2)]">
               Lớp đang học / phụ trách
             </span>
-            <span className="mt-1 block text-sm font-semibold text-slate-900">
+            <span className="mt-1 block text-sm font-semibold text-[var(--ink)]">
               {profile.assignedClass ||
                 (typeof profile.activeClassesCount === 'number' &&
                 profile.activeClassesCount > 0
@@ -264,7 +264,7 @@ export function PersonalInfoSection({
           <button
             type="submit"
             disabled={profileSubmitting}
-            className="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50 transition-colors"
+            className="rounded-lg bg-[var(--red)] px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] disabled:opacity-50 transition-colors"
           >
             {profileSubmitting ? 'Đang lưu...' : 'Lưu thông tin cá nhân'}
           </button>

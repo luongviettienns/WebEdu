@@ -4,7 +4,6 @@ import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { type AuthUserDto } from '@/features/auth/api/auth.api';
 import {
   listAvailableClasses,
@@ -25,7 +24,6 @@ interface PendingEnrollmentStudentsContentProps {
 }
 
 function PendingEnrollmentStudentsContent({
-  currentUser,
   onAuthError,
 }: PendingEnrollmentStudentsContentProps) {
   const [pendingStudents, setPendingStudents] = useState<PendingStudentDto[]>(
@@ -82,61 +80,57 @@ function PendingEnrollmentStudentsContent({
   }, [refreshTick, onAuthError]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader
-        currentUser={currentUser}
-        pendingCountOverride={totalPending}
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+        <div>
+          <div className="mb-2">
+            <Link
+              href="/admin/students"
+              className="text-xs font-semibold text-[var(--red)] hover:text-[var(--red-ink)] transition-colors inline-flex items-center gap-1"
+            >
+              &larr; Quay lại danh sách tất cả học viên
+            </Link>
+          </div>
+          <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+            待分班 · HÀNG ĐỢI XẾP LỚP
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
+            Tài Khoản Chờ Xếp Lớp
+          </h1>
+          <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
+            Tài khoản học viên tự đăng ký đang chờ quản trị viên phân công lớp học ban đầu.
+          </p>
+        </div>
+        <span className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] px-4 py-2 text-sm font-semibold text-[var(--amber)] shadow-xs num">
+          Chờ xử lý: <strong>{totalPending}</strong> tài khoản
+        </span>
+      </div>
+
+      {successBanner && (
+        <div
+          role="status"
+          className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5 text-sm font-medium text-[var(--jade)]"
+        >
+          {successBanner}
+        </div>
+      )}
+
+      {errorBanner && (
+        <div
+          role="alert"
+          className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3.5 text-sm font-medium text-[var(--red-ink)]"
+        >
+          {errorBanner}
+        </div>
+      )}
+
+      <PendingStudentListTable
+        students={pendingStudents}
+        loading={loading}
+        onAssignClass={setTargetStudent}
       />
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="mb-2">
-              <Link
-                href="/admin/students"
-                className="text-xs font-semibold text-emerald-800 hover:text-emerald-950"
-              >
-                &larr; Quay lại danh sách tất cả học viên
-              </Link>
-            </div>
-            <h1 className="text-2xl font-bold text-emerald-950">
-              Tài Khoản Chờ Xếp Lớp
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Tài khoản học viên tự đăng ký đang chờ admin xếp lớp ban đầu (FUNC-008).
-            </p>
-          </div>
-          <span className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 shadow-sm">
-            Chờ xử lý: <strong>{totalPending}</strong> tài khoản
-          </span>
-        </div>
-
-        {successBanner ? (
-          <div
-            role="status"
-            className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-900"
-          >
-            {successBanner}
-          </div>
-        ) : null}
-
-        {errorBanner ? (
-          <div
-            role="alert"
-            className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700"
-          >
-            {errorBanner}
-          </div>
-        ) : null}
-
-        <PendingStudentListTable
-          students={pendingStudents}
-          loading={loading}
-          onAssignClass={setTargetStudent}
-        />
-      </main>
-
-      {targetStudent ? (
+      {targetStudent && (
         <AssignInitialClassModal
           targetStudent={targetStudent}
           availableClasses={availableClasses}
@@ -151,7 +145,7 @@ function PendingEnrollmentStudentsContent({
           }}
           onAuthError={onAuthError}
         />
-      ) : null}
+      )}
     </div>
   );
 }

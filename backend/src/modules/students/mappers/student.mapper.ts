@@ -51,10 +51,14 @@ function toConsentStatus(
 export function toStudentDetailDto(
   user: StudentUserLike,
   actorRoles: Role[],
+  actorId?: string,
 ): StudentDetailDto {
   const profile = user.studentProfile;
   const consent = profile?.consent ?? null;
   const canViewInternalNotes = actorRoles.includes(Role.ADMIN);
+  const isSelf = actorId !== undefined && actorId === user.id;
+  const canViewClassData =
+    isSelf || actorRoles.includes(Role.ADMIN) || actorRoles.includes(Role.TEACHER);
 
   // Cleanup #13: Strictly omit createdAt / registeredAt ("Đăng ký lúc") on Student Detail DTO
   return {
@@ -68,9 +72,9 @@ export function toStudentDetailDto(
     dateOfBirthLocked: Boolean(consent),
     hasGuardianConsent: Boolean(consent),
     guardianEmail: profile?.guardianEmail ?? null,
-    assignedClass: profile?.assignedClass ?? null,
-    currentClassId: profile?.currentClassId ?? null,
-    enrolledAt: profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
+    assignedClass: canViewClassData ? (profile?.assignedClass ?? null) : null,
+    currentClassId: canViewClassData ? (profile?.currentClassId ?? null) : null,
+    enrolledAt: canViewClassData && profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
     internalNotes: canViewInternalNotes ? (profile?.internalNotes ?? null) : null,
     guardianConsent: consent
       ? {
@@ -86,7 +90,10 @@ export function toStudentDetailDto(
   };
 }
 
-export function toStudentListItemDto(user: StudentUserLike): StudentListItemDto {
+export function toStudentListItemDto(
+  user: StudentUserLike,
+  canViewClassData = true,
+): StudentListItemDto {
   const profile = user.studentProfile;
   return {
     id: user.id,
@@ -97,8 +104,8 @@ export function toStudentListItemDto(user: StudentUserLike): StudentListItemDto 
     dateOfBirth: profile ? formatIsoDateUtc(profile.dateOfBirth) : null,
     guardianEmail: profile?.guardianEmail ?? null,
     guardianConsentStatus: toConsentStatus(profile),
-    assignedClass: profile?.assignedClass ?? null,
-    enrolledAt: profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
+    assignedClass: canViewClassData ? (profile?.assignedClass ?? null) : null,
+    enrolledAt: canViewClassData && profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
   };
 }
 

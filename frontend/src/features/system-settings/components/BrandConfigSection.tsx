@@ -128,12 +128,12 @@ export function BrandConfigSection({
   };
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="border-b border-slate-100 pb-4">
-        <h2 className="text-lg font-bold text-slate-900">
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+      <div className="border-b border-[var(--line)] pb-4">
+        <h2 className="text-lg font-bold text-[var(--ink)]">
           2. Cấu hình hệ thống
         </h2>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-[var(--ink-2)]">
           Cập nhật Tên trung tâm và tải ảnh Logo hiển thị trên thanh điều hướng
           cùng màn hình Đăng nhập
         </p>
@@ -142,7 +142,7 @@ export function BrandConfigSection({
       {configSuccess ? (
         <div
           role="status"
-          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-900"
+          className="mt-4 rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5 text-sm font-medium text-[var(--jade)]"
         >
           {configSuccess}
         </div>
@@ -151,7 +151,7 @@ export function BrandConfigSection({
       {configError ? (
         <div
           role="alert"
-          className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700"
+          className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3.5 text-sm font-medium text-[var(--red-ink)]"
         >
           {configError}
         </div>
@@ -165,9 +165,9 @@ export function BrandConfigSection({
         <div className="space-y-2">
           <label
             htmlFor="cfg-center-name"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
-            Tên trung tâm <span className="text-red-600">*</span>
+            Tên trung tâm <span className="text-[var(--red)]">*</span>
           </label>
           <input
             id="cfg-center-name"
@@ -176,14 +176,14 @@ export function BrandConfigSection({
             value={centerName}
             onChange={(e) => onCenterNameChange(e.target.value)}
             placeholder="Trung Tâm TD Hán Ngữ"
-            className="w-full rounded-lg border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-600/20"
+            className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
           />
         </div>
 
         <div className="space-y-2">
           <label
             htmlFor="cfg-center-logo"
-            className="block text-sm font-medium text-slate-800"
+            className="block text-sm font-medium text-[var(--ink)]"
           >
             Logo trung tâm (Tệp ảnh PNG / JPG, tối đa 2MB)
           </label>
@@ -195,10 +195,10 @@ export function BrandConfigSection({
                 width={56}
                 height={56}
                 unoptimized
-                className="h-14 w-14 shrink-0 rounded-xl border border-emerald-200 bg-white object-contain p-1 shadow-sm"
+                className="h-14 w-14 shrink-0 rounded-xl border border-[var(--line)] bg-white object-contain p-1 shadow-xs"
               />
             ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-sm font-bold text-white shadow-sm">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[var(--red)] text-sm font-bold text-white shadow-xs">
                 TD
               </div>
             )}
@@ -210,18 +210,17 @@ export function BrandConfigSection({
                 type="file"
                 accept=".png,.jpg,.jpeg,image/png,image/jpeg"
                 onChange={handleLogoFileChange}
-                className="block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3.5 file:py-2 file:text-xs file:font-semibold file:text-emerald-800 hover:file:bg-emerald-100"
+                className="block w-full text-xs text-[var(--ink-2)] file:mr-3 file:rounded-lg file:border file:border-[var(--line-2)] file:bg-[var(--surface-2)] file:px-3.5 file:py-2 file:text-xs file:font-semibold file:text-[var(--ink)] hover:file:bg-[var(--hover)]"
               />
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[11px] text-slate-500">
-                  Tải trực tiếp tệp PNG hoặc JPG từ thiết bị (tối đa 2MB, tự
-                  động xác thực chữ ký tệp nhị phân).
+                <p className="text-[11px] text-[var(--ink-2)]">
+                  Hỗ trợ ảnh định dạng PNG hoặc JPG từ thiết bị (tối đa 2MB).
                 </p>
                 {centerLogoBase64 ? (
                   <button
                     type="button"
                     onClick={handleClearLogo}
-                    className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+                    className="rounded-lg border border-[var(--red)]/30 bg-[var(--red-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--red-ink)] hover:bg-[var(--red-soft)]/80 transition-colors"
                   >
                     Xóa logo
                   </button>
@@ -231,11 +230,11 @@ export function BrandConfigSection({
           </div>
         </div>
 
-        <div className="md:col-span-2 flex justify-end border-t border-slate-100 pt-4">
+        <div className="md:col-span-2 flex justify-end border-t border-[var(--line)] pt-4">
           <button
             type="submit"
             disabled={savingConfig}
-            className="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-50 transition-colors"
+            className="rounded-lg bg-[var(--red)] px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] disabled:opacity-50 transition-colors"
           >
             {savingConfig ? 'Đang lưu cấu hình...' : 'Lưu cấu hình hệ thống'}
           </button>

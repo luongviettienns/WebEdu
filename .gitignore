@@ -59,3 +59,9 @@ Thumbs.db
 .akit/runs/
 .worktrees/
 .superpowers/
+
+# Stryker mutation testing & Playwright reports
+.stryker-tmp/
+reports/
+playwright-report/
+test-results/

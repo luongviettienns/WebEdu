@@ -25,7 +25,7 @@ import {
   type SystemUserItemDto,
 } from '../mappers/system-user.mapper.js';
 
-/** Superadmin-facing account directory: list and create staff accounts (FUNC-013). */
+/** Superadmin-facing account directory: list and create staff accounts. */
 @Injectable()
 export class SystemUsersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -106,6 +106,14 @@ export class SystemUsersService {
             where: { userId: user.id },
             update: {},
             create: { userId: user.id, activeClassesCount: 0 },
+          });
+        }
+
+        if (uniqueRoles.includes(Role.STUDENT) && tx.studentProfile?.upsert) {
+          await tx.studentProfile.upsert({
+            where: { userId: user.id },
+            update: {},
+            create: { userId: user.id, dateOfBirth: new Date('2000-01-01') },
           });
         }
 

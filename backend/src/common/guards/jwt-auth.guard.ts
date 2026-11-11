@@ -16,7 +16,7 @@ import { getHighestRole } from '../auth/role-hierarchy.util.js';
 import type { AuthenticatedUser, JwtPayload } from '../auth/auth.types.js';
 
 export const AUTH_COOKIE_NAME = 'webedu_access_token';
-export const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes (FUNC-004)
+export const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
 const ACTIVITY_UPDATE_THROTTLE_MS = 60 * 1000; // 60 seconds
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 

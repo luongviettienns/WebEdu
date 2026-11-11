@@ -47,7 +47,7 @@ type LockedStudent = Prisma.UserGetPayload<{
   include: { studentProfile: { include: { consent: true } } };
 }>;
 
-/** Profile maintenance for students (FUNC-007): fields, status and DOB consent lock. */
+/** Profile maintenance for students: fields, status and DOB consent lock. */
 @Injectable()
 export class StudentCrudService {
   constructor(
@@ -78,12 +78,12 @@ export class StudentCrudService {
           throw new NotFoundException('Không tìm thấy học viên');
         }
 
-        // SEC-08: Check actor permissions before locking or evaluating pool state
+        // Check actor permissions before locking or evaluating pool state
         assertActorMayModifyAccount(actor, preliminary.roles);
 
         const nextStatus = dto.status ?? preliminary.status;
 
-        // SEC-07: Superadmin may not self-deactivate
+        // Superadmin may not self-deactivate
         assertSuperadminNotSelfDeactivating(
           actor,
           { id: studentId, roles: preliminary.roles },
@@ -111,6 +111,21 @@ export class StudentCrudService {
           throw new NotFoundException('Không tìm thấy học viên');
         }
 
+        // Re-check actor permissions on freshly locked target roles to eliminate race window (F1)
+        assertActorMayModifyAccount(actor, targetUser.roles);
+        assertSuperadminNotSelfDeactivating(
+          actor,
+          { id: studentId, roles: targetUser.roles },
+          nextStatus,
+        );
+        if (
+          isLeavingActiveSuperadmin(targetUser.roles, nextStatus) &&
+          !leavingSuperadmin
+        ) {
+          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, studentId);
+          assertAnotherActiveSuperadminRemains(studentId, lockedSuperadmins);
+        }
+
         const nextFullName =
           dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
         const nextEmail =
@@ -131,7 +146,7 @@ export class StudentCrudService {
           );
         }
 
-        // FIX-01 (FUNC-006): If the account also has TEACHER role, forbid deactivating
+        // If the account also has TEACHER role, forbid deactivating
         // while leading active or upcoming classes, matching Teachers/SystemSettings.
         if (
           nextStatus === UserStatus.INACTIVE &&
@@ -227,7 +242,7 @@ export class StudentCrudService {
   }
 
   /**
-   * FUNC-007 invariants for changing DOB. Returns the new DOB to persist, or
+   * Invariants for changing DOB. Returns the new DOB to persist, or
    * undefined when DOB is unchanged / not supplied.
    */
   private resolveDateOfBirthChange(
@@ -268,7 +283,7 @@ export class StudentCrudService {
   }
 
   /**
-   * P1-B4 (FUNC-008): forbid bypassing initial class assignment, reactivating a
+   * Forbid bypassing initial class assignment, reactivating a
    * dropped student without a valid enrollment, or re-queueing an enrolled student.
    */
   private async assertStatusTransitionAllowed(

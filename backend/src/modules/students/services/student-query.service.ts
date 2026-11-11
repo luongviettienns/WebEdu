@@ -37,15 +37,34 @@ export class StudentQueryService {
   ) {}
 
   async listStudents(
-    query: ListStudentsQueryDto,
+    actorOrQuery: AuthenticatedUser | ListStudentsQueryDto,
+    maybeQuery?: ListStudentsQueryDto,
   ): Promise<PaginatedResult<StudentListItemDto>> {
+    let actor: AuthenticatedUser | undefined;
+    let query: ListStudentsQueryDto;
+
+    if (maybeQuery !== undefined) {
+      actor = actorOrQuery as AuthenticatedUser;
+      query = maybeQuery;
+    } else {
+      actor = undefined;
+      query = actorOrQuery as ListStudentsQueryDto;
+    }
+
     const { page, limit, skip } = resolvePagination(query);
+
+    const canViewClassData =
+      !actor ||
+      actor.roles.includes(Role.ADMIN) ||
+      actor.roles.includes(Role.TEACHER);
 
     const className = query.className?.trim();
     const where: Prisma.UserWhereInput = {
       roles: { has: Role.STUDENT },
       ...(query.status ? { status: query.status } : {}),
-      ...(className ? { studentProfile: { assignedClass: className } } : {}),
+      ...(canViewClassData && className
+        ? { studentProfile: { assignedClass: className } }
+        : {}),
       ...buildUserSearchFilter(query.search),
     };
 
@@ -60,7 +79,12 @@ export class StudentQueryService {
       this.prisma.user.count({ where }),
     ]);
 
-    return { items: users.map(toStudentListItemDto), total, page, limit };
+    return {
+      items: users.map((u) => toStudentListItemDto(u, canViewClassData)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async getPendingEnrollmentQueue(
@@ -110,7 +134,7 @@ export class StudentQueryService {
       throw new NotFoundException('Không tìm thấy học viên');
     }
 
-    return toStudentDetailDto(user, actor.roles);
+    return toStudentDetailDto(user, actor.roles, actor.id);
   }
 
   async getStudentLearningRecords(

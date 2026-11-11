@@ -155,6 +155,19 @@ model EmailRateLimit {
   @@map("email_rate_limits")
 }
 
+model EmailVerification {
+  id         String    @id @default(uuid())
+  email      String    @db.VarChar(255)
+  codeHash   String    @map("code_hash") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  attempts   Int       @default(0)
+  verifiedAt DateTime? @map("verified_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([email, createdAt(sort: Desc)])
+  @@map("email_verifications")
+}
+
 model AuthRateLimit {
   key           String    @id @map("key") @db.VarChar(128)
   points        Int       @default(1)

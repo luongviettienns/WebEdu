@@ -31,6 +31,12 @@ export class RegisterDto {
   @MaxLength(72)
   confirmPassword?: string;
 
+  @ApiPropertyOptional({ example: '123456' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  verificationCode?: string;
+
   @ApiPropertyOptional({ example: 'phuhuynh@example.com' })
   @IsOptional()
   @IsString()
@@ -41,6 +47,13 @@ export class RegisterDto {
   @IsOptional()
   @IsBoolean()
   guardianConsent?: boolean;
+}
+
+export class SendVerificationCodeDto {
+  @ApiProperty({ example: 'phuhuynh@example.com' })
+  @IsString()
+  @MaxLength(255)
+  email!: string;
 }
 
 export class LoginDto {

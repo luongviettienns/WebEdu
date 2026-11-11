@@ -19,7 +19,7 @@ export interface EnrollmentTraceProfile {
 }
 
 /**
- * Derives the enrollment facts that gate FUNC-008 status transitions:
+ * Derives the enrollment facts that gate student status transitions:
  * - No PENDING_CLASS -> ACTIVE bypass without valid active/initial enrollment.
  * - No re-queueing an enrolled student (even if DROPPED or TRANSFERRED) back to PENDING_CLASS.
  * - No reactivating a dropped pure student without a valid active/completed enrollment.

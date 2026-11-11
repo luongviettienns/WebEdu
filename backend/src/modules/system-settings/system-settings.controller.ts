@@ -42,7 +42,7 @@ export class SystemSettingsController {
 
   @Get('users')
   @Roles(Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Danh sách tài khoản hệ thống / quản trị (FUNC-013)' })
+  @ApiOperation({ summary: 'Danh sách tài khoản quản trị hệ thống' })
   async listSystemUsers(@Query() query: ListSystemUsersQueryDto) {
     return this.systemUsersService.listSystemUsers(query);
   }
@@ -50,7 +50,7 @@ export class SystemSettingsController {
   @Post('users')
   @HttpCode(HttpStatus.CREATED)
   @Roles(Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Tạo tài khoản nhân sự / Admin mới với trạng thái ACTIVE (FUNC-013)' })
+  @ApiOperation({ summary: 'Tạo tài khoản nhân sự / quản trị mới' })
   async createSystemUser(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateSystemUserDto,
@@ -61,8 +61,7 @@ export class SystemSettingsController {
   @Patch('users/:id/roles')
   @Roles(Role.SUPERADMIN)
   @ApiOperation({
-    summary:
-      'Cập nhật vai trò / trạng thái tài khoản — chống tự khóa và bảo vệ Superadmin cuối cùng (FUNC-013, SEC-07)',
+    summary: 'Cập nhật phân quyền và trạng thái tài khoản quản trị',
   })
   async updateUserRolesAndStatus(
     @CurrentUser() user: AuthenticatedUser,
@@ -75,14 +74,14 @@ export class SystemSettingsController {
   @Public()
   @Get('config')
   @Header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
-  @ApiOperation({ summary: 'Lấy cấu hình Tên trung tâm & Logo (Public cho màn Login & Header)' })
+  @ApiOperation({ summary: 'Lấy cấu hình Tên trung tâm và Logo' })
   async getSystemConfig() {
     return this.systemConfigService.getSystemConfig();
   }
 
   @Put('config')
   @Roles(Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Cập nhật Tên trung tâm & Logo — kiểm tra Magic Bytes PNG/JPG (FUNC-013)' })
+  @ApiOperation({ summary: 'Cập nhật Tên trung tâm và Logo' })
   async updateSystemConfig(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdateSystemConfigDto,
@@ -92,7 +91,7 @@ export class SystemSettingsController {
 
   @Get('audit-logs')
   @Roles(Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Nhật ký vận hành hệ thống mới nhất lên đầu, chỉ đọc (FUNC-013)' })
+  @ApiOperation({ summary: 'Danh sách nhật ký vận hành hệ thống' })
   async listAuditLogs(@Query() query: ListAuditLogsQueryDto) {
     return this.systemConfigService.listAuditLogs(query);
   }

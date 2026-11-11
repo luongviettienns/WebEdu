@@ -91,11 +91,46 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
       }
     })();
 
+    const recheckSession = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+      try {
+        const fresh = await fetchSessionUser();
+        setUser((prev) => {
+          if (!prev) return fresh;
+          if (
+            prev.id !== fresh.id ||
+            prev.status !== fresh.status ||
+            JSON.stringify(prev.roles) !== JSON.stringify(fresh.roles)
+          ) {
+            if (
+              allowedRoles &&
+              allowedRoles.length > 0 &&
+              !userHasAnyRole(fresh, allowedRoles)
+            ) {
+              setStatus('forbidden');
+            } else {
+              setStatus('authorized');
+            }
+            return fresh;
+          }
+          return prev;
+        });
+      } catch (err) {
+        handleApiAuthError(err);
+      }
+    };
+
+    window.addEventListener('focus', recheckSession);
+    document.addEventListener('visibilitychange', recheckSession);
+
     return () => {
       controller.abort();
+      window.removeEventListener('focus', recheckSession);
+      document.removeEventListener('visibilitychange', recheckSession);
     };
   }, [fetchSessionUser, allowedRoles, handleApiAuthError]);
-
 
   return {
     status,
@@ -109,11 +144,21 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
 export function usePortalSession(
   allowedRoles?: readonly Role[],
 ): PortalSessionState<AuthUserDto> {
-  return usePortalSessionBase(getCurrentUser, allowedRoles);
+  const fetchSessionUser = useCallback(
+    (options?: RequestOptions) => getCurrentUser(options),
+    [],
+  );
+  return usePortalSessionBase(fetchSessionUser, allowedRoles);
 }
 
-export function usePortalProfileSession(
+export function useProfileSession(
   allowedRoles?: readonly Role[],
 ): PortalSessionState<UserProfileDto> {
-  return usePortalSessionBase(getMyProfile, allowedRoles);
+  const fetchSessionUser = useCallback(
+    (options?: RequestOptions) => getMyProfile(options),
+    [],
+  );
+  return usePortalSessionBase(fetchSessionUser, allowedRoles);
 }
+
+export const usePortalProfileSession = useProfileSession;

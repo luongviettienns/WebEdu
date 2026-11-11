@@ -5,9 +5,9 @@ import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { ClassLifecycleStatus } from '../students.types.js';
 
 /**
- * FUNC-011 & DEC-024/025: A teacher is authorized to view student learning records ONLY when:
+ * A teacher is authorized to view student learning records ONLY when:
  * 1. The student is currently ACTIVE in an UPCOMING/ACTIVE class assigned to that teacher, OR
- * 2. The student completed (COMPLETED/ACTIVE) a COMPLETED class formerly led by that teacher (DEC-025 Case 1).
+ * 2. The student completed (COMPLETED/ACTIVE) a COMPLETED class formerly led by that teacher.
  * Students who TRANSFERRED or DROPPED out of an ongoing class are NOT operationally accessible.
  */
 export function buildTeacherAuthorizedEnrollmentFilter(
@@ -26,7 +26,7 @@ export function buildTeacherAuthorizedEnrollmentFilter(
         status: { in: [EnrollmentStatus.COMPLETED, EnrollmentStatus.ACTIVE] },
         class: {
           teacherId,
-          status: ClassStatus.COMPLETED,
+          status: { in: [ClassStatus.COMPLETED, ClassStatus.ARCHIVED] },
         },
       },
     ],
@@ -43,13 +43,13 @@ export interface LearningRecordScope {
 /**
  * Object-level authorization (anti IDOR/BOLA) for student data. Owns every
  * "who may see which student" decision so query/crud services never duplicate
- * role checks. Pure Superadmin never gains learning-data access (FUNC-013).
+ * role checks. Pure Superadmin never gains learning-data access.
  */
 @Injectable()
 export class StudentAccessService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** FUNC-007 / FUNC-010: Admin/Superadmin view any profile; a Student only their own. */
+  /** Admin/Superadmin view any profile; a Student only their own. */
   assertCanViewProfile(actor: AuthenticatedUser, studentId: string): void {
     const canViewAnyProfile =
       actor.roles.includes(Role.ADMIN) || actor.roles.includes(Role.SUPERADMIN);
@@ -65,7 +65,7 @@ export class StudentAccessService {
     }
   }
 
-  /** FUNC-007 & FUNC-013: internalNotes is strictly Admin-only (pure SUPERADMIN cannot view or modify). */
+  /** internalNotes is strictly Admin-only (pure SUPERADMIN cannot view or modify). */
   assertCanWriteInternalNotes(actor: AuthenticatedUser): void {
     if (!actor.roles.includes(Role.ADMIN)) {
       throw new ForbiddenException(
@@ -75,19 +75,19 @@ export class StudentAccessService {
   }
 
   /**
-   * FUNC-009/010/011 & DEC-026: decides whether the actor may read learning
-   * records and, for teachers, which classes they are restricted to.
+   * Decides whether the actor may read learning records and, for teachers,
+   * which classes they are restricted to.
    */
   async resolveLearningRecordScope(
     actor: AuthenticatedUser,
     studentId: string,
   ): Promise<LearningRecordScope> {
     if (actor.roles.includes(Role.ADMIN)) {
-      // Admin has full access to academic learning records (FUNC-009, DEC-026)
+      // Admin has full access to academic learning records
       return {};
     }
     if (actor.roles.includes(Role.STUDENT) && actor.id === studentId) {
-      // Student viewing own learning records (FUNC-010)
+      // Student viewing own learning records
       return {};
     }
     if (actor.roles.includes(Role.TEACHER)) {
@@ -106,7 +106,7 @@ export class StudentAccessService {
   }
 
   /**
-   * DEC-024: Quyền xem lịch sử lớp của học viên:
+   * Quyền xem lịch sử lớp của học viên:
    * - Học viên: chỉ xem lịch sử lớp của chính mình.
    * - Giáo viên hiện tại: KHÔNG được xem lịch sử lớp cũ của học viên.
    * - Admin: xem lịch sử của tất cả học viên.
@@ -128,7 +128,7 @@ export class StudentAccessService {
   }
 
   /**
-   * DEC-025: FULL only while the enrollment is ACTIVE in an UPCOMING/ACTIVE
+   * FULL only while the enrollment is ACTIVE in an UPCOMING/ACTIVE
    * class; any teacher-visible completed-class record is READ_ONLY.
    * Non-teacher actors (Admin / the student) always get FULL.
    */
@@ -147,13 +147,13 @@ export class StudentAccessService {
   }
 
   /**
-   * DEC-025 & DEC-026: Kiểm tra quyền truy cập dữ liệu lớp học của Giáo viên / Admin:
-   * - Admin: có toàn quyền truy cập & thao tác nghiệp vụ đào tạo (DEC-026).
-   * - Superadmin thuần: bị chặn truy cập dữ liệu học tập (FUNC-013).
+   * Kiểm tra quyền truy cập dữ liệu lớp học của Giáo viên / Admin:
+   * - Admin: có toàn quyền truy cập & thao tác nghiệp vụ đào tạo.
+   * - Superadmin thuần: bị chặn truy cập dữ liệu học tập.
    * - Giáo viên:
    *   + Lớp UPCOMING / ACTIVE do GV đang phụ trách -> FULL.
-   *   + Case 1 (DEC-025): Lớp đã kết thúc (COMPLETED/ARCHIVED) mà GV vẫn là người phụ trách -> READ_ONLY.
-   *   + Case 2 (DEC-025): GV đang dạy nhưng bị thay bằng GV khác (assignedTeacherId !== actor.id) -> 403 Forbidden.
+   *   + Lớp đã kết thúc (COMPLETED/ARCHIVED) mà GV vẫn là người phụ trách -> READ_ONLY.
+   *   + GV đang dạy nhưng bị thay bằng GV khác (assignedTeacherId !== actor.id) -> 403 Forbidden.
    */
   verifyClassLearningAccess(
     actor: AuthenticatedUser,

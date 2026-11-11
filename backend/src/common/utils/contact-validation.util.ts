@@ -36,7 +36,7 @@ export function assertValidContactFields(fields: {
   }
 }
 
-/** Password length rules for administratively created accounts (FUNC-006, FUNC-013). */
+/** Password length rules for administratively created accounts. */
 export function assertValidInitialPassword(password: string): void {
   if (password.length < 8) {
     throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự');

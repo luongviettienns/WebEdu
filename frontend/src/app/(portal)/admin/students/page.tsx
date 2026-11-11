@@ -4,7 +4,6 @@ import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { type AuthUserDto } from '@/features/auth/api/auth.api';
 import {
   listStudents,
@@ -83,40 +82,43 @@ function AdminStudentsContent({
   }, [debouncedSearch, statusFilter, classFilter, page, refreshTick, onAuthError]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader currentUser={currentUser} />
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-emerald-950">
-              Quản Lý Hồ Sơ Học Viên
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Tra cứu thông tin học viên, đối soát xác nhận đồng ý của cha mẹ và
-              cập nhật trạng thái tài khoản
-            </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+        <div>
+          <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+            学员管理 · HỒ SƠ HỌC VIÊN
           </div>
+          <h1 className="text-2xl font-bold text-[var(--ink)] tracking-tight">
+            Quản Lý Hồ Sơ Học Viên
+          </h1>
+          <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
+            Tra cứu thông tin học viên, đối soát xác nhận đồng ý của cha mẹ và
+            cập nhật trạng thái tài khoản
+          </p>
+        </div>
+        {currentUser.roles.includes('ADMIN') && (
           <Link
             href="/admin/students/pending"
-            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900 shadow-sm hover:bg-amber-100 transition-colors"
+            className="rounded-lg border border-[var(--amber)]/30 bg-[var(--amber-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--amber)] hover:bg-[var(--amber-soft)]/80 transition-colors shadow-xs"
           >
             📋 Danh sách chờ xếp lớp
           </Link>
-        </div>
+        )}
+      </div>
 
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="text"
-              placeholder="Tìm theo họ tên, email, SĐT..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-              className="w-72 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-            />
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            placeholder="Tìm theo họ tên, email, SĐT..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            className="w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+          />
+          {currentUser.roles.includes('ADMIN') && (
             <input
               type="text"
               placeholder="Lọc theo lớp..."
@@ -125,58 +127,58 @@ function AdminStudentsContent({
                 setClassFilter(e.target.value);
                 setPage(1);
               }}
-              className="w-44 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-44 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
             />
-            <select
-              value={statusFilter}
-              aria-label="Lọc theo trạng thái học viên"
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              className="rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none"
-            >
-              <option value="">Tất cả trạng thái</option>
-              <option value="ACTIVE">Đang hoạt động</option>
-              <option value="PENDING_CLASS">Chờ xếp lớp</option>
-              <option value="INACTIVE">Vô hiệu hóa</option>
-            </select>
-          </div>
-          <span className="text-xs font-medium text-slate-500">
-            Tổng số: <strong>{total}</strong> học viên
-          </span>
+          )}
+          <select
+            value={statusFilter}
+            aria-label="Lọc theo trạng thái học viên"
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
+          >
+            <option value="">Tất cả trạng thái</option>
+            <option value="ACTIVE">Đang hoạt động</option>
+            <option value="PENDING_CLASS">Chờ xếp lớp</option>
+            <option value="INACTIVE">Vô hiệu hóa</option>
+          </select>
         </div>
+        <span className="text-xs font-medium text-[var(--ink-3)] num">
+          Tổng số: <strong>{total}</strong> học viên
+        </span>
+      </div>
 
-        {successBanner ? (
-          <div
-            role="status"
-            className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-sm font-medium text-emerald-900"
-          >
-            {successBanner}
-          </div>
-        ) : null}
+      {successBanner && (
+        <div
+          role="status"
+          className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5 text-sm font-medium text-[var(--jade)]"
+        >
+          {successBanner}
+        </div>
+      )}
 
-        {errorBanner ? (
-          <div
-            role="alert"
-            className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm font-medium text-red-700"
-          >
-            {errorBanner}
-          </div>
-        ) : null}
+      {errorBanner && (
+        <div
+          role="alert"
+          className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3.5 text-sm font-medium text-[var(--red-ink)]"
+        >
+          {errorBanner}
+        </div>
+      )}
 
-        <StudentListTable
-          students={students}
-          loading={loading}
-          page={page}
-          total={total}
-          pageLimit={PAGE_LIMIT}
-          onPageChange={setPage}
-          onSelectStudent={setSelectedStudent}
-        />
-      </main>
+      <StudentListTable
+        students={students}
+        loading={loading}
+        page={page}
+        total={total}
+        pageLimit={PAGE_LIMIT}
+        onPageChange={setPage}
+        onSelectStudent={setSelectedStudent}
+      />
 
-      {selectedStudent ? (
+      {selectedStudent && (
         <StudentDetailModal
           initialStudent={selectedStudent}
           canManageInternalNotes={canManageInternalNotes}
@@ -187,7 +189,7 @@ function AdminStudentsContent({
           }}
           onAuthError={onAuthError}
         />
-      ) : null}
+      )}
     </div>
   );
 }

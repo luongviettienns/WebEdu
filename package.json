@@ -1,0 +1,22 @@
+{
+  "name": "webedu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nền tảng giáo dục trực tuyến WebEdu",
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run start:dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "lint:frontend": "npm --prefix frontend run lint",
+    "lint:backend": "npm --prefix backend run lint",
+    "typecheck:frontend": "npm --prefix frontend run typecheck",
+    "typecheck:backend": "npm --prefix backend run typecheck",
+    "test:backend": "npm --prefix backend run test",
+    "test:frontend": "npm --prefix frontend run test:e2e",
+    "prisma:generate": "npm --prefix backend run prisma:generate",
+    "prisma:migrate": "npm --prefix backend run prisma:migrate",
+    "seed": "npm --prefix backend run seed",
+    "test:mail": "node scripts/test-smtp.mjs"
+  }
+}

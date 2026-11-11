@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { EnrollmentStatus, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import {
@@ -26,9 +28,9 @@ const LAST_SUPERADMIN_MESSAGE =
   'Không thể tự vô hiệu hóa chính mình hoặc gỡ vai trò Superadmin cuối cùng';
 
 /**
- * Role/status mutation for any account (FUNC-013). Enforces SEC-07 (always one
- * ACTIVE Superadmin), FUNC-008 (no activation bypass of class placement) and
- * FUNC-006 (no stripping a teacher who still leads classes). Every change
+ * Role/status mutation for any account. Enforces maintaining at least one
+ * ACTIVE Superadmin, preventing activation bypass of class placement, and
+ * preventing stripping a teacher who still leads classes. Every change
  * revokes sessions via a tokenVersion bump.
  */
 @Injectable()
@@ -62,7 +64,7 @@ export class UserRoleStatusService {
         throw new NotFoundException('Không tìm thấy tài khoản');
       }
 
-      // If target or requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC (SEC-07).
+      // If target or requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC.
       const touchesSuperadmin =
         preliminary.roles.includes(Role.SUPERADMIN) ||
         (dto.roles !== undefined && dto.roles.includes(Role.SUPERADMIN));
@@ -70,8 +72,28 @@ export class UserRoleStatusService {
       if (touchesSuperadmin) {
         await lockUserAndActiveSuperadmins(tx, targetUserId);
       } else {
-        // Normal user role/status change: lock only target row to prevent contention (FIX-05)
+        // Normal user role/status change: lock only target row to prevent contention
         await lockTargetUser(tx, targetUserId);
+      }
+
+      // Re-verify actor inside transaction after locks are acquired to eliminate race window (F2)
+      const freshActor = await tx.user.findUnique({
+        where: { id: actor.id },
+        select: { id: true, roles: true, status: true, tokenVersion: true },
+      });
+      if (
+        !freshActor ||
+        freshActor.status !== UserStatus.ACTIVE ||
+        !freshActor.roles.includes(Role.SUPERADMIN)
+      ) {
+        throw new ForbiddenException(
+          'Chỉ Quản trị tối cao (Superadmin) mới có quyền phân quyền hoặc đổi trạng thái người dùng',
+        );
+      }
+      if (freshActor.tokenVersion !== actor.tokenVersion) {
+        throw new UnauthorizedException(
+          'Phiên đăng nhập đã hết hiệu lực, vui lòng đăng nhập lại',
+        );
       }
 
       const targetUser = await tx.user.findUnique({
@@ -88,6 +110,38 @@ export class UserRoleStatusService {
           : targetUser.roles;
       const nextStatus = dto.status ?? targetUser.status;
 
+      // F3: Prevent stale form from granting ADMIN/SUPERADMIN while deactivating or to inactive user
+      const isGrantingAdminPrivilege =
+        dto.roles !== undefined &&
+        ((dto.roles.includes(Role.ADMIN) &&
+          !targetUser.roles.includes(Role.ADMIN)) ||
+          (dto.roles.includes(Role.SUPERADMIN) &&
+            !targetUser.roles.includes(Role.SUPERADMIN)));
+
+      if (nextStatus === UserStatus.INACTIVE && isGrantingAdminPrivilege) {
+        throw new BadRequestException(
+          'Không thể cấp quyền quản trị (ADMIN/SUPERADMIN) cho tài khoản bị vô hiệu hóa',
+        );
+      }
+
+      // F4: Prevent removing STUDENT role if user has an active class enrollment
+      if (
+        targetUser.roles.includes(Role.STUDENT) &&
+        !nextRoles.includes(Role.STUDENT)
+      ) {
+        const activeEnrollmentCount = await tx.enrollment.count({
+          where: {
+            studentId: targetUserId,
+            status: EnrollmentStatus.ACTIVE,
+          },
+        });
+        if (activeEnrollmentCount > 0) {
+          throw new BadRequestException(
+            'Không thể gỡ vai trò Học viên khi học viên đang có lớp học đang hoạt động',
+          );
+        }
+      }
+
       if (
         !nextRoles.includes(Role.STUDENT) &&
         nextStatus === UserStatus.PENDING_CLASS
@@ -97,7 +151,7 @@ export class UserRoleStatusService {
         );
       }
 
-      // FUNC-008: forbid bypassing initial enrollment or reactivating a dropped
+      // Forbid bypassing initial enrollment or reactivating a dropped
       // pure student without an active/completed enrollment
       const willBePureStudent =
         nextRoles.length === 1 && nextRoles[0] === Role.STUDENT;
@@ -117,7 +171,7 @@ export class UserRoleStatusService {
         }
       }
 
-      // FUNC-006: cannot deactivate or strip TEACHER while still leading active/upcoming classes
+      // Cannot deactivate or strip TEACHER while still leading active/upcoming classes
       const isDroppingActiveTeacher =
         targetUser.roles.includes(Role.TEACHER) &&
         (nextStatus === UserStatus.INACTIVE ||
@@ -150,6 +204,17 @@ export class UserRoleStatusService {
         });
       }
 
+      if (nextRoles.includes(Role.STUDENT) && tx.studentProfile?.upsert) {
+        await tx.studentProfile.upsert({
+          where: { userId: targetUserId },
+          update: {},
+          create: {
+            userId: targetUserId,
+            dateOfBirth: new Date('2000-01-01'),
+          },
+        });
+      }
+
       await writeAuditLog(tx, actor, {
         action: 'UPDATE_USER_ROLES_STATUS',
         targetType: 'User',
@@ -166,7 +231,7 @@ export class UserRoleStatusService {
     });
   }
 
-  /** SEC-07: demoting/deactivating an active Superadmin requires another active one. */
+  /** Demoting/deactivating an active Superadmin requires another active one. */
   private async assertLastActiveSuperadminSurvives(
     tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
     targetUser: { id: string; roles: Role[]; status: UserStatus },

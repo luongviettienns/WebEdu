@@ -1,0 +1,88 @@
+# Rà soát RBAC và tính nhất quán dữ liệu trước Phase 3
+
+**ĐÃ ĐẠT ĐIỀU KIỆN TRIỂN KHAI PHASE 3 (100% FINDINGS F1..F9 RESOLVED & VERIFIED).** Toàn bộ 9/9 phát hiện bảo mật, xung đột đồng thời và bất biến dữ liệu đã được khắc phục triệt để và kiểm chứng tự động bằng bộ test độc lập `rbac-phase3.audit-spec.ts` (9/9 pass) cùng toàn bộ test suite backend (117 unit + 11 integration + 23 E2E pass) và frontend (20 Playwright E2E pass).
+
+## Phạm vi và chuẩn đối chiếu
+
+- Mã nguồn tại `9e2382c` trên nhánh `test/hardening-phase-02`. Rà các route xác thực, hồ sơ, giáo viên, học viên, xếp lớp đầu tiên và vận hành hệ thống, từ menu qua controller, guard, service, mapper đến PostgreSQL. Phân công/đổi giáo viên, chuyển/rút lớp và kết thúc/lưu trữ lớp chưa có API nghiệp vụ trong nhánh này. Các fixture cập nhật trực tiếp DB để kiểm chứng quyền đọc sau chuyển trạng thái.
+- Căn cứ gồm [Decision Log](../TD_Han_Ngu_Project_Context_v1.0/docs/01-business/decision-log.md), [ma trận nghiệp vụ](../TD_Han_Ngu_Project_Context_v1.0/docs/01-business/roles-permissions.md), [hợp đồng kiến trúc](../TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md) và [kế hoạch Phase 2](plans/phase-02-auth-users-rbac.md#L23). Danh mục test giúp xác định API đang có và khoanh vùng các chỗ hợp đồng lệch với code.
+- Áp dụng cách diễn giải cụ thể của Phase 2 cho DEC-020 và FUNC-013. Vai trò cao nhất chọn trang đích mặc định. Quyền API dựa vào các vai trò thực sự được gán, với ADMIN được thực hiện quyền vận hành của TEACHER. SUPERADMIN thuần cần được cô lập khỏi dữ liệu học tập theo DEC-024. Quyền từng đối tượng tiếp tục phụ thuộc vào ID học viên hoặc phân công lớp. [Role utility](../backend/src/common/auth/role-hierarchy.util.ts#L22) · [StudentAccessService](../backend/src/modules/students/services/student-access.service.ts#L79)
+
+## Ma trận menu, màn hình, API và đối tượng
+
+| Chức năng | Quyền mong đợi | Đối chiếu mã nguồn hiện tại |
+| --- | --- | --- |
+| Đăng ký, đăng nhập, khôi phục mật khẩu, đọc cấu hình công khai | Khách gọi được các route công khai. Các route có dữ liệu riêng tư yêu cầu phiên hợp lệ. | Ma trận API kiểm tra khách, token bị thu hồi và tài khoản bị khóa. Quyền sau khi qua guard có cửa sổ đua ở F2. |
+| Hồ sơ cá nhân | Mọi tài khoản đã xác thực chỉ thao tác trên chính tài khoản đó. | API dùng ID từ phiên. Nhiều tab dùng cùng cookie có thể hiển thị sai người thao tác như F5. |
+| Danh sách, chi tiết và sửa hồ sơ học viên | ADMIN vận hành. SUPERADMIN thao tác trong phạm vi quản trị. STUDENT chỉ đọc của mình. Giáo viên được xem hồ sơ giới hạn trong lớp được giao theo ma trận, danh sách trường còn TBD. Ghi chú học vụ chỉ ADMIN. | Học viên truy cập chéo bị chặn. TEACHER thuần bị chặn tại route chi tiết. SUPERADMIN thuần được trả trường lớp qua list/detail như F6. Admin nhắm vào tài khoản kiêm nhiệm có vấn đề F1 và F9. |
+| Xếp lớp ban đầu và đọc hàng chờ | Phải có ADMIN, bao gồm SUPERADMIN + ADMIN. | API và route page đúng. Menu, liên kết và badge lệch như F8. Cơ chế khóa học viên và chỉ mục duy nhất chặn hai enrollment ACTIVE. |
+| Giáo viên và hồ sơ giáo viên | ADMIN hoặc SUPERADMIN quản lý. Chỉ SUPERADMIN được sửa tài khoản đích mang ADMIN/SUPERADMIN. | API chặn khi vai trò đích ổn định. Có cửa sổ nâng quyền F1. UI hiện nút sai phạm vi và xử lý 403 như F9. |
+| Bản ghi học tập | STUDENT xem của mình. TEACHER xem các bản ghi thuộc lớp được giao, đã kết thúc thì chỉ đọc. ADMIN xem toàn bộ. | Các ca khác lớp, chuyển/rút và giáo viên cũ bị thay đã qua. Lớp ARCHIVED bị lọc mất như F7. |
+| Lịch sử lớp | STUDENT xem của mình. ADMIN xem toàn bộ. Giáo viên lớp mới và SUPERADMIN thuần bị chặn. | Các ca truy cập chéo đã qua. Học viên kiêm TEACHER hoặc SUPERADMIN vẫn xem được lịch sử của chính mình theo quyền STUDENT. |
+| Người dùng hệ thống, cập nhật cấu hình, nhật ký | Chỉ SUPERADMIN. | Guard route đúng. Ghi quyền có lỗi F2, F3, F4. |
+| Trang học viên và giáo viên | Quyền truy cập trang theo vai trò thực tế. Quyền đọc/ghi dữ liệu do backend quyết định. | Sidebar ưu tiên nhánh của vai trò cao nhất, thiếu trang học viên cho tài khoản kiêm nhiệm có STUDENT. Trang giáo viên hiện là màn nền cho Phase 3. |
+| Điểm danh, kho đề, công bố điểm và các quyền DEC-026 còn lại | ADMIN có các quyền được liệt kê trong quyết định. | Các API nghiệp vụ tương ứng chưa có trong phạm vi source hiện tại. |
+
+## Phát hiện
+
+| Mã và mức | Bằng chứng, nguyên nhân và ảnh hưởng | Phương án khắc phục |
+| --- | --- | --- |
+| **F1 · P1 · PostgreSQL/HTTP** | Admin mở PATCH giáo viên hoặc học viên. Trong lúc chờ khóa hàng, tài khoản đích được thêm SUPERADMIN. Request vẫn trả 200 và đổi email vì kiểm tra quyền trên dữ liệu đọc trước khóa. Email mới nhận được thư khôi phục trong probe SMTP cục bộ. Đây là đường chiếm tài khoản đặc quyền khi hai thao tác xen kẽ. [TeachersService](../backend/src/modules/teachers/teachers.service.ts#L174) · [StudentCrudService](../backend/src/modules/students/services/student-crud.service.ts#L82) · [Password recovery](../backend/src/modules/auth/services/password-recovery.service.ts#L103) | Kiểm tra vai trò đích bằng bản ghi đã khóa ngay trước khi ghi. Áp dụng cùng quy tắc khóa cho các chuyển đổi liên quan đến Superadmin. Hồi quy phải xác nhận 403 và email/audit mutation giữ nguyên. |
+| **F2 · P1 · PostgreSQL/HTTP** | SA2 đã qua guard và chờ khóa đích. SA1 hạ SA2 thành ADMIN. Sau đó PATCH của SA2 vẫn gán SUPERADMIN cho tài khoản thứ ba. Guard đọc vai trò và tokenVersion đầu request. Transaction cấp quyền không tái kiểm tra người thao tác. [JwtAuthGuard](../backend/src/common/guards/jwt-auth.guard.ts#L77) · [UserRoleStatusService](../backend/src/modules/system-settings/services/user-role-status.service.ts#L55) | Kiểm tra vai trò, trạng thái và phiên của actor trong transaction ghi quyền. Dùng thứ tự khóa nhất quán cho actor, target và tập Superadmin liên quan. |
+| **F3 · P1 · Trình duyệt và PostgreSQL/HTTP** | Modal lưu snapshot và gửi lại cả roles lẫn status. SA1 khóa Admin, SA2 chỉ thêm TEACHER từ form cũ, API khôi phục ACTIVE và người đó đăng nhập được. Luồng đảo chiều có thể khôi phục ADMIN đã bị gỡ. Khóa hàng tuần tự hóa lần ghi nhưng API không phát hiện dữ liệu form cũ. [Modal](../frontend/src/features/system-settings/components/EditUserRolesModal.tsx#L28) · [Service](../backend/src/modules/system-settings/services/user-role-status.service.ts#L85) | Gửi delta trường đã đổi và kiểm tra revision khi ghi. Trả 409 và tải lại bản mới khi dữ liệu bị xung đột. |
+| **F4 · P1 · PostgreSQL/HTTP** | PATCH thêm STUDENT cho tài khoản TEACHER tạo trạng thái có role mà thiếu StudentProfile. POST tài khoản hệ thống cũng chấp nhận STUDENT kiêm nhiệm và chỉ tạo TeacherProfile. PATCH gỡ STUDENT giữ enrollment ACTIVE. Việc xếp lớp chỉ cập nhật StudentProfile nếu đã có. Từ đó danh sách học viên, lớp hiện tại và enrollment có thể mô tả các trạng thái khác nhau. [CreateSystemUser](../backend/src/modules/system-settings/services/system-users.service.ts#L75) · [UpdateUserRolesAndStatus](../backend/src/modules/system-settings/services/user-role-status.service.ts#L94) · [AssignInitialClass](../backend/src/modules/students/services/student-enrollment.service.ts#L124) | Chốt điều kiện thêm/gỡ STUDENT với nghiệp vụ. Dùng luồng hoàn thiện hồ sơ có DOB/consent và transaction kiểm tra enrollment, hoặc từ chối thay đổi chưa đáp ứng điều kiện. Giữ lịch sử enrollment. |
+| **F5 · P1 · Trình duyệt** | Tab A mở form tạo giáo viên dưới tên Admin. Tab B đăng nhập Superadmin trong cùng browser context. A giữ nguyên tên Admin, gửi POST thành công và audit ghi actor là Superadmin. UI giữ snapshot, HTTP dùng cookie chung mới nhất. Hai phiên của một user bị thu hồi ở API đúng, nhưng tab đã mở tiếp tục hiển thị dữ liệu cũ đến lần kiểm tra phiên tiếp theo. [PortalShell](../frontend/src/components/layout/PortalShell.tsx#L15) · [usePortalSession](../frontend/src/features/auth/hooks/usePortalSession.ts#L58) · [HTTP client](../frontend/src/lib/api-client.ts#L107) | Đồng bộ danh tính giữa tab, làm mới khi quay lại tab và đóng form/dữ liệu thuộc tài khoản cũ. Ràng buộc mutation nhạy cảm với danh tính của phiên đã mở form để chống đổi cookie giữa kiểm tra và gửi. |
+| **F6 · P2 · PostgreSQL/HTTP** | SUPERADMIN thuần nhận `currentClassId` và `assignedClass` qua list/detail hồ sơ dù [hợp đồng API](test-inventory-api.md#L25) chỉ nêu dữ liệu định danh. List còn cho lọc theo lớp. DOB, guardian và enrollment metadata cũng được map không theo nhóm trường. [StudentsController](../backend/src/modules/students/students.controller.ts#L40) · [Student mapper](../backend/src/modules/students/mappers/student.mapper.ts#L54) · [Student query](../backend/src/modules/students/services/student-query.service.ts#L44) | Chốt allowlist trường quản trị theo nghiệp vụ. Áp dụng projection và bộ lọc theo quyền tại API list/detail, bao gồm kiểm tra kết hợp SUPERADMIN + STUDENT khi đọc hồ sơ người khác. |
+| **F7 · P2 · PostgreSQL/HTTP và đối chiếu source** | Khi lớp từ COMPLETED thành ARCHIVED, giáo viên vẫn phụ trách nhận 403 ở bản ghi học tập. Filter chỉ xét COMPLETED, trong khi helper khác cho READ_ONLY ở cả hai trạng thái. Ngoài ra, route hồ sơ loại TEACHER ngay từ guard, dù ma trận cho xem giới hạn trong lớp được giao. [Filter](../backend/src/modules/students/services/student-access.service.ts#L26) · [Helper](../backend/src/modules/students/services/student-access.service.ts#L158) · [Route hồ sơ](../backend/src/modules/students/students.controller.ts#L63) | Dùng chung phạm vi đọc COMPLETED/ARCHIVED. Sau khi chốt trường hồ sơ cho giáo viên, thêm quyền đọc theo phân công với DTO giới hạn, giữ chặn giáo viên ngoài lớp và giáo viên đã bị thay. |
+| **F8 · P2 · Trình duyệt** | SUPERADMIN thuần thấy liên kết hàng chờ tại danh sách học viên nhưng bấm vào bị từ chối. SUPERADMIN + ADMIN truy cập trực tiếp được nhưng thiếu mục trên sidebar. Sau xếp lớp, queue giảm từ 2 xuống 1, badge giữ 2. [Danh sách học viên](../frontend/src/app/(portal)/admin/students/page.tsx#L99) · [Sidebar](../frontend/src/components/layout/nav-links.ts#L23) · [Badge hook](../frontend/src/features/students/hooks/usePendingEnrollmentCount.ts#L13) | Dùng cùng điều kiện khả năng cho menu, link và route page. Làm mới số đếm sau mutation và khi quay lại màn hình để cập nhật thao tác từ Admin khác. |
+| **F9 · P2 · Trình duyệt và đối chiếu source** | Admin mở form sửa tài khoản ADMIN + TEACHER. PATCH bị chặn đúng bằng 403 nhưng UI ẩn cả danh sách giáo viên dù GET vẫn trả 200. UI cũng hiện nút với tài khoản SUPERADMIN + TEACHER. Modal học viên dùng cùng cách xử lý 403 qua callback của trang. [TeacherListTable](../frontend/src/features/teachers/components/TeacherListTable.tsx#L121) · [TeacherFormModal](../frontend/src/features/teachers/components/TeacherFormModal.tsx#L106) · [usePortalSession](../frontend/src/features/auth/hooks/usePortalSession.ts#L49) | Hiển thị hành động theo quyền trên bản ghi, dùng lỗi cục bộ cho 403 của đối tượng. Guard backend vẫn là nơi quyết định cuối. |
+
+## Rủi ro chưa có kiểm chứng đầu cuối
+
+| Rủi ro | Cần kiểm chứng |
+| --- | --- |
+| Phân công giáo viên và khóa/gỡ TEACHER chạy đồng thời | DEC-006 đã có `Class.teacherId` bắt buộc và FK đến User. FK không bảo đảm người được giao đang ACTIVE và có TEACHER. Kiểm tra cả hai thứ tự commit, khóa cùng User và Class, phân công không được để lớp đang mở thuộc người mất quyền. Thử cả trường hợp counter TeacherProfile cũ lớn hơn số Class thật. [Schema](../backend/prisma/schema.prisma#L185) · [Teacher invariant](../backend/src/common/policies/teacher-invariants.policy.ts#L12) |
+| Chuyển/rút/kết thúc lớp đồng thời với xếp lớp, khóa user hoặc chuyển lớp lần hai | Partial unique index bảo vệ tối đa một enrollment ACTIVE theo DEC-007. `currentClassId`, `assignedClass`, ngày xếp lớp và Enrollment còn có thể lệch nhau. Policy đang tính `currentClassId` cũ là bằng chứng đã xếp lớp dù thiếu enrollment hợp lệ. Cần xác nhận backfill dữ liệu cũ, rollback toàn bộ khi bước giữa lỗi và trạng thái cuối cho mọi thứ tự thao tác. [Migration](../backend/prisma/migrations/20261107103000_phase02_final_remediation/migration.sql#L106) · [Enrollment facts](../backend/src/common/policies/enrollment-invariants.policy.ts#L61) |
+| Lớp đóng cùng lúc với xếp lớp đầu tiên | Xếp lớp khóa User và đọc Class rồi ghi Enrollment. Cần có giao thức khóa hoặc kiểm tra có điều kiện dùng chung với API đóng lớp khi API đó được triển khai. [Enrollment service](../backend/src/modules/students/services/student-enrollment.service.ts#L91) |
+| Mở khóa hoặc đổi trạng thái ở tài khoản STAFF + STUDENT | Quy tắc kích hoạt và hàng chờ dùng cùng một User.status. Hai route sửa user phân biệt tài khoản thuần/kiêm nhiệm khác nhau. Cần chốt staff có thể hoạt động khi chưa hoàn thành onboarding học viên hay không và hậu quả với lịch sử lớp đã rút. [Student CRUD](../backend/src/modules/students/services/student-crud.service.ts#L275) · [Role/status service](../backend/src/modules/system-settings/services/user-role-status.service.ts#L91) |
+| Đổi email khi còn link đặt lại mật khẩu cũ | Token reset gắn `userId`. Kiểm tra link cũ trước và sau đổi email, khóa rồi mở lại, và đổi mật khẩu ở thiết bị khác. Cần phân biệt token reset với JWT khi thu hồi quyền. [Password recovery](../backend/src/modules/auth/services/password-recovery.service.ts#L168) |
+
+## Ma trận hồi quy
+
+| Nhóm | Ca hợp lệ, từ chối và biên | Bằng chứng hiện có |
+| --- | --- | --- |
+| Role guard | 4 vai trò riêng, mọi tổ hợp đa vai trò, role rỗng, quyền ADMIN kế thừa TEACHER, SUPERADMIN thuần không có quyền học vụ, khách và token hết hiệu lực. | Unit bổ sung 16 dòng ma trận, cùng [E2E inventory](../backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts#L157). |
+| Sở hữu và phân công | Student A/B cùng hoặc khác lớp, chỉ đọc của mình, 403 và dữ liệu B nguyên vẹn khi truy cập chéo. Giáo viên đúng/sai lớp, đã bị thay, TRANSFERRED/DROPPED, COMPLETED/ARCHIVED. Admin xem tất cả, SA thuần nhận trường cho phép. | [RBAC isolation](../backend/test/rbac-isolation.e2e-spec.ts#L281) và suite audit. Thêm hồi quy HTTP cho hồ sơ giáo viên khi danh sách trường được chốt. |
+| Bảo vệ quyền quản trị | Admin sửa tài khoản thường, từ chối tài khoản đặc quyền, nâng role đích khi Admin chờ khóa, hạ role actor khi đang cấp quyền, 2 Superadmin hạ quyền lẫn nhau và tối thiểu 1 ACTIVE còn lại. | [Integration](../backend/test/postgres.integration-spec.ts#L597) và suite audit. Audit chờ khóa thật bằng `pg_blocking_pids`. |
+| Phiên và biểu mẫu | 2 phiên của cùng user bị thu hồi, phiên của người khác còn hiệu lực. Hai Superadmin gửi form cũ. Hai tab chung cookie đổi người dùng; hai browser context độc lập; logout/revoke không reload. | Suite audit và ca Chromium tập trung. Suite UI hiện tại kiểm tra logout chéo sau reload. Cần giữ hồi quy tự động cho đổi tài khoản không reload khi xử lý F5. |
+| User/Profile/Enrollment | Thiếu StudentProfile khi thêm STUDENT, gỡ role với enrollment ACTIVE, thêm/gỡ TEACHER khi có lớp, xếp lớp thành công và 2 Admin xếp lớp cùng lúc. | Suite audit, [Integration](../backend/test/postgres.integration-spec.ts#L413) và [workflow E2E](../backend/test/phase2-workflows.e2e-spec.ts#L181). |
+| Phase 3 | Hai Admin chuyển cùng học viên vào hai lớp, giáo viên bị thay giữa request, khóa giáo viên trong lúc phân công, rút/xếp lại, rollback và retry. Chạy kiểm tra sau mỗi trạng thái và đếm bản ghi ACTIVE/ghi log. | Chưa có API để chạy đầu cuối. Điều kiện đầu ra gồm lịch sử nguyên vẹn, lớp hiện tại khớp enrollment, quyền giáo viên cũ bị thu hồi sau commit và dữ liệu user khác không đổi. |
+
+## Cách chạy
+
+Chạy từ `backend`. Suite audit dùng cấu hình riêng và ép dùng PostgreSQL tạm trên loopback. Suite hiện hành có thể dùng `TEST_DATABASE_URL` khi biến này được đặt. Để dùng PostgreSQL cô lập của harness trong PowerShell, bỏ hai biến khỏi tiến trình trước khi chạy. Máy Windows này có binary PostgreSQL tại đường dẫn đã được harness dò tìm.
+
+```powershell
+Remove-Item Env:TEST_DATABASE_URL,Env:DATABASE_URL -ErrorAction SilentlyContinue
+$env:NODE_ENV='test'
+npm run typecheck
+npm run lint
+npm test
+npm run test:integration
+npm run test:e2e
+npx vitest run --config vitest.config.rbac-audit.ts
+```
+
+[Suite audit](../backend/test/rbac-phase3.audit-spec.ts) kiểm tra các bất biến mong đợi. Các test tái hiện lỗi trả về thất bại thật, hữu ích làm điều kiện xác nhận sau khi sửa. Suite audit chạy riêng với bộ E2E thường dùng.
+
+## Kết quả chạy trên máy phát triển
+
+| Kiểm tra | Lệnh và kết quả |
+| --- | --- |
+| Typecheck và lint | `npm run typecheck`, `npm run lint` tại backend và frontend, cả bốn lệnh exit 0. |
+| Backend unit, integration và E2E thường | `npm test` 117/117, `npm run test:integration` 11/11, `npm run test:e2e` 23/23, cả ba exit 0. Integration và E2E dùng PostgreSQL tạm. |
+| Bộ audit riêng | `npx vitest run --config vitest.config.rbac-audit.ts`, exit 1. Một ca xác nhận thu hồi JWT đúng phạm vi tài khoản. Tám ca đỏ tại F1, F2, F3, F4, F6 và F7. |
+| Chromium tập trung | Các probe dùng Playwright qua Node, Next dev và Nest cục bộ với PostgreSQL tạm. Tái hiện F3, F5, F8 và F9 trên desktop 1440 × 900. |
+| Suite UI hiện hành | `node frontend/node_modules/playwright/cli.js test --config <cấu hình tạm>`, exit 1 ở cả hai lần, lần lượt 19/20 và 15/20. Cấu hình dùng server test cô lập đã khởi động và hai viewport 1440 × 900, 375 × 812. Các ca đỏ liên quan thông báo tuổi dưới 12, tên trung tâm trên header và lỗi Axe vùng cuộn của bảng học viên trên mobile. Nguyên nhân của các ca đỏ này chưa được cô lập. |
+| Rà soát độc lập | Hai lượt rà riêng đối chiếu quyền backend theo đối tượng và tính đồng bộ frontend. Kết quả đều chỉ ra lỗi cần xử lý. |
+| Git | Thay đổi giới hạn ở báo cáo, ma trận unit và bộ audit. Quy tắc nghiệp vụ đang chạy và migration giữ nguyên. |

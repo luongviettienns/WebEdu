@@ -79,7 +79,7 @@ function decodeQuotedPrintable(input) {
   return Buffer.from(bytes).toString('utf8');
 }
 
-async function startQaSmtpAndInspector(smtpPort, inspectorPort) {
+async function startQaSmtpAndInspector(smtpPort, inspectorPort, databaseUrl) {
   const messages = [];
 
   const smtpServer = net.createServer((socket) => {
@@ -154,7 +154,7 @@ async function startQaSmtpAndInspector(smtpPort, inspectorPort) {
     smtpServer.listen(smtpPort, '127.0.0.1', () => resolve());
   });
 
-  const inspectorServer = http.createServer((req, res) => {
+  const inspectorServer = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
     if (req.method === 'GET' && reqUrl.pathname === '/latest-token') {
       const email = (reqUrl.searchParams.get('email') ?? '').trim().toLowerCase();
@@ -171,6 +171,27 @@ async function startQaSmtpAndInspector(smtpPort, inspectorPort) {
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ token: foundToken, totalMessages: messages.length }));
+      return;
+    }
+    if (req.method === 'POST' && reqUrl.pathname === '/reset-rate-limits') {
+      const prisma = new PrismaClient({
+        datasources: { db: { url: databaseUrl } },
+      });
+      try {
+        await prisma.$executeRawUnsafe(
+          'TRUNCATE TABLE "auth_rate_limits", "email_rate_limits" RESTART IDENTITY CASCADE',
+        );
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+      } finally {
+        await prisma.$disconnect();
+      }
+      return;
+    }
+    if (req.method === 'POST' && reqUrl.pathname === '/reseed') {
+      await seedQaFixtures(databaseUrl);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
     res.writeHead(404);
@@ -203,7 +224,9 @@ async function seedQaFixtures(databaseUrl) {
         "enrollments",
         "classes",
         "courses",
+        "auth_rate_limits",
         "email_rate_limits",
+        "email_verifications",
         "password_reset_tokens",
         "guardian_consents",
         "teacher_profiles",
@@ -527,7 +550,7 @@ async function main() {
 
     const smtpPort = Number(process.env.QA_SMTP_PORT || 4025);
     const inspectorPort = Number(process.env.QA_MAIL_INSPECTOR_PORT || 4026);
-    const mailServers = await startQaSmtpAndInspector(smtpPort, inspectorPort);
+    const mailServers = await startQaSmtpAndInspector(smtpPort, inspectorPort, databaseUrl);
 
     const backendChild = spawn(process.execPath, ['dist/main.js'], {
       cwd: BACKEND_ROOT,
@@ -537,8 +560,8 @@ async function main() {
         PORT: '3001',
         DATABASE_URL: databaseUrl,
         JWT_SECRET: 'webedu-browser-qa-jwt-secret-key-at-least-32-chars-2026',
-        CORS_ORIGIN: 'http://localhost:3000',
-        FRONTEND_APP_URL: 'http://localhost:3000',
+        CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3005',
+        FRONTEND_APP_URL: process.env.FRONTEND_APP_URL || 'http://localhost:3005',
         MAIL_PROVIDER: 'smtp',
         SMTP_HOST: '127.0.0.1',
         SMTP_PORT: String(smtpPort),

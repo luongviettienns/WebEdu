@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
-import { AppHeader } from '@/components/layout/AppHeader';
 import { type AuthUserDto } from '@/features/auth/api/auth.api';
 import {
   getSystemConfig,
@@ -131,61 +130,60 @@ function SuperadminSettingsContent({
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader currentUser={currentUser} />
-
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-8">
-        <div>
-          <h1 className="text-2xl font-bold text-emerald-950">
-            Vận Hành Hệ Thống (Superadmin)
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Quản lý tài khoản quản trị, gán đa vai trò, cấu hình thương hiệu
-            trung tâm và giám sát nhật ký hệ thống
-          </p>
+    <div className="space-y-8">
+      <div className="border-b border-[#E0DED5] pb-4">
+        <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
+          系统运营 · VẬN HÀNH HỆ THỐNG
         </div>
+        <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
+          Vận Hành Hệ Thống (Superadmin)
+        </h1>
+        <p className="mt-1 text-sm text-[#5A6460]">
+          Quản lý tài khoản quản trị, gán đa vai trò, cấu hình thương hiệu
+          trung tâm và giám sát nhật ký hệ thống
+        </p>
+      </div>
 
-        <SystemUsersSection
-          users={users}
-          usersLoading={usersLoading}
-          userErrorBanner={userErrorBanner}
-          currentUserId={currentUser.id}
-          onAuthError={onAuthError}
-          onMutated={() => {
-            setUsersLoading(true);
-            setAuditLoading(true);
-            setRefreshUsersTick((t) => t + 1);
-            setRefreshAuditTick((t) => t + 1);
-          }}
-        />
+      <SystemUsersSection
+        users={users}
+        usersLoading={usersLoading}
+        userErrorBanner={userErrorBanner}
+        currentUserId={currentUser.id}
+        onAuthError={onAuthError}
+        onMutated={() => {
+          setUsersLoading(true);
+          setAuditLoading(true);
+          setRefreshUsersTick((t) => t + 1);
+          setRefreshAuditTick((t) => t + 1);
+        }}
+      />
 
-        <BrandConfigSection
-          centerName={centerName}
-          centerLogoBase64={centerLogoBase64}
-          onCenterNameChange={setCenterName}
-          onCenterLogoChange={setCenterLogoBase64}
-          onAuthError={onAuthError}
-          onConfigSaved={() => {
-            setAuditLoading(true);
-            setRefreshAuditTick((t) => t + 1);
-          }}
-        />
+      <BrandConfigSection
+        centerName={centerName}
+        centerLogoBase64={centerLogoBase64}
+        onCenterNameChange={setCenterName}
+        onCenterLogoChange={setCenterLogoBase64}
+        onAuthError={onAuthError}
+        onConfigSaved={() => {
+          setAuditLoading(true);
+          setRefreshAuditTick((t) => t + 1);
+        }}
+      />
 
-        <AuditLogsSection
-          auditLogs={auditLogs}
-          auditLoading={auditLoading}
-          auditPage={auditPage}
-          totalAuditPages={totalAuditPages}
-          onPrevPage={() => {
-            setAuditLoading(true);
-            setAuditPage((p) => Math.max(1, p - 1));
-          }}
-          onNextPage={() => {
-            setAuditLoading(true);
-            setAuditPage((p) => Math.min(totalAuditPages, p + 1));
-          }}
-        />
-      </main>
+      <AuditLogsSection
+        auditLogs={auditLogs}
+        auditLoading={auditLoading}
+        auditPage={auditPage}
+        totalAuditPages={totalAuditPages}
+        onPrevPage={() => {
+          setAuditLoading(true);
+          setAuditPage((p) => Math.max(1, p - 1));
+        }}
+        onNextPage={() => {
+          setAuditLoading(true);
+          setAuditPage((p) => Math.min(totalAuditPages, p + 1));
+        }}
+      />
     </div>
   );
 }

@@ -1,9 +1,11 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { Suspense, useState } from 'react';
 import { loginWithEmail } from '@/features/auth/api/auth.api';
+import { AuthArtSide } from '@/features/auth/components/AuthArtSide';
 import { LoginFormCard } from '@/features/auth/components/LoginFormCard';
 import { getDefaultRouteForRole } from '@/features/auth/roles';
 import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
@@ -84,51 +86,69 @@ function LoginFormContent() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-center bg-slate-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex flex-col items-center text-center">
-          {centerLogo ? (
-            <Image
-              src={centerLogo}
-              alt={centerName}
-              width={56}
-              height={56}
-              unoptimized
-              className="h-14 w-14 rounded-xl border border-emerald-200 bg-white object-contain p-1 shadow-sm"
-            />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-700 text-2xl font-bold text-white shadow-sm">
-              TD
-            </div>
-          )}
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-emerald-950">
-            {centerName}
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Đăng nhập vào Hệ thống Quản trị & Học tập HSK
-          </p>
-        </div>
-      </div>
+    <div className="flex min-h-screen w-full bg-[var(--paper)]">
+      {/* Cột Trái Nghệ Thuật Thư Họa Á Đông (Desktop >= 1024px) */}
+      <AuthArtSide />
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <LoginFormCard
-          email={email}
-          setEmail={setEmail}
-          password={password}
-          setPassword={setPassword}
-          rememberMe={rememberMe}
-          setRememberMe={setRememberMe}
-          emailError={emailError}
-          setEmailError={setEmailError}
-          passwordError={passwordError}
-          setPasswordError={setPasswordError}
-          serverError={serverError}
-          submitting={submitting}
-          registeredSuccess={registeredSuccess}
-          resetSuccess={resetSuccess}
-          idleTimeout={idleTimeout}
-          onSubmit={(e) => void handleSubmit(e)}
-        />
+      {/* Cột Phải Form Đăng Nhập */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div className="w-full max-w-[420px]">
+          {/* Mobile-only Branding Header */}
+          <div className="lg:hidden flex flex-col items-center text-center mb-4">
+            <Link href="/" className="flex items-center gap-2 mb-2">
+              {centerLogo ? (
+                <Image
+                  src={centerLogo}
+                  alt={centerName}
+                  width={48}
+                  height={48}
+                  unoptimized
+                  className="h-12 w-12 rounded-lg border border-[var(--line)] bg-white object-contain p-1 shadow-xs"
+                />
+              ) : (
+                <div className="seal">TD</div>
+              )}
+            </Link>
+            <h1 className="text-xl font-bold tracking-tight text-[var(--ink)]">
+              {centerName}
+            </h1>
+            <p className="text-xs text-[var(--ink-2)] mt-0.5 font-normal">
+              Hệ thống Quản trị & Học tập HSK
+            </p>
+          </div>
+
+          {/* Desktop Heading with Hanzi eyebrow */}
+          <div className="hidden lg:block mb-4">
+            <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+              登录 · HỆ THỐNG HSK
+            </div>
+            <h1 className="text-2xl font-bold text-[var(--ink)] tracking-tight">
+              Đăng nhập hệ thống
+            </h1>
+            <p className="text-sm text-[var(--ink-2)] mt-1">
+              Nhập email và mật khẩu của bạn để truy cập tài khoản.
+            </p>
+          </div>
+
+          <LoginFormCard
+            email={email}
+            setEmail={setEmail}
+            password={password}
+            setPassword={setPassword}
+            rememberMe={rememberMe}
+            setRememberMe={setRememberMe}
+            emailError={emailError}
+            setEmailError={setEmailError}
+            passwordError={passwordError}
+            setPasswordError={setPasswordError}
+            serverError={serverError}
+            submitting={submitting}
+            registeredSuccess={registeredSuccess}
+            resetSuccess={resetSuccess}
+            idleTimeout={idleTimeout}
+            onSubmit={(e) => void handleSubmit(e)}
+          />
+        </div>
       </div>
     </div>
   );
@@ -138,7 +158,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
+        <div className="flex min-h-screen items-center justify-center bg-[var(--paper)] text-sm text-[var(--ink-3)]">
           Đang tải trang đăng nhập...
         </div>
       }

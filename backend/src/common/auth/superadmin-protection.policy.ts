@@ -3,7 +3,7 @@ import { Role, UserStatus, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from './auth.types.js';
 
 /**
- * Shared protection rules around ADMIN / SUPERADMIN accounts (SEC-07, SEC-08).
+ * Shared protection rules around ADMIN / SUPERADMIN accounts.
  * These are reused by Students, Teachers and System Settings so that the
  * "last active Superadmin" invariant is enforced identically everywhere.
  */
@@ -35,7 +35,7 @@ export async function lockTargetUser(
  * Locks the target user plus every ACTIVE Superadmin in ONE statement with a
  * deterministic `ORDER BY id ASC FOR UPDATE`. Acquiring locks in ascending
  * primary-key order across all services makes AB-BA deadlocks (40P01)
- * impossible and serializes concurrent Superadmin demotions (SEC-07).
+ * impossible and serializes concurrent Superadmin demotions.
  */
 export async function lockUserAndActiveSuperadmins(
   tx: Prisma.TransactionClient,
@@ -49,7 +49,7 @@ export async function lockUserAndActiveSuperadmins(
   `;
 }
 
-/** SEC-08: only a Superadmin may modify an ADMIN or SUPERADMIN account. */
+/** Only a Superadmin may modify an ADMIN or SUPERADMIN account. */
 export function assertActorMayModifyAccount(
   actor: AuthenticatedUser,
   targetRoles: Role[],
@@ -73,7 +73,7 @@ export function isLeavingActiveSuperadmin(
   );
 }
 
-/** SEC-07: a Superadmin may never deactivate their own account. */
+/** A Superadmin may never deactivate their own account. */
 export function assertSuperadminNotSelfDeactivating(
   actor: AuthenticatedUser,
   target: { id: string; roles: Role[] },
@@ -90,7 +90,7 @@ export function assertSuperadminNotSelfDeactivating(
 }
 
 /**
- * SEC-07: at least one OTHER active Superadmin must remain. Evaluated against
+ * At least one OTHER active Superadmin must remain. Evaluated against
  * the rows locked by `lockUserAndActiveSuperadmins` in the same transaction.
  * Rows without role/status columns (legacy mocks) count as active Superadmins.
  */

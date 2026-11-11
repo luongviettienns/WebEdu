@@ -21,6 +21,7 @@ import {
   LoginDto,
   RegisterDto,
   ResetPasswordDto,
+  SendVerificationCodeDto,
 } from './dto/auth.dto.js';
 import { Public } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
@@ -40,9 +41,17 @@ export class AuthController {
   ) {}
 
   @Public()
+  @Post('send-verification-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Gửi mã xác thực OTP qua Email' })
+  async sendVerificationCode(@Body() dto: SendVerificationCodeDto) {
+    return this.registrationService.sendVerificationCode(dto.email);
+  }
+
+  @Public()
   @Post(['register', 'register/student'])
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Đăng ký tài khoản học viên mới (FUNC-001, FUNC-002)' })
+  @ApiOperation({ summary: 'Đăng ký tài khoản học viên mới' })
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
     const ipAddress = (req.ip || 'unknown').slice(0, 64);
     const userAgent =
@@ -56,7 +65,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng nhập bằng Email & Mật khẩu (FUNC-003)' })
+  @ApiOperation({ summary: 'Đăng nhập bằng Email và Mật khẩu' })
   async login(
     @Body() dto: LoginDto,
     @Req() req: Request,
@@ -87,7 +96,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đăng xuất và thu hồi phiên hiện tại (FUNC-004)' })
+  @ApiOperation({ summary: 'Đăng xuất và thu hồi phiên hiện tại' })
   async logout(
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
@@ -105,7 +114,7 @@ export class AuthController {
   @Public()
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Yêu cầu đặt lại mật khẩu qua Email (FUNC-005)' })
+  @ApiOperation({ summary: 'Yêu cầu đặt lại mật khẩu qua Email' })
   async forgotPassword(
     @Body() dto: ForgotPasswordDto,
     @Req() req: Request,
@@ -117,7 +126,7 @@ export class AuthController {
   @Public()
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Đặt lại mật khẩu bằng token một lần (FUNC-005)' })
+  @ApiOperation({ summary: 'Đặt lại mật khẩu bằng liên kết xác thực' })
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.passwordRecoveryService.resetPassword(dto);
   }

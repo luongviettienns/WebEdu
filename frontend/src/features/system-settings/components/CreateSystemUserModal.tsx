@@ -92,17 +92,17 @@ export function CreateSystemUserModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-emerald-950">
+      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold text-[var(--ink)]">
           Tạo Tài Khoản Quản Trị Mới
         </h2>
 
         {createError ? (
           <div
             role="alert"
-            className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700"
+            className="mt-3 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {createError}
           </div>
@@ -116,9 +116,9 @@ export function CreateSystemUserModal({
           <div className="space-y-1">
             <label
               htmlFor="sys-new-name"
-              className="block text-sm font-medium text-slate-800"
+              className="block text-sm font-medium text-[var(--ink)]"
             >
-              Họ và tên <span className="text-red-600">*</span>
+              Họ và tên <span className="text-[var(--red)]">*</span>
             </label>
             <input
               id="sys-new-name"
@@ -126,7 +126,7 @@ export function CreateSystemUserModal({
               required
               value={newFullName}
               onChange={(e) => setNewFullName(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900"
+              className="w-full rounded-lg border border-[var(--line-2)] px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
             />
           </div>
 
@@ -134,9 +134,9 @@ export function CreateSystemUserModal({
             <div className="space-y-1">
               <label
                 htmlFor="sys-new-phone"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Số điện thoại <span className="text-red-600">*</span>
+                Số điện thoại <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="sys-new-phone"
@@ -145,15 +145,15 @@ export function CreateSystemUserModal({
                 required
                 value={newPhone}
                 onChange={(e) => setNewPhone(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
             <div className="space-y-1">
               <label
                 htmlFor="sys-new-email"
-                className="block text-sm font-medium text-slate-800"
+                className="block text-sm font-medium text-[var(--ink)]"
               >
-                Email <span className="text-red-600">*</span>
+                Email <span className="text-[var(--red)]">*</span>
               </label>
               <input
                 id="sys-new-email"
@@ -161,7 +161,7 @@ export function CreateSystemUserModal({
                 required
                 value={newEmail}
                 onChange={(e) => setNewEmail(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3.5 py-2 text-sm text-slate-900"
+                className="w-full rounded-lg border border-[var(--line-2)] px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
               />
             </div>
           </div>
@@ -176,15 +176,15 @@ export function CreateSystemUserModal({
           />
 
           <div className="space-y-1.5">
-            <span className="block text-sm font-medium text-slate-800">
+            <span className="block text-sm font-medium text-[var(--ink)]">
               Gán vai trò (Chọn nhiều vai trò){' '}
-              <span className="text-red-600">*</span>
+              <span className="text-[var(--red)]">*</span>
             </span>
-            <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="grid grid-cols-2 gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
               {ALL_ROLES.map((role) => (
                 <label
                   key={role}
-                  className="inline-flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer"
+                  className="inline-flex items-center gap-2 text-xs font-medium text-[var(--ink)] cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -192,7 +192,7 @@ export function CreateSystemUserModal({
                     onChange={() =>
                       setNewRoles((prev) => toggleRoleInList(prev, role))
                     }
-                    className="h-4 w-4 rounded border-slate-300 text-emerald-700"
+                    className="h-4 w-4 rounded border-[var(--line-2)] accent-[var(--red)]"
                   />
                   <span>{ROLE_LABELS[role]}</span>
                 </label>
@@ -200,18 +200,18 @@ export function CreateSystemUserModal({
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
             >
               Hủy
             </button>
             <button
               type="submit"
               disabled={creating}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+              className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
             >
               {creating ? 'Đang tạo...' : 'Tạo tài khoản'}
             </button>

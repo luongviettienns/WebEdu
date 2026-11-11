@@ -20,6 +20,7 @@ import { CONSENT_TEXT_V1_0, CONSENT_VERSION } from '../../common/auth/auth.types
 
 interface AuthTestFacade {
   register: AuthRegistrationService['register'];
+  sendVerificationCode: AuthRegistrationService['sendVerificationCode'];
   login: AuthLoginService['login'];
   getMe: AuthSessionService['getMe'];
   logout: AuthSessionService['logout'];
@@ -34,6 +35,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
   let configService: ConfigService;
   let mailService: MailService;
   let sentResetEmails: PasswordResetEmailInput[];
+  let sentVerificationEmails: Array<{ toEmail: string; code: string; expiresInMinutes: number }>;
   let shouldFailEmailSend: boolean;
 
   interface MockUserRecord {
@@ -66,6 +68,18 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     { id: string; userId: string; tokenHash: string; expiresAt: Date; usedAt: Date | null }
   >;
   let emailRateLimitStore: Map<string, Date>;
+  let emailVerificationsStore: Map<
+    string,
+    {
+      id: string;
+      email: string;
+      codeHash: string;
+      expiresAt: Date;
+      attempts: number;
+      verifiedAt: Date | null;
+      createdAt: Date;
+    }
+  >;
   let authRateLimitStore: Map<
     string,
     { points: number; lastAttemptAt: Date; blockedUntil: Date | null }
@@ -77,6 +91,8 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     consentsStore = [];
     resetTokensStore = new Map();
     emailRateLimitStore = new Map();
+    emailVerificationsStore = new Map();
+    sentVerificationEmails = [];
     authRateLimitStore = new Map();
     sentResetEmails = [];
     shouldFailEmailSend = false;
@@ -276,6 +292,77 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
 
     // Serialize $transaction AND faithfully roll back store state if callback throws!
     let txChain = Promise.resolve();
+    const emailVerificationDelegate = {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const id = `ev-${emailVerificationsStore.size + 1}`;
+        const rec = {
+          id,
+          email: data.email as string,
+          codeHash: data.codeHash as string,
+          expiresAt: data.expiresAt as Date,
+          attempts: (data.attempts as number) ?? 0,
+          verifiedAt: (data.verifiedAt as Date | null) ?? null,
+          createdAt: new Date(),
+        };
+        emailVerificationsStore.set(id, rec);
+        return rec;
+      }),
+      findFirst: vi.fn(
+        async ({
+          where,
+          orderBy,
+        }: {
+          where: Record<string, unknown>;
+          orderBy?: Record<string, string>;
+        }) => {
+          const items = Array.from(emailVerificationsStore.values());
+          if (orderBy?.createdAt === 'desc') {
+            items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+          }
+          return (
+            items.find((v) => {
+              if (where.email && v.email !== where.email) return false;
+              if (where.verifiedAt === null && v.verifiedAt !== null) return false;
+              if (
+                where.expiresAt &&
+                typeof where.expiresAt === 'object' &&
+                'gt' in where.expiresAt &&
+                v.expiresAt <= (where.expiresAt as { gt: Date }).gt
+              ) {
+                return false;
+              }
+              return true;
+            }) ?? null
+          );
+        },
+      ),
+      update: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { id: string };
+          data: Record<string, unknown>;
+        }) => {
+          const rec = emailVerificationsStore.get(where.id);
+          if (!rec) return null;
+          if (
+            data.attempts &&
+            typeof data.attempts === 'object' &&
+            'increment' in data.attempts
+          ) {
+            rec.attempts += Number(
+              (data.attempts as { increment: number }).increment,
+            );
+          }
+          if (data.verifiedAt !== undefined) {
+            rec.verifiedAt = data.verifiedAt as Date | null;
+          }
+          return rec;
+        },
+      ),
+    };
+
     mockPrisma = {
       $queryRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
         const sql = strings.join('?');
@@ -361,6 +448,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       guardianConsent: guardianConsentDelegate,
       passwordResetToken: passwordResetTokenDelegate,
       emailRateLimit: emailRateLimitDelegate,
+      emailVerification: emailVerificationDelegate,
       $transaction: vi.fn(async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
         const prev = txChain;
         let release!: () => void;
@@ -407,16 +495,27 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         }
         sentResetEmails.push(input);
       }),
+      sendVerificationCodeEmail: vi.fn(
+        async (input: { toEmail: string; code: string; expiresInMinutes: number }) => {
+          sentVerificationEmails.push(input);
+        },
+      ),
     } as unknown as MailService;
 
     const prisma = mockPrisma as unknown as PrismaService;
     const sessionService = new AuthSessionService(prisma, jwtService, configService);
-    const registrationService = new AuthRegistrationService(prisma, sessionService);
+    const registrationService = new AuthRegistrationService(
+      prisma,
+      sessionService,
+      mailService,
+    );
     const loginService = new AuthLoginService(prisma, sessionService);
     const recoveryService = new PasswordRecoveryService(prisma, mailService);
 
     service = {
       register: registrationService.register.bind(registrationService),
+      sendVerificationCode:
+        registrationService.sendVerificationCode.bind(registrationService),
       login: loginService.login.bind(loginService),
       getMe: sessionService.getMe.bind(sessionService),
       logout: sessionService.logout.bind(sessionService),
@@ -438,15 +537,14 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       ).rejects.toThrowError(new BadRequestException('Học viên phải từ 12 tuổi trở lên'));
     });
 
-    it('requires guardianEmail and guardianConsent=true when student is 12-15 years old', async () => {
+    it('requires guardianConsent=true when student is 12-15 years old', async () => {
       await expect(
         service.register({
           fullName: 'Thiếu Niên',
           dateOfBirth: '2012-05-10',
           phone: '0901112223',
-          email: 'thieunien@example.com',
+          email: 'parent.thieunien@example.com',
           password: 'Password123',
-          guardianEmail: 'parent@example.com',
           guardianConsent: false,
         }),
       ).rejects.toThrowError(
@@ -454,39 +552,25 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       );
     });
 
-    it('allows two siblings aged 12-15 to share the same guardianEmail and records GuardianConsent snapshot (AUTH-01, AUTH-03)', async () => {
-      const sibling1 = await service.register(
+    it('registers student aged 12-15 using parent email and records immutable GuardianConsent snapshot', async () => {
+      const reg = await service.register(
         {
-          fullName: 'Nguyễn Văn Anh',
+          fullName: 'Nguyễn Văn An',
           dateOfBirth: '2012-03-15',
           phone: '0902223331',
-          email: 'anh.sibling@example.com',
+          email: 'Parent.An@Example.com ',
           password: 'Password123',
-          guardianEmail: 'Mother@Example.com ',
           guardianConsent: true,
         },
         { ipAddress: '127.0.0.1', userAgent: 'Vitest-Agent' },
       );
 
-      const sibling2 = await service.register(
-        {
-          fullName: 'Nguyễn Thị Em',
-          dateOfBirth: '2013-08-20',
-          phone: '0902223332',
-          email: 'em.sibling@example.com',
-          password: 'Password123',
-          guardianEmail: 'mother@example.com',
-          guardianConsent: true,
-        },
-        { ipAddress: '127.0.0.1', userAgent: 'Vitest-Agent' },
-      );
-
-      expect(sibling1.user.status).toBe(UserStatus.PENDING_CLASS);
-      expect(sibling2.user.status).toBe(UserStatus.PENDING_CLASS);
-      expect(consentsStore).toHaveLength(2);
+      expect(reg.user.status).toBe(UserStatus.PENDING_CLASS);
+      expect(reg.user.email).toBe('parent.an@example.com');
+      expect(consentsStore).toHaveLength(1);
       expect(consentsStore[0]).toEqual(
         expect.objectContaining({
-          guardianEmail: 'mother@example.com',
+          guardianEmail: 'parent.an@example.com',
           consented: true,
           consentVersion: CONSENT_VERSION,
           consentTextSnapshot: CONSENT_TEXT_V1_0,
@@ -496,7 +580,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       );
     });
 
-    it('rejects duplicate email or phone with 409 Conflict', async () => {
+    it('rejects duplicate email or phone with clear, specific 409 Conflict messages', async () => {
       await service.register({
         fullName: 'Học Viên 1',
         dateOfBirth: '2000-01-01',
@@ -505,6 +589,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         password: 'Password123',
       });
 
+      // Duplicate email only
       await expect(
         service.register({
           fullName: 'Học Viên 2',
@@ -513,7 +598,73 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           email: 'DUP@example.com',
           password: 'Password123',
         }),
-      ).rejects.toThrowError(new ConflictException('Email/Số điện thoại đã được sử dụng'));
+      ).rejects.toThrowError(
+        new ConflictException(
+          'Email này đã được sử dụng. Vui lòng đăng nhập hoặc sử dụng email khác',
+        ),
+      );
+
+      // Duplicate phone only
+      await expect(
+        service.register({
+          fullName: 'Học Viên 3',
+          dateOfBirth: '2000-01-01',
+          phone: '0903334444',
+          email: 'unique3@example.com',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(new ConflictException('Số điện thoại này đã được đăng ký'));
+
+      // Duplicate both email and phone
+      await expect(
+        service.register({
+          fullName: 'Học Viên 4',
+          dateOfBirth: '2000-01-01',
+          phone: '0903334444',
+          email: 'dup@example.com',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(
+        new ConflictException('Email và số điện thoại này đã được sử dụng'),
+      );
+    });
+
+    it('sends 6-digit verification code, enforces rate limit cooldown, and validates OTP on register', async () => {
+      // 1. Send verification code
+      const sendResult = await service.sendVerificationCode('test.otp@example.com');
+      expect(sendResult.expiresInSeconds).toBe(600);
+      expect(sentVerificationEmails).toHaveLength(1);
+      const sentEmail = sentVerificationEmails[0]!;
+      expect(sentEmail.toEmail).toBe('test.otp@example.com');
+      expect(sentEmail.code).toHaveLength(6);
+
+      // 2. Rate limit cooldown within 60s
+      await expect(
+        service.sendVerificationCode('test.otp@example.com'),
+      ).rejects.toThrowError(HttpException);
+
+      // 3. Register with wrong code
+      await expect(
+        service.register({
+          fullName: 'Học Viên OTP',
+          dateOfBirth: '2000-01-01',
+          phone: '0908889999',
+          email: 'test.otp@example.com',
+          password: 'Password123',
+          verificationCode: '000000',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Mã xác thực không chính xác'));
+
+      // 4. Register with correct code
+      const regSuccess = await service.register({
+        fullName: 'Học Viên OTP',
+        dateOfBirth: '2000-01-01',
+        phone: '0908889999',
+        email: 'test.otp@example.com',
+        password: 'Password123',
+        verificationCode: sentEmail.code,
+      });
+      expect(regSuccess.user.status).toBe(UserStatus.PENDING_CLASS);
     });
   });
 
@@ -721,6 +872,202 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           429,
         ),
       );
+    });
+
+    it('validates resetPassword token, password length, and confirmPassword mismatch', async () => {
+      await expect(
+        service.resetPassword({ token: '', newPassword: 'ValidPassword123' }),
+      ).rejects.toThrowError(new BadRequestException('Link đã hết hạn, vui lòng gửi lại'));
+
+      await expect(
+        service.resetPassword({ token: 'abc', newPassword: 'short' }),
+      ).rejects.toThrowError(new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự'));
+
+      await expect(
+        service.resetPassword({ token: 'abc', newPassword: 'A'.repeat(73) }),
+      ).rejects.toThrowError(
+        new BadRequestException('Mật khẩu không được vượt quá 72 ký tự'),
+      );
+
+      await expect(
+        service.resetPassword({
+          token: 'abc',
+          newPassword: 'ValidPassword123',
+          confirmPassword: 'DifferentPassword123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Xác nhận mật khẩu không khớp'));
+    });
+  });
+
+  describe('FUNC-004: AuthSessionService getMe, logout & Registration Contact Validation', () => {
+    it('returns AuthUserDto on getMe, throws NotFoundException on unknown id, and increments tokenVersion on logout', async () => {
+      const reg = await service.register({
+        fullName: 'Học Viên Phiên',
+        dateOfBirth: '2002-04-15',
+        phone: '0904445555',
+        email: 'session@example.com',
+        password: 'Password123',
+      });
+
+      const me = await service.getMe(reg.user.id);
+      expect(me.email).toBe('session@example.com');
+      expect(me.effectiveRole).toBe(Role.STUDENT);
+
+      await expect(service.getMe('nonexistent-id')).rejects.toThrowError(
+        'Tài khoản không tồn tại',
+      );
+
+      const logoutRes = await service.logout(reg.user.id);
+      expect(logoutRes.message).toBe('Đăng xuất thành công');
+      expect(usersStore.get(reg.user.id)?.tokenVersion).toBe(1);
+    });
+
+    it('validates fullName, email, phone, password length, confirmPassword, and guardianEmail during registration', async () => {
+      await expect(
+        service.register({
+          fullName: '   ',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Họ và tên không được để trống'));
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'not-an-email',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Email không hợp lệ'));
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '12345',
+          email: 'valid@example.com',
+          password: 'Password123',
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0'),
+      );
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'short',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự'));
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'P'.repeat(73),
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Mật khẩu không được vượt quá 72 ký tự'),
+      );
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên',
+          dateOfBirth: '2000-01-01',
+          phone: '0901112222',
+          email: 'valid@example.com',
+          password: 'Password123',
+          confirmPassword: 'MismatchPassword123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Xác nhận mật khẩu không khớp'));
+
+      await expect(
+        service.register({
+          fullName: 'Thiếu Niên',
+          dateOfBirth: '2012-05-10',
+          phone: '0901112222',
+          email: 'teen@example.com',
+          password: 'Password123',
+          guardianConsent: false,
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Vui lòng xác nhận đã có sự đồng ý của cha mẹ'),
+      );
+    });
+
+    it('enforces exact 15m lockout expiry, 60s forgot-password cooldown, and 15m reset token TTL under fake clock (Bước 3.D)', async () => {
+      await service.register({
+        fullName: 'Học Viên Đồng Hồ',
+        dateOfBirth: '2000-01-01',
+        phone: '0906667777',
+        email: 'clock@example.com',
+        password: 'CorrectPassword123',
+      });
+
+      vi.useFakeTimers();
+      try {
+        const baseNow = new Date('2026-11-07T23:59:59+07:00');
+        vi.setSystemTime(baseNow);
+
+        // 1. Trigger 5 wrong logins -> locked for 15 minutes
+        for (let i = 0; i < 5; i++) {
+          await expect(
+            service.login({ email: 'clock@example.com', password: 'WrongPassword!' }),
+          ).rejects.toThrow();
+        }
+
+        // At +14m 59s -> still locked
+        vi.setSystemTime(new Date(baseNow.getTime() + (14 * 60 + 59) * 1000));
+        await expect(
+          service.login({ email: 'clock@example.com', password: 'CorrectPassword123' }),
+        ).rejects.toThrowError('Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần');
+
+        // At +15m 01s -> lockout expired, login succeeds!
+        vi.setSystemTime(new Date(baseNow.getTime() + (15 * 60 + 1) * 1000));
+        const unlockedLogin = await service.login({
+          email: 'clock@example.com',
+          password: 'CorrectPassword123',
+        });
+        expect(unlockedLogin.user.email).toBe('clock@example.com');
+
+        // 2. Forgot password 60s cooldown & 15m token TTL
+        const t0 = new Date('2026-11-08T10:00:00+07:00');
+        vi.setSystemTime(t0);
+        await service.forgotPassword({ email: 'clock@example.com' });
+        const firstToken = sentResetEmails[sentResetEmails.length - 1]!.rawToken;
+
+        // At +59s -> still in cooldown
+        vi.setSystemTime(new Date(t0.getTime() + 59 * 1000));
+        await expect(
+          service.forgotPassword({ email: 'clock@example.com' }),
+        ).rejects.toThrowError('Vui lòng đợi trước khi gửi lại yêu cầu');
+
+        // At +61s -> cooldown expired, can request again
+        vi.setSystemTime(new Date(t0.getTime() + 61 * 1000));
+        await service.forgotPassword({ email: 'clock@example.com' });
+        const secondToken = sentResetEmails[sentResetEmails.length - 1]!.rawToken;
+
+        // Advance to t0 + 15m 01s -> firstToken (issued at t0) has expired (> 15m TTL)!
+        vi.setSystemTime(new Date(t0.getTime() + (15 * 60 + 1) * 1000));
+        await expect(
+          service.resetPassword({ token: firstToken, newPassword: 'NewPassword456' }),
+        ).rejects.toThrowError('Link đã hết hạn, vui lòng gửi lại');
+
+        // Advance to t0 + 61s + 15m 01s -> secondToken (issued at t0 + 61s) has also expired!
+        vi.setSystemTime(new Date(t0.getTime() + (61 + 15 * 60 + 1) * 1000));
+        await expect(
+          service.resetPassword({ token: secondToken, newPassword: 'NewPassword456' }),
+        ).rejects.toThrowError('Link đã hết hạn, vui lòng gửi lại');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

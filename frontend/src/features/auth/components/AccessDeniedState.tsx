@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import React from 'react';
-import { AppHeader } from '@/components/layout/AppHeader';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { getDefaultRouteForRole } from '@/features/auth/roles';
 import { ROLE_LABELS, type Role } from '@/types/user';
@@ -48,9 +47,9 @@ export function AccessDeniedState({
   return (
     <div
       role="alert"
-      className="mx-auto max-w-xl rounded-2xl border border-rose-200 bg-white p-8 text-center shadow-sm sm:p-10"
+      className="mx-auto max-w-xl rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-8 text-center shadow-xs sm:p-10"
     >
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-700 ring-1 ring-rose-200">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--red-soft)] text-[var(--red)] ring-1 ring-[var(--red)]/20">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
@@ -67,36 +66,36 @@ export function AccessDeniedState({
         </svg>
       </div>
 
-      <span className="mt-4 inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-3 py-0.5 text-xs font-semibold text-rose-800">
+      <span className="mt-4 inline-flex items-center rounded-full border border-[var(--red)]/20 bg-[var(--red-soft)] px-3 py-0.5 text-xs font-semibold text-[var(--red-ink)]">
         403 — Giới hạn quyền truy cập
       </span>
 
-      <h1 className="mt-3 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+      <h1 className="mt-3 text-xl font-bold tracking-tight text-[var(--ink)] sm:text-2xl">
         {title}
       </h1>
 
-      <p className="mt-2 text-sm leading-relaxed text-slate-600">
+      <p className="mt-2 text-sm leading-relaxed text-[var(--ink-2)]">
         {resolvedDescription}
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <Link
           href={homeHref}
-          className="rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 transition-colors"
+          className="rounded-xl bg-[var(--red)] px-5 py-2.5 text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-ink)] transition-colors"
         >
           {homeLabel}
         </Link>
         {currentUser ? (
           <Link
             href="/profile"
-            className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--hover)] transition-colors"
           >
             Hồ sơ cá nhân
           </Link>
         ) : (
           <Link
             href="/login"
-            className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+            className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-5 py-2.5 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--hover)] transition-colors"
           >
             Đăng nhập lại
           </Link>
@@ -125,44 +124,37 @@ export function PortalGuardView({
   errorMessage,
 }: PortalGuardViewProps) {
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppHeader
-        currentUser={currentUser}
-        authLoading={status === 'checking' || status === 'unauthorized'}
-      />
-
-      <main className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
-        {status === 'checking' ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
-            Đang kiểm tra phiên đăng nhập và quyền truy cập...
+    <div className="mx-auto max-w-5xl py-8">
+      {status === 'checking' ? (
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-10 text-center text-sm text-[var(--ink-3)] shadow-xs">
+          Đang kiểm tra phiên đăng nhập và quyền truy cập...
+        </div>
+      ) : status === 'unauthorized' ? (
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-10 text-center text-sm text-[var(--ink-3)] shadow-xs">
+          Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Đang chuyển hướng về
+          trang đăng nhập...
+        </div>
+      ) : status === 'forbidden' ? (
+        <AccessDeniedState currentUser={currentUser} />
+      ) : (
+        <div
+          role="alert"
+          className="mx-auto max-w-xl rounded-2xl border border-[var(--red)]/20 bg-[var(--red-soft)] p-6 text-center shadow-xs"
+        >
+          <p className="text-sm font-semibold text-[var(--red-ink)]">
+            {errorMessage ||
+              'Không thể xác minh phiên đăng nhập lúc này. Vui lòng thử lại.'}
+          </p>
+          <div className="mt-4 flex justify-center gap-3">
+            <Link
+              href="/login"
+              className="rounded-lg bg-[var(--red)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--red-ink)] transition-colors"
+            >
+              Đến trang Đăng nhập
+            </Link>
           </div>
-        ) : status === 'unauthorized' ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 shadow-sm">
-            Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Đang chuyển hướng về
-            trang đăng nhập...
-          </div>
-        ) : status === 'forbidden' ? (
-          <AccessDeniedState currentUser={currentUser} />
-        ) : (
-          <div
-            role="alert"
-            className="mx-auto max-w-xl rounded-2xl border border-red-200 bg-red-50 p-6 text-center shadow-sm"
-          >
-            <p className="text-sm font-semibold text-red-800">
-              {errorMessage ||
-                'Không thể xác minh phiên đăng nhập lúc này. Vui lòng thử lại.'}
-            </p>
-            <div className="mt-4 flex justify-center gap-3">
-              <Link
-                href="/login"
-                className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
-              >
-                Đến trang Đăng nhập
-              </Link>
-            </div>
-          </div>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }

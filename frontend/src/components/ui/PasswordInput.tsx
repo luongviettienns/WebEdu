@@ -27,10 +27,10 @@ export function PasswordInput({
     <div className="space-y-1.5">
       <label
         htmlFor={inputId}
-        className="block text-sm font-medium text-slate-800"
+        className="block text-sm font-medium text-[var(--ink)]"
       >
         {label}
-        {required ? <span className="ml-1 text-red-600">*</span> : null}
+        {required ? <span className="ml-1 text-[var(--red)]">*</span> : null}
       </label>
 
       <div className="relative">
@@ -40,10 +40,10 @@ export function PasswordInput({
           required={required}
           aria-invalid={Boolean(error)}
           aria-describedby={error ? errorId : undefined}
-          className={`w-full rounded-lg border px-3.5 py-2.5 pr-11 text-sm text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 ${
+          className={`w-full rounded-lg border px-3.5 py-2 pr-11 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] transition-colors focus:outline-none focus:ring-2 ${
             error
-              ? 'border-red-500 bg-red-50/40 focus:border-red-600 focus:ring-red-500/20'
-              : 'border-slate-300 bg-white focus:border-emerald-700 focus:ring-emerald-600/20'
+              ? 'border-[var(--red)] bg-[var(--red-soft)]/40 focus:border-[var(--red)] focus:ring-[var(--red)]/20'
+              : 'border-[var(--line-2)] bg-white focus:border-[var(--blue)] focus:ring-[var(--blue)]/20'
           } ${className}`}
           {...rest}
         />
@@ -53,7 +53,7 @@ export function PasswordInput({
           onClick={() => setVisible((prev) => !prev)}
           aria-label={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
           title={visible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-emerald-800 focus:outline-none"
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-[var(--ink-2)] hover:text-[var(--ink)] focus:outline-none"
         >
           {visible ? (
             <svg
@@ -91,11 +91,11 @@ export function PasswordInput({
       </div>
 
       {hint && !error ? (
-        <p className="text-xs text-slate-500">{hint}</p>
+        <p className="text-xs text-[var(--ink-2)]">{hint}</p>
       ) : null}
 
       {error ? (
-        <p id={errorId} role="alert" className="text-xs font-medium text-red-600">
+        <p id={errorId} role="alert" className="text-xs font-medium text-[var(--red-ink)]">
           {error}
         </p>
       ) : null}

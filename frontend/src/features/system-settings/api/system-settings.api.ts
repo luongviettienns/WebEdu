@@ -28,7 +28,7 @@ export interface CreateSystemUserPayload {
 }
 
 export interface UpdateSystemUserRolesPayload {
-  roles: Role[];
+  roles?: Role[];
   status?: UserStatus;
 }
 
@@ -117,6 +117,7 @@ export async function getSystemConfig(
   return fetchApi<SystemConfigDto>('/system-settings/config', {
     method: 'GET',
     signal: options?.signal,
+    cache: 'no-store',
   });
 }
 

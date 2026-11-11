@@ -20,7 +20,16 @@ describe('ProfileService (FUNC-078)', () => {
     roles: Role[];
     status: UserStatus;
     tokenVersion: number;
-    studentProfile: { dateOfBirth: Date; assignedClass: string | null } | null;
+    studentProfile: {
+      dateOfBirth: Date;
+      assignedClass: string | null;
+      guardianEmail?: string | null;
+      consent?: {
+        consentedAt: Date;
+        guardianEmail: string;
+        consentVersion: string;
+      } | null;
+    } | null;
     teacherProfile: { activeClassesCount: number } | null;
     _count: { taughtClasses: number };
   };
@@ -114,6 +123,33 @@ describe('ProfileService (FUNC-078)', () => {
     expect(auditLogs[0]?.action).toBe('UPDATE_MY_PROFILE');
   });
 
+  it('preserves immutable GuardianConsent history when student turns 16 and updates to personal email (FUNC-078)', async () => {
+    // Initial state: registered at age 14 with parent's email
+    userState.email = 'parent.phuhuynh@example.com';
+    userState.studentProfile = {
+      dateOfBirth: new Date('2010-05-15'),
+      assignedClass: null,
+      guardianEmail: 'parent.phuhuynh@example.com',
+      consent: {
+        consentedAt: new Date('2024-05-15'),
+        guardianEmail: 'parent.phuhuynh@example.com',
+        consentVersion: 'v1.0',
+      },
+    };
+
+    // Student turns 16 and updates to their personal email
+    const result = await service.updateMyProfile('u-1', {
+      email: 'student.truongthanh@example.com',
+      currentPassword: 'CurrentPass123',
+    });
+
+    expect(result.profile.email).toBe('student.truongthanh@example.com');
+    // GuardianConsent must remain untouched and strictly preserve original parent email
+    expect(userState.studentProfile?.consent?.guardianEmail).toBe(
+      'parent.phuhuynh@example.com',
+    );
+  });
+
   it('maps P2002 unique violation during concurrent profile update to 409 Conflict', async () => {
     const p2002Prisma = {
       user: {
@@ -138,5 +174,81 @@ describe('ProfileService (FUNC-078)', () => {
     await expect(
       raceService.updateMyProfile('u-1', { phone: '0909998888' }),
     ).rejects.toThrowError(new ConflictException('Email/Số điện thoại đã được sử dụng'));
+  });
+
+  it('validates currentPassword, length, confirmation, and non-reuse in changePassword and rotates session', async () => {
+    await expect(
+      service.changePassword('u-1', {
+        currentPassword: 'WrongPassword',
+        newPassword: 'NewPassword@123',
+      }),
+    ).rejects.toThrowError(new BadRequestException('Mật khẩu hiện tại không đúng'));
+
+    await expect(
+      service.changePassword('u-1', {
+        currentPassword: 'CurrentPass123',
+        newPassword: 'short',
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Mật khẩu mới phải có ít nhất 8 ký tự'),
+    );
+
+    await expect(
+      service.changePassword('u-1', {
+        currentPassword: 'CurrentPass123',
+        newPassword: 'A'.repeat(73),
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Mật khẩu mới không được vượt quá 72 ký tự'),
+    );
+
+    await expect(
+      service.changePassword('u-1', {
+        currentPassword: 'CurrentPass123',
+        newPassword: 'NewPassword@123',
+        confirmPassword: 'DifferentPassword@123',
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Xác nhận mật khẩu không khớp'),
+    );
+
+    await expect(
+      service.changePassword('u-1', {
+        currentPassword: 'CurrentPass123',
+        newPassword: 'CurrentPass123',
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Mật khẩu mới không được trùng mật khẩu hiện tại'),
+    );
+
+    const res = await service.changePassword(
+      'u-1',
+      {
+        currentPassword: 'CurrentPass123',
+        newPassword: 'NewPassword@456',
+        confirmPassword: 'NewPassword@456',
+      },
+      { rememberMe: false },
+    );
+    expect(res.message).toBe('Đổi mật khẩu thành công');
+    expect(res.expiresIn).toBe(3600);
+    expect(userState.tokenVersion).toBe(3);
+  });
+
+  it('maps student profile dateOfBirth and isDateOfBirthReadOnly in getMyProfile and updates fullName without rotating session', async () => {
+    userState.roles = [Role.STUDENT];
+    userState.studentProfile = {
+      dateOfBirth: new Date('2010-05-20T00:00:00.000Z'),
+      assignedClass: 'HSK1-K26-01',
+    };
+    const studentProfile = await service.getMyProfile('u-1');
+    expect(studentProfile.dateOfBirth).toBe('2010-05-20');
+    expect(studentProfile.assignedClass).toBe('HSK1-K26-01');
+
+    const res = await service.updateMyProfile('u-1', {
+      fullName: 'Học Viên Đổi Tên',
+    });
+    expect(res.profile.fullName).toBe('Học Viên Đổi Tên');
+    expect(res.rotatedSession).toBeUndefined();
   });
 });

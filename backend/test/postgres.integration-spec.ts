@@ -289,15 +289,14 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       }),
     ).rejects.toThrowError(BadRequestException);
 
-    // Sibling 1 & Sibling 2 (aged 13-14) share same parent guardianEmail
+    // Under-16 students register using parent email + consent checkbox
     const s1 = await authService.register(
       {
         fullName: 'Nguyễn Minh Châu',
         dateOfBirth: DOB_TEEN_14,
         phone: '0901000011',
-        email: 'chau.teen@example.com',
+        email: 'parent.chau@example.com',
         password: 'Password@123',
-        guardianEmail: 'parent.family@example.com',
         guardianConsent: true,
       },
       { ipAddress: '203.113.10.5', userAgent: 'IntegrationTest/1.0' },
@@ -308,9 +307,8 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
         fullName: 'Nguyễn Minh Khang',
         dateOfBirth: DOB_TEEN_13,
         phone: '0901000012',
-        email: 'khang.teen@example.com',
+        email: 'parent.khang@example.com',
         password: 'Password@123',
-        guardianEmail: 'parent.family@example.com',
         guardianConsent: true,
       },
       { ipAddress: '203.113.10.5', userAgent: 'IntegrationTest/1.0' },
@@ -319,11 +317,23 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     expect(s1.user.status).toBe(UserStatus.PENDING_CLASS);
     expect(s2.user.status).toBe(UserStatus.PENDING_CLASS);
 
-    const consents = await prisma.guardianConsent.findMany();
+    const consents = await prisma.guardianConsent.findMany({
+      orderBy: { consentedAt: 'asc' },
+    });
     expect(consents).toHaveLength(2);
-    expect(consents[0]?.guardianEmail).toBe('parent.family@example.com');
+    expect(consents[0]?.guardianEmail).toBe('parent.chau@example.com');
     expect(consents[0]?.consentVersion).toBe('v1.0');
     expect(consents[0]?.consentTextSnapshot.length).toBeGreaterThan(20);
+
+    // Verify Immutability: When student turns 16 and updates personal email, GuardianConsent is untouched
+    await prisma.user.update({
+      where: { id: s1.user.id },
+      data: { email: 'chau.grownup@example.com' },
+    });
+    const consentAfterUpdate = await prisma.guardianConsent.findUnique({
+      where: { studentProfileId: consents[0]?.studentProfileId },
+    });
+    expect(consentAfterUpdate?.guardianEmail).toBe('parent.chau@example.com');
 
     // Adult >= 16 requires no guardianEmail
     const adult = await authService.register({
@@ -704,9 +714,8 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       fullName: 'Hoàng Bảo Ngọc',
       dateOfBirth: DOB_TEEN_14,
       phone: '0905000005',
-      email: 'ngoc.teen@example.com',
+      email: 'parent.ngoc@example.com',
       password: 'Password@123',
-      guardianEmail: 'parent.ngoc@example.com',
       guardianConsent: true,
     });
 

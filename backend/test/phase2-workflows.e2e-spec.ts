@@ -188,9 +188,8 @@ describe('Phase 2 Full Domain Workflows (e2e — Real PostgreSQL FUNC-006..012)'
         fullName: 'Lê Hoàng Nam (黎皇南)',
         dateOfBirth: DOB_TEEN_14,
         phone: '0941000001',
-        email: 'nam.teen@example.com',
+        email: 'phuhuynh.nam@example.com',
         password: PASSWORD,
-        guardianEmail: 'phuhuynh.nam@example.com',
         guardianConsent: true,
       })
       .expect(201);

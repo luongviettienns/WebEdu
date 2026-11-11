@@ -351,7 +351,30 @@ describe('TeachersService (Slice 2.4 - FUNC-006)', () => {
 
     // Changing teacher email increments tokenVersion
     const beforeVer = usersStore.get(normalTeacher.id)!.tokenVersion;
-    await service.updateTeacher(adminActor, normalTeacher.id, { email: 'mai.new@webedu.vn' });
+    await service.updateTeacher(adminActor, normalTeacher.id, {
+      email: 'mai.new@webedu.vn',
+      phone: '0911555333',
+      notes: 'Cập nhật ghi chú',
+    });
     expect(usersStore.get(normalTeacher.id)!.tokenVersion).toBe(beforeVer + 1);
+
+    // updateTeacher throws 404 when not found and supports notes-only update
+    await expect(
+      service.updateTeacher(adminActor, 'missing-teacher', { fullName: 'X' }),
+    ).rejects.toThrowError('Không tìm thấy giáo viên');
+
+    const notesOnly = await service.updateTeacher(adminActor, normalTeacher.id, {
+      notes: '   ',
+    });
+    expect(notesOnly.notes).toBeNull();
+
+    // listTeachers with search and status filters
+    const filtered = await service.listTeachers({
+      search: 'Mai',
+      status: UserStatus.ACTIVE,
+      page: 1,
+      limit: 10,
+    });
+    expect(filtered.items.length).toBeGreaterThan(0);
   });
 });
