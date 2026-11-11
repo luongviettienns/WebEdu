@@ -36,8 +36,9 @@ export function ClassSummary({ detail }: { detail: ClassDetail }) {
       <div className={CARD}>
         <div className={CARD_LABEL}>Giáo viên phụ trách</div>
         <div className="mt-1.5 text-sm font-bold text-[var(--ink)]">{detail.teacher.fullName}</div>
-        <div className="num mt-0.5 break-all text-xs text-[var(--ink-2)]">
-          {detail.teacher.phone} · {detail.teacher.email}
+        <div className="num mt-1 text-xs text-[var(--ink-2)]">{detail.teacher.phone}</div>
+        <div className="mt-0.5 truncate text-xs text-[var(--ink-2)]" title={detail.teacher.email}>
+          {detail.teacher.email}
         </div>
       </div>
       <div className={CARD}>

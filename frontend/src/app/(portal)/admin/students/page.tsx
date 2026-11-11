@@ -99,9 +99,10 @@ function AdminStudentsContent({
         {currentUser.roles.includes('ADMIN') && (
           <Link
             href="/admin/students/pending"
-            className="rounded-lg border border-[var(--amber)]/30 bg-[var(--amber-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--amber)] hover:bg-[var(--amber-soft)]/80 transition-colors shadow-xs"
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-xs font-semibold text-[var(--ink)] shadow-2xs hover:bg-[var(--hover)] hover:border-[var(--line)] transition-colors"
           >
-            📋 Danh sách chờ xếp lớp
+            <span className="font-han text-xs text-[var(--red)]">待分班</span>
+            <span>Tài khoản chờ xếp lớp</span>
           </Link>
         )}
       </div>
