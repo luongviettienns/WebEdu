@@ -91,12 +91,16 @@ export class StudentQueryService {
   > {
     const { page, limit, skip } = resolvePagination(query);
 
-    const where: Prisma.UserWhereInput = {
+    const queueScope: Prisma.UserWhereInput = {
       roles: { has: Role.STUDENT },
       status: UserStatus.PENDING_CLASS,
     };
+    const where: Prisma.UserWhereInput = {
+      ...queueScope,
+      ...buildUserSearchFilter(query?.search),
+    };
 
-    const [users, totalPending] = await Promise.all([
+    const [users, total, totalPending] = await Promise.all([
       this.prisma.user.findMany({
         where,
         include: { studentProfile: { include: { consent: true } } },
@@ -105,12 +109,13 @@ export class StudentQueryService {
         take: limit,
       }),
       this.prisma.user.count({ where }),
+      this.prisma.user.count({ where: queueScope }),
     ]);
 
     return {
       items: users.map(toPendingStudentDto),
       totalPending,
-      total: totalPending,
+      total,
       page,
       limit,
     };

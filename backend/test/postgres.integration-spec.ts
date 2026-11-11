@@ -1065,4 +1065,124 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     });
     expect(activeSaLeft).toBe(1);
   });
+
+  it('Scenario 14 (SEC-02 & SEC-04): Concurrent completeClass preserves teacher activeClassesCount === 0 and concurrent createClass serializes against course deactivation', async () => {
+    const [{ CoursesService }, { ClassCrudService }, { ClassLifecycleService }] = await Promise.all([
+      import('../src/modules/courses/services/courses.service.js'),
+      import('../src/modules/classes/services/class-crud.service.js'),
+      import('../src/modules/classes/services/class-lifecycle.service.js'),
+    ]);
+    const coursesService = moduleRef.get(CoursesService);
+    const classCrudService = moduleRef.get(ClassCrudService);
+    const classLifecycleService = moduleRef.get(ClassLifecycleService);
+
+    const adminUser = await prisma.user.create({
+      data: {
+        email: 'pg.p3admin@webedu.vn',
+        phone: '0907900001',
+        fullName: 'PG Admin Phase3',
+        passwordHash: 'hash',
+        roles: [Role.ADMIN],
+        status: UserStatus.ACTIVE,
+      },
+    });
+    const teacherUser = await prisma.user.create({
+      data: {
+        email: 'pg.p3teacher@webedu.vn',
+        phone: '0907900002',
+        fullName: 'PG Teacher Phase3',
+        passwordHash: 'hash',
+        roles: [Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        teacherProfile: { create: { activeClassesCount: 0 } },
+      },
+    });
+    const adminActor: AuthenticatedUser = {
+      id: adminUser.id,
+      email: adminUser.email,
+      fullName: adminUser.fullName,
+      phone: adminUser.phone,
+      roles: adminUser.roles,
+      effectiveRole: Role.ADMIN,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    const course1 = await coursesService.createCourse(adminActor, {
+      code: 'PG-HSK1',
+      name: 'PG HSK 1',
+      level: CourseLevel.HSK1,
+      defaultSessions: 12,
+    });
+    const c1 = await classCrudService.createClass(adminActor, {
+      code: 'PG-CLS-01',
+      courseId: course1.id,
+      teacherId: teacherUser.id,
+      scheduleDays: [1, 3],
+      scheduleStartTime: '08:00',
+      scheduleEndTime: '09:30',
+      startDate: '2026-10-05',
+      status: ClassStatus.ACTIVE,
+    });
+    const c2 = await classCrudService.createClass(adminActor, {
+      code: 'PG-CLS-02',
+      courseId: course1.id,
+      teacherId: teacherUser.id,
+      scheduleDays: [2, 4],
+      scheduleStartTime: '18:00',
+      scheduleEndTime: '19:30',
+      startDate: '2026-10-06',
+      status: ClassStatus.ACTIVE,
+    });
+
+    const beforeProfile = await prisma.teacherProfile.findUniqueOrThrow({
+      where: { userId: teacherUser.id },
+    });
+    expect(beforeProfile.activeClassesCount).toBe(2);
+
+    // Concurrent completion of both classes of the same teacher -> serializes on teacher row without lost update
+    await Promise.all([
+      classLifecycleService.completeClass(adminActor, c1.id, { actualEndDate: '2026-11-05' }),
+      classLifecycleService.completeClass(adminActor, c2.id, { actualEndDate: '2026-11-05' }),
+    ]);
+
+    const afterProfile = await prisma.teacherProfile.findUniqueOrThrow({
+      where: { userId: teacherUser.id },
+    });
+    expect(afterProfile.activeClassesCount).toBe(0);
+
+    // Deactivating the teacher afterwards must succeed cleanly (no phantom activeClassesCount > 0)
+    await teachersService.updateTeacher(adminActor, teacherUser.id, { status: UserStatus.INACTIVE });
+    const deactivatedTeacher = await prisma.user.findUniqueOrThrow({ where: { id: teacherUser.id } });
+    expect(deactivatedTeacher.status).toBe(UserStatus.INACTIVE);
+
+    // Concurrent course deactivation vs createClass -> settles deterministically without errors
+    const course2 = await coursesService.createCourse(adminActor, {
+      code: 'PG-HSK2-RACE',
+      name: 'PG HSK 2 Race',
+      level: CourseLevel.HSK2,
+      defaultSessions: 12,
+    });
+    await teachersService.updateTeacher(adminActor, teacherUser.id, { status: UserStatus.ACTIVE });
+
+    const [createRes, deactivateRes] = await Promise.allSettled([
+      classCrudService.createClass(adminActor, {
+        code: 'PG-CLS-RACE',
+        courseId: course2.id,
+        teacherId: teacherUser.id,
+        scheduleDays: [5],
+        scheduleStartTime: '19:00',
+        scheduleEndTime: '20:30',
+        startDate: '2026-11-06',
+      }),
+      coursesService.updateCourse(adminActor, course2.id, { isActive: false }),
+    ]);
+
+    expect(deactivateRes.status).toBe('fulfilled');
+    if (createRes.status === 'rejected') {
+      expect(createRes.reason).toBeInstanceOf(BadRequestException);
+    } else {
+      expect(createRes.value.code).toBe('PG-CLS-RACE');
+    }
+  });
 });

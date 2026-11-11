@@ -8,6 +8,13 @@ import {
   type CourseItemDto,
   type CourseLevel,
 } from '@/features/courses/api/courses.api';
+import {
+  BaseDialog,
+  DIALOG_INPUT_CLS,
+  DIALOG_LABEL_CLS,
+  DialogActions,
+  DialogError,
+} from '@/features/common/components/BaseDialog';
 import { extractErrorMessage, isUnauthorizedError } from '@/lib/api-client';
 
 interface CourseFormModalProps {
@@ -17,10 +24,6 @@ interface CourseFormModalProps {
   onSuccess: (bannerMessage: string) => void;
   onAuthError: (error: unknown) => boolean;
 }
-
-const INPUT_CLS =
-  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
-const LABEL_CLS = 'block text-sm font-medium text-[var(--ink)]';
 
 export function CourseFormModal({
   mode,
@@ -104,36 +107,18 @@ export function CourseFormModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
+    <BaseDialog
+      eyebrow="课程设置 · THIẾT LẬP KHÓA HỌC"
+      title={mode === 'create' ? 'Thêm Khóa Học HSK Mới' : 'Chỉnh Sửa Thông Tin Khóa Học'}
+      onClose={onClose}
+      busy={submitting}
     >
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-[var(--paper)] p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-          <div>
-            <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase">
-              课程设置 · THIẾT LẬP KHÓA HỌC
-            </div>
-            <h2 className="mt-0.5 text-lg font-bold text-[var(--ink)]">
-              {mode === 'create' ? 'Thêm Khóa Học HSK Mới' : 'Chỉnh Sửa Thông Tin Khóa Học'}
-            </h2>
-          </div>
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]">
-            Đóng
-          </button>
-        </div>
-
-        {formError ? (
-          <div role="alert" className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]">
-            {formError}
-          </div>
-        ) : null}
+      <DialogError message={formError} />
 
         <form onSubmit={(e) => void handleSubmit(e)} noValidate className="mt-4 space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="course-code" className={LABEL_CLS}>
+              <label htmlFor="course-code" className={DIALOG_LABEL_CLS}>
                 Mã khóa học <span className="text-[var(--red)]">*</span>
               </label>
               <input
@@ -144,19 +129,19 @@ export function CourseFormModal({
                 placeholder="VD: HSK1, HSK3-TC, GT-CB"
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
-                className={`${INPUT_CLS} font-semibold num`}
+                className={`${DIALOG_INPUT_CLS} font-semibold num`}
               />
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="course-level" className={LABEL_CLS}>
+              <label htmlFor="course-level" className={DIALOG_LABEL_CLS}>
                 Cấp độ đào tạo <span className="text-[var(--red)]">*</span>
               </label>
               <select
                 id="course-level"
                 value={level}
                 onChange={(e) => setLevel(e.target.value as CourseLevel)}
-                className={INPUT_CLS}
+                className={DIALOG_INPUT_CLS}
               >
                 {COURSE_LEVEL_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -166,7 +151,7 @@ export function CourseFormModal({
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="course-name" className={LABEL_CLS}>
+            <label htmlFor="course-name" className={DIALOG_LABEL_CLS}>
               Tên khóa học <span className="text-[var(--red)]">*</span>
             </label>
             <input
@@ -177,13 +162,13 @@ export function CourseFormModal({
               placeholder="VD: Tiếng Trung HSK 1 — 汉语水平考试一级"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className={INPUT_CLS}
+              className={DIALOG_INPUT_CLS}
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="course-sessions" className={LABEL_CLS}>
+              <label htmlFor="course-sessions" className={DIALOG_LABEL_CLS}>
                 Số buổi mặc định (gợi ý khi mở lớp)
               </label>
               <input
@@ -194,17 +179,17 @@ export function CourseFormModal({
                 placeholder="VD: 24"
                 value={defaultSessions}
                 onChange={(e) => setDefaultSessions(e.target.value)}
-                className={`${INPUT_CLS} num`}
+                className={`${DIALOG_INPUT_CLS} num`}
               />
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="course-active" className={LABEL_CLS}>Trạng thái áp dụng</label>
+              <label htmlFor="course-active" className={DIALOG_LABEL_CLS}>Trạng thái áp dụng</label>
               <select
                 id="course-active"
                 value={isActive ? 'ACTIVE' : 'INACTIVE'}
                 onChange={(e) => setIsActive(e.target.value === 'ACTIVE')}
-                className={INPUT_CLS}
+                className={DIALOG_INPUT_CLS}
               >
                 <option value="ACTIVE">Đang sử dụng</option>
                 <option value="INACTIVE">Ngừng sử dụng</option>
@@ -213,7 +198,7 @@ export function CourseFormModal({
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="course-description" className={LABEL_CLS}>Mô tả / Giáo trình áp dụng</label>
+            <label htmlFor="course-description" className={DIALOG_LABEL_CLS}>Mô tả / Giáo trình áp dụng</label>
             <textarea
               id="course-description"
               rows={3}
@@ -221,20 +206,17 @@ export function CourseFormModal({
               placeholder="Ghi chú giáo trình chuẩn, mục tiêu đầu ra..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className={INPUT_CLS}
+              className={DIALOG_INPUT_CLS}
             />
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
-            <button type="button" onClick={onClose} className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]">
-              Hủy
-            </button>
-            <button type="submit" disabled={submitting} className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50">
-              {submitting ? 'Đang lưu...' : 'Lưu khóa học'}
-            </button>
-          </div>
+          <DialogActions
+            onCancel={onClose}
+            submitLabel="Lưu khóa học"
+            submittingLabel="Đang lưu..."
+            submitting={submitting}
+          />
         </form>
-      </div>
-    </div>
+    </BaseDialog>
   );
 }

@@ -6,6 +6,7 @@ import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-erro
 import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
 import { assertActorMayModifyAccount } from '../../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
+import { assertEffectiveDateNotInFuture } from '../policies/class-schedule.util.js';
 import type { DropStudentClassDto, EnrollStudentsDto, TransferStudentClassDto } from '../dto/classes.dto.js';
 
 @Injectable()
@@ -24,6 +25,7 @@ export class ClassEnrollmentService {
 
     const enrolledDate = resolveVnCalendarDateForDb(dto.enrolledDate);
     if (!enrolledDate) throw new BadRequestException('Ngày vào lớp không hợp lệ');
+    assertEffectiveDateNotInFuture(enrolledDate, 'Ngày vào lớp');
 
     const sortedIds = [...uniqueIds].sort((a, b) => a.localeCompare(b));
 
@@ -134,6 +136,7 @@ export class ClassEnrollmentService {
 
     const transferDate = resolveVnCalendarDateForDb(dto.transferDate);
     if (!transferDate) throw new BadRequestException('Ngày chuyển lớp không hợp lệ');
+    assertEffectiveDateNotInFuture(transferDate, 'Ngày chuyển lớp');
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -157,6 +160,11 @@ export class ClassEnrollmentService {
         }
 
         const student = await this.lockAndVerifyStudent(tx, actor, studentId);
+        if (student.status === UserStatus.INACTIVE) {
+          throw new BadRequestException(
+            `Học viên ${student.fullName} đang ở trạng thái Vô hiệu hóa, không thể chuyển lớp`,
+          );
+        }
 
         const activeEnrollment = await tx.enrollment.findFirst({
           where: { classId: sourceClassId, studentId, status: EnrollmentStatus.ACTIVE },
@@ -235,6 +243,7 @@ export class ClassEnrollmentService {
   ): Promise<{ status: 'DROPPED'; classId: string; studentId: string }> {
     const leftDate = resolveVnCalendarDateForDb(dto.leftDate);
     if (!leftDate) throw new BadRequestException('Ngày rời lớp không hợp lệ');
+    assertEffectiveDateNotInFuture(leftDate, 'Ngày rời lớp');
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;

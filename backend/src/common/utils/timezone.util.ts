@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { addDays, endOfDay, startOfDay } from 'date-fns';
 import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz';
 
@@ -130,4 +131,34 @@ export function formatIsoDateUtc(date: Date): string {
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
   const d = String(date.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+/**
+ * Returns today's calendar date in Asia/Ho_Chi_Minh as UTC midnight (matches Prisma `@db.Date`).
+ */
+export function resolveVnToday(nowInstant: Date = new Date()): Date {
+  return new Date(`${formatInTimeZone(nowInstant, VN_TIMEZONE, 'yyyy-MM-dd')}T00:00:00.000Z`);
+}
+
+/**
+ * True when the calendar date (UTC midnight) is strictly after today in Asia/Ho_Chi_Minh.
+ */
+export function isVnFutureDate(date: Date, nowInstant: Date = new Date()): boolean {
+  return date.getTime() > resolveVnToday(nowInstant).getTime();
+}
+
+/**
+ * Chặn chọn ngày hiệu lực trong tương lai (GMT+7) cho các thao tác áp dụng ngay
+ * vì hệ thống chưa hỗ trợ bộ lập lịch tự động (scheduler).
+ */
+export function assertVnDateNotInFuture(
+  date: Date,
+  actionLabel: string,
+  nowInstant: Date = new Date(),
+): void {
+  if (isVnFutureDate(date, nowInstant)) {
+    throw new BadRequestException(
+      `${actionLabel} không được chọn ngày trong tương lai: thao tác có hiệu lực ngay khi lưu (chưa hỗ trợ lên lịch tự động)`,
+    );
+  }
 }

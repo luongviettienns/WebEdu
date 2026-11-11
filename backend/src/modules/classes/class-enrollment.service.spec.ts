@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BadRequestException,
   ConflictException,
@@ -66,7 +66,14 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
     tokenVersion: 0,
   };
 
+  // Ghim đồng hồ hệ thống để dữ liệu mẫu có ngày cố định không bị coi là 'tương lai' (GMT+7: 31/12/2026 12:00).
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-12-31T05:00:00.000Z'));
     usersStore = new Map([
       [
         'student-02',
@@ -462,6 +469,17 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
         ),
       );
     });
+
+    it('REGRESSION (P1-2 / SEC-03): rejects a future enrolledDate without creating enrollments', async () => {
+      await expect(
+        service.enrollStudents(adminActor, 'class-hsk1', {
+          studentIds: ['student-01'],
+          enrolledDate: '2027-01-10', // today (pinned) = 2026-12-31 GMT+7
+        }),
+      ).rejects.toThrowError(/ngày trong tương lai/);
+
+      expect(enrollmentsStore).toHaveLength(0);
+    });
   });
 
   describe('transferStudent', () => {
@@ -546,6 +564,35 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
           'Ngày chuyển lớp không được nhỏ hơn ngày vào lớp ban đầu',
         ),
       );
+    });
+
+    it('REGRESSION: rejects a future transferDate and keeps the source enrollment ACTIVE with no target enrollment created', async () => {
+      await expect(
+        service.transferStudent(adminActor, 'class-hsk1', 'student-01', {
+          targetClassId: 'class-hsk2',
+          transferDate: '2027-01-10', // today (pinned) = 2026-12-31 GMT+7
+        }),
+      ).rejects.toThrowError(/ngày trong tương lai/);
+
+      expect(enrollmentsStore).toHaveLength(1);
+      expect(enrollmentsStore[0]?.status).toBe(EnrollmentStatus.ACTIVE);
+      expect(usersStore.get('student-01')?.studentProfile?.currentClassId).toBe(
+        'class-hsk1',
+      );
+    });
+
+    it('REGRESSION (SEC-01): rejects transferring an INACTIVE student and leaves enrollment untouched', async () => {
+      usersStore.get('student-01')!.status = UserStatus.INACTIVE;
+
+      await expect(
+        service.transferStudent(adminActor, 'class-hsk1', 'student-01', {
+          targetClassId: 'class-hsk2',
+          transferDate: '2026-11-10',
+        }),
+      ).rejects.toThrowError(/Vô hiệu hóa/);
+
+      expect(enrollmentsStore).toHaveLength(1);
+      expect(enrollmentsStore[0]?.status).toBe(EnrollmentStatus.ACTIVE);
     });
   });
 
@@ -647,6 +694,33 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
           'Không thể rút học viên khỏi lớp đã kết thúc hoặc lưu trữ',
         ),
       );
+    });
+
+    it('REGRESSION: rejects a future leftDate and leaves the enrollment, user status and profile untouched', async () => {
+      await expect(
+        service.dropStudent(adminActor, 'class-hsk1', 'student-01', {
+          leftDate: '2027-01-10', // today (pinned) = 2026-12-31 GMT+7
+        }),
+      ).rejects.toThrowError(/ngày trong tương lai/);
+
+      expect(enrollmentsStore[0]?.status).toBe(EnrollmentStatus.ACTIVE);
+      expect(enrollmentsStore[0]?.leftDate).toBeNull();
+      expect(usersStore.get('student-01')?.studentProfile?.currentClassId).toBe(
+        'class-hsk1',
+      );
+      expect(auditLogs.some((l) => l.action === 'CLASS_STUDENT_DROPPED')).toBe(
+        false,
+      );
+    });
+
+    it('accepts leftDate = today (GMT+7) as the boundary of the allowed range', async () => {
+      const result = await service.dropStudent(
+        adminActor,
+        'class-hsk1',
+        'student-01',
+        { leftDate: '2026-12-31' },
+      );
+      expect(result.status).toBe('DROPPED');
     });
   });
 });

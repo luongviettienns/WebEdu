@@ -83,6 +83,8 @@ export function formatSchedulePreviewText(
   return `${daysPart} · ${startTime || '--:--'}–${endTime || '--:--'}`;
 }
 
+export const MAX_CLASS_TOTAL_SESSIONS = 200;
+
 export function calculateExpectedEndDateIso(
   startDateIso: string,
   scheduleDays: readonly number[],
@@ -97,7 +99,7 @@ export function calculateExpectedEndDateIso(
     validDays.length === 0 ||
     !Number.isInteger(totalSessions) ||
     totalSessions < 1 ||
-    totalSessions > 500
+    totalSessions > MAX_CLASS_TOTAL_SESSIONS
   ) {
     return null;
   }
@@ -148,6 +150,9 @@ export function validateClassFormInput(input: {
   scheduleEndTime: string;
   startDate: string;
   parsedSessions: number;
+  /** Khi đổi giáo viên: ngày GV mới nhận lớp (không được ở tương lai - chưa hỗ trợ lên lịch). */
+  teacherAssignedFrom?: string;
+  todayIso?: string;
 }): string | null {
   if (!/^[A-Z0-9_-]{2,20}$/.test(input.code)) {
     return 'Mã lớp học phải từ 2 đến 20 ký tự (chữ in hoa, số, - hoặc _)';
@@ -174,9 +179,17 @@ export function validateClassFormInput(input: {
   if (
     !Number.isInteger(input.parsedSessions) ||
     input.parsedSessions < 1 ||
-    input.parsedSessions > 200
+    input.parsedSessions > MAX_CLASS_TOTAL_SESSIONS
   ) {
     return 'Tổng số buổi phải là số nguyên từ 1 đến 200 buổi';
+  }
+  if (input.teacherAssignedFrom !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.teacherAssignedFrom)) {
+      return 'Ngày nhận lớp của giáo viên mới không hợp lệ';
+    }
+    if (input.teacherAssignedFrom > (input.todayIso ?? getTodayVnIsoDate())) {
+      return 'Chưa hỗ trợ lên lịch bàn giao giáo viên vào ngày tương lai: vui lòng chọn hôm nay hoặc ngày đã qua';
+    }
   }
   return null;
 }

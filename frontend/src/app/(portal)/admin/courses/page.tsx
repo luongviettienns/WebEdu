@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import {
-  COURSE_LEVEL_HAN,
   COURSE_LEVEL_OPTIONS,
   listCourses,
   updateCourse,
@@ -12,6 +11,9 @@ import {
   type CourseLevel,
 } from '@/features/courses/api/courses.api';
 import { CourseFormModal } from '@/features/courses/components/CourseFormModal';
+import { CourseTable } from '@/features/courses/components/CourseTable';
+import { ListBanners } from '@/features/classes/components/ClassListFilters';
+import { ConfirmDialog } from '@/features/common/components/ConfirmDialog';
 import { useDebounce } from '@/features/common/hooks/useDebounce';
 import { extractErrorMessage } from '@/lib/api-client';
 import type { Role } from '@/types/user';
@@ -21,14 +23,17 @@ type ModalState = { mode: 'create' | 'edit'; course: CourseItemDto | null } | nu
 
 function AdminCoursesContent({ onAuthError }: { onAuthError: (error: unknown) => boolean }) {
   const [courses, setCourses] = useState<CourseItemDto[]>([]);
-  const [search, setSearch] = useState<string>('');
+  const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState<CourseLevel | ''>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
-  const [refreshTick, setRefreshTick] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [errorBanner, setErrorBanner] = useState<string>('');
-  const [successBanner, setSuccessBanner] = useState<string>('');
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [listError, setListError] = useState('');
+  const [mutationError, setMutationError] = useState('');
+  const [successBanner, setSuccessBanner] = useState('');
   const [modalState, setModalState] = useState<ModalState>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<CourseItemDto | null>(null);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -43,10 +48,11 @@ function AdminCoursesContent({ onAuthError }: { onAuthError: (error: unknown) =>
         );
         if (controller.signal.aborted) return;
         setCourses(response.items ?? []);
-        setErrorBanner('');
+        setLoaded(true);
+        setListError('');
       } catch (error) {
         if (controller.signal.aborted || onAuthError(error)) return;
-        setErrorBanner(extractErrorMessage(error, 'Không thể tải danh mục khóa học HSK'));
+        setListError(extractErrorMessage(error, 'Không thể tải danh mục khóa học HSK'));
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -60,23 +66,38 @@ function AdminCoursesContent({ onAuthError }: { onAuthError: (error: unknown) =>
     return courses;
   }, [courses, statusFilter]);
 
-  const handleToggleActive = async (course: CourseItemDto) => {
-    setErrorBanner('');
+  const handleReactivate = async (course: CourseItemDto) => {
+    setMutationError('');
     setSuccessBanner('');
     try {
-      const nextActive = !course.isActive;
-      await updateCourse(course.id, { isActive: nextActive });
-      setSuccessBanner(
-        nextActive
-          ? `Đã kích hoạt lại khóa học ${course.code}.`
-          : `Đã ngừng sử dụng khóa học ${course.code} đối với các lớp mở mới.`,
-      );
+      await updateCourse(course.id, { isActive: true });
+      setSuccessBanner(`Đã kích hoạt lại khóa học ${course.code}.`);
       setRefreshTick((t) => t + 1);
     } catch (error) {
       if (onAuthError(error)) return;
-      setErrorBanner(extractErrorMessage(error, 'Không thể cập nhật trạng thái khóa học'));
+      setMutationError(extractErrorMessage(error, 'Không thể cập nhật trạng thái khóa học'));
     }
   };
+
+  const handleConfirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    setMutationError('');
+    try {
+      await updateCourse(deactivateTarget.id, { isActive: false });
+      const code = deactivateTarget.code;
+      setDeactivateTarget(null);
+      setSuccessBanner(`Đã ngừng sử dụng khóa học ${code} đối với các lớp mở mới.`);
+      setRefreshTick((t) => t + 1);
+    } catch (error) {
+      if (onAuthError(error)) {
+        setDeactivateTarget(null);
+        return;
+      }
+      throw error;
+    }
+  };
+
+  const hasFilters = Boolean(search.trim() || levelFilter || statusFilter !== 'ALL');
 
   return (
     <div className="space-y-6">
@@ -92,13 +113,13 @@ function AdminCoursesContent({ onAuthError }: { onAuthError: (error: unknown) =>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-xs">
-        <div className="flex flex-wrap items-center gap-3">
-          <input type="text" placeholder="Tìm theo mã khóa hoặc tên khóa học..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none" />
-          <select aria-label="Lọc theo cấp độ khóa học" value={levelFilter} onChange={(e) => setLevelFilter(e.target.value as CourseLevel | '')} className="rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none">
+        <div className="flex w-full flex-wrap items-center gap-3 md:w-auto">
+          <input type="search" aria-label="Tìm kiếm khóa học" placeholder="Tìm theo mã khóa hoặc tên khóa học..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full sm:w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none" />
+          <select aria-label="Lọc theo cấp độ khóa học" value={levelFilter} onChange={(e) => setLevelFilter(e.target.value as CourseLevel | '')} className="w-full sm:w-auto rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none">
             <option value="">Tất cả cấp độ</option>
             {COURSE_LEVEL_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
-          <select aria-label="Lọc theo trạng thái sử dụng" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE')} className="rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none">
+          <select aria-label="Lọc theo trạng thái sử dụng" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE')} className="w-full sm:w-auto rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none">
             <option value="ALL">Tất cả trạng thái</option>
             <option value="ACTIVE">Đang sử dụng</option>
             <option value="INACTIVE">Ngừng sử dụng</option>
@@ -107,66 +128,45 @@ function AdminCoursesContent({ onAuthError }: { onAuthError: (error: unknown) =>
         <span className="text-xs font-medium text-[var(--ink-3)] num">Hiển thị: <strong>{filteredCourses.length}</strong> khóa học</span>
       </div>
 
-      {errorBanner ? <div role="alert" className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-4 text-sm font-medium text-[var(--red-ink)]">{errorBanner}</div> : null}
-      {successBanner ? <div role="status" className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-4 text-sm font-medium text-[var(--jade)]">{successBanner}</div> : null}
+      <ListBanners
+        error={listError}
+        isStale={loaded}
+        success={successBanner}
+        onRetry={() => setRefreshTick((t) => t + 1)}
+        onDismissSuccess={() => setSuccessBanner('')}
+      />
 
-      <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-[var(--line)] bg-[var(--surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
-              <tr>
-                <th className="px-4 py-3">Mã khóa</th>
-                <th className="px-4 py-3">Tên khóa học & Giáo trình</th>
-                <th className="px-4 py-3">Cấp độ</th>
-                <th className="px-4 py-3 text-center">Số buổi mặc định</th>
-                <th className="px-4 py-3 text-center">Lớp đang mở / Tổng lớp</th>
-                <th className="px-4 py-3">Trạng thái</th>
-                <th className="px-4 py-3 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--line)]">
-              {loading ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-[var(--ink-3)]">Đang tải danh mục khóa học HSK...</td></tr>
-              ) : filteredCourses.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-[var(--ink-3)]">Không tìm thấy khóa học nào phù hợp với bộ lọc.</td></tr>
-              ) : (
-                filteredCourses.map((course) => (
-                  <tr key={course.id} className="hover:bg-[var(--hover)]/60">
-                    <td className="px-4 py-3.5 font-bold text-[var(--ink)] num">{course.code}</td>
-                    <td className="px-4 py-3.5">
-                      <div className="font-semibold text-[var(--ink)]">{course.name}</div>
-                      {course.description ? <div className="mt-0.5 text-xs text-[var(--ink-2)]">{course.description}</div> : null}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--red)]/25 bg-[var(--red-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--red-ink)]">
-                        <span className="font-han">{COURSE_LEVEL_HAN[course.level]}</span>
-                        <span>{course.levelLabel}</span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-center font-medium text-[var(--ink)] num">
-                      {course.defaultSessions ? `${course.defaultSessions} buổi` : '—'}
-                    </td>
-                    <td className="px-4 py-3.5 text-center font-medium text-[var(--ink)] num">
-                      <span className="font-bold text-[var(--blue)]">{course.activeClassesCount}</span>{' / '}<span>{course.totalClassesCount}</span>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${course.isActive ? 'bg-[var(--jade-soft)] text-[var(--jade)]' : 'bg-[var(--grey-soft)] text-[var(--grey)]'}`}>
-                        {course.isActive ? 'Đang sử dụng' : 'Ngừng sử dụng'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-right space-x-2">
-                      <button type="button" onClick={() => setModalState({ mode: 'edit', course })} className="rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--hover)]">Chỉnh sửa</button>
-                      <button type="button" onClick={() => void handleToggleActive(course)} className="rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--hover)]">
-                        {course.isActive ? 'Ngừng sử dụng' : 'Kích hoạt lại'}
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+      {mutationError ? (
+        <div
+          role="alert"
+          data-testid="course-mutation-error"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] px-4 py-3 text-xs font-medium text-[var(--red-ink)]"
+        >
+          <span>{mutationError}</span>
+          <button
+            type="button"
+            onClick={() => setMutationError('')}
+            className="rounded-md border border-[var(--red)]/30 bg-white px-2.5 py-1 text-xs font-semibold text-[var(--red-ink)] hover:bg-[var(--hover)]"
+          >
+            Đóng
+          </button>
         </div>
-      </div>
+      ) : null}
+
+      <CourseTable
+        loading={loading}
+        loaded={loaded}
+        courses={filteredCourses}
+        hasFilters={hasFilters}
+        onClearFilters={() => {
+          setSearch('');
+          setLevelFilter('');
+          setStatusFilter('ALL');
+        }}
+        onEdit={(course) => setModalState({ mode: 'edit', course })}
+        onDeactivate={setDeactivateTarget}
+        onReactivate={(course) => void handleReactivate(course)}
+      />
 
       {modalState ? (
         <CourseFormModal
@@ -177,10 +177,24 @@ function AdminCoursesContent({ onAuthError }: { onAuthError: (error: unknown) =>
           onAuthError={onAuthError}
           onSuccess={(msg) => {
             setModalState(null);
+            setMutationError('');
             setSuccessBanner(msg);
             setRefreshTick((t) => t + 1);
           }}
         />
+      ) : null}
+
+      {deactivateTarget ? (
+        <ConfirmDialog
+          eyebrow="课程 · NGỪNG SỬ DỤNG KHÓA HỌC"
+          title={`Ngừng sử dụng khóa học ${deactivateTarget.code}?`}
+          confirmLabel="Xác nhận ngừng sử dụng"
+          onCancel={() => setDeactivateTarget(null)}
+          onConfirm={handleConfirmDeactivate}
+          describeError={(err) => extractErrorMessage(err, 'Không thể cập nhật trạng thái khóa học')}
+        >
+          Khóa học <strong>{deactivateTarget.code} — {deactivateTarget.name}</strong> sẽ không còn xuất hiện khi mở lớp mới. Các lớp đang mở ({deactivateTarget.activeClassesCount} lớp) và dữ liệu lịch sử vẫn được giữ nguyên.
+        </ConfirmDialog>
       ) : null}
     </div>
   );

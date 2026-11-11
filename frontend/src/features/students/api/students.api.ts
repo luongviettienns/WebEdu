@@ -121,6 +121,7 @@ export interface ListStudentsParams {
 }
 
 export interface ListPendingEnrollmentParams {
+  search?: string;
   page?: number;
   limit?: number;
 }
@@ -151,6 +152,7 @@ export async function listPendingEnrollmentStudents(
   options?: RequestOptions,
 ): Promise<PendingEnrollmentResponse> {
   const qs = buildQueryString({
+    search: params?.search?.trim() || undefined,
     page: params?.page,
     limit: params?.limit,
   });

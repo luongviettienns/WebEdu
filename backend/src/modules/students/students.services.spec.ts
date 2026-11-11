@@ -700,6 +700,13 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
       }),
     ).rejects.toThrowError(BadRequestException);
 
+    await expect(
+      service.assignInitialClass(adminActor, 'student-a', {
+        classNameOrId: 'HSK1-K21',
+        enrolledAt: '2099-01-01',
+      }),
+    ).rejects.toThrowError(/ngày trong tương lai/);
+
     const assigned = await service.assignInitialClass(adminActor, 'student-a', {
       classNameOrId: 'HSK1-K21',
     });

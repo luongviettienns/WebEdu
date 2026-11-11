@@ -5,11 +5,12 @@ import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
 import { syncTeacherActiveClassesCount } from '../../../common/policies/teacher-invariants.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
+import { assertEffectiveDateNotInFuture } from '../policies/class-schedule.util.js';
 import type { CompleteClassDto, ReopenClassDto } from '../dto/classes.dto.js';
 import type { ClassDetailDto } from '../classes.types.js';
+import { CLASS_REOPEN_WINDOW_MS } from './class-access.service.js';
 import { ClassQueryService } from './class-query.service.js';
 
-const REOPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ClassLifecycleService {
@@ -27,6 +28,7 @@ export class ClassLifecycleService {
     if (!actualEndDate) {
       throw new BadRequestException('Ngày kết thúc thực tế không hợp lệ');
     }
+    assertEffectiveDateNotInFuture(actualEndDate, 'Ngày kết thúc thực tế');
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
@@ -56,8 +58,12 @@ export class ClassLifecycleService {
         new Set(activeEnrollments.map((e) => e.studentId)),
       ).sort((a, b) => a.localeCompare(b));
 
-      for (const sid of sortedStudentIds) {
-        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${sid} FOR UPDATE`;
+      const userIdsToLock = Array.from(
+        new Set([targetClass.teacherId, ...sortedStudentIds]),
+      ).sort((a, b) => a.localeCompare(b));
+
+      for (const uid of userIdsToLock) {
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${uid} FOR UPDATE`;
       }
 
       await tx.enrollment.updateMany({
@@ -125,7 +131,7 @@ export class ClassLifecycleService {
     dto?: ReopenClassDto,
     now: Date = new Date(),
   ): Promise<ClassDetailDto> {
-    await this.prisma.$transaction(async (tx) => {
+    const reopenSummary = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
 
       const targetClass = await tx.class.findUnique({
@@ -145,7 +151,7 @@ export class ClassLifecycleService {
 
       if (
         !targetClass.closedAt ||
-        now.getTime() - targetClass.closedAt.getTime() > REOPEN_WINDOW_MS
+        now.getTime() - targetClass.closedAt.getTime() > CLASS_REOPEN_WINDOW_MS
       ) {
         throw new BadRequestException(
           'Đã quá thời hạn 7 ngày kể từ khi kết thúc lớp, không thể mở lại lớp học',
@@ -183,6 +189,7 @@ export class ClassLifecycleService {
         );
       }
 
+      let restoredStudentsCount = 0;
       for (const enr of sortedCompleted) {
         const completedAtClassClose =
           !targetClass.actualEndDate ||
@@ -193,11 +200,15 @@ export class ClassLifecycleService {
         const otherActiveEnrollment = await tx.enrollment.findFirst({
           where: { studentId: enr.studentId, status: EnrollmentStatus.ACTIVE },
         });
+        const closeDate = targetClass.actualEndDate ?? enr.enrolledDate;
         const newerOtherEnrollment = await tx.enrollment.findFirst({
           where: {
             studentId: enr.studentId,
             classId: { not: classId },
-            enrolledDate: { gte: targetClass.actualEndDate ?? enr.enrolledDate },
+            OR: [
+              { createdAt: { gt: targetClass.closedAt } },
+              { enrolledDate: { gt: closeDate } },
+            ],
           },
         });
 
@@ -225,6 +236,7 @@ export class ClassLifecycleService {
               enrolledAt: enr.enrolledDate,
             },
           });
+          restoredStudentsCount += 1;
         }
       }
 
@@ -269,12 +281,20 @@ export class ClassLifecycleService {
         metadata: {
           classCode: targetClass.code,
           reason: dto?.reason?.trim() ?? null,
+          restoredStudentsCount,
+          skippedStudentsCount: sortedCompleted.length - restoredStudentsCount,
         },
       });
+
+      return {
+        restoredStudentsCount,
+        skippedStudentsCount: sortedCompleted.length - restoredStudentsCount,
+      };
     });
 
-    return this.queryService.getClassById(actor, classId, {
+    const detail = await this.queryService.getClassById(actor, classId, {
       includeInactiveEnrollments: true,
     });
+    return { ...detail, reopenSummary };
   }
 }

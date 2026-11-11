@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BadRequestException,
   ConflictException,
@@ -100,7 +100,14 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
     tokenVersion: 0,
   };
 
+  // Ghim đồng hồ hệ thống để dữ liệu mẫu có ngày cố định không bị coi là 'tương lai' (GMT+7: 31/12/2026 12:00).
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-12-31T05:00:00.000Z'));
     coursesStore = new Map([
       [
         'course-hsk1',
@@ -806,6 +813,175 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
           'Ngày bàn giao giáo viên mới không được nhỏ hơn ngày bắt đầu phân công hiện tại',
         ),
       );
+    });
+
+    it('REGRESSION: rejects a future teacherAssignedFrom without changing teacherId, assignments, counters or audit trail', async () => {
+      const created = await service.createClass(adminActor, {
+        code: 'HSK1-FUTURE-01',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+      });
+
+      await expect(
+        service.updateClass(adminActor, created.id, {
+          teacherId: 'teacher-02',
+          teacherAssignedFrom: '2027-01-15', // today (pinned) = 2026-12-31 GMT+7
+        }),
+      ).rejects.toThrowError(/ngày tương lai/);
+
+      expect(classesStore.get(created.id)?.teacherId).toBe('teacher-01');
+      expect(assignmentsStore).toHaveLength(1);
+      expect(assignmentsStore[0]?.teacherId).toBe('teacher-01');
+      expect(assignmentsStore[0]?.assignedTo).toBeNull();
+      expect(teacherProfileCounts.get('teacher-01')).toBe(1);
+      expect(teacherProfileCounts.get('teacher-02')).toBe(0);
+      expect(
+        auditLogs.some((l) => l.action === 'CLASS_TEACHER_CHANGED'),
+      ).toBe(false);
+    });
+
+    it('REGRESSION: hands over the class on the effective date when teacherAssignedFrom is today (default) so history and access date agree', async () => {
+      const created = await service.createClass(adminActor, {
+        code: 'HSK1-TODAY-01',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+      });
+
+      const updated = await service.updateClass(adminActor, created.id, {
+        teacherId: 'teacher-02',
+      });
+
+      expect(updated.teacherId).toBe('teacher-02');
+      expect(assignmentsStore[0]?.assignedTo?.toISOString().slice(0, 10)).toBe(
+        '2026-12-31',
+      );
+      expect(
+        assignmentsStore[1]?.assignedFrom.toISOString().slice(0, 10),
+      ).toBe('2026-12-31');
+    });
+  });
+
+  describe('schedule conflict warning considers the real active period of both classes', () => {
+    const slice = {
+      scheduleDays: [1, 3, 5],
+      scheduleStartTime: '18:00',
+      scheduleEndTime: '19:30',
+    };
+
+    it('does not warn when weekday and time match but the two classes never run in the same period', () => {
+      expect(
+        hasScheduleOverlap(
+          {
+            ...slice,
+            startDate: new Date('2026-09-01T00:00:00.000Z'),
+            endDate: new Date('2026-10-30T00:00:00.000Z'),
+          },
+          {
+            ...slice,
+            startDate: new Date('2026-11-02T00:00:00.000Z'),
+            endDate: new Date('2026-12-25T00:00:00.000Z'),
+          },
+        ),
+      ).toBe(false);
+    });
+
+    it('warns when periods touch on the boundary date (inclusive) or one side is open-ended', () => {
+      expect(
+        hasScheduleOverlap(
+          {
+            ...slice,
+            startDate: new Date('2026-09-01T00:00:00.000Z'),
+            endDate: new Date('2026-11-02T00:00:00.000Z'),
+          },
+          {
+            ...slice,
+            startDate: new Date('2026-11-02T00:00:00.000Z'),
+            endDate: new Date('2026-12-25T00:00:00.000Z'),
+          },
+        ),
+      ).toBe(true);
+      expect(
+        hasScheduleOverlap(
+          { ...slice, startDate: new Date('2026-09-01T00:00:00.000Z'), endDate: null },
+          {
+            ...slice,
+            startDate: new Date('2027-01-05T00:00:00.000Z'),
+            endDate: new Date('2027-02-26T00:00:00.000Z'),
+          },
+        ),
+      ).toBe(true);
+    });
+
+    it('createClass: no warning for a later same-slot class after the first one ends, warning once their periods overlap', async () => {
+      await service.createClass(adminActor, {
+        code: 'HSK1-A',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6, // ends Friday 2026-11-13
+      });
+
+      const after = await service.createClass(adminActor, {
+        code: 'HSK1-B',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-16',
+        totalSessions: 6,
+      });
+      expect(after.scheduleConflictWarning).toBeNull();
+
+      const overlapping = await service.createClass(adminActor, {
+        code: 'HSK1-C',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-13',
+        totalSessions: 6,
+      });
+      expect(overlapping.scheduleConflictWarning).toContain('HSK1-A');
+    });
+
+    it('REGRESSION (SEC-04): verifies active course inside transaction after acquiring row locks', async () => {
+      const order: string[] = [];
+      const origQueryRaw = mockPrisma.$queryRaw as ReturnType<typeof vi.fn>;
+      const origCourseFind = (mockPrisma.course as { findUnique: ReturnType<typeof vi.fn> }).findUnique;
+      origQueryRaw.mockImplementationOnce(async (...args: unknown[]) => {
+        order.push('lock_teacher');
+        return [{ id: (args[1] as string) ?? 'teacher-01' }];
+      });
+      origCourseFind.mockImplementationOnce(async (args: { where: { id: string } }) => {
+        order.push('check_course');
+        return coursesStore.get(args.where.id) ?? null;
+      });
+
+      await service.createClass(adminActor, {
+        code: 'HSK1-ATOMIC',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [2, 4],
+        scheduleStartTime: '08:00',
+        scheduleEndTime: '09:30',
+        startDate: '2026-11-03',
+        totalSessions: 6,
+      });
+
+      expect(order).toEqual(['lock_teacher', 'check_course']);
     });
   });
 });

@@ -409,9 +409,10 @@ export function StudentRegisterForm({
 
         {/* Nút Submit Đăng Ký */}
         <button
+          id="reg-submit-btn"
           type="submit"
-          disabled={submitting}
-          className="w-full mt-2 rounded-xl bg-[var(--red)] py-2.5 text-center text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:opacity-50 transition-colors"
+          disabled={submitting || isUnder12}
+          className="w-full mt-2 rounded-xl bg-[var(--red)] py-2.5 text-center text-sm font-semibold text-white shadow-xs hover:bg-[var(--red-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
         >
           {submitting ? 'Đang xử lý đăng ký...' : 'Đăng Ký Tài Khoản'}
         </button>

@@ -8,7 +8,10 @@ import { ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client'
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
-import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
+import {
+  assertVnDateNotInFuture,
+  resolveVnCalendarDateForDb,
+} from '../../../common/utils/timezone.util.js';
 import { assertActorMayModifyAccount } from '../../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { AssignInitialClassDto } from '../dto/students.dto.js';
@@ -65,6 +68,7 @@ export class StudentEnrollmentService {
     if (!enrolledDate) {
       throw new BadRequestException('Thời điểm xếp lớp (enrolledAt) không hợp lệ');
     }
+    assertVnDateNotInFuture(enrolledDate, 'Ngày vào lớp');
 
     try {
       await this.prisma.$transaction(async (tx) => {

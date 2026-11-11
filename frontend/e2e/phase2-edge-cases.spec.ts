@@ -84,7 +84,7 @@ test.describe('Phase 2 Edge Cases & Form Ergonomics Verification', () => {
     expect(pageErrors).toEqual([]);
   });
 
-  test('EC-3: Student Under 16 — Guardian consent requirement and rejection of identical student/guardian email', async ({
+  test('EC-3: Student Under 16 — Unified guardian email guidance and mandatory consent checkbox enforcement', async ({
     page,
   }) => {
     const { pageErrors } = attachErrorGuards(page);
@@ -93,27 +93,23 @@ test.describe('Phase 2 Edge Cases & Form Ergonomics Verification', () => {
     await page.locator('#reg-fullname').fill('Học Viên Trẻ Tuổi');
     await page.locator('#reg-dob').fill(DOB_TEEN_14);
     await page.locator('#reg-phone').fill('0912345679');
-    await page.locator('#reg-email').fill('young.student@webedu.vn');
+    await page.locator('#reg-email').fill('phuhuynh.young@webedu.vn');
+    await page.locator('#reg-verification-code').fill('123456');
 
-    // Guardian section must dynamically appear for 14-year-old
-    const guardianEmailInput = page.locator('#reg-guardian-email');
+    // Unified single-email guidance + guardian consent checkbox must dynamically appear for 14-year-old
+    await expect(page.getByText(/Email cha mẹ \/ người giám hộ/i)).toBeVisible();
     const guardianConsentCheckbox = page.locator('#reg-guardian-consent');
-    await expect(guardianEmailInput).toBeVisible();
     await expect(guardianConsentCheckbox).toBeVisible();
 
-    // Enter identical email as student email
-    await guardianEmailInput.fill('young.student@webedu.vn');
-    await guardianConsentCheckbox.check();
     await page.locator('#reg-password').fill('Password@123');
     await page.locator('#reg-confirm-password').fill('Password@123');
-
     await page.locator('#reg-submit-btn').click();
 
-    // Invariant check: Guardian email cannot be the same as student email
-    const duplicateEmailAlert = page.locator('[role="alert"]').filter({
-      hasText: 'Email người giám hộ không được trùng với email học viên',
+    // Invariant check: Unchecked guardian consent blocks form submission
+    const consentAlert = page.locator('[role="alert"]').filter({
+      hasText: 'Bắt buộc phải có sự đồng ý của cha mẹ/người giám hộ',
     });
-    await expect(duplicateEmailAlert).toBeVisible();
+    await expect(consentAlert).toBeVisible();
     await expect(page).toHaveURL(/\/register/);
 
     expect(pageErrors).toEqual([]);

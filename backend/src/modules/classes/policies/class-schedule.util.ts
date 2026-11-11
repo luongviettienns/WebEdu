@@ -1,6 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { ClassStatus } from '@prisma/client';
-import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
+import { ClassStatus, Prisma } from '@prisma/client';
+import type { PrismaService } from '../../../common/prisma/prisma.service.js';
+import {
+  assertVnDateNotInFuture,
+  resolveVnCalendarDateForDb,
+} from '../../../common/utils/timezone.util.js';
 
 const TIME_24H_REGEX = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
@@ -28,6 +32,24 @@ export interface ClassScheduleSlice {
   scheduleDays: readonly number[];
   scheduleStartTime: string;
   scheduleEndTime: string;
+  /** Ngày khai giảng (UTC midnight). Bỏ trống = không giới hạn đầu. */
+  startDate?: Date | null;
+  /** Ngày kết thúc thực tế hoặc dự kiến (UTC midnight). Bỏ trống = không giới hạn cuối. */
+  endDate?: Date | null;
+}
+
+/**
+ * Hai khoảng hoạt động [startDate, endDate] giao nhau (biên inclusive, null = mở).
+ */
+export function hasActivePeriodOverlap(
+  a: ClassScheduleSlice,
+  b: ClassScheduleSlice,
+): boolean {
+  const aStart = a.startDate?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const aEnd = a.endDate?.getTime() ?? Number.POSITIVE_INFINITY;
+  const bStart = b.startDate?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const bEnd = b.endDate?.getTime() ?? Number.POSITIVE_INFINITY;
+  return aStart <= bEnd && bStart <= aEnd;
 }
 
 export function normalizeScheduleDays(days: readonly number[]): number[] {
@@ -121,7 +143,7 @@ export function hasScheduleOverlap(
 ): boolean {
   const aDays = new Set(a.scheduleDays);
   const sharesWeekday = b.scheduleDays.some((day) => aDays.has(day));
-  if (!sharesWeekday) {
+  if (!sharesWeekday || !hasActivePeriodOverlap(a, b)) {
     return false;
   }
   return (
@@ -169,6 +191,48 @@ export function assertClassIsEditable(status: ClassStatus): void {
       'Lớp học đã kết thúc hoặc lưu trữ (chỉ đọc), không thể chỉnh sửa',
     );
   }
+}
+
+/**
+ * Hệ thống chưa có bộ lập lịch (scheduler) cho thao tác có hiệu lực tương lai:
+ * mọi thao tác đổi trạng thái ngay lập tức nên không chấp nhận ngày hiệu lực sau hôm nay (GMT+7).
+ */
+export function assertEffectiveDateNotInFuture(
+  date: Date,
+  actionLabel: string,
+): void {
+  assertVnDateNotInFuture(date, actionLabel);
+}
+
+export async function findTeacherScheduleConflictWarning(
+  db: Prisma.TransactionClient | PrismaService,
+  teacherId: string,
+  candidate: ClassScheduleSlice,
+  excludeClassId?: string,
+): Promise<string | null> {
+  const others = await db.class.findMany({
+    where: {
+      teacherId,
+      ...(excludeClassId ? { id: { not: excludeClassId } } : {}),
+      status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+    },
+    select: {
+      code: true,
+      scheduleDays: true,
+      scheduleStartTime: true,
+      scheduleEndTime: true,
+      startDate: true,
+      expectedEndDate: true,
+      actualEndDate: true,
+    },
+  });
+  return buildScheduleConflictWarning(
+    candidate,
+    others.map(({ actualEndDate, expectedEndDate, ...rest }) => ({
+      ...rest,
+      endDate: actualEndDate ?? expectedEndDate,
+    })),
+  );
 }
 
 export function assertOpenClassStatus(status: ClassStatus): void {

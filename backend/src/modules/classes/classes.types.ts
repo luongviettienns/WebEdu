@@ -6,6 +6,21 @@ import type {
 
 export type ClassAccessMode = 'FULL' | 'READ_ONLY';
 
+export type ClassEffectiveRole = 'ADMIN' | 'TEACHER';
+
+/** Quyền thao tác thực tế của người xem trên một lớp (tính phía Backend, Frontend chỉ hiển thị). */
+export interface ClassCapabilitiesDto {
+  canEditClass: boolean;
+  canManageEnrollments: boolean;
+  canComplete: boolean;
+  canReopen: boolean;
+}
+
+export interface ClassReopenSummaryDto {
+  restoredStudentsCount: number;
+  skippedStudentsCount: number;
+}
+
 export interface ClassTeacherSummaryDto {
   id: string;
   fullName: string;
@@ -74,6 +89,10 @@ export interface ClassItemDto {
 
 export interface ClassDetailDto extends ClassItemDto {
   accessMode: ClassAccessMode;
+  effectiveRole: ClassEffectiveRole;
+  capabilities: ClassCapabilitiesDto;
+  /** Chỉ có trong phản hồi của thao tác mở lại lớp. */
+  reopenSummary?: ClassReopenSummaryDto;
   enrollments: ClassEnrollmentItemDto[];
   teacherHistory: ClassTeacherHistoryItemDto[];
 }

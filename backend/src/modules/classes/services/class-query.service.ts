@@ -18,6 +18,7 @@ import {
   type ClassDetailEntity,
   type ClassItemEntity,
 } from '../mappers/class.mapper.js';
+import { findTeacherScheduleConflictWarning } from '../policies/class-schedule.util.js';
 import { ClassAccessService } from './class-access.service.js';
 
 const CLASS_DETAIL_INCLUDE = {
@@ -100,6 +101,10 @@ export class ClassQueryService {
       where.courseId = query.courseId.trim();
     }
 
+    if (query.excludeClassId?.trim()) {
+      where.id = { not: query.excludeClassId.trim() };
+    }
+
     const includeEnded =
       query.includeEnded === true || query.includeEnded === 'true';
     if (query.status) {
@@ -158,6 +163,21 @@ export class ClassQueryService {
       cls.status === ClassStatus.COMPLETED ||
       cls.status === ClassStatus.ARCHIVED;
 
+    const scheduleConflictWarning = isEndedClass
+      ? null
+      : await findTeacherScheduleConflictWarning(
+          this.prisma,
+          cls.teacherId,
+          {
+            scheduleDays: cls.scheduleDays,
+            scheduleStartTime: cls.scheduleStartTime,
+            scheduleEndTime: cls.scheduleEndTime,
+            startDate: cls.startDate,
+            endDate: cls.actualEndDate ?? cls.expectedEndDate,
+          },
+          cls.id,
+        );
+
     const filteredEnrollments = includeInactive
       ? cls.enrollments
       : cls.enrollments.filter((e) =>
@@ -173,6 +193,11 @@ export class ClassQueryService {
         enrollments: filteredEnrollments,
       },
       accessMode,
+      scheduleConflictWarning,
+      {
+        effectiveRole: this.access.resolveEffectiveRole(actor),
+        capabilities: this.access.resolveCapabilities(actor, cls),
+      },
     );
   }
 }

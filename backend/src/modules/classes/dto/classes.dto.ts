@@ -32,6 +32,11 @@ export class ListClassesQueryDto {
   @IsString()
   teacherId?: string;
 
+  @ApiPropertyOptional({ description: 'Loại trừ một ID lớp học (khi chọn lớp đích chuyển lớp)' })
+  @IsOptional()
+  @IsString()
+  excludeClassId?: string;
+
   @ApiPropertyOptional({ enum: ClassStatus })
   @IsOptional()
   @IsEnum(ClassStatus)

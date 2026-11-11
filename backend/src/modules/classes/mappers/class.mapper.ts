@@ -10,7 +10,9 @@ import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
 import { formatScheduleText } from '../policies/class-schedule.util.js';
 import type {
   ClassAccessMode,
+  ClassCapabilitiesDto,
   ClassDetailDto,
+  ClassEffectiveRole,
   ClassEnrollmentItemDto,
   ClassItemDto,
   ClassTeacherHistoryItemDto,
@@ -180,6 +182,15 @@ export function toClassDetailDto(
   entity: ClassDetailEntity,
   accessMode?: ClassAccessMode,
   scheduleConflictWarning: string | null = null,
+  viewer: { effectiveRole: ClassEffectiveRole; capabilities: ClassCapabilitiesDto } = {
+    effectiveRole: 'TEACHER',
+    capabilities: {
+      canEditClass: false,
+      canManageEnrollments: false,
+      canComplete: false,
+      canReopen: false,
+    },
+  },
 ): ClassDetailDto {
   const base = toClassItemDto(entity, scheduleConflictWarning);
   const resolvedAccessMode: ClassAccessMode =
@@ -218,6 +229,8 @@ export function toClassDetailDto(
   return {
     ...base,
     accessMode: resolvedAccessMode,
+    effectiveRole: viewer.effectiveRole,
+    capabilities: viewer.capabilities,
     enrollments,
     teacherHistory,
   };

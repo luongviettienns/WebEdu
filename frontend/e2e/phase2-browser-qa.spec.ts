@@ -71,6 +71,7 @@ const DOB_ADULT_25 = `${VN_YEAR - 25}-04-15`;
 test.describe('Phase 2 Browser QA — Auth, Users & RBAC (Desktop & Mobile)', () => {
   test('Journey 1: Student Registration (<12 block, 12-15 conditional Guardian Consent, >=16 pending enrollment)', async ({
     page,
+    request,
   }, testInfo) => {
     const { pageErrors } = attachErrorGuards(page);
     const isMobile = testInfo.project.name.includes('mobile');
@@ -108,9 +109,21 @@ test.describe('Phase 2 Browser QA — Auth, Users & RBAC (Desktop & Mobile)', ()
     await page
       .locator('#reg-phone')
       .fill(isMobile ? '0987654322' : '0987654321');
-    await page
-      .locator('#reg-email')
-      .fill(`new.student.${suffix}@example.com`);
+    const registerEmail = `new.student.${suffix}@example.com`;
+    await page.locator('#reg-email').fill(registerEmail);
+    await page.getByRole('button', { name: 'Gửi mã' }).click();
+    await expect(
+      page.getByText(/Mã xác thực đã được gửi tới email của bạn/i),
+    ).toBeVisible();
+
+    const otpRes = await request.get(
+      `http://127.0.0.1:4026/latest-otp?email=${encodeURIComponent(registerEmail)}`,
+    );
+    expect(otpRes.ok()).toBe(true);
+    const { otp } = (await otpRes.json()) as { otp: string | null };
+    expect(otp).toMatch(/^\d{6}$/);
+    await page.locator('#reg-verification-code').fill(otp!);
+
     await page.locator('#reg-password').fill('Password@123');
     await page.locator('#reg-confirm-password').fill('Password@123');
 

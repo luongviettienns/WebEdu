@@ -173,6 +173,25 @@ async function startQaSmtpAndInspector(smtpPort, inspectorPort, databaseUrl) {
       res.end(JSON.stringify({ token: foundToken, totalMessages: messages.length }));
       return;
     }
+    if (req.method === 'GET' && reqUrl.pathname === '/latest-otp') {
+      const email = (reqUrl.searchParams.get('email') ?? '').trim().toLowerCase();
+      let foundOtp = null;
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const msg = messages[i];
+        if (msg.rcptTo.some((r) => r.toLowerCase().includes(email))) {
+          const normalized = msg.decodedBody.replace(/\s+/g, ' ');
+          const match =
+            /TD Hán Ngữ là:\s*(\d{6})/i.exec(normalized) ??
+            />(\d{6})<\/div>/i.exec(normalized) ??
+            /TD Hán Ngữ là:\s*(\d{6})/i.exec(msg.rawData);
+          foundOtp = match?.[1] ?? null;
+          if (foundOtp) break;
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ otp: foundOtp, totalMessages: messages.length }));
+      return;
+    }
     if (req.method === 'POST' && reqUrl.pathname === '/reset-rate-limits') {
       const prisma = new PrismaClient({
         datasources: { db: { url: databaseUrl } },

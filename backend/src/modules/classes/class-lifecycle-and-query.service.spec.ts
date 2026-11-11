@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BadRequestException,
   ForbiddenException,
@@ -72,6 +72,7 @@ interface MockEnrollmentRecord {
   enrolledDate: Date;
   leftDate: Date | null;
   reason: string | null;
+  createdAt?: Date;
 }
 
 interface MockTeacherAssignmentRecord {
@@ -155,7 +156,14 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
     tokenVersion: 0,
   };
 
+  // Ghim đồng hồ hệ thống để dữ liệu mẫu có ngày cố định không bị coi là 'tương lai' (GMT+7: 31/12/2026 12:00).
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-12-31T05:00:00.000Z'));
     coursesStore = new Map([
       [
         'course-hsk1',
@@ -434,6 +442,14 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       where?: Record<string, unknown>,
     ): boolean => {
       if (!where) return true;
+      if (
+        where.id &&
+        typeof where.id === 'object' &&
+        'not' in (where.id as Record<string, unknown>) &&
+        cls.id === (where.id as { not: string }).not
+      ) {
+        return false;
+      }
       if (typeof where.teacherId === 'string' && cls.teacherId !== where.teacherId) {
         return false;
       }
@@ -642,6 +658,10 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
               status?: EnrollmentStatus;
               classId?: { not?: string };
               enrolledDate?: { gte?: Date };
+              OR?: Array<{
+                createdAt?: { gt?: Date };
+                enrolledDate?: { gt?: Date };
+              }>;
             };
           }) => {
             return (
@@ -656,6 +676,23 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
                   e.enrolledDate.getTime() < where.enrolledDate.gte.getTime()
                 ) {
                   return false;
+                }
+                if (Array.isArray(where.OR)) {
+                  const createdAtMs = e.createdAt?.getTime() ?? 0;
+                  const enrolledMs = e.enrolledDate.getTime();
+                  const matchedOr = where.OR.some((cond) => {
+                    if (cond.createdAt?.gt && createdAtMs > cond.createdAt.gt.getTime()) {
+                      return true;
+                    }
+                    if (
+                      cond.enrolledDate?.gt &&
+                      enrolledMs > cond.enrolledDate.gt.getTime()
+                    ) {
+                      return true;
+                    }
+                    return false;
+                  });
+                  if (!matchedOr) return false;
                 }
                 return true;
               }) ?? null
@@ -959,6 +996,28 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         queryService.getClassById(adminActor, 'class-missing'),
       ).rejects.toThrowError(new NotFoundException('Không tìm thấy lớp học'));
     });
+
+    it('REGRESSION (P2-5 & P2-4): excludes source class via excludeClassId in listClasses and returns live scheduleConflictWarning for open overlapping classes', async () => {
+      const excluded = await queryService.listClasses(adminActor, {
+        excludeClassId: 'class-active-1',
+      });
+      expect(excluded.total).toBe(1);
+      expect(excluded.items.map((c) => c.id)).toEqual(['class-other']);
+
+      // Make class-other share teacher-01 and overlap schedule with class-active-1
+      classesStore.get('class-other')!.teacherId = 'teacher-01';
+      classesStore.get('class-other')!.scheduleDays = [1, 3, 5];
+      classesStore.get('class-other')!.scheduleStartTime = '18:30';
+      classesStore.get('class-other')!.scheduleEndTime = '20:00';
+      classesStore.get('class-other')!.startDate = new Date('2026-10-15T00:00:00.000Z');
+      classesStore.get('class-other')!.expectedEndDate = new Date('2026-12-20T00:00:00.000Z');
+
+      const openDetail = await queryService.getClassById(adminActor, 'class-active-1');
+      expect(openDetail.scheduleConflictWarning).toContain('HSK1-K26-02');
+
+      const endedDetail = await queryService.getClassById(adminActor, 'class-completed-1');
+      expect(endedDetail.scheduleConflictWarning).toBeNull();
+    });
   });
 
   describe('ClassLifecycleService — completeClass & reopenClass (7-Day Window)', () => {
@@ -978,8 +1037,8 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       expect(completed.closedReason).toBe('Kết thúc khóa học HSK1 đúng tiến độ');
       expect(completed.closedAt).toBeTruthy();
 
-      // Locks students in ascending order of studentId ('student-01', 'student-04')
-      expect(lockedUserIdsOrder).toEqual(['student-01', 'student-04']);
+      // Locks teacher & active students together in ascending userId order to avoid counter races
+      expect(lockedUserIdsOrder).toEqual(['student-01', 'student-04', 'teacher-01']);
 
       // Only previously ACTIVE enrollments become COMPLETED; TRANSFERRED and DROPPED are untouched!
       const enr1 = enrollmentsStore.find((e) => e.id === 'enr-active-1')!;
@@ -1014,6 +1073,22 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       expect(
         auditLogs.some((l) => l.action === 'CLASS_COMPLETED'),
       ).toBe(true);
+    });
+
+    it('REGRESSION: rejects a future actualEndDate and leaves class, enrollments and teacher assignment untouched', async () => {
+      await expect(
+        lifecycleService.completeClass(adminActor, 'class-active-1', {
+          actualEndDate: '2027-01-10', // today (pinned) = 2026-12-31 GMT+7
+        }),
+      ).rejects.toThrowError(/ngày trong tương lai/);
+
+      expect(classesStore.get('class-active-1')!.status).toBe(
+        ClassStatus.ACTIVE,
+      );
+      expect(
+        enrollmentsStore.find((e) => e.id === 'enr-active-1')!.status,
+      ).toBe(EnrollmentStatus.ACTIVE);
+      expect(auditLogs.some((l) => l.action === 'CLASS_COMPLETED')).toBe(false);
     });
 
     it('rejects completeClass when actualEndDate < startDate or class is already COMPLETED', async () => {
@@ -1110,6 +1185,11 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       expect(reopened.actualEndDate).toBeNull();
       expect(reopened.closedAt).toBeNull();
       expect(reopened.closedReason).toBeNull();
+      // REGRESSION: the response reports exactly how many students were truly restored vs skipped
+      expect(reopened.reopenSummary).toEqual({
+        restoredStudentsCount: 1,
+        skippedStudentsCount: 1,
+      });
 
       // student-01 (no other active class) is restored to ACTIVE in class-active-1
       const enr1 = enrollmentsStore.find((e) => e.id === 'enr-active-1')!;
@@ -1173,5 +1253,113 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       expect(usersStore.get('student-04')?.status).toBe(UserStatus.PENDING_CLASS);
       expect(usersStore.get('student-04')?.studentProfile?.currentClassId).toBeNull();
     });
+
+    it('REGRESSION (P2-3): restores same-day prior-class transfers created before closedAt and blocks post-close enrollments even with backdated enrolledDate', async () => {
+      // Prior enrollment in class-other before closing on 2026-11-28 (same calendar day!)
+      enrollmentsStore.push({
+        id: 'enr-prior-same-day',
+        classId: 'class-other',
+        studentId: 'student-01',
+        status: EnrollmentStatus.TRANSFERRED,
+        enrolledDate: new Date('2026-11-28T00:00:00.000Z'),
+        leftDate: new Date('2026-11-28T00:00:00.000Z'),
+        reason: 'Chuyển lớp trước khi đóng lớp',
+        createdAt: new Date('2026-11-27T08:00:00.000Z'),
+      });
+
+      await lifecycleService.completeClass(adminActor, 'class-active-1', {
+        actualEndDate: '2026-11-28',
+      });
+
+      const closedAt = classesStore.get('class-active-1')!.closedAt!;
+
+      // student-04 enrolled in another class AFTER closedAt even with backdated enrolledDate < actualEndDate
+      enrollmentsStore.push({
+        id: 'enr-post-close-backdated',
+        classId: 'class-other',
+        studentId: 'student-04',
+        status: EnrollmentStatus.DROPPED,
+        enrolledDate: new Date('2026-11-27T00:00:00.000Z'),
+        leftDate: new Date('2026-11-28T00:00:00.000Z'),
+        reason: 'Nhập lại sau khi đóng lớp',
+        createdAt: new Date(closedAt.getTime() + 60_000),
+      });
+
+      const twoDaysLater = new Date(closedAt.getTime() + 2 * 24 * 60 * 60 * 1000);
+      const reopened = await lifecycleService.reopenClass(
+        adminActor,
+        'class-active-1',
+        { reason: 'Kiểm tra P2-3' },
+        twoDaysLater,
+      );
+
+      expect(reopened.reopenSummary).toEqual({
+        restoredStudentsCount: 1,
+        skippedStudentsCount: 1,
+      });
+      expect(enrollmentsStore.find((e) => e.id === 'enr-active-1')?.status).toBe(
+        EnrollmentStatus.ACTIVE,
+      );
+      expect(enrollmentsStore.find((e) => e.id === 'enr-active-4')?.status).toBe(
+        EnrollmentStatus.COMPLETED,
+      );
+    });
+  });
+});
+
+describe('ClassAccessService.resolveCapabilities — server-side capability contract', () => {
+  const access = new ClassAccessService();
+  const actor = (roles: Role[]): AuthenticatedUser => ({
+    id: 'u-1',
+    email: 'u1@webedu.vn',
+    fullName: 'U1',
+    phone: '0909000099',
+    roles,
+    effectiveRole: roles[0]!,
+    status: UserStatus.ACTIVE,
+    tokenVersion: 0,
+  });
+  const open = { status: ClassStatus.ACTIVE, closedAt: null };
+  const closedAt = new Date('2026-12-20T03:00:00.000Z');
+  const ended = { status: ClassStatus.COMPLETED, closedAt };
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('gives write capabilities only to ADMIN (including dual ADMIN+TEACHER) and never to a teacher-only viewer', () => {
+    const none = {
+      canEditClass: false,
+      canManageEnrollments: false,
+      canComplete: false,
+      canReopen: false,
+    };
+    expect(access.resolveCapabilities(actor([Role.TEACHER]), open)).toEqual(none);
+    expect(access.resolveCapabilities(actor([Role.SUPERADMIN]), open)).toEqual(none);
+    expect(access.resolveCapabilities(actor([Role.ADMIN]), open)).toEqual({
+      canEditClass: true,
+      canManageEnrollments: true,
+      canComplete: true,
+      canReopen: false,
+    });
+    expect(
+      access.resolveCapabilities(actor([Role.ADMIN, Role.TEACHER]), open),
+    ).toEqual(access.resolveCapabilities(actor([Role.ADMIN]), open));
+    expect(access.resolveEffectiveRole(actor([Role.ADMIN, Role.TEACHER]))).toBe('ADMIN');
+    expect(access.resolveEffectiveRole(actor([Role.TEACHER]))).toBe('TEACHER');
+  });
+
+  it('exposes canReopen only for an ADMIN within 7 days of closing, and removes write actions on ended classes', () => {
+    const admin = actor([Role.ADMIN]);
+    const within = access.resolveCapabilities(admin, ended, new Date(closedAt.getTime() + 6 * DAY));
+    expect(within).toEqual({
+      canEditClass: false,
+      canManageEnrollments: false,
+      canComplete: false,
+      canReopen: true,
+    });
+    expect(
+      access.resolveCapabilities(admin, ended, new Date(closedAt.getTime() + 8 * DAY)).canReopen,
+    ).toBe(false);
+    expect(
+      access.resolveCapabilities(actor([Role.TEACHER]), ended, new Date(closedAt.getTime() + DAY)).canReopen,
+    ).toBe(false);
   });
 });

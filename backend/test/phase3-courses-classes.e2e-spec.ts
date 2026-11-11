@@ -383,7 +383,23 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     });
     expect(t1ProfileAfterB.activeClassesCount).toBe(2);
 
-    // 3. ADMIN reassigns Class A from Teacher 1 to Teacher 2 via PATCH /api/v1/classes/:id
+    // 3a. Attempting to reassign teacher with future effective date returns 400 and leaves teacherId & access unchanged
+    await request(server)
+      .patch(`/api/v1/classes/${classARes.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        teacherId: teacher2.id,
+        teacherAssignedFrom: '2099-01-01',
+        teacherChangeReason: 'Thử hẹn ngày bàn giao tương lai',
+      })
+      .expect(400);
+
+    await request(server)
+      .get(`/api/v1/classes/${classARes.body.id}`)
+      .set('Authorization', `Bearer ${teacher1Token}`)
+      .expect(200);
+
+    // 3b. ADMIN reassigns Class A from Teacher 1 to Teacher 2 via PATCH /api/v1/classes/:id
     await request(server)
       .patch(`/api/v1/classes/${classARes.body.id}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -555,7 +571,19 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     });
     expect(s3ActiveEnrollments).toHaveLength(1);
 
-    // 3. Class Transfer: ADMIN transfers Student 1 from Class A to Class B
+    // 3. Class Transfer: future transferDate returns 400; valid date transfers Student 1 from Class A to Class B
+    await request(server)
+      .post(
+        `/api/v1/classes/${classA.body.id}/enrollments/${student1.id}/transfer`,
+      )
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        targetClassId: classB.body.id,
+        transferDate: '2099-01-01',
+        reason: 'Thử chuyển lớp với ngày tương lai',
+      })
+      .expect(400);
+
     const transferRes = await request(server)
       .post(
         `/api/v1/classes/${classA.body.id}/enrollments/${student1.id}/transfer`,
@@ -611,12 +639,21 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
         .expect(403);
     }
 
-    // 5. Drop Student: ADMIN drops Student 2 from Class A -> DROPPED & returns to PENDING_CLASS
+    // 5. Drop Student: future leftDate returns 400; valid date drops Student 2 from Class A -> DROPPED & returns to PENDING_CLASS
+    await request(server)
+      .post(`/api/v1/classes/${classA.body.id}/enrollments/${student2.id}/drop`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        leftDate: '2099-01-01',
+        reason: 'Thử rút lớp ngày tương lai',
+      })
+      .expect(400);
+
     const dropRes = await request(server)
       .post(`/api/v1/classes/${classA.body.id}/enrollments/${student2.id}/drop`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
-        leftDate: '2026-11-12',
+        leftDate: '2026-11-11',
         reason: 'Bảo lưu cá nhân 2 tháng',
       })
       .expect(200);
@@ -691,7 +728,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
         scheduleDays: [1, 3, 5],
         scheduleStartTime: '18:00',
         scheduleEndTime: '19:30',
-        startDate: '2026-11-02',
+        startDate: '2026-10-05',
         status: ClassStatus.ACTIVE,
       })
       .expect(201);
@@ -706,7 +743,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
         scheduleDays: [2, 4, 6],
         scheduleStartTime: '19:30',
         scheduleEndTime: '21:00',
-        startDate: '2026-11-03',
+        startDate: '2026-10-06',
         status: ClassStatus.ACTIVE,
       })
       .expect(201);
@@ -717,7 +754,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         studentIds: [student1.id, student2.id],
-        enrolledDate: '2026-11-02',
+        enrolledDate: '2026-10-05',
       })
       .expect(200);
 
@@ -728,7 +765,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         targetClassId: classB.body.id,
-        transferDate: '2026-11-10',
+        transferDate: '2026-10-12',
         reason: 'Chuyển sang lớp HSK2-K26-01',
       })
       .expect(200);
@@ -736,27 +773,42 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     await request(server)
       .post(`/api/v1/classes/${classA.body.id}/enrollments/${student2.id}/drop`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ leftDate: '2026-11-12', reason: 'Bảo lưu' })
+      .send({ leftDate: '2026-10-14', reason: 'Bảo lưu' })
       .expect(200);
 
     await request(server)
       .post(`/api/v1/classes/${classB.body.id}/enrollments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ studentIds: [student3.id], enrolledDate: '2026-11-03' })
+      .send({ studentIds: [student3.id], enrolledDate: '2026-10-06' })
       .expect(200);
 
-    // 1. ADMIN completes Class B -> status COMPLETED, accessMode READ_ONLY, Teacher 1 activeClassesCount = 0
+    // 1. Future actualEndDate returns 400; valid ADMIN complete -> COMPLETED, READ_ONLY, Teacher 1 activeClassesCount = 0
+    await request(server)
+      .post(`/api/v1/classes/${classB.body.id}/complete`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        actualEndDate: '2099-01-01',
+        reason: 'Thử kết thúc lớp ngày tương lai',
+      })
+      .expect(400);
+
     const completeBRes = await request(server)
       .post(`/api/v1/classes/${classB.body.id}/complete`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
-        actualEndDate: '2026-12-26',
+        actualEndDate: '2026-11-10',
         reason: 'Hoàn thành chương trình HSK 2 đúng tiến độ',
       })
       .expect(200);
 
     expect(completeBRes.body.status).toBe(ClassStatus.COMPLETED);
     expect(completeBRes.body.accessMode).toBe('READ_ONLY');
+    expect(completeBRes.body.capabilities).toEqual({
+      canEditClass: false,
+      canManageEnrollments: false,
+      canComplete: false,
+      canReopen: true,
+    });
 
     const t1AfterCompleteB =
       await harness.prisma.teacherProfile.findUniqueOrThrow({
@@ -806,6 +858,13 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
       .set('Authorization', `Bearer ${teacher1Token}`)
       .expect(200);
     expect(t1CompletedBView.body.accessMode).toBe('READ_ONLY');
+    expect(t1CompletedBView.body.effectiveRole).toBe('TEACHER');
+    expect(t1CompletedBView.body.capabilities).toEqual({
+      canEditClass: false,
+      canManageEnrollments: false,
+      canComplete: false,
+      canReopen: false,
+    });
 
     // 3. Attempting PATCH or POST enrollments on completed Class B returns 400 BadRequestException
     await request(server)
@@ -817,7 +876,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     await request(server)
       .post(`/api/v1/classes/${classB.body.id}/enrollments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ studentIds: [student2.id], enrolledDate: '2026-12-27' })
+      .send({ studentIds: [student2.id], enrolledDate: '2026-11-11' })
       .expect(400);
 
     // 4. Enroll Student 1 into new Class C (ACTIVE), while Student 3 remains PENDING_CLASS.
@@ -832,7 +891,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
         scheduleDays: [2, 4, 6],
         scheduleStartTime: '18:00',
         scheduleEndTime: '19:30',
-        startDate: '2026-12-28',
+        startDate: '2026-11-11',
         status: ClassStatus.ACTIVE,
       })
       .expect(201);
@@ -840,7 +899,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     await request(server)
       .post(`/api/v1/classes/${classC.body.id}/enrollments`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ studentIds: [student1.id], enrolledDate: '2026-12-28' })
+      .send({ studentIds: [student1.id], enrolledDate: '2026-11-11' })
       .expect(200);
 
     const reopenRes = await request(server)
@@ -851,6 +910,17 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
 
     expect(reopenRes.body.status).toBe(ClassStatus.ACTIVE);
     expect(reopenRes.body.accessMode).toBe('FULL');
+    expect(reopenRes.body.effectiveRole).toBe('ADMIN');
+    expect(reopenRes.body.capabilities).toEqual({
+      canEditClass: true,
+      canManageEnrollments: true,
+      canComplete: true,
+      canReopen: false,
+    });
+    expect(reopenRes.body.reopenSummary).toEqual({
+      restoredStudentsCount: 1,
+      skippedStudentsCount: 1,
+    });
 
     const [s1AfterReopen, s3AfterReopen] = await Promise.all([
       harness.prisma.user.findUniqueOrThrow({
@@ -887,7 +957,7 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     await request(server)
       .post(`/api/v1/classes/${classB.body.id}/complete`)
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ actualEndDate: '2026-12-26', reason: 'Đóng lớp hoàn tất' })
+      .send({ actualEndDate: '2026-11-10', reason: 'Đóng lớp hoàn tất' })
       .expect(200);
 
     const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
@@ -1001,5 +1071,135 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     expect(adminStudentDetail.body.currentClassId).toBe(classA.body.id);
     expect(adminStudentDetail.body.pastClasses).toHaveLength(1);
     expect(adminStudentDetail.body.pastClasses[0]?.classCode).toBe('HSK1-K26-VIP');
+  });
+
+  it('Scenario 6 (Hardening): excludeClassId, live getClassById scheduleConflictWarning, future enrollment date blocks, inactive student transfer block, and same-day transfer reopen', async () => {
+    const { server, teacher1, teacher2, student1, student2, adminToken } = await seedActors();
+
+    const hsk1 = await request(server)
+      .post('/api/v1/courses')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-HARDEN',
+        name: 'HSK 1 Hardening',
+        level: CourseLevel.HSK1,
+        defaultSessions: 24,
+      })
+      .expect(201);
+
+    const class1 = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-H1',
+        courseId: hsk1.body.id,
+        teacherId: teacher1.id,
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-10-05',
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    const class2 = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-H2',
+        courseId: hsk1.body.id,
+        teacherId: teacher1.id,
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:30',
+        scheduleEndTime: '20:00',
+        startDate: '2026-10-12',
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+    expect(class2.body.scheduleConflictWarning).toContain('HSK1-H1');
+
+    const class3 = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-H3',
+        courseId: hsk1.body.id,
+        teacherId: teacher2.id,
+        scheduleDays: [2, 4],
+        scheduleStartTime: '09:00',
+        scheduleEndTime: '10:30',
+        startDate: '2026-10-06',
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    // P2-4: GET /classes/:id computes live scheduleConflictWarning
+    const detail2 = await request(server)
+      .get(`/api/v1/classes/${class2.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(detail2.body.scheduleConflictWarning).toContain('HSK1-H1');
+
+    // P2-5: excludeClassId excludes source class from paged results and total
+    const excludedList = await request(server)
+      .get(`/api/v1/classes?excludeClassId=${class1.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(excludedList.body.total).toBe(2);
+    expect(excludedList.body.items.map((c: { id: string }) => c.id)).not.toContain(class1.body.id);
+
+    // P1-2 / SEC-03: Future enrolledDate and future enrolledAt rejected with 400
+    await request(server)
+      .post(`/api/v1/classes/${class1.body.id}/enrollments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ studentIds: [student1.id], enrolledDate: '2099-01-01' })
+      .expect(400);
+
+    await request(server)
+      .post(`/api/v1/students/${student1.id}/assign-initial-class`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ classNameOrId: class1.body.code, enrolledAt: '2099-01-01' })
+      .expect(400);
+
+    // SEC-01: Deactivated student cannot be transferred out of class
+    await request(server)
+      .post(`/api/v1/classes/${class1.body.id}/enrollments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ studentIds: [student2.id], enrolledDate: '2026-11-01' })
+      .expect(200);
+    await harness.prisma.user.update({
+      where: { id: student2.id },
+      data: { status: UserStatus.INACTIVE },
+    });
+    await request(server)
+      .post(`/api/v1/classes/${class1.body.id}/enrollments/${student2.id}/transfer`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ targetClassId: class3.body.id, transferDate: '2026-11-05' })
+      .expect(400);
+
+    // P2-3: Student enrolled in H1, transferred same-day (2026-11-05) into H2, H2 closed on 2026-11-05 and reopened -> restored!
+    await request(server)
+      .post(`/api/v1/classes/${class1.body.id}/enrollments`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ studentIds: [student1.id], enrolledDate: '2026-11-01' })
+      .expect(200);
+    await request(server)
+      .post(`/api/v1/classes/${class1.body.id}/enrollments/${student1.id}/transfer`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ targetClassId: class2.body.id, transferDate: '2026-11-05' })
+      .expect(200);
+    await request(server)
+      .post(`/api/v1/classes/${class2.body.id}/complete`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ actualEndDate: '2026-11-05', reason: 'Đóng lớp H2' })
+      .expect(200);
+    const reopenedH2 = await request(server)
+      .post(`/api/v1/classes/${class2.body.id}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Mở lại lớp H2 kiểm tra khôi phục' })
+      .expect(200);
+
+    expect(reopenedH2.body.reopenSummary?.restoredStudentsCount).toBe(1);
+    expect(reopenedH2.body.scheduleConflictWarning).toContain('HSK1-H1');
   });
 });
