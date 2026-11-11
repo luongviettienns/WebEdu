@@ -70,7 +70,8 @@ export function StudentListTable({
               students.map((student, idx) => (
                 <tr
                   key={student.id}
-                  className="hover:bg-[var(--hover)] transition-colors"
+                  onClick={() => onSelectStudent(student)}
+                  className="hover:bg-[var(--hover)] transition-colors cursor-pointer"
                 >
                   <td className="px-4 py-3.5 font-medium text-[var(--ink-2)] font-num">
                     {(page - 1) * pageLimit + idx + 1}

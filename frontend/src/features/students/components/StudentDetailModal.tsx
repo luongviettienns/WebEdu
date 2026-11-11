@@ -15,7 +15,7 @@ import {
   formatDateDdMmYyyy,
   formatDateTimeVn,
 } from '@/lib/utils/date';
-import { type UserStatus } from '@/types/user';
+import { STATUS_LABELS, type UserStatus } from '@/types/user';
 
 function normalizeIsoDateForInput(iso?: string | null): string {
   if (!iso) return '';
@@ -62,6 +62,22 @@ export function StudentDetailModal({
   );
   const [modalError, setModalError] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  const initials = (editFullName || initialStudent.fullName)
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .slice(-2)
+    .join('')
+    .toUpperCase();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -190,167 +206,305 @@ export function StudentDetailModal({
   };
 
   return (
-    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 overflow-y-auto backdrop-blur-xs">
-      <div className="my-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-          <div>
-            <h2 className="text-lg font-bold text-[var(--ink)]">Hồ Sơ Chi Tiết Học Viên</h2>
-            <p className="text-xs text-[var(--ink-2)]">
-              Quản lý thông tin cá nhân, trạng thái tài khoản và ghi chú nội bộ
-            </p>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Chi tiết hồ sơ học viên"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex justify-end bg-[#1C2320]/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
+    >
+      <div className="flex h-full w-full max-w-lg flex-col border-l border-[var(--line)] bg-white shadow-2xl transition-transform animate-in slide-in-from-right duration-200">
+        <div className="flex items-center justify-between border-b border-[var(--line)] p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-[var(--surface-2)] text-sm font-bold text-[var(--ink)] border border-[var(--line-2)] font-han">
+              {initials}
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-[var(--ink)] leading-snug">
+                {editFullName || initialStudent.fullName}
+              </h2>
+              <div className="mt-1 flex items-center gap-2">
+                <span
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    editStatus === 'ACTIVE'
+                      ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
+                      : editStatus === 'PENDING_CLASS'
+                        ? 'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--amber)]/20'
+                        : 'bg-[var(--surface-2)] text-[var(--ink-2)] border border-[var(--line)]'
+                  }`}
+                >
+                  {STATUS_LABELS[editStatus] ?? editStatus}
+                </span>
+                <span className="font-han text-[10px] text-[var(--ink-3)] uppercase tracking-wider">
+                  学员档案
+                </span>
+              </div>
+            </div>
           </div>
-          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]">Đóng</button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-sm text-[var(--ink-2)] hover:bg-[var(--surface-2)] hover:text-[var(--ink)] transition-colors"
+          >
+            ✕
+          </button>
         </div>
 
-        {detailLoading ? (
-          <p className="mt-3 text-xs text-[var(--ink-2)]">Đang đồng bộ dữ liệu chi tiết...</p>
-        ) : null}
+        <form
+          onSubmit={(e) => void handleSaveStudent(e)}
+          noValidate
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {detailLoading ? (
+              <p className="text-xs text-[var(--ink-2)]">
+                Đang đồng bộ dữ liệu chi tiết...
+              </p>
+            ) : null}
 
-        {modalError ? (
-          <div role="alert" className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]">{modalError}</div>
-        ) : null}
-
-        <form onSubmit={(e) => void handleSaveStudent(e)} noValidate className="mt-4 space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label htmlFor="stu-fullname" className={LABEL_CLS}>
-                Họ và tên <span className="text-[var(--red)]">*</span>
-              </label>
-              <input id="stu-fullname" type="text" maxLength={100} required value={editFullName} onChange={(e) => setEditFullName(e.target.value)} className={INPUT_CLS} />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="stu-dob" className={LABEL_CLS}>
-                  Ngày sinh ({formatDateDdMmYyyy(editDateOfBirth)})
-                </label>
-                {computedAge !== null ? (
-                  <span className="rounded bg-[var(--surface-2)] px-2 py-0.5 text-xs font-semibold text-[var(--ink-2)] font-num">
-                    Tuổi: {computedAge}
-                  </span>
-                ) : null}
+            {modalError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
+              >
+                {modalError}
               </div>
-              <input
-                id="stu-dob"
-                type="date"
-                disabled={isGuardianConsentLocked}
-                value={editDateOfBirth}
-                onChange={(e) => setEditDateOfBirth(e.target.value)}
-                className={`${INPUT_CLS} font-num disabled:cursor-not-allowed disabled:bg-[var(--surface-2)] disabled:text-[var(--ink-2)]`}
-              />
-              {isGuardianConsentLocked ? (
-                <p className="text-[11px] font-medium text-[var(--amber)]">
-                  Trường Ngày sinh đã khóa do học viên có xác nhận đồng ý của cha mẹ.
-                </p>
+            ) : null}
+
+            <div className="space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
+                Thông tin cá nhân
+              </h3>
+
+              <div className="space-y-1.5">
+                <label htmlFor="stu-fullname" className={LABEL_CLS}>
+                  Họ và tên <span className="text-[var(--red)]">*</span>
+                </label>
+                <input
+                  id="stu-fullname"
+                  type="text"
+                  maxLength={100}
+                  required
+                  value={editFullName}
+                  onChange={(e) => setEditFullName(e.target.value)}
+                  className={INPUT_CLS}
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="stu-dob" className={LABEL_CLS}>
+                      Ngày sinh
+                    </label>
+                    {computedAge !== null ? (
+                      <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--ink-2)] font-num">
+                        {computedAge} tuổi
+                      </span>
+                    ) : null}
+                  </div>
+                  <input
+                    id="stu-dob"
+                    type="date"
+                    disabled={isGuardianConsentLocked}
+                    value={editDateOfBirth}
+                    onChange={(e) => setEditDateOfBirth(e.target.value)}
+                    className={`${INPUT_CLS} font-num disabled:cursor-not-allowed disabled:bg-[var(--surface-2)] disabled:text-[var(--ink-2)]`}
+                  />
+                  {isGuardianConsentLocked ? (
+                    <p className="text-[11px] font-medium text-[var(--amber)]">
+                      Trường Ngày sinh đã khóa do học viên có xác nhận đồng ý của cha mẹ.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label htmlFor="stu-phone" className={LABEL_CLS}>
+                    Số điện thoại <span className="text-[var(--red)]">*</span>
+                  </label>
+                  <input
+                    id="stu-phone"
+                    type="tel"
+                    maxLength={10}
+                    required
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className={`${INPUT_CLS} font-num`}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="stu-email" className={LABEL_CLS}>
+                  Email <span className="text-[var(--red)]">*</span>
+                </label>
+                <input
+                  id="stu-email"
+                  type="email"
+                  required
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  className={INPUT_CLS}
+                />
+              </div>
+
+              {selectedStudent.guardianConsent || selectedStudent.hasGuardianConsent ? (
+                <div className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5">
+                  <p className="text-xs font-semibold text-[var(--jade)]">
+                    Đã xác nhận đồng ý của cha mẹ –{' '}
+                    {selectedStudent.guardianConsent?.consentedAt
+                      ? formatDateTimeVn(selectedStudent.guardianConsent.consentedAt)
+                      : 'Khi đăng ký'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[var(--ink-2)]">
+                    Email phụ huynh:{' '}
+                    <strong>
+                      {selectedStudent.guardianConsent?.guardianEmail ||
+                        selectedStudent.guardianEmail ||
+                        'Đã lưu'}
+                    </strong>
+                  </p>
+                </div>
               ) : null}
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label htmlFor="stu-phone" className={LABEL_CLS}>
-                Số điện thoại <span className="text-[var(--red)]">*</span>
-              </label>
-              <input id="stu-phone" type="tel" maxLength={10} required value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={`${INPUT_CLS} font-num`} />
-            </div>
+            <div className="h-px bg-[var(--line)]" />
 
-            <div className="space-y-1.5">
-              <label htmlFor="stu-email" className={LABEL_CLS}>
-                Email <span className="text-[var(--red)]">*</span>
-              </label>
-              <input id="stu-email" type="email" required value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className={INPUT_CLS} />
-            </div>
-          </div>
+            <div className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
+                Lớp học & Lịch sử
+              </h3>
 
-          {selectedStudent.guardianConsent || selectedStudent.hasGuardianConsent ? (
-            <div className="rounded-xl border border-[var(--jade)]/30 bg-[var(--jade-soft)] p-3.5">
-              <p className="text-xs font-semibold text-[var(--jade)]">
-                Đã xác nhận đồng ý của cha mẹ –{' '}
-                {selectedStudent.guardianConsent?.consentedAt
-                  ? formatDateTimeVn(selectedStudent.guardianConsent.consentedAt)
-                  : 'Khi đăng ký'}
-              </p>
-              <p className="mt-0.5 text-xs text-[var(--ink-2)]">
-                Email phụ huynh:{' '}
-                <strong>
-                  {selectedStudent.guardianConsent?.guardianEmail ||
-                    selectedStudent.guardianEmail ||
-                    'Đã lưu'}
-                </strong>
-              </p>
-            </div>
-          ) : null}
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <span className={LABEL_CLS}>Lớp đang học & Lịch sử lớp</span>
-              <div className="rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-sm text-[var(--ink)]">
-                <p className="font-semibold">
-                  Hiện tại: {selectedStudent.assignedClass || 'Chưa xếp lớp'}
-                </p>
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-[var(--ink)]">
+                    {selectedStudent.assignedClass ? (
+                      <>
+                        <span className="font-num text-[var(--jade)] font-bold">
+                          {selectedStudent.assignedClass}
+                        </span>
+                        {selectedStudent.enrolledAt ? (
+                          <span className="ml-2 text-xs font-normal text-[var(--ink-2)]">
+                            (Từ {formatDateDdMmYyyy(selectedStudent.enrolledAt)})
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      'Chưa được xếp lớp'
+                    )}
+                  </p>
+                  {selectedStudent.assignedClass ? (
+                    <span className="rounded-md bg-[var(--jade-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--jade)]">
+                      Đang học
+                    </span>
+                  ) : null}
+                </div>
                 <PastClassesHistoryList
                   pastClasses={selectedStudent.pastClasses}
                   classHistory={selectedStudent.classHistory}
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="stu-status" className={LABEL_CLS}>
+                  Trạng thái tài khoản
+                </label>
+                <select
+                  id="stu-status"
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value as UserStatus)}
+                  className={INPUT_CLS}
+                >
+                  {!isSelectedStudentEnrolled ? (
+                    <>
+                      <option value="PENDING_CLASS">Chờ xếp lớp</option>
+                      <option value="INACTIVE">Vô hiệu hóa</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="ACTIVE">Đang hoạt động</option>
+                      <option value="INACTIVE">Vô hiệu hóa</option>
+                    </>
+                  )}
+                </select>
+                {!isSelectedStudentEnrolled ? (
+                  <p className="text-[11px] text-[var(--ink-2)]">
+                    Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng thực hiện tại{' '}
+                    <Link
+                      href="/admin/students/pending"
+                      className="font-semibold text-[var(--red)] underline hover:text-[var(--red-ink)]"
+                    >
+                      Danh sách chờ xếp lớp
+                    </Link>
+                    .
+                  </p>
+                ) : null}
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label htmlFor="stu-status" className={LABEL_CLS}>Trạng thái tài khoản</label>
-              <select
-                id="stu-status"
-                value={editStatus}
-                onChange={(e) => setEditStatus(e.target.value as UserStatus)}
-                className={INPUT_CLS}
-              >
-                {!isSelectedStudentEnrolled ? (
-                  <>
-                    <option value="PENDING_CLASS">Chờ xếp lớp</option>
-                    <option value="INACTIVE">Vô hiệu hóa</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="ACTIVE">Đang hoạt động</option>
-                    <option value="INACTIVE">Vô hiệu hóa</option>
-                  </>
-                )}
-              </select>
-              {!isSelectedStudentEnrolled ? (
-                <p className="text-[11px] text-[var(--ink-2)]">
-                  Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng thực hiện tại{' '}
-                  <Link
-                    href="/admin/students/pending"
-                    className="font-semibold text-[var(--red)] underline hover:text-[var(--red-ink)]"
-                  >
-                    Danh sách chờ xếp lớp
-                  </Link>
-                  .
-                </p>
-              ) : null}
-            </div>
+            {canManageInternalNotes ? (
+              <>
+                <div className="h-px bg-[var(--line)]" />
+                <div className="space-y-1.5">
+                  <label htmlFor="stu-internal-notes" className={LABEL_CLS}>
+                    Ghi chú nội bộ (Chỉ Admin xem)
+                  </label>
+                  <textarea
+                    id="stu-internal-notes"
+                    rows={3}
+                    value={editInternalNotes}
+                    onChange={(e) => setEditInternalNotes(e.target.value)}
+                    placeholder="Ghi chú xếp lớp, nhu cầu học tập, lưu ý phụ huynh..."
+                    className={INPUT_CLS}
+                  />
+                </div>
+              </>
+            ) : null}
           </div>
 
-          {canManageInternalNotes ? (
-            <div className="space-y-1.5">
-              <label htmlFor="stu-internal-notes" className={LABEL_CLS}>
-                Ghi chú nội bộ (Chỉ Admin xem)
-              </label>
-              <textarea
-                id="stu-internal-notes"
-                rows={3}
-                value={editInternalNotes}
-                onChange={(e) => setEditInternalNotes(e.target.value)}
-                placeholder="Ghi chú xếp lớp, nhu cầu học tập, lưu ý phụ huynh..."
-                className={INPUT_CLS}
-              />
+          <div className="flex items-center justify-between border-t border-[var(--line)] bg-[var(--surface)] p-4">
+            {editStatus === 'INACTIVE' ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() =>
+                  setEditStatus(
+                    selectedStudent.assignedClass ? 'ACTIVE' : 'PENDING_CLASS',
+                  )
+                }
+                className="rounded-lg border border-[var(--jade)]/30 bg-[var(--jade-soft)] px-3 py-2 text-xs font-semibold text-[var(--jade)] hover:bg-[var(--jade-soft)]/80 transition-colors"
+              >
+                Kích hoạt lại
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setEditStatus('INACTIVE')}
+                className="rounded-lg border border-[var(--red)]/30 bg-[var(--red-soft)] px-3 py-2 text-xs font-semibold text-[var(--red-ink)] hover:bg-[var(--red-soft)]/80 transition-colors"
+              >
+                Vô hiệu hóa
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-2)] transition-colors"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={saving || detailLoading}
+                className="rounded-lg bg-[var(--red)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50 transition-colors shadow-xs"
+              >
+                {saving ? 'Đang lưu...' : 'Lưu cập nhật'}
+              </button>
             </div>
-          ) : null}
-
-          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
-            <button type="button" onClick={onClose} className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]">Hủy</button>
-            <button type="submit" disabled={saving || detailLoading} className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50">
-              {saving ? 'Đang lưu...' : 'Lưu cập nhật'}
-            </button>
           </div>
         </form>
       </div>

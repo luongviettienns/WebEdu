@@ -145,22 +145,21 @@ export function PendingClassNotice({
 } = {}) {
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-[var(--amber)]/30 bg-white p-8 text-center shadow-xs sm:p-12">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[var(--amber-soft)] text-[var(--amber)] font-bold text-xl font-han">
-          待
+      <div className="rounded-2xl border border-[var(--line)] bg-white p-8 text-center shadow-xs sm:p-12">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--amber-soft)] text-xl font-bold text-[var(--amber)] font-han border border-[var(--amber)]/20 shadow-xs">
+          等
         </div>
         <h2 className="mt-4 text-xl font-bold text-[var(--ink)]">
-          Bạn chưa được xếp lớp. Vui lòng liên hệ trung tâm
+          Bạn chưa được xếp lớp
         </h2>
-        <p className="mx-auto mt-2 max-w-lg text-sm text-[var(--ink-2)]">
-          Tài khoản của bạn đã được ghi nhận trên hệ thống Trung Tâm TD Hán Ngữ.
-          Sau khi bộ phận Giáo vụ liên kết tài khoản vào lớp học chính thức, lịch
-          học, bài tập và bảng điểm cá nhân sẽ hiển thị tại đây.
+        <p className="mx-auto mt-2 max-w-md text-sm text-[var(--ink-2)] leading-relaxed">
+          Vui lòng liên hệ trung tâm. Sau khi bộ phận Giáo vụ xếp lớp, lịch học,
+          bài tập và bảng điểm cá nhân sẽ hiển thị đầy đủ tại đây.
         </p>
         <div className="mt-6 flex justify-center gap-3">
           <Link
             href="/profile"
-            className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
+            className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--surface-2)] transition-colors shadow-2xs"
           >
             Kiểm tra hồ sơ cá nhân
           </Link>
@@ -188,44 +187,130 @@ export function ActiveStudentClassSection({
   const pastClasses = studentDetail?.pastClasses ?? [];
   const classHistory = studentDetail?.classHistory ?? [];
 
+  const currentClassRecord =
+    pastClasses.find(
+      (c) => c.classCode === assignedClass || c.enrollmentStatus === 'ACTIVE',
+    ) ?? null;
+  const courseName = currentClassRecord?.courseName ?? 'Khóa học HSK Tiêu chuẩn';
+  const teacherName = currentClassRecord?.teacherName ?? 'Giáo viên phụ trách';
+
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2 space-y-6">
-        <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
-          <div className="flex items-center justify-between border-b border-[var(--line)] pb-4">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--jade)]">
-                Lớp đang theo học
-              </span>
-              <h2 className="mt-1 text-xl font-bold text-[var(--ink)]">
-                {assignedClass}
-              </h2>
-            </div>
-            <span className="rounded-lg bg-[var(--jade-soft)] px-3 py-1 text-xs font-semibold text-[var(--jade)] border border-[var(--jade)]/20">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      {/* Left Stack (lg:col-span-7) */}
+      <div className="space-y-6 lg:col-span-7">
+        {/* Card 1: Lớp đang học */}
+        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-xs">
+          <div className="flex items-center justify-between border-b border-[var(--line)] px-6 py-4">
+            <h2 className="text-base font-bold text-[var(--ink)]">
+              Lớp đang học
+            </h2>
+            <span className="rounded-full bg-[var(--jade-soft)] px-3 py-0.5 text-xs font-semibold text-[var(--jade)] border border-[var(--jade)]/20">
               Đang học
             </span>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-xl bg-[var(--surface-2)] p-4 border border-[var(--line)]">
-              <p className="text-xs font-medium text-[var(--ink-2)]">
-                Ngày vào lớp
-              </p>
-              <p className="mt-1 text-sm font-semibold text-[var(--ink)] font-num">
-                {formatDateDdMmYyyy(enrolledAt)}
-              </p>
+          <div className="p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+              {/* Progress Ring */}
+              <div
+                className="relative flex h-24 w-24 flex-none items-center justify-center rounded-full"
+                style={{
+                  background:
+                    'conic-gradient(var(--jade) 0%, var(--surface-2) 0)',
+                }}
+              >
+                <div className="flex h-20 w-20 flex-col items-center justify-center rounded-full bg-white text-center shadow-2xs">
+                  <span className="font-num text-lg font-bold text-[var(--ink)] leading-none">
+                    0%
+                  </span>
+                  <span className="text-[10px] text-[var(--ink-3)] font-medium mt-0.5">
+                    hoàn thành
+                  </span>
+                </div>
+              </div>
+
+              {/* Class Info */}
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="font-num text-xl font-bold text-[var(--ink)]">
+                    {assignedClass}
+                  </span>
+                  <span className="text-sm font-medium text-[var(--ink-2)] truncate">
+                    {courseName}
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--ink-2)]">
+                  {teacherName} · Lịch học định kỳ
+                </p>
+                <div className="space-y-1 pt-1">
+                  <div className="flex justify-between text-xs text-[var(--ink-2)] font-num">
+                    <span>
+                      <strong>0 buổi</strong> đã học
+                    </span>
+                    <span>
+                      Vào lớp:{' '}
+                      <strong>{formatDateDdMmYyyy(enrolledAt)}</strong>
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
+                    <div
+                      className="h-full bg-[var(--jade)] rounded-full transition-all duration-300"
+                      style={{ width: '0%' }}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="rounded-xl bg-[var(--surface-2)] p-4 border border-[var(--line)]">
-              <p className="text-xs font-medium text-[var(--ink-2)]">
-                Trạng thái học tập
-              </p>
-              <p className="mt-1 text-sm font-semibold text-[var(--jade)]">
-                Đang theo học chính thức ({profile.fullName})
-              </p>
+          </div>
+
+          {/* Next Session Slot */}
+          <div className="flex items-center justify-between border-t border-[var(--line)] bg-[var(--surface-2)]/60 px-6 py-3.5 text-xs text-[var(--ink)]">
+            <div className="flex items-center gap-3">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-[var(--line-2)] text-xs text-[var(--ink-2)] shadow-2xs">
+                🕒
+              </span>
+              <div>
+                <p className="font-semibold">Buổi học tiếp theo</p>
+                <p className="text-[11px] text-[var(--ink-2)]">
+                  Lịch học và điểm danh sẽ được kích hoạt khi lớp vào học chính thức
+                </p>
+              </div>
             </div>
+            <Link
+              href="/profile"
+              className="rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--ink)] hover:bg-[var(--surface-2)] transition-colors shadow-2xs"
+            >
+              Hồ sơ lớp
+            </Link>
           </div>
         </div>
 
+        {/* Card 2: Bài cần làm */}
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+          <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-[var(--ink)]">
+                Bài cần làm
+              </h2>
+              <span className="rounded bg-[var(--amber-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--amber)]">
+                0 bài
+              </span>
+            </div>
+            <span className="text-xs font-medium text-[var(--ink-3)]">
+              Tất cả bài
+            </span>
+          </div>
+          <div className="py-8 text-center">
+            <p className="text-sm text-[var(--ink-2)] font-medium">
+              Không còn bài nào cần làm.
+            </p>
+            <p className="mt-1 text-xs text-[var(--ink-3)]">
+              Bài tập về nhà (BTVN) và đề kiểm tra HSK sẽ được giao tại đây trong quá trình học.
+            </p>
+          </div>
+        </div>
+
+        {/* Card 5: Lịch sử các lớp đã học (nếu có) */}
         {pastClasses.length > 0 || classHistory.length > 0 ? (
           <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
             <h3 className="text-base font-semibold text-[var(--ink)]">
@@ -239,36 +324,101 @@ export function ActiveStudentClassSection({
         ) : null}
       </div>
 
-      <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
-        <h3 className="text-base font-semibold text-[var(--ink)]">
-          Thông tin học viên
-        </h3>
-        <dl className="mt-4 space-y-3 text-sm">
-          <div className="flex justify-between border-b border-[var(--line)] pb-2">
-            <dt className="text-[var(--ink-2)]">Họ và tên</dt>
-            <dd className="font-medium text-[var(--ink)]">{profile.fullName}</dd>
+      {/* Right Stack (lg:col-span-5) */}
+      <div className="space-y-6 lg:col-span-5">
+        {/* Card 3: Chuyên cần */}
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+          <div className="border-b border-[var(--line)] pb-3">
+            <h2 className="text-base font-bold text-[var(--ink)]">
+              Chuyên cần
+            </h2>
           </div>
-          <div className="flex justify-between border-b border-[var(--line)] pb-2">
-            <dt className="text-[var(--ink-2)]">Ngày sinh</dt>
-            <dd className="font-medium text-[var(--ink)] font-num">
-              {formatDateDdMmYyyy(
-                studentDetail?.dateOfBirth ?? profile.dateOfBirth,
-              )}
-            </dd>
+          <div className="grid grid-cols-2 gap-4 pt-4">
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
+              <span className="block text-xs font-medium text-[var(--ink-2)]">
+                Số buổi nghỉ
+              </span>
+              <span className="mt-1 block font-num text-2xl font-bold text-[var(--ink)]">
+                0
+              </span>
+            </div>
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
+              <span className="block text-xs font-medium text-[var(--ink-2)]">
+                Tỷ lệ chuyên cần
+              </span>
+              <span className="mt-1 block font-num text-2xl font-bold text-[var(--jade)]">
+                100%
+              </span>
+            </div>
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
+              <span className="block text-xs font-medium text-[var(--ink-2)]">
+                Có mặt
+              </span>
+              <span className="mt-1 block font-num text-xs font-semibold text-[var(--ink)]">
+                0 buổi đã điểm danh
+              </span>
+            </div>
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
+              <span className="block text-xs font-medium text-[var(--ink-2)]">
+                Tỷ lệ nộp BTVN
+              </span>
+              <span className="mt-1 block font-num text-xs font-semibold text-[var(--ink)]">
+                —
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between border-b border-[var(--line)] pb-2">
-            <dt className="text-[var(--ink-2)]">Số điện thoại</dt>
-            <dd className="font-medium text-[var(--ink)] font-num">
-              {profile.phone}
-            </dd>
+          <p className="mt-4 text-[11px] text-[var(--ink-3)] italic">
+            Điểm BTVN chỉ tính chuyên cần, không tính vào điểm tổng kết.
+          </p>
+        </div>
+
+        {/* Card 4: Kết quả gần đây */}
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+          <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
+            <h2 className="text-base font-bold text-[var(--ink)]">
+              Kết quả gần đây
+            </h2>
+            <span className="text-xs font-medium text-[var(--ink-3)]">
+              Xem tất cả
+            </span>
           </div>
-          <div className="flex justify-between">
-            <dt className="text-[var(--ink-2)]">Email</dt>
-            <dd className="font-medium text-[var(--ink)] truncate max-w-[180px]">
-              {profile.email}
-            </dd>
+          <div className="py-8 text-center text-xs text-[var(--ink-2)]">
+            Chưa có kết quả bài thi mới.
           </div>
-        </dl>
+        </div>
+
+        {/* Card: Thông tin học viên */}
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
+          <h3 className="text-base font-semibold text-[var(--ink)] border-b border-[var(--line)] pb-3">
+            Thông tin học viên
+          </h3>
+          <dl className="mt-4 space-y-3 text-xs">
+            <div className="flex justify-between border-b border-[var(--line)] pb-2">
+              <dt className="text-[var(--ink-2)]">Họ và tên</dt>
+              <dd className="font-semibold text-[var(--ink)]">{profile.fullName}</dd>
+            </div>
+            <div className="flex justify-between border-b border-[var(--line)] pb-2">
+              <dt className="text-[var(--ink-2)]">Ngày sinh</dt>
+              <dd className="font-medium text-[var(--ink)] font-num">
+                {formatDateDdMmYyyy(
+                  studentDetail?.dateOfBirth ?? profile.dateOfBirth,
+                )}
+              </dd>
+            </div>
+            <div className="flex justify-between border-b border-[var(--line)] pb-2">
+              <dt className="text-[var(--ink-2)]">Số điện thoại</dt>
+              <dd className="font-medium text-[var(--ink)] font-num">
+                {profile.phone}
+              </dd>
+            </div>
+            <div className="flex justify-between">
+              <dt className="text-[var(--ink-2)]">Email</dt>
+              <dd className="font-medium text-[var(--ink)] truncate max-w-[180px]">
+                {profile.email}
+              </dd>
+            </div>
+          </dl>
+        </div>
       </div>
     </div>
   );
