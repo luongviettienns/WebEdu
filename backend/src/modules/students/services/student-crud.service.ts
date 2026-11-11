@@ -308,7 +308,7 @@ export class StudentCrudService {
 
     if (
       nextStatus === UserStatus.PENDING_CLASS &&
-      (targetUser.status !== UserStatus.PENDING_CLASS || hasEverBeenEnrolled) &&
+      targetUser.status !== UserStatus.PENDING_CLASS &&
       !(isPureStudent && !hasEverBeenEnrolled)
     ) {
       throw new BadRequestException(

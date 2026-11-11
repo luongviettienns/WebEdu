@@ -40,6 +40,7 @@ interface StudentUserLike {
   roles: Role[];
   createdAt?: Date;
   studentProfile?: StudentProfileLike | null;
+  enrollments?: EnrollmentWithClassCourse[];
 }
 
 function toConsentStatus(
@@ -57,8 +58,7 @@ export function toStudentDetailDto(
   const consent = profile?.consent ?? null;
   const canViewInternalNotes = actorRoles.includes(Role.ADMIN);
   const isSelf = actorId !== undefined && actorId === user.id;
-  const canViewClassData =
-    isSelf || actorRoles.includes(Role.ADMIN) || actorRoles.includes(Role.TEACHER);
+  const canViewClassData = isSelf || actorRoles.includes(Role.ADMIN);
 
   // Cleanup #13: Strictly omit createdAt / registeredAt ("Đăng ký lúc") on Student Detail DTO
   return {
@@ -75,6 +75,14 @@ export function toStudentDetailDto(
     assignedClass: canViewClassData ? (profile?.assignedClass ?? null) : null,
     currentClassId: canViewClassData ? (profile?.currentClassId ?? null) : null,
     enrolledAt: canViewClassData && profile?.enrolledAt ? profile.enrolledAt.toISOString() : null,
+    ...(canViewClassData && user.enrollments
+      ? {
+          classHistory: Array.from(
+            new Set(user.enrollments.map((e) => e.class.code)),
+          ),
+          pastClasses: user.enrollments.map(toPastClassRecord),
+        }
+      : {}),
     internalNotes: canViewInternalNotes ? (profile?.internalNotes ?? null) : null,
     guardianConsent: consent
       ? {
@@ -153,10 +161,12 @@ interface EnrollmentWithClassCourse {
   status: EnrollmentStatus;
   enrolledDate: Date;
   leftDate: Date | null;
+  reason?: string | null;
   class: {
     code: string;
     status: ClassStatus;
     course: { code: string; name: string };
+    teacher?: { fullName: string } | null;
   };
 }
 
@@ -184,9 +194,12 @@ export function toPastClassRecord(
     enrollmentId: enrollment.id,
     classId: enrollment.classId,
     classCode: enrollment.class.code,
+    courseCode: enrollment.class.course.code,
     courseName: enrollment.class.course.name,
+    teacherName: enrollment.class.teacher?.fullName ?? null,
     enrollmentStatus: enrollment.status,
     enrolledDate: formatIsoDateUtc(enrollment.enrolledDate),
     leftDate: enrollment.leftDate ? formatIsoDateUtc(enrollment.leftDate) : null,
+    reason: enrollment.reason ?? null,
   };
 }

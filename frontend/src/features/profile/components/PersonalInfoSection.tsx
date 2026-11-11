@@ -36,6 +36,7 @@ export function PersonalInfoSection({
 
   const emailChanged =
     email.trim().toLowerCase() !== profile.email.trim().toLowerCase();
+  const isStudent = (profile.roles ?? []).includes('STUDENT');
 
   const handleUpdateProfile = async (
     event: React.FormEvent<HTMLFormElement>,
@@ -109,7 +110,9 @@ export function PersonalInfoSection({
         Thông tin cá nhân
       </h2>
       <p className="mt-0.5 text-xs text-[var(--ink-2)]">
-        Các trường Ngày sinh, Vai trò và Lớp học được quản lý bởi Trung tâm
+        {isStudent
+          ? 'Các trường Ngày sinh, Vai trò và Lớp học được quản lý bởi Trung tâm'
+          : 'Thông tin liên hệ cá nhân và vai trò tài khoản trên hệ thống'}
       </p>
 
       {profileSuccess ? (
@@ -153,59 +156,100 @@ export function PersonalInfoSection({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <label
-              htmlFor="profile-dob"
-              className="block text-sm font-medium text-[var(--ink-2)]"
-            >
-              Ngày sinh (Chỉ xem)
-            </label>
-            <input
-              id="profile-dob"
-              type="text"
-              readOnly
-              disabled
-              value={formatDateDdMmYyyy(profile.dateOfBirth)}
-              className="w-full cursor-not-allowed rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-sm text-[var(--ink-2)] font-num"
-            />
-          </div>
+        {isStudent ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="profile-dob"
+                  className="block text-sm font-medium text-[var(--ink-2)]"
+                >
+                  Ngày sinh (Chỉ xem)
+                </label>
+                <input
+                  id="profile-dob"
+                  type="text"
+                  readOnly
+                  disabled
+                  value={formatDateDdMmYyyy(profile.dateOfBirth)}
+                  className="w-full cursor-not-allowed rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-sm text-[var(--ink-2)] font-num"
+                />
+              </div>
 
-          <div className="space-y-1.5">
-            <label
-              htmlFor="profile-phone"
-              className="block text-sm font-medium text-[var(--ink)]"
-            >
-              Số điện thoại <span className="text-[var(--red)]">*</span>
-            </label>
-            <input
-              id="profile-phone"
-              type="tel"
-              maxLength={10}
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
-            />
-          </div>
-        </div>
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="profile-phone"
+                  className="block text-sm font-medium text-[var(--ink)]"
+                >
+                  Số điện thoại <span className="text-[var(--red)]">*</span>
+                </label>
+                <input
+                  id="profile-phone"
+                  type="tel"
+                  maxLength={10}
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+                />
+              </div>
+            </div>
 
-        <div className="space-y-1.5">
-          <label
-            htmlFor="profile-email"
-            className="block text-sm font-medium text-[var(--ink)]"
-          >
-            Email đăng nhập <span className="text-[var(--red)]">*</span>
-          </label>
-          <input
-            id="profile-email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
-          />
-        </div>
+            <div className="space-y-1.5">
+              <label
+                htmlFor="profile-email"
+                className="block text-sm font-medium text-[var(--ink)]"
+              >
+                Email đăng nhập <span className="text-[var(--red)]">*</span>
+              </label>
+              <input
+                id="profile-email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+              />
+            </div>
+          </>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label
+                htmlFor="profile-phone"
+                className="block text-sm font-medium text-[var(--ink)]"
+              >
+                Số điện thoại <span className="text-[var(--red)]">*</span>
+              </label>
+              <input
+                id="profile-phone"
+                type="tel"
+                maxLength={10}
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] font-num focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="profile-email"
+                className="block text-sm font-medium text-[var(--ink)]"
+              >
+                Email đăng nhập <span className="text-[var(--red)]">*</span>
+              </label>
+              <input
+                id="profile-email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+              />
+            </div>
+          </div>
+        )}
 
         {emailChanged ? (
           <div className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3.5">

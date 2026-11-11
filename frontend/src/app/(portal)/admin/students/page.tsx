@@ -9,6 +9,7 @@ import {
   listStudents,
   type StudentItemDto,
 } from '@/features/students/api/students.api';
+import { listClasses, type ClassItem } from '@/features/classes/api/classes.api';
 import { StudentDetailModal } from '@/features/students/components/StudentDetailModal';
 import { StudentListTable } from '@/features/students/components/StudentListTable';
 import { useDebounce } from '@/features/common/hooks/useDebounce';
@@ -33,6 +34,7 @@ function AdminStudentsContent({
   const [search, setSearch] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [classFilter, setClassFilter] = useState<string>('');
+  const [availableClasses, setAvailableClasses] = useState<ClassItem[]>([]);
   const [refreshTick, setRefreshTick] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorBanner, setErrorBanner] = useState<string>('');
@@ -43,6 +45,15 @@ function AdminStudentsContent({
 
   const canManageInternalNotes = currentUser.roles.includes('ADMIN');
   const debouncedSearch = useDebounce(search, 350);
+
+  useEffect(() => {
+    if (!currentUser.roles.includes('ADMIN')) return;
+    void listClasses({ limit: 100 })
+      .then((res) => {
+        setAvailableClasses(res.items ?? []);
+      })
+      .catch(() => {});
+  }, [currentUser.roles]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,9 +110,10 @@ function AdminStudentsContent({
         {currentUser.roles.includes('ADMIN') && (
           <Link
             href="/admin/students/pending"
-            className="rounded-lg border border-[var(--amber)]/30 bg-[var(--amber-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--amber)] hover:bg-[var(--amber-soft)]/80 transition-colors shadow-xs"
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-xs font-semibold text-[var(--ink)] shadow-2xs hover:bg-[var(--hover)] hover:border-[var(--line)] transition-colors"
           >
-            📋 Danh sách chờ xếp lớp
+            <span className="font-han text-xs text-[var(--red)]">待分班</span>
+            <span>Tài khoản chờ xếp lớp</span>
           </Link>
         )}
       </div>
@@ -119,16 +131,23 @@ function AdminStudentsContent({
             className="w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
           />
           {currentUser.roles.includes('ADMIN') && (
-            <input
-              type="text"
-              placeholder="Lọc theo lớp..."
+            <select
+              id="student-class-filter"
               value={classFilter}
+              aria-label="Lọc theo lớp học"
               onChange={(e) => {
                 setClassFilter(e.target.value);
                 setPage(1);
               }}
-              className="w-44 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
-            />
+              className="rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
+            >
+              <option value="">Mọi lớp</option>
+              {availableClasses.map((c) => (
+                <option key={c.id} value={c.code}>
+                  {c.code}
+                </option>
+              ))}
+            </select>
           )}
           <select
             value={statusFilter}

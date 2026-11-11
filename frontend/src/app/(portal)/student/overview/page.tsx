@@ -84,25 +84,25 @@ function StudentOverviewContent({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E0DED5] pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
         <div>
-          <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
-            个人学情 · TÌNH TRẠNG HỌC TẬP
+          <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+            概览 · TỔNG QUAN HỌC TẬP
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
-            Tình Trạng Học Tập Cá Nhân
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
+            Chào {profile.fullName ? profile.fullName.trim().split(/\s+/).slice(-2).join(' ') : 'Học viên'}, hôm nay học gì?
           </h1>
-          <p className="mt-1 text-sm text-[#5A6460]">
+          <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
             Theo dõi thông tin lớp học, lịch học và tiến độ học tập tại Trung Tâm TD Hán Ngữ
           </p>
         </div>
         <span
           className={`inline-flex items-center rounded-full px-3.5 py-1 text-xs font-semibold ${
             currentStatus === 'ACTIVE'
-              ? 'bg-[#2B7760]/10 text-[#2B7760] border border-[#2B7760]/20'
+              ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
               : currentStatus === 'PENDING_CLASS'
-                ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                : 'bg-[#EAECE6] text-[#5A6460]'
+                ? 'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--amber)]/20'
+                : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
           }`}
         >
           {STATUS_LABELS[currentStatus]}
@@ -110,20 +110,20 @@ function StudentOverviewContent({
       </div>
 
       {detailLoading ? (
-        <div className="rounded-2xl border border-[#E0DED5] bg-white p-10 text-center text-sm text-[#5A6460]">
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-10 text-center text-sm text-[var(--ink-2)]">
           Đang tải dữ liệu học tập cá nhân...
         </div>
       ) : detailError ? (
         <div
           role="alert"
-          className="rounded-2xl border border-[#B5322A]/20 bg-[#B5322A]/10 p-6 text-sm font-medium text-[#B5322A]"
+          className="rounded-2xl border border-[var(--red)]/20 bg-[var(--red-soft)] p-6 text-sm font-medium text-[var(--red-ink)]"
         >
           {detailError}
         </div>
       ) : !isStudentAccount ? (
         <AdminAccessNotice />
       ) : isPendingClass ? (
-        <PendingClassNotice />
+        <PendingClassNotice pastClasses={studentDetail?.pastClasses} />
       ) : (
         <ActiveStudentClassSection
           profile={profile}

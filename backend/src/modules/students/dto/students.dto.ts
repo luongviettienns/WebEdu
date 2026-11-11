@@ -6,6 +6,7 @@ export class ListStudentsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
 
   @ApiPropertyOptional({ enum: UserStatus })
@@ -28,6 +29,12 @@ export class ListStudentsQueryDto {
 }
 
 export class ListPendingEnrollmentQueryDto {
+  @ApiPropertyOptional({ description: 'Tìm theo họ tên, email hoặc SĐT' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  search?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   page?: number | string;

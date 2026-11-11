@@ -59,6 +59,20 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'GET', path: '/api/v1/system-settings/config', isPublic: true },
   { method: 'PUT', path: '/api/v1/system-settings/config', isPublic: false },
   { method: 'GET', path: '/api/v1/system-settings/audit-logs', isPublic: false },
+  // CoursesController (3)
+  { method: 'GET', path: '/api/v1/courses', isPublic: false },
+  { method: 'POST', path: '/api/v1/courses', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/courses/:id', isPublic: false },
+  // ClassesController (9)
+  { method: 'GET', path: '/api/v1/classes', isPublic: false },
+  { method: 'GET', path: '/api/v1/classes/:id', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/classes/:id', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/enrollments', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/enrollments/:studentId/transfer', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/enrollments/:studentId/drop', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/complete', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:id/reopen', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -152,7 +166,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(29);
+    expect(actualRoutes).toHaveLength(41);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -397,6 +411,18 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'patch', url: `/api/v1/system-settings/users/${pureSuperadmin.id}/roles` },
       { method: 'put', url: '/api/v1/system-settings/config' },
       { method: 'get', url: '/api/v1/system-settings/audit-logs' },
+      { method: 'get', url: '/api/v1/courses' },
+      { method: 'post', url: '/api/v1/courses' },
+      { method: 'patch', url: `/api/v1/courses/${course.id}` },
+      { method: 'get', url: '/api/v1/classes' },
+      { method: 'get', url: `/api/v1/classes/${activeClass.id}` },
+      { method: 'post', url: '/api/v1/classes' },
+      { method: 'patch', url: `/api/v1/classes/${activeClass.id}` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments/${studentA.id}/transfer` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments/${studentA.id}/drop` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/complete` },
+      { method: 'post', url: `/api/v1/classes/${completedClass.id}/reopen` },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -427,6 +453,9 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       `/api/v1/students/${studentPending.id}/class-history`,
       `/api/v1/students/${studentPending.id}/learning-records`,
       '/api/v1/teachers',
+      '/api/v1/courses',
+      '/api/v1/classes',
+      `/api/v1/classes/${activeClass.id}`,
       '/api/v1/system-settings/users',
       '/api/v1/system-settings/audit-logs',
     ]) {
@@ -477,11 +506,23 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .get('/api/v1/teachers')
       .set('Authorization', `Bearer ${activeTeacherToken}`)
       .expect(403);
+    await request(server)
+      .get('/api/v1/courses')
+      .set('Authorization', `Bearer ${activeTeacherToken}`)
+      .expect(200);
+    await request(server)
+      .post('/api/v1/courses')
+      .set('Authorization', `Bearer ${activeTeacherToken}`)
+      .send({ code: 'HSK3', name: 'HSK 3', level: CourseLevel.HSK3 })
+      .expect(403);
 
     // 4. Pure SUPERADMIN vs Dual [SUPERADMIN, ADMIN] (roles-permissions.md §2.1 & FUNC-009)
     for (const saDeniedUrl of [
       '/api/v1/students/pending-enrollment',
       '/api/v1/students/available-classes',
+      '/api/v1/courses',
+      '/api/v1/classes',
+      `/api/v1/classes/${activeClass.id}`,
       `/api/v1/students/${studentA.id}/class-history`,
       `/api/v1/students/${studentA.id}/learning-records`,
     ]) {

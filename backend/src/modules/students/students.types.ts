@@ -62,6 +62,8 @@ export interface StudentDetailDto {
   assignedClass: string | null;
   currentClassId: string | null;
   enrolledAt: string | null;
+  classHistory?: string[];
+  pastClasses?: Array<Record<string, unknown>>;
   internalNotes: string | null;
   guardianConsent: {
     consented: boolean;

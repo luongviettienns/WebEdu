@@ -1,10 +1,10 @@
-# Kiểm kê Toàn diện API Endpoints — Phase 2 (`docs/test-inventory-api.md`)
+# Kiểm kê Toàn diện API Endpoints — Phase 2 & Phase 3 (`docs/test-inventory-api.md`)
 
-> **Phương pháp trích xuất:** Quét tự động từ toàn bộ 6 Controller trong `backend/src/modules/**` và kiểm chứng 1-1 bằng bài test tự động `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts` trên Express router của ứng dụng NestJS (`app.getHttpAdapter().getInstance()`). Bất kỳ endpoint mới nào được thêm vào controller mà chưa khai báo trong ma trận kiểm thử sẽ làm bài test tự kiểm **FAIL** ngay lập tức.
+> **Phương pháp trích xuất:** Quét tự động từ toàn bộ 8 Controller trong `backend/src/modules/**` và kiểm chứng 1-1 bằng bài test tự động `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts` trên Express router của ứng dụng NestJS (`app.getHttpAdapter().getInstance()`). Bất kỳ endpoint mới nào được thêm vào controller mà chưa khai báo trong ma trận kiểm thử sẽ làm bài test tự kiểm **FAIL** ngay lập tức.
 
 ---
 
-## 1. Bảng Tổng hợp Toàn bộ 29 HTTP Endpoints (Phase 2)
+## 1. Bảng Tổng hợp Toàn bộ 41 HTTP Endpoints (Phase 2 & Phase 3)
 
 | # | Module / Controller | HTTP Method | Đường dẫn đầy đủ (`/api/v1/...`) | FUNC / DEC / SEC | Vai trò được phép (Guard + Object Policy) | DTO Đầu vào | Cấu trúc JSON Đầu ra / Mã trạng thái |
 |---|---|---|---|---|---|---|---|
@@ -37,6 +37,18 @@
 | 27 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/config` | `FUNC-013` | `@Public()` (hiển thị thương hiệu & logo trung tâm) | — | `200 OK`: `SystemConfigDto` (`centerName`, `logoDataUri`, `updatedAt`, `updatedBy`) |
 | 28 | `SystemSettingsController` | `PUT` | `/api/v1/system-settings/config` | `FUNC-013`, `SEC-10`, `FIX-06` | Chỉ `SUPERADMIN` | `UpdateSystemConfigDto` (`centerName`, `logoDataUri?`) | `200 OK`: `SystemConfigDto` (kiểm tra magic bytes PNG/JPG, kích thước `<= 2MB`, chống decompression bomb `<= 2048x2048`) |
 | 29 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/audit-logs` | `FUNC-011`, `FUNC-012`, `FUNC-013`, `SEC-09` | Chỉ `SUPERADMIN` | `ListAuditLogsQueryDto` (`action?`, `page?`, `limit?`) | `200 OK`: `{ items: SystemAuditLogItemDto[], total, page, limit }` |
+| 30 | `CoursesController` | `GET` | `/api/v1/courses` | `FUNC-014`, `COURSE-01` | `ADMIN`, `TEACHER` (`SUPERADMIN` thuần và `STUDENT` nhận `403`) | `ListCoursesQueryDto` (`activeOnly?`, `search?`, `level?`) | `200 OK`: `{ items: CourseItemDto[], total }` |
+| 31 | `CoursesController` | `POST` | `/api/v1/courses` | `FUNC-014`, `COURSE-01`, `COURSE-02` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `CreateCourseDto` (`code`, `name`, `level`, `defaultSessions?`, `description?`, `isActive?`) | `201 Created`: `CourseItemDto` |
+| 32 | `CoursesController` | `PATCH` | `/api/v1/courses/:id` | `FUNC-014`, `COURSE-01`, `COURSE-03` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `UpdateCourseDto` (`code?`, `name?`, `level?`, `defaultSessions?`, `description?`, `isActive?`) | `200 OK`: `CourseItemDto` |
+| 33 | `ClassesController` | `GET` | `/api/v1/classes` | `FUNC-016`, `FUNC-020`, `CLASS-05` | `ADMIN` (toàn bộ lớp), `TEACHER` (chỉ lớp mình đang phụ trách `teacherId = user.id`). `SUPERADMIN` thuần và `STUDENT` nhận `403`. | `ListClassesQueryDto` (`search?`, `courseId?`, `teacherId?`, `status?`, `includeEnded?`, `page?`, `limit?`) | `200 OK`: `{ items: ClassItemDto[], total, page, limit }` |
+| 34 | `ClassesController` | `GET` | `/api/v1/classes/:id` | `FUNC-016`, `FUNC-020`, `DEC-025`, `CLASS-05` | `ADMIN`, `TEACHER` đang phụ trách (`FULL` khi `UPCOMING`/`ACTIVE`, `READ_ONLY` khi `COMPLETED`/`ARCHIVED`). `TEACHER` đã bị thay thế nhận `403`. | `GetClassDetailQueryDto` (`includeInactiveEnrollments?`) | `200 OK`: `ClassDetailDto` |
+| 35 | `ClassesController` | `POST` | `/api/v1/classes` | `FUNC-015`, `CLASS-01`, `CLASS-02` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `CreateClassDto` (`code`, `courseId`, `teacherId`, `scheduleDays`, `scheduleStartTime`, `scheduleEndTime`, `startDate`, `totalSessions?`, `status?`, `notes?`) | `201 Created`: `ClassItemDto` |
+| 36 | `ClassesController` | `PATCH` | `/api/v1/classes/:id` | `FUNC-016`, `FUNC-019`, `CLASS-03`, `CLASS-04` | Chỉ `ADMIN` (chặn `400` khi lớp `COMPLETED`/`ARCHIVED` hoặc đổi `courseId` khi đã có HV; tự động ghi `ClassTeacherAssignment` khi đổi GV) | `UpdateClassDto` | `200 OK`: `ClassItemDto` |
+| 37 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments` | `FUNC-017`, `CLASS-06` | Chỉ `ADMIN` (khóa `FOR UPDATE` theo thứ tự `studentId ASC`; chặn `409` nếu HV đã có lớp `ACTIVE`) | `EnrollStudentsDto` (`studentIds`, `enrolledDate?`) | `200 OK`: `{ enrolledCount, classId, classCode, studentIds }` |
+| 38 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments/:studentId/transfer` | `FUNC-017`, `CLASS-07` | Chỉ `ADMIN` (chuyển nguyên tử từ lớp nguồn `TRANSFERRED` sang lớp đích `ACTIVE`) | `TransferStudentClassDto` (`targetClassId`, `transferDate?`, `reason?`) | `200 OK`: `{ status: 'TRANSFERRED', sourceClassId, targetClassId, targetClassCode, studentId }` |
+| 39 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments/:studentId/drop` | `FUNC-017`, `CLASS-07` | Chỉ `ADMIN` (đánh dấu `DROPPED`, giải phóng `currentClassId`, đưa HV về `PENDING_CLASS`) | `DropStudentClassDto` (`leftDate?`, `reason?`) | `200 OK`: `{ status: 'DROPPED', classId, studentId }` |
+| 40 | `ClassesController` | `POST` | `/api/v1/classes/:id/complete` | `FUNC-018`, `CLASS-08` | Chỉ `ADMIN` (chuyển lớp sang `COMPLETED`, chỉ chuyển `Enrollment` `ACTIVE` -> `COMPLETED`, giải phóng HV về `PENDING_CLASS`, đồng bộ `activeClassesCount`) | `CompleteClassDto` (`actualEndDate?`, `reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'READ_ONLY'`) |
+| 41 | `ClassesController` | `POST` | `/api/v1/classes/:id/reopen` | `FUNC-018`, `CLASS-08`, `DEC-002` | Chỉ `ADMIN` (chỉ trong thời hạn 7 ngày kể từ `closedAt`, kiểm tra GV còn `ACTIVE`, khôi phục an toàn các `Enrollment` `COMPLETED` chưa vào lớp mới) | `ReopenClassDto` (`reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'FULL'`) |
 
 ---
 

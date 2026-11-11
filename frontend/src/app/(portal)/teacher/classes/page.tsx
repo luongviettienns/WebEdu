@@ -1,43 +1,91 @@
 'use client';
 
 import Link from 'next/link';
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
+import { listClasses } from '@/features/classes/api/classes.api';
+import { ClassListFilters, ListBanners } from '@/features/classes/components/ClassListFilters';
+import { ClassesTableSection } from '@/features/classes/components/ClassesTableSection';
+import { useClassList } from '@/features/classes/hooks/useClassList';
+import { resolveClassListPermissions } from '@/features/classes/permissions/class-permissions';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import { ROLE_LABELS, STATUS_LABELS, type Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['TEACHER', 'ADMIN'];
 
-interface TeacherClassesContentProps {
-  profile: UserProfileDto;
+/**
+ * Số lớp đang phụ trách (Sắp mở + Đang học) — độc lập bộ lọc/phân trang của bảng:
+ * luôn đếm trên toàn bộ lớp của giáo viên từ server.
+ */
+function useResponsibleClassCount(
+  teacherId: string | undefined,
+  onAuthError: (error: unknown) => boolean,
+  refreshKey: number,
+) {
+  const [count, setCount] = useState<number | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await listClasses({ teacherId, includeEnded: false, page: 1, limit: 1 }, controller.signal);
+        if (controller.signal.aborted) return;
+        setCount(res.total);
+        setFailed(false);
+      } catch (error) {
+        if (controller.signal.aborted || onAuthError(error)) return;
+        setFailed(true);
+      }
+    })();
+    return () => controller.abort();
+  }, [teacherId, onAuthError, refreshKey]);
+
+  return { count, failed };
 }
 
-function TeacherClassesContent({ profile }: TeacherClassesContentProps) {
-  const activeClassesCount = profile.activeClassesCount ?? 0;
-  const isDualAdmin = profile.roles.includes('ADMIN');
+function TeacherClassesContent({
+  profile,
+  onAuthError,
+}: {
+  profile: UserProfileDto;
+  onAuthError: (error: unknown) => boolean;
+}) {
+  const hasAdminRole = resolveClassListPermissions(profile.roles).canViewAllClasses;
+  // Tài khoản kiêm Admin: API trả toàn bộ lớp nên khóa cứng theo chính mình để xem "lớp của tôi".
+  const fixedTeacherId = hasAdminRole ? profile.id : undefined;
+  const list = useClassList({
+    fixedTeacherId,
+    onAuthError,
+    errorFallback: 'Không thể tải danh sách lớp học phụ trách',
+  });
+  const [refreshKey, setRefreshKey] = useState(0);
+  const responsible = useResponsibleClassCount(fixedTeacherId, onAuthError, refreshKey);
+
+  const retry = useCallback(() => {
+    list.refresh();
+    setRefreshKey((k) => k + 1);
+  }, [list]);
+
+  const countText =
+    responsible.count !== null ? String(responsible.count) : responsible.failed ? '—' : '…';
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E0DED5] pb-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4">
         <div>
-          <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
-            教学工作 · LỚP PHỤ TRÁCH
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
-            Lớp Học Phụ Trách
-          </h1>
-          <p className="mt-1 text-sm text-[#5A6460]">
-            Tổng quan lịch giảng dạy và danh sách các lớp HSK được phân công
-            cho giảng viên
+          <div className="font-han mb-1 text-xs uppercase tracking-widest text-[var(--red)]">教学工作 · LỚP PHỤ TRÁCH</div>
+          <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">Lớp Học Phụ Trách</h1>
+          <p className="mt-1 text-sm text-[var(--ink-2)]">
+            Tổng quan lịch giảng dạy và danh sách các lớp HSK được phân công cho giảng viên
           </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2">
           {profile.roles.map((role) => (
             <span
               key={role}
-              className="inline-flex items-center rounded-full border border-[#2B7760]/20 bg-[#2B7760]/10 px-3 py-1 text-xs font-semibold text-[#2B7760]"
+              className="inline-flex items-center rounded-full border border-[var(--jade)]/20 bg-[var(--jade-soft)] px-3 py-1 text-xs font-semibold text-[var(--jade)]"
             >
               {ROLE_LABELS[role] ?? role}
             </span>
@@ -45,8 +93,8 @@ function TeacherClassesContent({ profile }: TeacherClassesContentProps) {
           <span
             className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
               profile.status === 'ACTIVE'
-                ? 'border border-[#2B7760]/20 bg-[#2B7760]/10 text-[#2B7760]'
-                : 'bg-[#EAECE6] text-[#5A6460]'
+                ? 'border border-[var(--jade)]/20 bg-[var(--jade-soft)] text-[var(--jade)]'
+                : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
             }`}
           >
             {STATUS_LABELS[profile.status] ?? profile.status}
@@ -54,120 +102,76 @@ function TeacherClassesContent({ profile }: TeacherClassesContentProps) {
         </div>
       </div>
 
-      {/* Thống kê tổng quan giảng dạy */}
-      <section
-        aria-label="Tổng quan công tác giảng dạy"
-        className="grid grid-cols-1 gap-4 sm:grid-cols-3"
-      >
-        <div className="rounded-2xl border border-[#E0DED5] bg-white p-5 shadow-xs">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#5A6460]">
-            Số lớp đang phụ trách
+      <section aria-label="Tổng quan công tác giảng dạy" className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-xs">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">Số lớp đang phụ trách</p>
+          <p className="num mt-2 text-3xl font-extrabold text-[var(--jade)]" data-testid="responsible-class-count">
+            {countText}
           </p>
-          <p className="mt-2 text-3xl font-extrabold text-[#2B7760] font-num">
-            {activeClassesCount}
-          </p>
-          <p className="mt-1 text-xs text-[#5A6460]">
-            {activeClassesCount > 0
-              ? 'Đang trong thời gian giảng dạy'
-              : 'Chưa có lớp đang mở được phân công'}
+          <p className="mt-1 text-xs text-[var(--ink-2)]">
+            {responsible.failed
+              ? 'Không thể tải số lớp đang phụ trách'
+              : responsible.count && responsible.count > 0
+                ? 'Sắp mở + đang học, không phụ thuộc bộ lọc bên dưới'
+                : 'Chưa có lớp đang mở được phân công'}
           </p>
         </div>
-
-        <div className="rounded-2xl border border-[#E0DED5] bg-white p-5 shadow-xs">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#5A6460]">
-            Lịch giảng dạy trong tuần
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-xs">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">Lịch giảng dạy trong tuần</p>
+          <p className="mt-2 text-base font-bold text-[var(--ink)]">
+            {responsible.count ? 'Theo thời khóa biểu lớp phụ trách' : 'Chưa có ca dạy trong tuần'}
           </p>
-          <p className="mt-2 text-base font-bold text-[#1C2320]">
-            {activeClassesCount > 0
-              ? 'Theo thời khóa biểu lớp phụ trách'
-              : 'Chưa có ca dạy trong tuần'}
-          </p>
-          <p className="mt-1 text-xs text-[#5A6460]">
-            Múi giờ chuẩn Việt Nam (GMT+7)
-          </p>
+          <p className="mt-1 text-xs text-[var(--ink-2)]">Múi giờ chuẩn Việt Nam (GMT+7)</p>
         </div>
-
-        <div className="rounded-2xl border border-[#E0DED5] bg-white p-5 shadow-xs">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#5A6460]">
-            Giảng viên đăng nhập
-          </p>
-          <p className="mt-2 text-base font-bold text-[#1C2320] truncate">
-            {profile.fullName}
-          </p>
-          <p className="mt-1 text-xs text-[#5A6460] truncate">
+        <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-xs">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">Giảng viên đăng nhập</p>
+          <p className="mt-2 truncate text-base font-bold text-[var(--ink)]">{profile.fullName}</p>
+          <p className="num mt-1 truncate text-xs text-[var(--ink-2)]">
             {profile.email} • {profile.phone}
           </p>
         </div>
       </section>
 
-      {/* Danh sách lớp đang phụ trách */}
-      <section className="rounded-2xl border border-[#E0DED5] bg-white p-6 shadow-xs">
-        <div className="flex items-center justify-between border-b border-[#EAECE6] pb-4">
-          <div>
-            <h2 className="text-lg font-bold text-[#1C2320]">
-              Danh sách lớp đang phụ trách
-            </h2>
-            <p className="mt-0.5 text-xs text-[#5A6460]">
-              Hiển thị các lớp học được bộ phận Giáo vụ phân công giảng dạy
-              trực tiếp
-            </p>
-          </div>
-          <span className="rounded-lg border border-[#E0DED5] bg-[#F5F6F2] px-3 py-1 text-xs font-semibold text-[#1C2320] font-num">
-            {activeClassesCount} lớp
-          </span>
-        </div>
-
-        {activeClassesCount > 0 ? (
-          <div className="mt-6 rounded-xl border border-[#2B7760]/20 bg-[#2B7760]/5 p-6">
-            <h3 className="text-base font-semibold text-[#2B7760]">
-              Hồ sơ của bạn đang ghi nhận {activeClassesCount} lớp phụ trách
-            </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-[#5A6460]">
-              Danh sách học viên theo từng lớp, lịch buổi học chi tiết và sổ
-              điểm danh trực tuyến được đồng bộ trực tiếp theo phân công của
-              Trung Tâm TD Hán Ngữ.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-6 rounded-xl border border-[#E0DED5] bg-[#F5F6F2] p-8 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-[#2B7760]/10 text-[#2B7760] font-bold text-base font-han">
-              师
-            </div>
-            <h3 className="mt-3 text-base font-bold text-[#1C2320]">
-              Hiện chưa có lớp học nào được phân công giảng dạy
-            </h3>
-            <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-[#5A6460]">
-              Khi bộ phận Giáo vụ mở lớp HSK mới và gán giáo viên phụ trách,
-              thông tin lớp học, danh sách học viên cùng lịch lên lớp sẽ
-              hiển thị đầy đủ tại đây.
-            </p>
-          </div>
-        )}
-
-        <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-[#EAECE6] pt-4">
+      <ClassListFilters
+        search={list.filters.search}
+        onSearchChange={list.setSearch}
+        searchPlaceholder="Tìm theo mã lớp hoặc tên khóa học..."
+        status={list.filters.status}
+        onStatusChange={list.setStatus}
+        includeEnded={list.filters.includeEnded}
+        onIncludeEndedChange={list.setIncludeEnded}
+        includeEndedLabel="Hiện lớp đã kết thúc (Chỉ xem)"
+        totalLabel={`Tổng: ${list.total} lớp học`}
+      >
+        {hasAdminRole ? (
           <Link
-            href="/profile"
-            className="rounded-lg border border-[#D5D3CA] bg-white px-4 py-2 text-sm font-semibold text-[#1C2320] hover:bg-[#F5F6F2] transition-colors"
+            href="/admin/classes"
+            className="rounded-lg bg-[var(--red)] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--red-ink)]"
           >
-            Cập nhật hồ sơ cá nhân
+            Quản lý toàn bộ lớp học
           </Link>
-          {isDualAdmin ? (
-            <Link
-              href="/admin/teachers"
-              className="rounded-lg bg-[#B5322A] px-4 py-2 text-sm font-semibold text-white shadow-xs hover:bg-[#962821] transition-colors"
-            >
-              Quản lý đội ngũ giáo viên
-            </Link>
-          ) : null}
-        </div>
-      </section>
+        ) : null}
+      </ClassListFilters>
+
+      <ListBanners error={list.error} isStale={list.isStale} onRetry={retry} />
+
+      <ClassesTableSection
+        classes={list.items}
+        loading={list.loading}
+        detailBasePath="/teacher/classes"
+        showTeacherColumn={false}
+        hasActiveFilters={list.hasActiveFilters}
+        onClearFilters={list.clearFilters}
+        emptyTitle="Hiện chưa có lớp học nào được phân công giảng dạy"
+        emptyDescription="Khi bộ phận Giáo vụ mở lớp HSK mới và gán giáo viên phụ trách, thông tin lớp học, danh sách học viên cùng lịch lên lớp sẽ hiển thị đầy đủ tại đây."
+        pagination={{ page: list.page, limit: list.pageSize, total: list.total, onPageChange: list.setPage }}
+      />
     </div>
   );
 }
 
 export default function TeacherClassesPage() {
-  const { status, user, errorMessage } =
-    usePortalProfileSession(ALLOWED_ROLES);
+  const { status, user, errorMessage, handleApiAuthError } = usePortalProfileSession(ALLOWED_ROLES);
 
   if (status !== 'authorized' || !user) {
     return (
@@ -179,5 +183,5 @@ export default function TeacherClassesPage() {
     );
   }
 
-  return <TeacherClassesContent profile={user} />;
+  return <TeacherClassesContent profile={user} onAuthError={handleApiAuthError} />;
 }

@@ -8,7 +8,10 @@ import { ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client'
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
-import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
+import {
+  assertVnDateNotInFuture,
+  resolveVnCalendarDateForDb,
+} from '../../../common/utils/timezone.util.js';
 import { assertActorMayModifyAccount } from '../../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { AssignInitialClassDto } from '../dto/students.dto.js';
@@ -65,9 +68,37 @@ export class StudentEnrollmentService {
     if (!enrolledDate) {
       throw new BadRequestException('Thời điểm xếp lớp (enrolledAt) không hợp lệ');
     }
+    assertVnDateNotInFuture(enrolledDate, 'Ngày vào lớp');
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        const isUuid = UUID_REGEX.test(classNameOrId);
+        const foundClass = await tx.class.findFirst({
+          where: isUuid
+            ? { OR: [{ id: classNameOrId }, { code: classNameOrId }] }
+            : { code: classNameOrId },
+        });
+        if (!foundClass) {
+          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
+        }
+
+        // Lock Hierarchy: lock "classes" before "users" to prevent cross-table deadlocks
+        await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${foundClass.id} FOR UPDATE`;
+        const targetClass = await tx.class.findFirst({
+          where: { OR: [{ id: foundClass.id }] },
+        });
+        if (!targetClass) {
+          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
+        }
+        if (
+          targetClass.status !== ClassStatus.UPCOMING &&
+          targetClass.status !== ClassStatus.ACTIVE
+        ) {
+          throw new BadRequestException(
+            'Chỉ có thể xếp học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
+          );
+        }
+
         // Row-lock the student row to serialize concurrent initial enrollment requests
         await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${studentId} FOR UPDATE`;
 
@@ -84,24 +115,6 @@ export class StudentEnrollmentService {
         if (targetUser.status !== UserStatus.PENDING_CLASS) {
           throw new BadRequestException(
             'Chỉ có thể xếp lớp lần đầu cho học viên đang ở trạng thái Chờ xếp lớp',
-          );
-        }
-
-        const isUuid = UUID_REGEX.test(classNameOrId);
-        const targetClass = await tx.class.findFirst({
-          where: isUuid
-            ? { OR: [{ id: classNameOrId }, { code: classNameOrId }] }
-            : { code: classNameOrId },
-        });
-        if (!targetClass) {
-          throw new NotFoundException('Lớp học không tồn tại trong hệ thống');
-        }
-        if (
-          targetClass.status !== ClassStatus.UPCOMING &&
-          targetClass.status !== ClassStatus.ACTIVE
-        ) {
-          throw new BadRequestException(
-            'Chỉ có thể xếp học viên vào lớp Sắp mở (UPCOMING) hoặc Đang học (ACTIVE)',
           );
         }
 

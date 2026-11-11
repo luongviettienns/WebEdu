@@ -700,6 +700,13 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
       }),
     ).rejects.toThrowError(BadRequestException);
 
+    await expect(
+      service.assignInitialClass(adminActor, 'student-a', {
+        classNameOrId: 'HSK1-K21',
+        enrolledAt: '2099-01-01',
+      }),
+    ).rejects.toThrowError(/ngày trong tương lai/);
+
     const assigned = await service.assignInitialClass(adminActor, 'student-a', {
       classNameOrId: 'HSK1-K21',
     });
@@ -809,10 +816,14 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
     expect(teacherRecords.records).toHaveLength(1);
     expect(teacherRecords.records[0]?.accessMode).toBe('FULL');
 
-    // Case 1 (DEC-025): Class finishes (COMPLETED), teacher was NOT replaced -> READ_ONLY access
+    // Case 1 (DEC-025): Class finishes (COMPLETED), teacher was NOT replaced -> READ_ONLY access for Teacher, Admin, and Student
     classesStore.get('cls-k21')!.status = ClassStatus.COMPLETED;
     const completedRecords = await service.getStudentLearningRecords(teacher1, 'student-a');
     expect(completedRecords.records[0]?.accessMode).toBe('READ_ONLY');
+    const adminCompletedRecords = await service.getStudentLearningRecords(adminActor, 'student-a');
+    expect(adminCompletedRecords.records[0]?.accessMode).toBe('READ_ONLY');
+    const studentCompletedRecords = await service.getStudentLearningRecords(studentActorA, 'student-a');
+    expect(studentCompletedRecords.records[0]?.accessMode).toBe('READ_ONLY');
 
     // Case 2 (DEC-025): Teacher is replaced by teacher-2 -> teacher-1 gets 403, teacher-2 gets access
     classesStore.get('cls-k21')!.status = ClassStatus.ACTIVE;
@@ -938,6 +949,21 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
         'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
       ),
     );
+
+    // When a dropped/completed student is already in PENDING_CLASS, editing internalNotes while keeping status = PENDING_CLASS succeeds
+    usersStore.get('student-dropped')!.status = UserStatus.PENDING_CLASS;
+    const updatedDropped = await service.updateStudent(
+      adminActor,
+      'student-dropped',
+      {
+        status: UserStatus.PENDING_CLASS,
+        internalNotes: 'Bảo lưu chờ khóa HSK2 tháng sau',
+      },
+    );
+    expect(updatedDropped.status).toBe(UserStatus.PENDING_CLASS);
+    expect(updatedDropped.internalNotes).toBe(
+      'Bảo lưu chờ khóa HSK2 tháng sau',
+    );
   });
 
   it('lists students with filters and evaluates verifyClassLearningAccess for Admin, Teacher, and Superadmin', async () => {
@@ -968,6 +994,14 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
         classStatus: 'ACTIVE',
       }),
     ).toEqual({ allowed: true, mode: 'FULL' });
+
+    expect(
+      service.verifyClassLearningAccess(adminActor, {
+        classId: 'cls-completed',
+        assignedTeacherId: 'teacher-1',
+        classStatus: 'COMPLETED',
+      }),
+    ).toEqual({ allowed: true, mode: 'READ_ONLY' });
 
     expect(
       service.verifyClassLearningAccess(teacherActor, {
@@ -1004,5 +1038,82 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
         classStatus: 'ACTIVE',
       }),
     ).toThrow(new ForbiddenException('Bạn không có quyền truy cập'));
+  });
+
+  it('enriches getStudentClassHistory and toStudentDetailDto with courseCode, teacherName, reason, classHistory, and pastClasses', async () => {
+    const pastEnr = {
+      id: 'enr-past-1',
+      classId: 'cls-completed',
+      studentId: 'student-a',
+      status: EnrollmentStatus.COMPLETED,
+      enrolledDate: new Date('2026-01-01T00:00:00.000Z'),
+      leftDate: new Date('2026-03-30T00:00:00.000Z'),
+      reason: 'Hoàn thành khóa học',
+      class: classesStore.get('cls-completed')!,
+    };
+    enrollmentsStore.push(pastEnr);
+    Object.assign(usersStore.get('student-a')!, {
+      enrollments: [pastEnr],
+    });
+
+    const history = await service.getStudentClassHistory(adminActor, 'student-a');
+    expect(history.pastClasses).toEqual([
+      {
+        enrollmentId: 'enr-past-1',
+        classId: 'cls-completed',
+        classCode: 'HSK1-OLD',
+        courseCode: 'HSK1',
+        courseName: 'Tiếng Trung HSK 1',
+        teacherName: 'Cô Giáo Lan',
+        enrollmentStatus: EnrollmentStatus.COMPLETED,
+        enrolledDate: '2026-01-01',
+        leftDate: '2026-03-30',
+        reason: 'Hoàn thành khóa học',
+      },
+    ]);
+
+    const detail = await service.getStudentById(adminActor, 'student-a');
+    expect(detail.classHistory).toEqual(['HSK1-OLD']);
+    expect(detail.pastClasses).toEqual(history.pastClasses);
+
+    // Deduplicate classHistory when re-enrolled in the same class and mask for composite [SUPERADMIN, TEACHER]
+    const pastEnrDuplicateClass = {
+      ...pastEnr,
+      id: 'enr-past-2',
+      status: EnrollmentStatus.DROPPED,
+    };
+    usersStore.get('student-a')!.studentProfile!.assignedClass = 'HSK1-K21';
+    usersStore.get('student-a')!.studentProfile!.currentClassId = 'cls-k21';
+    usersStore.get('student-a')!.studentProfile!.enrolledAt = new Date('2026-10-01T00:00:00.000Z');
+    Object.assign(usersStore.get('student-a')!, {
+      enrollments: [pastEnr, pastEnrDuplicateClass],
+    });
+
+    const detailDeduplicated = await service.getStudentById(adminActor, 'student-a');
+    expect(detailDeduplicated.classHistory).toEqual(['HSK1-OLD']);
+    expect(detailDeduplicated.pastClasses).toHaveLength(2);
+
+    const compositeSaTeacher: AuthenticatedUser = {
+      id: 'sa-teacher-composite',
+      email: 'sateacher@webedu.vn',
+      fullName: 'SA Teacher Composite',
+      phone: '0907777777',
+      roles: [Role.SUPERADMIN, Role.TEACHER],
+      effectiveRole: Role.SUPERADMIN,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    const maskedDetail = await service.getStudentById(compositeSaTeacher, 'student-a');
+    expect(maskedDetail.assignedClass).toBeNull();
+    expect(maskedDetail.currentClassId).toBeNull();
+    expect(maskedDetail.enrolledAt).toBeNull();
+    expect(maskedDetail.classHistory).toBeUndefined();
+    expect(maskedDetail.pastClasses).toBeUndefined();
+
+    const maskedList = await service.listStudents(compositeSaTeacher, { page: 1, limit: 10 });
+    const maskedItemA = maskedList.items.find((i) => i.id === 'student-a')!;
+    expect(maskedItemA.assignedClass).toBeNull();
+    expect(maskedItemA.enrolledAt).toBeNull();
   });
 });

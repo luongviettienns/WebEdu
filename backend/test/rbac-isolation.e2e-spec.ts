@@ -391,14 +391,26 @@ describe('RBAC, Multi-Tenant IDOR, DEC-024/025/026 & Superadmin Isolation (e2e �
       'Giáo viên không có quyền xem lịch sử lớp cũ của học viên',
     );
 
-    // DEC-026: Admin gets 200 FULL on learning-records and 200 on class-history with real enrollment rows
+    // DEC-026 & REM-05: Admin gets 200 FULL on active class learning-records (Student A), READ_ONLY on completed class (Student B), and 200 on class-history
+    const adminActiveLearningRes = await request(harness.app.getHttpServer())
+      .get(`/api/v1/students/${IDS.studentA}/learning-records`)
+      .set('Cookie', adminSession.cookiePair)
+      .expect(200);
+    expect(
+      (
+        adminActiveLearningRes.body as {
+          records: Array<{ classCode: string; accessMode: string }>;
+        }
+      ).records.find((r) => r.classCode === 'HSK2-LIVE-01')?.accessMode,
+    ).toBe('FULL');
+
     const adminLearningRes = await request(harness.app.getHttpServer())
       .get(`/api/v1/students/${IDS.studentB}/learning-records`)
       .set('Cookie', adminSession.cookiePair)
       .expect(200);
     expect(
       (adminLearningRes.body as { records: Array<{ accessMode: string }> }).records[0]?.accessMode,
-    ).toBe('FULL');
+    ).toBe('READ_ONLY');
 
     const adminHistoryRes = await request(harness.app.getHttpServer())
       .get(`/api/v1/students/${IDS.studentB}/class-history`)

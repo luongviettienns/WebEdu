@@ -41,12 +41,11 @@ export function AssignInitialClassModal({
   onSuccess,
   onAuthError,
 }: AssignInitialClassModalProps) {
+  const todayIso = getTodayDateString();
   const [selectedClass, setSelectedClass] = useState<string>(
     availableClasses[0]?.code ?? '',
   );
-  const [enrolledAt, setEnrolledAt] = useState<string>(() =>
-    getTodayDateString(),
-  );
+  const [enrolledAt, setEnrolledAt] = useState<string>(todayIso);
   const [assignError, setAssignError] = useState<string>('');
   const [assigning, setAssigning] = useState<boolean>(false);
 
@@ -62,6 +61,12 @@ export function AssignInitialClassModal({
     }
     if (!enrolledAt) {
       setAssignError('Vui lòng chọn ngày vào lớp');
+      return;
+    }
+    if (enrolledAt > todayIso) {
+      setAssignError(
+        'Ngày vào lớp không được chọn ngày trong tương lai: thao tác có hiệu lực ngay khi lưu (chưa hỗ trợ lên lịch tự động)',
+      );
       return;
     }
 
@@ -158,6 +163,7 @@ export function AssignInitialClassModal({
             <input
               id="assign-enrolled-date"
               type="date"
+              max={todayIso}
               required
               value={enrolledAt}
               onChange={(e) => setEnrolledAt(e.target.value)}

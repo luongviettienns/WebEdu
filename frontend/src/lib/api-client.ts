@@ -125,8 +125,23 @@ export async function fetchApi<T>(
     throw new ApiClientError(response.status, problem);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as unknown as T;
+  }
+
+  const rawText = await response.text();
+  if (!rawText || !rawText.trim()) {
+    return undefined as unknown as T;
+  }
+
+  try {
+    return JSON.parse(rawText) as T;
+  } catch {
+    return rawText as unknown as T;
+  }
 }
+
+export const requestJson = fetchApi;
 
 export async function getSystemHealth(): Promise<HealthCheckResponse> {
   return fetchApi<HealthCheckResponse>('/health');

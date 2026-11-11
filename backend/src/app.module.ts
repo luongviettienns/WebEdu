@@ -8,6 +8,8 @@ import { ProfileModule } from './modules/users/profile.module.js';
 import { TeachersModule } from './modules/teachers/teachers.module.js';
 import { StudentsModule } from './modules/students/students.module.js';
 import { SystemSettingsModule } from './modules/system-settings/system-settings.module.js';
+import { CoursesModule } from './modules/courses/courses.module.js';
+import { ClassesModule } from './modules/classes/classes.module.js';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { SystemSettingsModule } from './modules/system-settings/system-settings.
     TeachersModule,
     StudentsModule,
     SystemSettingsModule,
+    CoursesModule,
+    ClassesModule,
   ],
 })
 export class AppModule {}

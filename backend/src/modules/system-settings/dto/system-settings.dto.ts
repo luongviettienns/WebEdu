@@ -6,6 +6,7 @@ export class ListSystemUsersQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
 
   @ApiPropertyOptional({ default: 1 })
