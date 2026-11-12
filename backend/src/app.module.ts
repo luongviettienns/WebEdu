@@ -16,6 +16,7 @@ import { CoursesModule } from './modules/courses/courses.module.js';
 import { ClassesModule } from './modules/classes/classes.module.js';
 import { SchedulesModule } from './modules/schedules/schedules.module.js';
 import { AttendanceModule } from './modules/attendance/attendance.module.js';
+import { AssessmentsModule } from './modules/assessments/assessments.module.js';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AttendanceModule } from './modules/attendance/attendance.module.js';
     ClassesModule,
     SchedulesModule,
     AttendanceModule,
+    AssessmentsModule,
   ],
   providers: [
     {
