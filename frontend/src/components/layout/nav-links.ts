@@ -40,6 +40,7 @@ export function getGroupedNavLinks(
                   { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
                   { href: '/admin/classes', label: 'Quản lý lớp học', han: '班级' },
                   { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
+                  { href: '/teacher/assessments', label: 'Ngân hàng đề', han: '题库' },
                 ]
               : []),
             { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
@@ -82,6 +83,7 @@ export function getGroupedNavLinks(
             { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
             { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
             { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
+            { href: '/teacher/assessments', label: 'Ngân hàng đề', han: '题库' },
             ...(hasTeacherRole
               ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]
               : []),
@@ -110,6 +112,7 @@ export function getGroupedNavLinks(
           items: [
             { href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' },
             { href: '/teacher/schedules', label: 'Lịch dạy', han: '课表' },
+            { href: '/teacher/assessments', label: 'Ngân hàng đề', han: '题库' },
           ],
         },
         ...(hasStudentRole

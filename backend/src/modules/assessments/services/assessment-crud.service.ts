@@ -54,7 +54,12 @@ export class AssessmentCrudService {
       orderBy: { updatedAt: 'desc' },
       include: { questions: { select: { points: true } } },
     });
-    return rows.map((a) => toTeacherAssessmentDto({ ...a, questions: [] }));
+    return rows.map((a) => {
+      const dto = toTeacherAssessmentDto({ ...a, questions: [] });
+      dto.totalPoints = a.questions.reduce((sum, q) => sum + q.points, 0);
+      dto.questionCount = a.questions.length;
+      return dto;
+    });
   }
 
   async getDetail(id: string): Promise<TeacherAssessmentDto> {
