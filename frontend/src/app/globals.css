@@ -138,3 +138,175 @@ body {
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* Phase 4 Calendar, Schedule Events & Attendance Matrix (100% Prototype Paper-Ink Fidelity) */
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  min-width: 680px;
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+}
+.cal .dh {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 600;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.cal .d {
+  min-height: 104px;
+  padding: 6px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  background: var(--surface);
+}
+.cal .d.out {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+.cal .d.out .dn {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.cal .dn {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 600;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+}
+.cal .d.today .dn {
+  background: var(--red);
+  color: #fff;
+}
+.ev {
+  font-size: 11.5px;
+  line-height: 1.3;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  border-left: 3px solid;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  width: 100%;
+  transition: filter 0.15s ease;
+}
+.ev:hover {
+  filter: brightness(0.96);
+}
+.ev.plan {
+  background: var(--blue-soft);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.ev.done {
+  background: var(--jade-soft);
+  border-color: var(--jade);
+  color: var(--jade);
+}
+.ev.cancel {
+  background: var(--grey-soft);
+  border-color: var(--grey);
+  color: var(--grey);
+  text-decoration: line-through;
+}
+.ev.today {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.ev.miss {
+  background: var(--red-soft);
+  border-color: var(--red);
+  color: var(--red-ink);
+}
+.bu {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--red);
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 4px;
+  text-decoration: none;
+  display: inline-block;
+}
+.mv {
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-right: 4px;
+}
+.cal.att .d {
+  min-height: 76px;
+  align-items: flex-start;
+}
+.attd {
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 5px;
+  padding: 3px 7px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.attd.PRESENT {
+  background: var(--jade-soft);
+  color: var(--jade);
+}
+.attd.ABSENT {
+  background: var(--red-soft);
+  color: var(--red-ink);
+}
+.attd.EXCUSED {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.attd.FUTURE {
+  background: transparent;
+  border: 1px solid var(--blue);
+  color: var(--blue);
+}
+.attd.CANCELLED {
+  background: var(--grey-soft);
+  color: var(--grey);
+  text-decoration: line-through;
+}
+.mk {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.mk.PRESENT {
+  background: var(--jade-soft);
+  color: var(--jade);
+}
+.mk.ABSENT {
+  background: var(--red-soft);
+  color: var(--red-ink);
+}
+.mk.EXCUSED {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+.mk.NONE {
+  color: var(--ink-3);
+}

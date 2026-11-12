@@ -15,6 +15,7 @@ import {
   Role,
   UserStatus,
 } from '@prisma/client';
+import { seedInitialClassSessions } from '../../prisma/seed-sessions.util.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -279,7 +280,7 @@ async function seedQaFixtures(databaseUrl) {
       },
     });
 
-    await prisma.user.create({
+    const adminUser = await prisma.user.create({
       data: {
         email: 'admin@webedu.vn',
         phone: '0909000003',
@@ -340,7 +341,7 @@ async function seedQaFixtures(databaseUrl) {
       },
     });
 
-    await prisma.class.create({
+    const classHsk1 = await prisma.class.create({
       data: {
         code: 'HSK1-K26-01',
         courseId: courseHsk1.id,
@@ -359,6 +360,9 @@ async function seedQaFixtures(databaseUrl) {
         startDate: new Date('2026-10-01T00:00:00.000Z'),
       },
     });
+
+    await seedInitialClassSessions(prisma, classHsk1, adminUser);
+    await seedInitialClassSessions(prisma, classHsk2, adminUser);
 
     const vnYear = Number(
       new Intl.DateTimeFormat('en-CA', {

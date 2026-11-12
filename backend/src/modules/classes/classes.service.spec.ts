@@ -19,6 +19,7 @@ import {
   normalizeScheduleDays,
 } from './policies/class-schedule.util.js';
 import { ClassCrudService } from './services/class-crud.service.js';
+import { SessionGeneratorService } from '../schedules/services/session-generator.service.js';
 import type { PrismaService } from '../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 
@@ -462,6 +463,16 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       studentProfile: {
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      $executeRaw: vi.fn().mockResolvedValue(0),
+      lessonSession: {
+        createMany: vi.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      sessionChangeLog: {
+        create: vi.fn().mockResolvedValue({}),
+      },
       systemAuditLog: {
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           auditLogs.push(data);
@@ -474,7 +485,10 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       ),
     };
 
-    service = new ClassCrudService(mockPrisma as unknown as PrismaService);
+    service = new ClassCrudService(
+      mockPrisma as unknown as PrismaService,
+      new SessionGeneratorService(),
+    );
   });
 
   describe('class-schedule.util', () => {
@@ -866,6 +880,31 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       expect(
         assignmentsStore[1]?.assignedFrom.toISOString().slice(0, 10),
       ).toBe('2026-12-31');
+    });
+
+    it('REGRESSION (SEC-P4-02): preserves shifted expectedEndDate when updating non-schedule fields like notes', async () => {
+      const created = await service.createClass(adminActor, {
+        code: 'HSK1-NOTES-01',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6,
+      });
+
+      classesStore.get(created.id)!.expectedEndDate = new Date('2026-12-28T00:00:00.000Z');
+
+      const updated = await service.updateClass(adminActor, created.id, {
+        notes: 'Cập nhật ghi chú lớp',
+      });
+
+      expect(updated.notes).toBe('Cập nhật ghi chú lớp');
+      expect(updated.expectedEndDate).toBe('2026-12-28');
+      expect(classesStore.get(created.id)?.expectedEndDate?.toISOString().slice(0, 10)).toBe(
+        '2026-12-28',
+      );
     });
   });
 

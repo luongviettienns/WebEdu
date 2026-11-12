@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 4: Module 04 & 05 — Lịch học, Buổi học & Điểm danh (`FUNC-026..032`, `FUNC-034..037`) — ĐANG KHỞI ĐỘNG**
+* **Giai đoạn hiện tại**: **Phase 4: Module 04 & 05 — Lịch học, Buổi học & Điểm danh (`FUNC-026..032`, `FUNC-034..037`) — HOÀN THÀNH SLICE 4.1–4.5 (100% PASS), CHỜ MERGE VÀO `develop`**
 
 ---
 
@@ -194,12 +194,18 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Kiểm Chứng & Phản Biện Độc Lập Lần 2**: `node scripts/check-loc.js` PASS (122 files); Backend `tsc` 0 errors, `oxlint` 0 warnings/0 errors (128 files), `nest build` PASS, Unit **176/176 PASS**, Real PG Integration **15/15 PASS** (gồm Scenario 16 EPQ `[realOtp, wrongOtp, realOtp]` & Brute-force race và Scenario 17 `CHECK`/Triggers đồng thời), Backend E2E **31/31 PASS**; Frontend `tsc` 0 errors, `eslint` PASS, `next build` PASS (19/19 trang + `ƒ Proxy`), Playwright E2E **40/40 PASS**; `akit-security` kết luận **`PASS`** và `akit-critic` kết luận **`APPROVE`**.
 
 ### Phase 4: Module 04 & 05 — Lịch học, Buổi học & Điểm danh (`FUNC-026..032`, `FUNC-034..037`)
-- [ ] Lập Sub-Plan `docs/plans/phase-04-schedule-and-attendance.md` & chốt Open Issues `SCHED-01`, `ATT-01`.
-- [ ] **Slice 4.1**: Khai báo lịch định kỳ & Sinh các buổi học (`FUNC-026, 027` — không tự chuyển 'Đã học' khi chưa điểm danh).
-- [ ] **Slice 4.2**: Cập nhật lịch (`FUNC-029`), Hủy buổi (`FUNC-030`), Tạo buổi học bù (`FUNC-031`), Nhật ký thay đổi lịch (`FUNC-032`).
-- [ ] **Slice 4.3**: Điểm danh từng buổi 3 trạng thái (`FUNC-034, 035`).
-- [ ] **Slice 4.4**: Sửa điểm danh giới hạn 2 ngày GMT+7 cho GV & Admin Override Audit Log (`FUNC-037`) + Cảnh báo nghỉ chạm 30% (`FUNC-036`).
-- [ ] **Slice 4.5**: Giao diện Calendar Lịch học & Điểm danh trực tiếp trên buổi học (bỏ menu Điểm danh rời 14 ngày theo Cleanup #9).
+- [x] Lập Sub-Plan `docs/plans/phase-04-schedule-and-attendance.md` & chốt Open Issues `SCHED-01` (`DEC-031`), `ATT-01` (`DEC-032`, `DEC-033`).
+- [x] **Slice 4.1**: Khai báo lịch định kỳ & Sinh các buổi học (`FUNC-026, 027` — không tự chuyển 'Đã học' khi chưa điểm danh).
+- [x] **Slice 4.2**: Cập nhật lịch (`FUNC-029`), Hủy buổi (`FUNC-030`), Tạo buổi học bù (`FUNC-031`), Nhật ký thay đổi lịch (`FUNC-032`).
+- [x] **Slice 4.3**: Điểm danh từng buổi 3 trạng thái (`FUNC-034, 035`).
+- [x] **Slice 4.4**: Sửa điểm danh giới hạn 2 ngày GMT+7 cho GV & Admin Override Audit Log (`FUNC-037`) + Cảnh báo nghỉ chạm 30% (`FUNC-036`).
+- [x] **Slice 4.5**: Giao diện Calendar Lịch học & Điểm danh trực tiếp trên buổi học (bỏ menu Điểm danh rời 14 ngày theo Cleanup #9).
+- [x] **Khắc phục phát hiện từ 2 reviewer độc lập (`akit-security` + `akit-critic`)**:
+  - Backend: khóa `FOR UPDATE` lớp TRƯỚC khi đọc buổi học (reschedule/cancel/makeup), map `P2002` makeup trùng → `409`, từ chối `reason` chỉ có khoảng trắng, học viên `DROPPED` không xem được lịch lớp, ẩn `attendanceSummary` với STUDENT, giới hạn cửa sổ lịch ≤ 93 ngày, lọc nhật ký theo `Asia/Ho_Chi_Minh`, `updateClass` không ghi đè `expectedEndDate` đã dịch, khử trùng lặp học viên ghi danh lại trong bảng/ma trận điểm danh.
+  - Frontend: đồng bộ CSS Paper-Ink (`.dh/.d/.dn`, `.attd.*`, `.mk.*`), bỏ `formatDeadlineVn` gây sai ngày, không bắt nhập lý do khi lưu không thay đổi, token tương phản WCAG AA cho ô ngoài tháng.
+  - Test hồi quy: bổ sung unit/PG integration/HTTP E2E/Playwright cho từng phát hiện.
+- [x] **Xác minh Phase 4 (sau chỉnh sửa cuối)**: `check-loc` PASS (151 file); backend `typecheck`/`lint`/`build` sạch; unit 194/194; PG integration 16/16; HTTP E2E 32/32; frontend `typecheck`/`lint`/`build` (23 route) sạch; Playwright 46/46 (Desktop + Mobile + Axe WCAG).
+- [x] **Tinh chỉnh & Dọn dẹp Công cụ sau Phase 4**: Chặn `canMarkAttendance` khi buổi học đã có bản ghi điểm danh (`session.mapper.ts`), đồng bộ schema/log trong `docs/plans/phase-04-schedule-and-attendance.md`, gỡ bỏ thư mục AKit (`.agents/`, `.akit/`) và thêm cấu hình `ponytail-config.json`.
 
 ### Phase 5: Module 06 (Phần 1) — Ngân hàng Câu hỏi HSK & Import Đề Word/PDF (`FUNC-039..050`)
 - [ ] Lập Sub-Plan `docs/plans/phase-05-question-bank-and-import.md`, chạy `akit-prior-art` & chốt `ASSIGN-01`.

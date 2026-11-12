@@ -1645,4 +1645,234 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       }),
     ).rejects.toThrow();
   });
+
+  it('Scenario 18 (Phase 4 PostgreSQL Constraints, Concurrency Locking, Renumbering & Immutability): Verifies session constraints, FOR UPDATE makeup race, cancel renumbering, and audit triggers', async () => {
+    const [{ CoursesService }, { ClassCrudService }, { SessionWorkflowService }, { AttendanceCrudService }] =
+      await Promise.all([
+        import('../src/modules/courses/services/courses.service.js'),
+        import('../src/modules/classes/services/class-crud.service.js'),
+        import('../src/modules/schedules/services/session-workflow.service.js'),
+        import('../src/modules/attendance/services/attendance-crud.service.js'),
+      ]);
+
+    const coursesService = moduleRef.get(CoursesService);
+    const classCrudService = moduleRef.get(ClassCrudService);
+    const workflowService = moduleRef.get(SessionWorkflowService);
+    const attendanceCrud = moduleRef.get(AttendanceCrudService);
+
+    const adminUser = await prisma.user.create({
+      data: {
+        email: 'pg.phase4.admin@test.com',
+        phone: '0908333001',
+        fullName: 'PG Phase 4 Admin',
+        passwordHash: 'hash',
+        roles: [Role.ADMIN],
+        status: UserStatus.ACTIVE,
+      },
+    });
+    const adminActor: AuthenticatedUser = {
+      id: adminUser.id,
+      email: adminUser.email,
+      fullName: adminUser.fullName,
+      phone: adminUser.phone,
+      roles: adminUser.roles,
+      effectiveRole: Role.ADMIN,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    const teacherUser = await prisma.user.create({
+      data: {
+        email: 'pg.phase4.teacher@test.com',
+        phone: '0908333002',
+        fullName: 'PG Phase 4 Teacher',
+        passwordHash: 'hash',
+        roles: [Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        teacherProfile: { create: { activeClassesCount: 0 } },
+      },
+    });
+    const studentUser = await prisma.user.create({
+      data: {
+        email: 'pg.phase4.student@test.com',
+        phone: '0908333003',
+        fullName: 'PG Phase 4 Student',
+        passwordHash: 'hash',
+        roles: [Role.STUDENT],
+        status: UserStatus.ACTIVE,
+      },
+    });
+
+    const course = await coursesService.createCourse(adminActor, {
+      code: 'PG-HSK4-S18',
+      name: 'PG HSK 4 Phase 4 Integration',
+      level: CourseLevel.HSK4,
+      defaultSessions: 6,
+    });
+
+    // Future-anchored start date (valid relative to real wall clock; 2026-12-01 is after 2026-11-12)
+    const cls = await classCrudService.createClass(adminActor, {
+      code: 'PG-P4-CLS01',
+      courseId: course.id,
+      teacherId: teacherUser.id,
+      scheduleDays: [1, 3, 5],
+      scheduleStartTime: '18:00',
+      scheduleEndTime: '19:30',
+      startDate: '2026-12-02',
+      totalSessions: 4,
+    });
+
+    const generated = await prisma.lessonSession.findMany({
+      where: { classId: cls.id },
+      orderBy: { sessionNumber: 'asc' },
+    });
+    expect(generated.map((s) => s.sessionNumber)).toEqual([1, 2, 3, 4]);
+
+    // 1. Cancel session #2 without makeup -> sessionNumber becomes null and remaining active sessions renumber 1..3
+    await workflowService.cancelSession(adminActor, generated[1]!.id, {
+      reason: 'Giáo viên công tác',
+    });
+    const afterCancel = await prisma.lessonSession.findMany({
+      where: { classId: cls.id },
+      orderBy: [{ sessionDate: 'asc' }],
+    });
+    const cancelledRow = afterCancel.find((s) => s.id === generated[1]!.id)!;
+    expect(cancelledRow.sessionNumber).toBeNull();
+    expect(cancelledRow.status).toBe('CANCELLED');
+    expect(
+      afterCancel.filter((s) => s.status !== 'CANCELLED').map((s) => s.sessionNumber),
+    ).toEqual([1, 2, 3]);
+
+    // 2. Concurrent makeup session creation on the same cancelled session -> FOR UPDATE + unique makeup_for_session_id -> strictly 1 wins!
+    const makeupRace = await Promise.allSettled([
+      workflowService.createMakeupSession(adminActor, cancelledRow.id, {
+        sessionDate: '2026-12-19',
+        startTime: '09:00',
+        endTime: '10:30',
+      }),
+      workflowService.createMakeupSession(adminActor, cancelledRow.id, {
+        sessionDate: '2026-12-20',
+        startTime: '09:00',
+        endTime: '10:30',
+      }),
+    ]);
+    expect(makeupRace.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejectedMakeup = makeupRace.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+    expect(rejectedMakeup).toHaveLength(1);
+    expect([400, 409]).toContain(
+      (rejectedMakeup[0]!.reason as { getStatus(): number }).getStatus(),
+    );
+
+    // 2b. Concurrent cancel vs reschedule on the same active session -> FOR UPDATE serializes -> strictly 1 wins!
+    const scheduled3 = afterCancel.find((s) => s.id === generated[2]!.id)!;
+    const cancelVsReschedule = await Promise.allSettled([
+      workflowService.cancelSession(adminActor, scheduled3.id, {
+        reason: 'Hủy đồng thời',
+      }),
+      workflowService.rescheduleSession(adminActor, scheduled3.id, {
+        sessionDate: '2026-12-26',
+        startTime: '18:00',
+        endTime: '19:30',
+        reason: 'Đổi đồng thời',
+      }),
+    ]);
+    expect(cancelVsReschedule.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejectedRace = cancelVsReschedule.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+    expect(rejectedRace).toHaveLength(1);
+    expect([400, 409]).toContain((rejectedRace[0]!.reason as { getStatus(): number }).getStatus());
+
+    // 2c. SEC-P4-02: Rescheduled/makeup expectedEndDate is preserved when updating non-schedule fields like notes
+    const latestActive = await prisma.lessonSession.findFirstOrThrow({
+      where: { classId: cls.id, status: 'SCHEDULED' },
+      orderBy: { sessionDate: 'desc' },
+    });
+    const shifted = await workflowService.rescheduleSession(adminActor, latestActive.id, {
+      sessionDate: '2026-12-30',
+      startTime: '18:00',
+      endTime: '19:30',
+      reason: 'Dời buổi cuối để kiểm tra bảo toàn ngày dự kiến',
+    });
+    expect(shifted.expectedEndDate).toBe('2026-12-30');
+    await classCrudService.updateClass(adminActor, cls.id, { notes: 'Giữ nguyên ngày kết thúc dự kiến' });
+    const reloadedCls = await prisma.class.findUniqueOrThrow({ where: { id: cls.id } });
+    expect(reloadedCls.expectedEndDate?.toISOString().slice(0, 10)).toBe('2026-12-30');
+
+    // 3. PG CHECK constraints reject invalid session numbers or reversed time range
+    await expect(
+      prisma.lessonSession.create({
+        data: {
+          classId: cls.id,
+          sessionNumber: 99,
+          status: 'CANCELLED',
+          sessionDate: new Date('2026-12-22T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      prisma.lessonSession.create({
+        data: {
+          classId: cls.id,
+          sessionNumber: 10,
+          status: 'SCHEDULED',
+          sessionDate: new Date('2026-12-23T00:00:00.000Z'),
+          startTime: '19:30',
+          endTime: '18:00',
+        },
+      }),
+    ).rejects.toThrow();
+
+    // 4. Past session attendance + edit audit log + immutability triggers on both log tables
+    const pastSession = await prisma.lessonSession.create({
+      data: {
+        classId: cls.id,
+        sessionNumber: 5,
+        status: 'SCHEDULED',
+        sessionDate: new Date('2026-11-01T00:00:00.000Z'),
+        startTime: '18:00',
+        endTime: '19:30',
+      },
+    });
+    await prisma.enrollment.create({
+      data: {
+        classId: cls.id,
+        studentId: studentUser.id,
+        status: EnrollmentStatus.ACTIVE,
+        enrolledDate: new Date('2026-11-01T00:00:00.000Z'),
+      },
+    });
+
+    await attendanceCrud.saveSessionAttendance(adminActor, pastSession.id, {
+      records: [{ studentId: studentUser.id, status: 'ABSENT' }],
+    });
+    await attendanceCrud.saveSessionAttendance(adminActor, pastSession.id, {
+      reason: 'Sửa bổ sung có phép trong PG integration test',
+      records: [{ studentId: studentUser.id, status: 'EXCUSED' }],
+    });
+
+    const changeLogRow = await prisma.sessionChangeLog.findFirstOrThrow({
+      where: { classId: cls.id },
+    });
+    const attAuditRow = await prisma.attendanceAuditLog.findFirstOrThrow({
+      where: { sessionId: pastSession.id },
+    });
+
+    await expect(
+      prisma.sessionChangeLog.update({
+        where: { id: changeLogRow.id },
+        data: { reason: 'tampered' },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.attendanceAuditLog.delete({
+        where: { id: attAuditRow.id },
+      }),
+    ).rejects.toThrow();
+  });
 });

@@ -1,5 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
-import { ClassStatus, Prisma } from '@prisma/client';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
   assertVnDateNotInFuture,
@@ -104,11 +104,16 @@ export function formatScheduleText(
   return `${daysLabel} · ${startTime}–${endTime}`;
 }
 
-export function calculateExpectedEndDate(
+/**
+ * Sinh danh sách N ngày học định kỳ chuẩn UTC midnight từ `startDateUtc` theo các thứ `scheduleDays`.
+ * Dùng làm nguồn chân lý duy nhất cho cả preview ngày kết thúc lớp và `SessionGeneratorService`.
+ */
+export function generateRecurringSessionDates(
   startDateUtc: Date,
   scheduleDays: readonly number[],
   totalSessions: number,
-): Date {
+  excludedDateYmds?: ReadonlySet<string>,
+): Date[] {
   const normalizedDays = normalizeScheduleDays(scheduleDays);
   if (!Number.isInteger(totalSessions) || totalSessions < 1) {
     throw new BadRequestException('Tổng số buổi học phải từ 1 buổi trở lên');
@@ -123,18 +128,33 @@ export function calculateExpectedEndDate(
     ),
   );
 
-  let count = 0;
-  while (count < totalSessions) {
+  const result: Date[] = [];
+  let guardIterations = 0;
+  const maxIterations = Math.max(totalSessions * 14 + 365, 2000);
+  while (result.length < totalSessions && guardIterations < maxIterations) {
+    guardIterations += 1;
     if (daySet.has(cursor.getUTCDay())) {
-      count += 1;
-      if (count === totalSessions) {
-        return new Date(cursor.getTime());
+      const ymd = cursor.toISOString().slice(0, 10);
+      if (!excludedDateYmds?.has(ymd)) {
+        result.push(new Date(cursor.getTime()));
       }
     }
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  return new Date(cursor.getTime());
+  if (result.length < totalSessions) {
+    throw new BadRequestException('Không thể sinh đủ số buổi học hợp lệ theo cấu hình lịch');
+  }
+  return result;
+}
+
+export function calculateExpectedEndDate(
+  startDateUtc: Date,
+  scheduleDays: readonly number[],
+  totalSessions: number,
+): Date {
+  const dates = generateRecurringSessionDates(startDateUtc, scheduleDays, totalSessions);
+  return dates[dates.length - 1]!;
 }
 
 export function hasScheduleOverlap(
@@ -295,4 +315,29 @@ export function resolveUpdatedClassSchedule(
     nextStatus: dto.status ?? existing.status,
     nextNotes: dto.notes !== undefined ? dto.notes?.trim() || null : existing.notes,
   };
+}
+
+export async function assertValidActiveCourseInDb(
+  db: Prisma.TransactionClient | PrismaService,
+  courseId: string,
+): Promise<{ id: string; defaultSessions: number | null }> {
+  const course = await db.course.findUnique({ where: { id: courseId } });
+  if (!course) throw new NotFoundException('Không tìm thấy khóa học');
+  if (!course.isActive) {
+    throw new BadRequestException('Khóa học đã ngừng sử dụng, không thể mở lớp mới');
+  }
+  return course;
+}
+
+export async function assertValidActiveTeacherInDb(
+  db: Prisma.TransactionClient | PrismaService,
+  teacherId: string,
+): Promise<void> {
+  const teacher = await db.user.findUnique({
+    where: { id: teacherId },
+    select: { id: true, roles: true, status: true },
+  });
+  if (!teacher || !teacher.roles.includes(Role.TEACHER) || teacher.status !== UserStatus.ACTIVE) {
+    throw new BadRequestException('Giáo viên phụ trách không hợp lệ hoặc đã ngừng hoạt động');
+  }
 }
