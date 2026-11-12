@@ -132,3 +132,28 @@ export async function resetRateLimitKey(
     WHERE "key" = ${key}
   `;
 }
+
+/**
+ * Atomically enforces a per-email cooldown using `email_rate_limits` conditional upsert.
+ */
+export async function acquireEmailCooldownOrThrow(
+  prisma: PrismaService,
+  emailHash: string,
+  cooldownMs: number,
+  errorMessage: string,
+  now = new Date(),
+): Promise<void> {
+  const cutoff = new Date(now.getTime() - cooldownMs);
+  const allowedRows = await prisma.$queryRaw<Array<{ email_hash: string }>>`
+    INSERT INTO "email_rate_limits" ("email_hash", "last_requested_at")
+    VALUES (${emailHash}, ${now})
+    ON CONFLICT ("email_hash") DO UPDATE
+      SET "last_requested_at" = EXCLUDED."last_requested_at"
+      WHERE "email_rate_limits"."last_requested_at" <= ${cutoff}
+    RETURNING "email_hash"
+  `;
+
+  if (allowedRows.length === 0) {
+    throw new HttpException(errorMessage, HttpStatus.TOO_MANY_REQUESTS);
+  }
+}

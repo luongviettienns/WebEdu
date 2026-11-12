@@ -38,4 +38,17 @@ trigger: always_on
 ## 7. Quy Chuẩn Phân Rã Module & Chống "God File" (WebEdu Anti-God-File Guardrails)
 - **Backend (`backend/src/modules/<domain>/`):** Cấm tạo `<domain>.service.ts` đơn khối vượt `350 LOC`. Bắt buộc tách ngay từ đầu thành `services/{query,crud,workflow,access}.service.ts`, `mappers/<domain>.mapper.ts`, và `policies/<domain>.policy.ts`; tái sử dụng `common/utils/*`, `common/audit/audit-log.util.ts`, và `common/auth/superadmin-protection.policy.ts`.
 - **Frontend (`frontend/src/`):** Mọi route `app/**/page.tsx` chỉ là thin orchestration shell (`<= 250 LOC`). Toàn bộ API client theo miền, custom hooks (bắt buộc có `AbortController` cho `useEffect` gọi API) và Modal/Section/Table phải đặt tại `src/features/<domain>/{api,hooks,components}/`. Không thêm code mới vào `src/lib/auth-api.ts`.
+
+## 8. Quy Tắc Chống Tái Diễn Thiếu Sót Kiến Trúc & Bảo Mật (WebEdu Lessons Learned)
+1. **Single Responsibility & Chống Phình File Toàn Diện:**
+   - Guard/Infrastructure không ôm nhiều trách nhiệm: tách riêng token extraction, CSRF origin check, session/`tokenVersion` validation, và activity tracking.
+   - Gom toàn bộ quy tắc ký JWT & TTL (`rememberMe` 7 ngày / 1 giờ) về một `TokenService` duy nhất; dùng 1 hằng số `BCRYPT_ROUNDS` dùng chung (cân nhắc `12`).
+   - Giới hạn LOC không chỉ áp dụng cho `*.service.ts` (`<= 350 LOC`) và `page.tsx` (`<= 250 LOC`): **Guard, Controller, Hook, và UI Component/Modal** cũng phải giữ gọn (`<= 250–300 LOC`). Modal/Form phức tạp bắt buộc tách fetch/state/validate/submit vào custom hook (`use<Domain>Form`, chuẩn `useClassForm`).
+2. **Không Bẻ Cong Production Code Theo Test Mock:** Cấm thêm các nhánh phòng thủ phục vụ mock thiếu như `typeof prisma.x.updateMany === 'function'` hay fallback giả định "legacy mocks" trong production code — hãy sửa mock trong file test.
+3. **Backend Là Nguồn Chân Lý Duy Nhất (Single Source of Truth):** Cấm nhân bản logic tính toán/chuẩn hóa nghiệp vụ (VD: `calculateExpectedEndDate`, `normalizeScheduleDays`, sinh buổi học) ở cả frontend và backend; backend cung cấp endpoint preview/compute nếu UI cần xem trước.
+4. **Default-Deny & Production Security Hardening:**
+   - Mọi endpoint mới phải theo nguyên tắc **từ chối mặc định** (`APP_GUARD` toàn cục kèm `@Public()` tường minh, không gắn `@UseGuards` rời rạc từng controller; route không ghi `@Roles` không được mặc định mở cho mọi user nếu thuộc miền hạn chế).
+   - Luôn có `helmet`, global rate limiting (không chỉ riêng `/auth`), và JSON body limit nhỏ toàn cục (chỉ nới `4MB` tại đúng route upload cần thiết).
+   - Giảm tải DB trên mỗi request (cân nhắc tối ưu query user + ghi `lastActivityAt` khi scale) và xem xét Next.js middleware/SSR route guard để tránh nháy giao diện client.
+   - Bảo đảm logic đăng ký học viên `< 16 tuổi` tuân thủ tuyệt đối `DEC-023` (email riêng cho học viên, không dùng chung một email sai thiết kế giám hộ).
 <!-- AKIT:END -->

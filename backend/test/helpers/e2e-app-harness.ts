@@ -1,9 +1,7 @@
-import { ValidationPipe } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import cookieParser from 'cookie-parser';
 import type { Response } from 'supertest';
-import { AllExceptionsFilter } from '../../src/common/filters/all-exceptions.filter.js';
+import { configureAppSecurityAndPipes } from '../../src/common/http/configure-app.util.js';
 import { PrismaService } from '../../src/common/prisma/prisma.service.js';
 import {
   startIsolatedPostgresTestDb,
@@ -78,34 +76,10 @@ export async function createRealE2eAppHarness(): Promise<RealE2eAppHarness> {
     bodyParser: false,
     rawBody: false,
   });
-  app.useBodyParser('json', { limit: '4mb' });
-  app.use(cookieParser());
-  const allowedOrigins = ['http://localhost:3000'];
-  app.enableCors({
-    origin: (
-      requestOrigin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void,
-    ) => {
-      if (!requestOrigin) {
-        return callback(null, true);
-      }
-      const normalizedOrigin = requestOrigin.trim().replace(/\/+$/, '');
-      if (allowedOrigins.includes(normalizedOrigin)) {
-        return callback(null, true);
-      }
-      return callback(null, false);
-    },
-    credentials: true,
+  configureAppSecurityAndPipes(app, {
+    nodeEnv: 'test',
+    allowedOrigins: ['http://localhost:3000'],
   });
-  app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-  app.useGlobalFilters(new AllExceptionsFilter());
   await app.init();
 
   const prisma = app.get(PrismaService);

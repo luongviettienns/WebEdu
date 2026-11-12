@@ -279,3 +279,42 @@ export class ReopenClassDto {
   @MaxLength(255)
   reason?: string;
 }
+
+export class PreviewClassScheduleDto {
+  @ApiProperty({ example: [1, 3, 5] })
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Vui lòng chọn ít nhất 1 ngày học trong tuần' })
+  @ArrayMaxSize(7, { message: 'Lịch học trong tuần tối đa 7 ngày' })
+  @Type(() => Number)
+  @IsInt({ each: true })
+  scheduleDays!: number[];
+
+  @ApiProperty({ example: '18:00' })
+  @IsString()
+  scheduleStartTime!: string;
+
+  @ApiProperty({ example: '19:30' })
+  @IsString()
+  scheduleEndTime!: string;
+
+  @ApiProperty({ example: '2026-11-02' })
+  @IsString()
+  startDate!: string;
+
+  @ApiProperty({ example: 24 })
+  @Type(() => Number)
+  @IsInt({ message: 'Tổng số buổi học phải là số nguyên' })
+  @Min(1, { message: 'Tổng số buổi học tối thiểu là 1 buổi' })
+  @Max(200, { message: 'Tổng số buổi học tối đa là 200 buổi' })
+  totalSessions!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  teacherId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  excludeClassId?: string;
+}

@@ -92,7 +92,6 @@ export function assertSuperadminNotSelfDeactivating(
 /**
  * At least one OTHER active Superadmin must remain. Evaluated against
  * the rows locked by `lockUserAndActiveSuperadmins` in the same transaction.
- * Rows without role/status columns (legacy mocks) count as active Superadmins.
  */
 export function assertAnotherActiveSuperadminRemains(
   targetUserId: string,
@@ -100,12 +99,11 @@ export function assertAnotherActiveSuperadminRemains(
 ): void {
   const otherActiveCount = lockedRows.filter((row) => {
     if (row.id === targetUserId) return false;
-    if (Array.isArray(row.roles)) {
-      return (
-        row.roles.includes(Role.SUPERADMIN) && row.status === UserStatus.ACTIVE
-      );
-    }
-    return row.roles === undefined;
+    return (
+      Array.isArray(row.roles) &&
+      row.roles.includes(Role.SUPERADMIN) &&
+      row.status === UserStatus.ACTIVE
+    );
   }).length;
 
   if (otherActiveCount < 1) {

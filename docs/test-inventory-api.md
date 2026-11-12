@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Bảng Tổng hợp Toàn bộ 41 HTTP Endpoints (Phase 2 & Phase 3)
+## 1. Bảng Tổng hợp Toàn bộ 42 HTTP Endpoints (Phase 2 & Phase 3)
 
 | # | Module / Controller | HTTP Method | Đường dẫn đầy đủ (`/api/v1/...`) | FUNC / DEC / SEC | Vai trò được phép (Guard + Object Policy) | DTO Đầu vào | Cấu trúc JSON Đầu ra / Mã trạng thái |
 |---|---|---|---|---|---|---|---|
@@ -49,6 +49,7 @@
 | 39 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments/:studentId/drop` | `FUNC-017`, `CLASS-07` | Chỉ `ADMIN` (đánh dấu `DROPPED`, giải phóng `currentClassId`, đưa HV về `PENDING_CLASS`) | `DropStudentClassDto` (`leftDate?`, `reason?`) | `200 OK`: `{ status: 'DROPPED', classId, studentId }` |
 | 40 | `ClassesController` | `POST` | `/api/v1/classes/:id/complete` | `FUNC-018`, `CLASS-08` | Chỉ `ADMIN` (chuyển lớp sang `COMPLETED`, chỉ chuyển `Enrollment` `ACTIVE` -> `COMPLETED`, giải phóng HV về `PENDING_CLASS`, đồng bộ `activeClassesCount`) | `CompleteClassDto` (`actualEndDate?`, `reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'READ_ONLY'`) |
 | 41 | `ClassesController` | `POST` | `/api/v1/classes/:id/reopen` | `FUNC-018`, `CLASS-08`, `DEC-002` | Chỉ `ADMIN` (chỉ trong thời hạn 7 ngày kể từ `closedAt`, kiểm tra GV còn `ACTIVE`, khôi phục an toàn các `Enrollment` `COMPLETED` chưa vào lớp mới) | `ReopenClassDto` (`reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'FULL'`) |
+| 42 | `ClassesController` | `POST` | `/api/v1/classes/preview-schedule` | `TD-06`, `FUNC-015`, `FUNC-016` | Chỉ `ADMIN` (`SUPERADMIN` thuần, `TEACHER`, `STUDENT` nhận `403`) | `PreviewClassScheduleDto` (`scheduleDays`, `scheduleStartTime`, `scheduleEndTime`, `startDate`, `totalSessions`, `teacherId?`, `excludeClassId?`) | `200 OK`: `{ normalizedScheduleDays, scheduleText, expectedEndDate, totalSessions, scheduleConflictWarning }` |
 
 ---
 

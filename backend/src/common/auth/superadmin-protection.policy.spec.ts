@@ -143,9 +143,9 @@ describe('superadmin-protection.policy (FUNC-013, SEC-07)', () => {
       ]),
     ).not.toThrow();
 
-    // Legacy mock row without roles property -> counts as active Superadmin
+    // Incomplete row missing roles/status must NOT be assumed to be an active Superadmin (TD-04)
     expect(() =>
       assertAnotherActiveSuperadminRemains('sa-1', [{ id: 'sa-1' }, { id: 'sa-2' }]),
-    ).not.toThrow();
+    ).toThrow(BadRequestException);
   });
 });

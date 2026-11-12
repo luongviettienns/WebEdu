@@ -4,6 +4,15 @@ import { expect, request as playwrightRequest, test, type Page } from '@playwrig
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 const INSPECTOR_URL = `http://127.0.0.1:${process.env.QA_MAIL_INSPECTOR_PORT || 4026}`;
 
+function getTodayVnIso(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 function attachStrictGuards(page: Page): {
   pageErrors: string[];
   hydrationErrors: string[];
@@ -219,7 +228,7 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await editDialog.getByRole('button', { name: 'Lưu thay đổi' }).click();
     await expect(editDialog.getByRole('alert')).toContainText('tương lai');
 
-    await editDialog.locator('#teacher-assigned-from').fill('2026-11-11');
+    await editDialog.locator('#teacher-assigned-from').fill(getTodayVnIso());
     await editDialog.locator('#teacher-change-reason').fill('Bàn giao ca tối sang cô Lan');
     await editDialog.getByRole('button', { name: 'Lưu thay đổi' }).click();
     await expect(editDialog).toHaveCount(0);
@@ -255,12 +264,7 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await enrollUpcomingDialog.getByRole('button', { name: 'Thêm vào lớp (1)' }).click();
     await expect(enrollUpcomingDialog.getByRole('alert')).toContainText('tương lai');
 
-    const todayVnIso = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
+    const todayVnIso = getTodayVnIso();
     await enrollUpcomingDialog.locator('#enroll-date').fill(todayVnIso);
     await enrollUpcomingDialog.getByRole('button', { name: 'Thêm vào lớp (1)' }).click();
     await expect(enrollUpcomingDialog).toHaveCount(0);
@@ -301,7 +305,7 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await transferDialog.getByRole('button', { name: 'Xác nhận chuyển lớp' }).click();
     await expect(transferDialog.getByRole('alert')).toContainText('tương lai');
 
-    await transferDialog.locator('#transfer-date').fill('2026-11-11');
+    await transferDialog.locator('#transfer-date').fill(todayVnIso);
     await transferDialog.locator('#transfer-reason').fill('Chuyển về lớp HSK1 theo trình độ');
     await transferDialog.getByRole('button', { name: 'Xác nhận chuyển lớp' }).click();
     await expect(transferDialog).toHaveCount(0);
@@ -314,7 +318,7 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await completeDialog.getByRole('button', { name: 'Xác nhận kết thúc lớp' }).click();
     await expect(completeDialog.getByRole('alert')).toContainText('tương lai');
 
-    await completeDialog.locator('#complete-actual-end-date').fill('2026-11-10');
+    await completeDialog.locator('#complete-actual-end-date').fill(todayVnIso);
     await completeDialog.getByRole('button', { name: 'Xác nhận kết thúc lớp' }).click();
     await expect(completeDialog).toHaveCount(0);
     await expect(page.getByText('印 · CHỈ ĐỌC (READ_ONLY)')).toBeVisible();
@@ -337,7 +341,7 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await dropDialog.getByRole('button', { name: 'Xác nhận rút khỏi lớp' }).click();
     await expect(dropDialog.getByRole('alert')).toContainText('tương lai');
 
-    await dropDialog.locator('#drop-left-date').fill('2026-11-11');
+    await dropDialog.locator('#drop-left-date').fill(todayVnIso);
     await dropDialog.locator('#drop-reason').fill('Tạm dừng lịch học');
     await dropDialog.getByRole('button', { name: 'Xác nhận rút khỏi lớp' }).click();
     await expect(dropDialog).toHaveCount(0);

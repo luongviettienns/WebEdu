@@ -2,10 +2,12 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
+import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type {
   GetClassDetailQueryDto,
   ListClassesQueryDto,
+  PreviewClassScheduleDto,
 } from '../dto/classes.dto.js';
 import type {
   ClassDetailDto,
@@ -15,10 +17,18 @@ import {
   CLASS_ITEM_INCLUDE,
   toClassDetailDto,
   toClassItemDto,
+  validateClassTotalSessions,
   type ClassDetailEntity,
   type ClassItemEntity,
 } from '../mappers/class.mapper.js';
-import { findTeacherScheduleConflictWarning } from '../policies/class-schedule.util.js';
+import {
+  assertValidTimeRange,
+  calculateExpectedEndDate,
+  findTeacherScheduleConflictWarning,
+  formatScheduleText,
+  normalizeScheduleDays,
+  parseRequiredCalendarDate,
+} from '../policies/class-schedule.util.js';
 import { ClassAccessService } from './class-access.service.js';
 
 const CLASS_DETAIL_INCLUDE = {
@@ -199,5 +209,52 @@ export class ClassQueryService {
         capabilities: this.access.resolveCapabilities(actor, cls),
       },
     );
+  }
+
+  async previewSchedule(dto: PreviewClassScheduleDto): Promise<{
+    normalizedScheduleDays: number[];
+    scheduleText: string;
+    expectedEndDate: string;
+    totalSessions: number;
+    scheduleConflictWarning: string | null;
+  }> {
+    const normalizedDays = normalizeScheduleDays(dto.scheduleDays ?? []);
+    const { startTime, endTime } = assertValidTimeRange(
+      dto.scheduleStartTime ?? '',
+      dto.scheduleEndTime ?? '',
+    );
+    const startDate = parseRequiredCalendarDate(
+      dto.startDate,
+      'Ngày khai giảng không hợp lệ',
+    );
+    const totalSessions = validateClassTotalSessions(dto.totalSessions);
+    const expectedEndDate = calculateExpectedEndDate(
+      startDate,
+      normalizedDays,
+      totalSessions,
+    );
+
+    const scheduleConflictWarning = dto.teacherId?.trim()
+      ? await findTeacherScheduleConflictWarning(
+          this.prisma,
+          dto.teacherId.trim(),
+          {
+            scheduleDays: normalizedDays,
+            scheduleStartTime: startTime,
+            scheduleEndTime: endTime,
+            startDate,
+            endDate: expectedEndDate,
+          },
+          dto.excludeClassId?.trim() || undefined,
+        )
+      : null;
+
+    return {
+      normalizedScheduleDays: normalizedDays,
+      scheduleText: formatScheduleText(normalizedDays, startTime, endTime),
+      expectedEndDate: formatIsoDateUtc(expectedEndDate),
+      totalSessions,
+      scheduleConflictWarning,
+    };
   }
 }

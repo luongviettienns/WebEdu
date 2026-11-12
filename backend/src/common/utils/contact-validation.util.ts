@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { assertPasswordWithinLimit } from '../auth/password-hash.util.js';
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PHONE_REGEX = /^0\d{9}$/;
@@ -36,12 +37,7 @@ export function assertValidContactFields(fields: {
   }
 }
 
-/** Password length rules for administratively created accounts. */
+/** Password length & UTF-8 byte limits for administratively created accounts. */
 export function assertValidInitialPassword(password: string): void {
-  if (password.length < 8) {
-    throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự');
-  }
-  if (password.length > 72) {
-    throw new BadRequestException('Mật khẩu không được vượt quá 72 ký tự');
-  }
+  assertPasswordWithinLimit(password, 'Mật khẩu');
 }

@@ -9,11 +9,15 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role, UserStatus } from '@prisma/client';
 import { IS_PUBLIC_KEY } from '../decorators/roles.decorator.js';
+import { TokenService } from '../auth/token.service.js';
+import { ActivityTrackerService } from './activity-tracker.service.js';
+import { CsrfOriginPolicy } from './csrf-origin.policy.js';
 import {
   AUTH_COOKIE_NAME,
   IDLE_TIMEOUT_MS,
   JwtAuthGuard,
 } from './jwt-auth.guard.js';
+import { SessionValidatorService } from './session-validator.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 
 describe('JwtAuthGuard', () => {
@@ -83,11 +87,21 @@ describe('JwtAuthGuard', () => {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
-    guard = new JwtAuthGuard(
-      jwtService,
-      configService,
+    const tokenService = new TokenService(jwtService, configService);
+    const csrfOriginPolicy = new CsrfOriginPolicy(configService);
+    const activityTracker = new ActivityTrackerService(
       prismaMock as unknown as PrismaService,
+    );
+    const sessionValidator = new SessionValidatorService(
+      tokenService,
+      prismaMock as unknown as PrismaService,
+      activityTracker,
+    );
+    guard = new JwtAuthGuard(
       reflector,
+      csrfOriginPolicy,
+      sessionValidator,
+      tokenService,
     );
   });
 
@@ -485,5 +499,22 @@ describe('JwtAuthGuard', () => {
       tokenVersion: 1,
       rememberMe: true,
     });
+  });
+
+  it('does NOT clear the auth cookie when session validation fails due to a transient DB error (LOW-01)', async () => {
+    const token = await jwtService.signAsync({
+      sub: 'u-db-err',
+      email: 'db@webedu.vn',
+      tokenVersion: 0,
+    });
+    prismaMock.user.findUnique.mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    const ctx = createHttpContext({
+      method: 'GET',
+      cookies: { [AUTH_COOKIE_NAME]: token },
+    });
+
+    await expect(guard.canActivate(ctx.context)).rejects.toThrow('ECONNRESET');
+    expect(ctx.clearCookie).not.toHaveBeenCalled();
   });
 });

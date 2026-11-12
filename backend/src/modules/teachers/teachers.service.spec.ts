@@ -50,7 +50,7 @@ describe('TeachersService (Slice 2.4 - FUNC-006)', () => {
       $queryRaw: vi.fn(async () => {
         return Array.from(usersStore.values())
           .filter((u) => u.roles.includes(Role.SUPERADMIN) && u.status === UserStatus.ACTIVE)
-          .map((u) => ({ id: u.id }));
+          .map((u) => ({ id: u.id, roles: u.roles, status: u.status }));
       }),
       user: {
         findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {

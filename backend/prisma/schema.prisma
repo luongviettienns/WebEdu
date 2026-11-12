@@ -89,7 +89,9 @@ model StudentProfile {
   userId         String           @unique @map("user_id")
   dateOfBirth    DateTime         @map("date_of_birth") @db.Date
   guardianEmail  String?          @map("guardian_email") @db.VarChar(255)
+  // Materialized read-model cache synced atomically inside Enrollment transactions from the student's ACTIVE Enrollment (or initial placement).
   assignedClass  String?          @map("assigned_class") @db.VarChar(100)
+  // Materialized FK synced atomically inside Enrollment transactions with the student's ACTIVE Enrollment.classId.
   currentClassId String?          @map("current_class_id")
   internalNotes  String?          @map("internal_notes") @db.Text
   enrolledAt     DateTime?        @map("enrolled_at") @db.Timestamptz(3)
@@ -106,6 +108,8 @@ model StudentProfile {
   @@map("student_profiles")
 }
 
+// Immutable point-in-time consent record for an under-16 registration (1 student_profile -> max 1 initial guardian consent;
+// enforced append-only in PostgreSQL via trg_guardian_consents_immutable so >= 16 User.email edits never overwrite consent history).
 model GuardianConsent {
   id                  String         @id @default(uuid())
   studentProfileId    String         @unique @map("student_profile_id")
@@ -126,6 +130,7 @@ model TeacherProfile {
   id                 String   @id @default(uuid())
   userId             String   @unique @map("user_id")
   notes              String?  @db.Text
+  // Materialized counter maintained in-DB by PostgreSQL trigger trg_classes_sync_teacher_active_count (UPCOMING + ACTIVE classes).
   activeClassesCount Int      @default(0) @map("active_classes_count")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -146,6 +151,7 @@ model PasswordResetToken {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([expiresAt])
   @@map("password_reset_tokens")
 }
 
@@ -167,6 +173,7 @@ model EmailVerification {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([email, createdAt(sort: Desc)])
+  @@index([expiresAt])
   @@map("email_verifications")
 }
 
@@ -201,6 +208,7 @@ model Class {
   id                String                   @id @default(uuid())
   code              String                   @unique @db.VarChar(20)
   courseId          String                   @map("course_id")
+  // Denormalized current lead teacher pointer synced atomically inside assignment transactions with the open ClassTeacherAssignment (assignedTo IS NULL).
   teacherId         String                   @map("teacher_id")
   status            ClassStatus              @default(UPCOMING)
   startDate         DateTime                 @map("start_date") @db.Date
@@ -280,5 +288,6 @@ model SystemAuditLog {
 
   @@index([createdAt(sort: Desc)])
   @@index([actorId])
+  @@index([targetType, targetId, createdAt(sort: Desc)])
   @@map("system_audit_logs")
 }

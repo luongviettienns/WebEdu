@@ -8,15 +8,12 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../../common/guards/roles.guard.js';
 import {
   CompleteClassDto,
   CreateClassDto,
@@ -24,6 +21,7 @@ import {
   EnrollStudentsDto,
   GetClassDetailQueryDto,
   ListClassesQueryDto,
+  PreviewClassScheduleDto,
   ReopenClassDto,
   TransferStudentClassDto,
   UpdateClassDto,
@@ -35,7 +33,6 @@ import { ClassLifecycleService } from './services/class-lifecycle.service.js';
 
 @ApiTags('Classes')
 @Controller('classes')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ClassesController {
   constructor(
     private readonly queryService: ClassQueryService,
@@ -52,6 +49,16 @@ export class ClassesController {
     @Query() query: ListClassesQueryDto,
   ) {
     return this.queryService.listClasses(user, query);
+  }
+
+  @Post('preview-schedule')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Tính trước ngày kết thúc dự kiến và tóm tắt lịch học từ backend',
+  })
+  async previewSchedule(@Body() dto: PreviewClassScheduleDto) {
+    return this.queryService.previewSchedule(dto);
   }
 
   @Get(':id')

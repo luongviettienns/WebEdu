@@ -6,6 +6,10 @@ import {
   extractAuthCookie,
   type RealE2eAppHarness,
 } from './helpers/e2e-app-harness.js';
+import {
+  obtainVerificationCodeViaHttp,
+  registerStudentViaHttpWithOtp,
+} from './helpers/auth-test-helpers.js';
 
 interface ProblemBody {
   type: string;
@@ -114,44 +118,53 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       'Vui lòng xác nhận đã có sự đồng ý của cha mẹ',
     );
 
-    const sibling1Res = await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register/student')
-      .send({
+    const sibling1Res = await registerStudentViaHttpWithOtp(
+      harness.app,
+      harness.smtpServer,
+      {
         fullName: 'Nguyễn Minh Anh',
         dateOfBirth: DOB_TEEN_14,
         phone: '0901110003',
         email: 'parent.shared1@example.com',
         password: 'Password@123',
         guardianConsent: true,
-      })
-      .expect(201);
+      },
+      '/api/v1/auth/register/student',
+    ).then((req) => req);
+    expect(sibling1Res.status).toBe(201);
 
-    const sibling2Res = await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
+    const sibling2Res = await registerStudentViaHttpWithOtp(
+      harness.app,
+      harness.smtpServer,
+      {
         fullName: 'Nguyễn Minh Em',
         dateOfBirth: DOB_TEEN_13,
         phone: '0901110004',
         email: 'parent.shared2@example.com',
         password: 'Password@123',
         guardianConsent: true,
-      })
-      .expect(201);
+      },
+      '/api/v1/auth/register',
+    );
+    expect(sibling2Res.status).toBe(201);
 
     expect((sibling1Res.body as RegisterSuccessBody).user.status).toBe('PENDING_CLASS');
     expect((sibling2Res.body as RegisterSuccessBody).user.status).toBe('PENDING_CLASS');
     expect(await harness.prisma.guardianConsent.count()).toBe(2);
 
-    const dupRes = await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register/student')
-      .send({
+    const dupRes = await registerStudentViaHttpWithOtp(
+      harness.app,
+      harness.smtpServer,
+      {
         fullName: 'Trùng Số ĐT',
         dateOfBirth: '2002-01-01',
         phone: '0901110003',
         email: 'unique.other@example.com',
         password: 'Password@123',
-      })
-      .expect(409);
+      },
+      '/api/v1/auth/register/student',
+    );
+    expect(dupRes.status).toBe(409);
 
     expect((dupRes.body as ProblemBody).detail).toBe(
       'Số điện thoại này đã được đăng ký',
@@ -159,16 +172,13 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
   });
 
   it('enforces email-only login, dummy bcrypt on unknown email, HttpOnly cookie-only response (no accessToken in JSON), and commits 5-strike 15m lockout to PostgreSQL (FUNC-003, DEC-023)', async () => {
-    await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Học Viên Đăng Nhập',
-        dateOfBirth: '2001-09-15',
-        phone: '0902220001',
-        email: 'student.login@example.com',
-        password: 'Correct@123',
-      })
-      .expect(201);
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên Đăng Nhập',
+      dateOfBirth: '2001-09-15',
+      phone: '0902220001',
+      email: 'student.login@example.com',
+      password: 'Correct@123',
+    }).then((res) => expect(res.status).toBe(201));
 
     // Phone number in email field -> 400 Bad Request
     await request(harness.app.getHttpServer())
@@ -254,16 +264,13 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
   });
 
   it('revokes JWT immediately on logout via tokenVersion increment in PostgreSQL so reused cookie/token gets 401 (FUNC-004)', async () => {
-    await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Học Viên Logout',
-        dateOfBirth: '2000-03-03',
-        phone: '0903330001',
-        email: 'logout.user@example.com',
-        password: 'Password@123',
-      })
-      .expect(201);
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên Logout',
+      dateOfBirth: '2000-03-03',
+      phone: '0903330001',
+      email: 'logout.user@example.com',
+      password: 'Password@123',
+    }).then((res) => expect(res.status).toBe(201));
 
     const loginRes = await request(harness.app.getHttpServer())
       .post('/api/v1/auth/login')
@@ -298,16 +305,13 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
   });
 
   it('delivers password reset email over real SMTP without leaking debugResetToken, enforces 60s DB cooldown, and enforces single-use reset token (FUNC-005, SEC-06)', async () => {
-    await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Học Viên Quên MK',
-        dateOfBirth: '2001-06-06',
-        phone: '0904440001',
-        email: 'forgot.exists@example.com',
-        password: 'OldPassword@123',
-      })
-      .expect(201);
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên Quên MK',
+      dateOfBirth: '2001-06-06',
+      phone: '0904440001',
+      email: 'forgot.exists@example.com',
+      password: 'OldPassword@123',
+    }).then((res) => expect(res.status).toBe(201));
 
     const ghostFirst = await request(harness.app.getHttpServer())
       .post('/api/v1/auth/forgot-password')
@@ -370,16 +374,13 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
   });
 
   it('FUNC-078 E2E: rotates tokenVersion on password change and email change while minting fresh HttpOnly Set-Cookie without leaking JWT in JSON body', async () => {
-    await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Học Viên Đổi MK & Email',
-        dateOfBirth: '2000-04-04',
-        phone: '0905550001',
-        email: 'profile.session@example.com',
-        password: 'InitPassword@123',
-      })
-      .expect(201);
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên Đổi MK & Email',
+      dateOfBirth: '2000-04-04',
+      phone: '0905550001',
+      email: 'profile.session@example.com',
+      password: 'InitPassword@123',
+    }).then((res) => expect(res.status).toBe(201));
 
     const loginRes = await request(harness.app.getHttpServer())
       .post('/api/v1/auth/login')
@@ -447,16 +448,13 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
   });
 
   it('FUNC-004 E2E: enforces 60-minute Idle Timeout in PostgreSQL even when rememberMe=true 7-day cookie is used', async () => {
-    await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Học Viên Idle Timeout',
-        dateOfBirth: '2000-07-07',
-        phone: '0906660001',
-        email: 'idle.timeout@example.com',
-        password: 'Password@123',
-      })
-      .expect(201);
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên Idle Timeout',
+      dateOfBirth: '2000-07-07',
+      phone: '0906660001',
+      email: 'idle.timeout@example.com',
+      password: 'Password@123',
+    }).then((res) => expect(res.status).toBe(201));
 
     const loginRes = await request(harness.app.getHttpServer())
       .post('/api/v1/auth/login')
@@ -539,16 +537,13 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
   });
 
   it('Cookie & Login CSRF E2E: blocks cross-origin & form-urlencoded @Public() POSTs and blocks Cookie-only mutations lacking trusted Origin (SEC-NEW-03)', async () => {
-    await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Học Viên CSRF',
-        dateOfBirth: '2000-08-08',
-        phone: '0907770001',
-        email: 'csrf.cookie@example.com',
-        password: 'Password@123',
-      })
-      .expect(201);
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên CSRF',
+      dateOfBirth: '2000-08-08',
+      phone: '0907770001',
+      email: 'csrf.cookie@example.com',
+      password: 'Password@123',
+    }).then((res) => expect(res.status).toBe(201));
 
     // SEC-NEW-03: Cross-origin POST to @Public() /auth/login is blocked with 403
     await request(harness.app.getHttpServer())
@@ -609,5 +604,80 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       .get('/api/v1/profile/me')
       .set('Cookie', cookiePair)
       .expect(401);
+  });
+
+  it('Security Hardening E2E: blocks "999999"/blank OTP in test env, rejects >72 UTF-8 byte Vietnamese passwords, and rate-limits OTP & reset-password by IP', async () => {
+    // 1. Blank and 999999 OTP must fail with 400 even under NODE_ENV=test
+    await obtainVerificationCodeViaHttp(
+      harness.app,
+      harness.smtpServer,
+      'strict.e2e@example.com',
+    );
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        fullName: 'Strict E2E',
+        dateOfBirth: '2000-01-01',
+        phone: '0908880001',
+        email: 'strict.e2e@example.com',
+        password: 'Password@123',
+        verificationCode: '',
+      })
+      .expect(400);
+
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        fullName: 'Strict E2E',
+        dateOfBirth: '2000-01-01',
+        phone: '0908880001',
+        email: 'strict.e2e@example.com',
+        password: 'Password@123',
+        verificationCode: '999999',
+      })
+      .expect(400);
+
+    // 2. Vietnamese multi-byte password > 72 bytes (<= 72 chars) -> 400
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        fullName: 'Byte Cap E2E',
+        dateOfBirth: '2000-01-01',
+        phone: '0908880002',
+        email: 'bytecap.e2e@example.com',
+        password: 'ệ'.repeat(30),
+        verificationCode: '123456',
+      })
+      .expect(400);
+
+    // 3. IP rate limiting on reset-password (10 attempts allowed -> 11th returns 429)
+    for (let i = 1; i <= 10; i += 1) {
+      await request(harness.app.getHttpServer())
+        .post('/api/v1/auth/reset-password')
+        .send({
+          token: `invalid-token-${i}`,
+          newPassword: 'Password@123',
+        })
+        .expect(400);
+    }
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/auth/reset-password')
+      .send({
+        token: 'invalid-token-11',
+        newPassword: 'Password@123',
+      })
+      .expect(429);
+
+    // 4. IP rate limiting on send-verification-code (1 used above + 14 more = 15 -> 16th returns 429)
+    for (let i = 1; i <= 14; i += 1) {
+      await request(harness.app.getHttpServer())
+        .post('/api/v1/auth/send-verification-code')
+        .send({ email: `ip.otp.${i}@example.com` })
+        .expect(200);
+    }
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/auth/send-verification-code')
+      .send({ email: 'ip.otp.15@example.com' })
+      .expect(429);
   });
 });

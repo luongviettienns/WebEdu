@@ -1,12 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import bcrypt from 'bcryptjs';
+import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../common/audit/audit-log.util.js';
 import {
@@ -14,8 +13,13 @@ import {
   normalizeEmail,
 } from '../../common/utils/contact-validation.util.js';
 import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
-import type { JwtPayload } from '../../common/auth/auth.types.js';
+import {
+  assertPasswordWithinLimit,
+  comparePassword,
+  hashPassword,
+} from '../../common/auth/password-hash.util.js';
 import { getHighestRole } from '../../common/auth/role-hierarchy.util.js';
+import { TokenService } from '../../common/auth/token.service.js';
 import type { ChangePasswordDto, UpdateProfileDto } from './dto/profile.dto.js';
 import {
   PROFILE_USER_INCLUDE,
@@ -43,32 +47,8 @@ export interface ChangePasswordResult {
 export class ProfileService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly tokenService: TokenService,
   ) {}
-
-  private async signFreshAccessToken(
-    user: {
-      id: string;
-      email: string;
-      tokenVersion: number;
-    },
-    rememberMe = false,
-  ): Promise<{ accessToken: string; expiresIn: number }> {
-    const expiresIn = rememberMe ? 7 * 24 * 60 * 60 : 3600;
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      tokenVersion: user.tokenVersion,
-      ...(rememberMe ? { rememberMe: true } : {}),
-    };
-    const secret = this.configService.get<string>('JWT_SECRET');
-    const accessToken = await this.jwtService.signAsync(payload, {
-      secret,
-      expiresIn: rememberMe ? '7d' : 3600,
-    });
-    return { accessToken, expiresIn };
-  }
 
   async getMyProfile(userId: string): Promise<UserProfileDto> {
     const user = await this.prisma.user.findUnique({
@@ -117,7 +97,7 @@ export class ProfileService {
       if (!currentPwd) {
         throw new BadRequestException('Mật khẩu hiện tại không đúng');
       }
-      const isValidPwd = await bcrypt.compare(
+      const isValidPwd = await comparePassword(
         currentPwd,
         preReadUser.passwordHash,
       );
@@ -130,9 +110,7 @@ export class ProfileService {
     try {
       const { updated, isEmailChanged } = await this.prisma.$transaction(
         async (tx) => {
-          if (typeof tx.$queryRaw === 'function') {
-            await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`;
-          }
+          await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`;
 
           const user = await tx.user.findUnique({
             where: { id: userId },
@@ -157,7 +135,7 @@ export class ProfileService {
               throw new BadRequestException('Mật khẩu hiện tại không đúng');
             }
             if (preVerifiedHash !== user.passwordHash) {
-              const isValidFreshPwd = await bcrypt.compare(
+              const isValidFreshPwd = await comparePassword(
                 currentPwd,
                 user.passwordHash,
               );
@@ -215,7 +193,10 @@ export class ProfileService {
       );
 
       const rotatedSession = isEmailChanged
-        ? await this.signFreshAccessToken(updated, options?.rememberMe === true)
+        ? await this.tokenService.signAccessToken(
+            updated,
+            options?.rememberMe === true,
+          )
         : undefined;
 
       return {
@@ -241,18 +222,16 @@ export class ProfileService {
     }
 
     const currentPassword = dto.currentPassword ?? '';
-    const isCurrentValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    const isCurrentValid = await comparePassword(
+      currentPassword,
+      user.passwordHash,
+    );
     if (!isCurrentValid) {
       throw new BadRequestException('Mật khẩu hiện tại không đúng');
     }
 
     const newPassword = dto.newPassword ?? '';
-    if (newPassword.length < 8) {
-      throw new BadRequestException('Mật khẩu mới phải có ít nhất 8 ký tự');
-    }
-    if (newPassword.length > 72) {
-      throw new BadRequestException('Mật khẩu mới không được vượt quá 72 ký tự');
-    }
+    assertPasswordWithinLimit(newPassword, 'Mật khẩu mới');
 
     if (dto.confirmPassword !== undefined && dto.confirmPassword !== newPassword) {
       throw new BadRequestException('Xác nhận mật khẩu không khớp');
@@ -260,13 +239,35 @@ export class ProfileService {
 
     const isSameAsOld =
       newPassword === currentPassword ||
-      (await bcrypt.compare(newPassword, user.passwordHash));
+      (await comparePassword(newPassword, user.passwordHash));
     if (isSameAsOld) {
       throw new BadRequestException('Mật khẩu mới không được trùng mật khẩu hiện tại');
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const preVerifiedHash = user.passwordHash;
+    const passwordHash = await hashPassword(newPassword);
     const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`;
+
+      const lockedUser = await tx.user.findUnique({
+        where: { id: userId },
+      });
+      if (!lockedUser) {
+        throw new NotFoundException('Tài khoản không tồn tại');
+      }
+      if (lockedUser.status === UserStatus.INACTIVE) {
+        throw new ForbiddenException('Tài khoản đã bị khóa');
+      }
+      if (lockedUser.passwordHash !== preVerifiedHash) {
+        const isCurrentStillValid = await comparePassword(
+          currentPassword,
+          lockedUser.passwordHash,
+        );
+        if (!isCurrentStillValid) {
+          throw new BadRequestException('Mật khẩu hiện tại không đúng');
+        }
+      }
+
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: {
@@ -294,7 +295,7 @@ export class ProfileService {
       return updatedUser;
     });
 
-    const { accessToken, expiresIn } = await this.signFreshAccessToken(
+    const { accessToken, expiresIn } = await this.tokenService.signAccessToken(
       updated,
       options?.rememberMe === true,
     );

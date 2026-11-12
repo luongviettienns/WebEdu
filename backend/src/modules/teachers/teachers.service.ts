@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../../common/auth/password-hash.util.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../common/audit/audit-log.util.js';
 import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
@@ -104,7 +104,7 @@ export class TeachersService {
       throw new ConflictException('Email/Số điện thoại đã được sử dụng');
     }
 
-    const passwordHash = await bcrypt.hash(initialPassword, 10);
+    const passwordHash = await hashPassword(initialPassword);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {

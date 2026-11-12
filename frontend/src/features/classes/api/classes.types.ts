@@ -183,3 +183,21 @@ export interface CompleteClassPayload {
 export interface ReopenClassPayload {
   reason?: string;
 }
+
+export interface PreviewClassSchedulePayload {
+  scheduleDays: number[];
+  scheduleStartTime: string;
+  scheduleEndTime: string;
+  startDate: string;
+  totalSessions: number;
+  teacherId?: string;
+  excludeClassId?: string;
+}
+
+export interface PreviewClassScheduleResponse {
+  normalizedScheduleDays: number[];
+  scheduleText: string;
+  expectedEndDate: string;
+  totalSessions: number;
+  scheduleConflictWarning: string | null;
+}

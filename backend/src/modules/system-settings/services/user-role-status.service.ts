@@ -196,7 +196,7 @@ export class UserRoleStatusService {
         },
       });
 
-      if (nextRoles.includes(Role.TEACHER) && tx.teacherProfile?.upsert) {
+      if (nextRoles.includes(Role.TEACHER)) {
         await tx.teacherProfile.upsert({
           where: { userId: targetUserId },
           update: {},
@@ -204,7 +204,7 @@ export class UserRoleStatusService {
         });
       }
 
-      if (nextRoles.includes(Role.STUDENT) && tx.studentProfile?.upsert) {
+      if (nextRoles.includes(Role.STUDENT)) {
         await tx.studentProfile.upsert({
           where: { userId: targetUserId },
           update: {},

@@ -13,6 +13,7 @@ import {
   type ExtractedCookieSession,
   type RealE2eAppHarness,
 } from './helpers/e2e-app-harness.js';
+import { registerStudentViaHttpWithOtp } from './helpers/auth-test-helpers.js';
 
 describe('Phase 2 Full Domain Workflows (e2e — Real PostgreSQL FUNC-006..012)', () => {
   const vnYear = Number(
@@ -182,17 +183,20 @@ describe('Phase 2 Full Domain Workflows (e2e — Real PostgreSQL FUNC-006..012)'
     const adminSession = await loginSession('admin@webedu.vn');
 
     // Register a 14-year-old student (creates GuardianConsent & PENDING_CLASS)
-    const regRes = await request(harness.app.getHttpServer())
-      .post('/api/v1/auth/register/student')
-      .send({
+    const regRes = await registerStudentViaHttpWithOtp(
+      harness.app,
+      harness.smtpServer,
+      {
         fullName: 'Lê Hoàng Nam (黎皇南)',
         dateOfBirth: DOB_TEEN_14,
         phone: '0941000001',
         email: 'phuhuynh.nam@example.com',
         password: PASSWORD,
         guardianConsent: true,
-      })
-      .expect(201);
+      },
+      '/api/v1/auth/register/student',
+    );
+    expect(regRes.status).toBe(201);
 
     const studentId = (regRes.body as { user: { id: string } }).user.id;
 

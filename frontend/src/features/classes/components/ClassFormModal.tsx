@@ -8,7 +8,6 @@ import { useCourseOptions } from '@/features/classes/hooks/useCourseOptions';
 import {
   QUICK_SCHEDULE_PRESETS,
   WEEKDAY_OPTIONS,
-  formatSchedulePreviewText,
 } from '@/features/classes/utils/schedule.util';
 import {
   BaseDialog,
@@ -113,8 +112,7 @@ function ClassFormModalContent({ mode, initialData, onClose, onSuccess }: ClassF
         <div className="space-y-3 rounded-xl border border-[var(--line)] bg-white p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
-              Lịch học định kỳ (
-              {formatSchedulePreviewText(values.scheduleDays, values.scheduleStartTime, values.scheduleEndTime)})
+              Lịch học định kỳ ({derived.scheduleTextPreview})
             </span>
             <div className="flex flex-wrap gap-1.5">
               {QUICK_SCHEDULE_PRESETS.map((preset) => (
