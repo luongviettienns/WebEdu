@@ -1,4 +1,19 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
@@ -11,7 +26,9 @@ import {
   UpdateAssessmentDto,
   UpdateQuestionDto,
 } from './dto/assessments.dto.js';
+import { ImportAssessmentDto } from './dto/import.dto.js';
 import { AssessmentCrudService } from './services/assessment-crud.service.js';
+import { DocumentImportService } from './services/document-import.service.js';
 import { QuestionCrudService } from './services/question-crud.service.js';
 
 @Controller('assessments')
@@ -20,7 +37,26 @@ export class AssessmentsController {
   constructor(
     private readonly assessments: AssessmentCrudService,
     private readonly questions: QuestionCrudService,
+    private readonly imports: DocumentImportService,
   ) {}
+
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  importDocument(
+    @CurrentUser() actor: AuthenticatedUser,
+    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
+    @Body() dto: ImportAssessmentDto,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
+    }
+    return this.imports.importFile(actor.id, file.originalname, file.buffer, dto);
+  }
+
+  @Get(':id/review')
+  getReview(@Param('id', ParseUUIDPipe) id: string) {
+    return this.imports.getReview(id);
+  }
 
   @Post()
   create(@CurrentUser() actor: AuthenticatedUser, @Body() dto: CreateAssessmentDto) {
