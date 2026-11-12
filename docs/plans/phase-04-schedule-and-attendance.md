@@ -71,6 +71,7 @@ Bổ sung các enum và 4 bảng mới (`lesson_sessions`, `session_change_logs`
 ```prisma
 enum SessionType {
   REGULAR
+  MANUAL
   MAKEUP
 }
 
@@ -81,11 +82,12 @@ enum SessionStatus {
 }
 
 enum SessionChangeAction {
+  GENERATE
+  UPDATE_RECURRING_RULE
+  ADD_MANUAL
   RESCHEDULE
   CANCEL
-  CREATE_MAKEUP
-  ADD_MANUAL
-  UPDATE_RECURRING_RULE
+  ADD_MAKEUP
 }
 
 enum AttendanceStatus {
@@ -104,25 +106,24 @@ model LessonSession {
   type               SessionType      @default(REGULAR)
   status             SessionStatus    @default(SCHEDULED)
   isRescheduled      Boolean          @default(false) @map("is_rescheduled")
-  originalDate       DateTime?        @map("original_date") @db.Date
-  originalStartTime  String?          @map("original_start_time") @db.VarChar(5)
-  originalEndTime    String?          @map("original_end_time") @db.VarChar(5)
-  cancelReason       String?          @map("cancel_reason") @db.VarChar(255)
-  cancelledAt        DateTime?        @map("cancelled_at") @db.Timestamptz(3)
-  cancelledById      String?          @map("cancelled_by_id")
-  makeupForSessionId String?          @unique @map("makeup_for_session_id")
-  notes              String?          @db.Text
-  attendanceMarkedAt DateTime?        @map("attendance_marked_at") @db.Timestamptz(3)
-  attendanceMarkedById String?        @map("attendance_marked_by_id")
-  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  isMakeup             Boolean          @default(false) @map("is_makeup")
+  makeupForSessionId   String?          @unique @map("makeup_for_session_id")
+  topic                String?          @db.VarChar(255)
+  cancelReason         String?          @map("cancel_reason") @db.Text
+  cancelledById        String?          @map("cancelled_by_id")
+  cancelledAt          DateTime?        @map("cancelled_at") @db.Timestamptz(3)
+  attendanceMarkedById String?          @map("attendance_marked_by_id")
+  attendanceMarkedAt   DateTime?        @map("attendance_marked_at") @db.Timestamptz(3)
+  createdAt            DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   class              Class            @relation(fields: [classId], references: [id], onDelete: Restrict)
   makeupForSession   LessonSession?   @relation("MakeupSessionLink", fields: [makeupForSessionId], references: [id], onDelete: Restrict)
-  makeupSession      LessonSession?   @relation("MakeupSessionLink")
+  makeupReplacement  LessonSession?   @relation("MakeupSessionLink")
   cancelledBy        User?            @relation("SessionCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
   attendanceMarkedBy User?            @relation("SessionAttendanceMarkedBy", fields: [attendanceMarkedById], references: [id], onDelete: SetNull)
   attendanceRecords  AttendanceRecord[]
+  attendanceAudits   AttendanceAuditLog[]
   changeLogs         SessionChangeLog[]
 
   @@index([classId, sessionDate, startTime])
@@ -131,20 +132,24 @@ model LessonSession {
 }
 
 model SessionChangeLog {
-  id          String              @id @default(uuid())
-  classId     String              @map("class_id")
-  sessionId   String?             @map("session_id")
-  actorId     String?             @map("actor_id")
-  sessionLabel String             @map("session_label") @db.VarChar(50)
-  action      SessionChangeAction
-  oldValue    String              @map("old_value") @db.VarChar(255)
-  newValue    String              @map("new_value") @db.VarChar(255)
-  reason      String              @db.Text
-  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                String              @id @default(uuid())
+  classId           String              @map("class_id")
+  sessionId         String?             @map("session_id")
+  action            SessionChangeAction
+  actorId           String              @map("actor_id")
+  actorName         String              @map("actor_name") @db.VarChar(100)
+  previousDate      DateTime?           @map("previous_date") @db.Date
+  previousStartTime String?             @map("previous_start_time") @db.VarChar(5)
+  previousEndTime   String?             @map("previous_end_time") @db.VarChar(5)
+  newDate           DateTime?           @map("new_date") @db.Date
+  newStartTime      String?             @map("new_start_time") @db.VarChar(5)
+  newEndTime        String?             @map("new_end_time") @db.VarChar(5)
+  reason            String              @db.Text
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  class       Class               @relation(fields: [classId], references: [id], onDelete: Restrict)
-  session     LessonSession?      @relation(fields: [sessionId], references: [id], onDelete: SetNull)
-  actor       User?               @relation("SessionChangeActor", fields: [actorId], references: [id], onDelete: SetNull)
+  class   Class          @relation(fields: [classId], references: [id], onDelete: Restrict)
+  session LessonSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  actor   User           @relation("SessionChangeActor", fields: [actorId], references: [id], onDelete: Restrict)
 
   @@index([classId, createdAt(sort: Desc)])
   @@index([action, createdAt(sort: Desc)])
@@ -158,17 +163,18 @@ model AttendanceRecord {
   classId     String           @map("class_id")
   studentId   String           @map("student_id")
   status      AttendanceStatus
-  note        String?          @db.Text
-  markedById  String?          @map("marked_by_id")
-  isEdited    Boolean          @default(false) @map("is_edited")
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  note        String?          @db.VarChar(255)
+  markedById  String           @map("marked_by_id")
+  markedAt    DateTime         @default(now()) @map("marked_at") @db.Timestamptz(3)
+  updatedById String?          @map("updated_by_id")
   updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  session     LessonSession    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
-  class       Class            @relation(fields: [classId], references: [id], onDelete: Restrict)
-  student     User             @relation("StudentAttendance", fields: [studentId], references: [id], onDelete: Restrict)
-  markedBy    User?            @relation("AttendanceMarker", fields: [markedById], references: [id], onDelete: SetNull)
-  auditLogs   AttendanceAuditLog[]
+  session   LessonSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  class     Class                @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student   User                 @relation("StudentAttendanceRecords", fields: [studentId], references: [id], onDelete: Restrict)
+  markedBy  User                 @relation("AttendanceMarkedBy", fields: [markedById], references: [id], onDelete: Restrict)
+  updatedBy User?                @relation("AttendanceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  auditLogs AttendanceAuditLog[]
 
   @@unique([sessionId, studentId])
   @@index([classId, studentId])
@@ -182,8 +188,8 @@ model AttendanceAuditLog {
   sessionId          String           @map("session_id")
   classId            String           @map("class_id")
   studentId          String           @map("student_id")
-  actorId            String?          @map("actor_id")
-  actingRole         Role             @map("acting_role")
+  actorId            String           @map("actor_id")
+  actorRole          Role             @map("actor_role")
   oldStatus          AttendanceStatus @map("old_status")
   newStatus          AttendanceStatus @map("new_status")
   oldNote            String?          @map("old_note") @db.Text
@@ -299,9 +305,9 @@ Tuân thủ 100% bố cục và CSS/layout của `prototype/TD Hán Ngữ (Copy)
 - **TDD Verification (`RED -> GREEN -> REFACTOR`):**
   - Viết unit & RBAC test kiểm chứng:
     1. Giáo viên hoặc Học viên gọi API Đổi lịch / Hủy buổi / Tạo buổi bù $\rightarrow$ bị chặn `403 Forbidden` (`DEC-031`).
-    2. Đổi lịch buổi (`FUNC-029`): chỉ cho phép buổi `SCHEDULED`, không chọn ngày quá khứ, không trùng ngày giờ với buổi khác của cùng lớp; lưu `isRescheduled = true`, giữ `originalDate`/`originalStartTime`, đánh lại `sessionNumber` theo thứ tự ngày mới, cập nhật `Class.expectedEndDate`, ghi `SessionChangeLog` (`RESCHEDULE`).
+    2. Đổi lịch buổi (`FUNC-029`): chỉ cho phép buổi `SCHEDULED`, không chọn ngày quá khứ, không trùng ngày giờ với buổi khác của cùng lớp; lưu `isRescheduled = true` (lịch cũ tra cứu qua `SessionChangeLog` `RESCHEDULE` và hiển thị qua `previousScheduleText`), đánh lại `sessionNumber` theo thứ tự ngày mới, cập nhật `Class.expectedEndDate`, ghi `SessionChangeLog` (`RESCHEDULE`).
     3. Hủy buổi (`FUNC-030`, `DEC-031`): chỉ cho phép buổi `SCHEDULED`, chuyển `status = CANCELLED`, `sessionNumber = null`, giữ nguyên `Class.totalSessions`, đánh lại `sessionNumber` `1..N` cho các buổi còn lại, không tự sinh buổi mới nếu không tích chọn tạo buổi bù (`DEC-009`), ghi `SessionChangeLog` (`CANCEL`).
-    4. Tạo buổi học bù (`FUNC-031`, `DEC-009`): bắt buộc gắn với 1 buổi `CANCELLED` chưa có buổi bù (`@unique makeupForSessionId`), kiểm tra trùng lịch với buổi khác của lớp (`Trùng lịch với Buổi [n]`), tạo buổi `type = MAKEUP`, đánh lại `sessionNumber` sao cho tổng số buổi hoạt động giữ nguyên không cộng trùng, cập nhật `Class.expectedEndDate`, ghi `SessionChangeLog` (`CREATE_MAKEUP`).
+    4. Tạo buổi học bù (`FUNC-031`, `DEC-009`): bắt buộc gắn với 1 buổi `CANCELLED` chưa có buổi bù (`@unique makeupForSessionId`), kiểm tra trùng lịch với buổi khác của lớp (`Trùng lịch với Buổi [n]`), tạo buổi `type = MAKEUP`, đánh lại `sessionNumber` sao cho tổng số buổi hoạt động giữ nguyên không cộng trùng, cập nhật `Class.expectedEndDate`, ghi `SessionChangeLog` (`ADD_MAKEUP`).
 
 ### Task 4.3: Nghiệp Vụ Điểm Danh Từng Buổi 3 Trạng Thái (`FUNC-034`) & Xem Điểm Danh Theo Lịch / Ma Trận (`FUNC-035`)
 - **Files:**

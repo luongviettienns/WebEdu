@@ -1,0 +1,6 @@
+{
+  "ledger": "true",
+  "webhookUrl": "",
+  "webhookToken": "",
+  "sendNames": "true"
+}

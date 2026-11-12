@@ -121,6 +121,7 @@ export function toLessonSessionItemDto(
     !isCancelled &&
     !isFutureDate &&
     entity.status === SessionStatus.SCHEDULED &&
+    (entity.attendanceRecords?.length ?? 0) === 0 &&
     (isAdmin || isLeadTeacher);
 
   const canEditAttendance =

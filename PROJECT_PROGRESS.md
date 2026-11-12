@@ -205,6 +205,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - Frontend: đồng bộ CSS Paper-Ink (`.dh/.d/.dn`, `.attd.*`, `.mk.*`), bỏ `formatDeadlineVn` gây sai ngày, không bắt nhập lý do khi lưu không thay đổi, token tương phản WCAG AA cho ô ngoài tháng.
   - Test hồi quy: bổ sung unit/PG integration/HTTP E2E/Playwright cho từng phát hiện.
 - [x] **Xác minh Phase 4 (sau chỉnh sửa cuối)**: `check-loc` PASS (151 file); backend `typecheck`/`lint`/`build` sạch; unit 194/194; PG integration 16/16; HTTP E2E 32/32; frontend `typecheck`/`lint`/`build` (23 route) sạch; Playwright 46/46 (Desktop + Mobile + Axe WCAG).
+- [x] **Tinh chỉnh & Dọn dẹp Công cụ sau Phase 4**: Chặn `canMarkAttendance` khi buổi học đã có bản ghi điểm danh (`session.mapper.ts`), đồng bộ schema/log trong `docs/plans/phase-04-schedule-and-attendance.md`, gỡ bỏ thư mục AKit (`.agents/`, `.akit/`) và thêm cấu hình `ponytail-config.json`.
 
 ### Phase 5: Module 06 (Phần 1) — Ngân hàng Câu hỏi HSK & Import Đề Word/PDF (`FUNC-039..050`)
 - [ ] Lập Sub-Plan `docs/plans/phase-05-question-bank-and-import.md`, chạy `akit-prior-art` & chốt `ASSIGN-01`.
