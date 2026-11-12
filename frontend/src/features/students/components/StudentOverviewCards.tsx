@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React from 'react';
+import { StatusTag, type StatusTagTone } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import type {
   PastClassRecordDto,
@@ -18,27 +19,23 @@ interface StudentOverviewCardsProps {
 
 const PAST_CLASS_STATUS_META: Record<
   PastClassRecordDto['enrollmentStatus'],
-  { label: string; badgeCls: string }
+  { label: string; tone: StatusTagTone }
 > = {
   COMPLETED: {
     label: 'Đã hoàn thành',
-    badgeCls:
-      'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20',
+    tone: 'jade',
   },
   TRANSFERRED: {
     label: 'Đã chuyển lớp',
-    badgeCls:
-      'bg-[var(--surface-2)] text-[var(--ink-2)] border border-[var(--line-2)]',
+    tone: 'grey',
   },
   DROPPED: {
     label: 'Tạm nghỉ / Rút lớp',
-    badgeCls:
-      'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--amber)]/20',
+    tone: 'amber',
   },
   ACTIVE: {
     label: 'Đang học',
-    badgeCls:
-      'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20',
+    tone: 'jade',
   },
 };
 
@@ -68,11 +65,9 @@ export function PastClassesHistoryList({
                   <span className="num">{item.classCode}</span> —{' '}
                   {item.courseName}
                 </div>
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusMeta.badgeCls}`}
-                >
+                <StatusTag size="sm" tone={statusMeta.tone}>
                   {statusMeta.label}
-                </span>
+                </StatusTag>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[var(--ink-2)]">
                 {item.teacherName ? (
@@ -204,9 +199,7 @@ export function ActiveStudentClassSection({
             <h2 className="text-base font-bold text-[var(--ink)]">
               Lớp đang học
             </h2>
-            <span className="rounded-full bg-[var(--jade-soft)] px-3 py-0.5 text-xs font-semibold text-[var(--jade)] border border-[var(--jade)]/20">
-              Đang học
-            </span>
+            <StatusTag tone="jade">Đang học</StatusTag>
           </div>
 
           <div className="p-6">

@@ -81,7 +81,7 @@ function PendingEnrollmentStudentsContent({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4 sm:items-end">
         <div>
           <div className="mb-2">
             <Link
@@ -101,9 +101,21 @@ function PendingEnrollmentStudentsContent({
             Tài khoản học viên tự đăng ký đang chờ quản trị viên phân công lớp học ban đầu.
           </p>
         </div>
-        <span className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] px-4 py-2 text-sm font-semibold text-[var(--amber)] shadow-xs num">
-          Chờ xử lý: <strong>{totalPending}</strong> tài khoản
-        </span>
+        <div className="inline-flex items-center gap-2 text-xs font-medium text-[var(--ink-2)] num">
+          <span
+            aria-hidden="true"
+            className={`h-2 w-2 rounded-full ${
+              totalPending > 0 ? 'bg-[var(--amber)]' : 'bg-[var(--line-2)]'
+            }`}
+          />
+          <span>
+            Chờ xử lý:{' '}
+            <strong className="font-semibold text-[var(--ink)]">
+              {loading ? '—' : totalPending}
+            </strong>{' '}
+            tài khoản
+          </span>
+        </div>
       </div>
 
       {successBanner && (

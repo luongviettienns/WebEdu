@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import { type SystemUserDto } from '@/features/system-settings/api/system-settings.api';
 import { CreateSystemUserModal } from '@/features/system-settings/components/CreateSystemUserModal';
 import { EditUserRolesModal } from '@/features/system-settings/components/EditUserRolesModal';
@@ -131,17 +132,9 @@ export function SystemUsersSection({
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          u.status === 'ACTIVE'
-                            ? 'bg-[var(--jade-soft)] text-[var(--jade)]'
-                            : u.status === 'PENDING_CLASS'
-                              ? 'bg-[var(--amber-soft)] text-[var(--amber)]'
-                              : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
-                        }`}
-                      >
+                      <StatusTag tone={getUserStatusTone(u.status)}>
                         {STATUS_LABELS[u.status] ?? u.status}
-                      </span>
+                      </StatusTag>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button

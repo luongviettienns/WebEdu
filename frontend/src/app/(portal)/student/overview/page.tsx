@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
+import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import {
   getStudentDetail,
@@ -96,17 +97,9 @@ function StudentOverviewContent({
             Theo dõi thông tin lớp học, lịch học và tiến độ học tập tại Trung Tâm TD Hán Ngữ
           </p>
         </div>
-        <span
-          className={`inline-flex items-center rounded-full px-3.5 py-1 text-xs font-semibold ${
-            currentStatus === 'ACTIVE'
-              ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
-              : currentStatus === 'PENDING_CLASS'
-                ? 'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--amber)]/20'
-                : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
-          }`}
-        >
+        <StatusTag tone={getUserStatusTone(currentStatus)}>
           {STATUS_LABELS[currentStatus]}
-        </span>
+        </StatusTag>
       </div>
 
       {detailLoading ? (

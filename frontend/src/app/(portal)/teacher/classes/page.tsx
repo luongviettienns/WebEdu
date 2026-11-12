@@ -9,6 +9,7 @@ import { ClassListFilters, ListBanners } from '@/features/classes/components/Cla
 import { ClassesTableSection } from '@/features/classes/components/ClassesTableSection';
 import { useClassList } from '@/features/classes/hooks/useClassList';
 import { resolveClassListPermissions } from '@/features/classes/permissions/class-permissions';
+import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import { ROLE_LABELS, STATUS_LABELS, type Role } from '@/types/user';
 
@@ -83,22 +84,13 @@ function TeacherClassesContent({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {profile.roles.map((role) => (
-            <span
-              key={role}
-              className="inline-flex items-center rounded-full border border-[var(--jade)]/20 bg-[var(--jade-soft)] px-3 py-1 text-xs font-semibold text-[var(--jade)]"
-            >
+            <StatusTag key={role} tone="jade" dot={false}>
               {ROLE_LABELS[role] ?? role}
-            </span>
+            </StatusTag>
           ))}
-          <span
-            className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-              profile.status === 'ACTIVE'
-                ? 'border border-[var(--jade)]/20 bg-[var(--jade-soft)] text-[var(--jade)]'
-                : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
-            }`}
-          >
+          <StatusTag tone={getUserStatusTone(profile.status)}>
             {STATUS_LABELS[profile.status] ?? profile.status}
-          </span>
+          </StatusTag>
         </div>
       </div>
 

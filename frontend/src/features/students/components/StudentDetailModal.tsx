@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
+import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import {
   getStudentClassHistory,
   getStudentDetail,
@@ -226,17 +227,9 @@ export function StudentDetailModal({
                 {editFullName || initialStudent.fullName}
               </h2>
               <div className="mt-1 flex items-center gap-2">
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                    editStatus === 'ACTIVE'
-                      ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
-                      : editStatus === 'PENDING_CLASS'
-                        ? 'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--amber)]/20'
-                        : 'bg-[var(--surface-2)] text-[var(--ink-2)] border border-[var(--line)]'
-                  }`}
-                >
+                <StatusTag size="sm" tone={getUserStatusTone(editStatus)}>
                   {STATUS_LABELS[editStatus] ?? editStatus}
-                </span>
+                </StatusTag>
                 <span className="font-han text-[10px] text-[var(--ink-3)] uppercase tracking-wider">
                   学员档案
                 </span>

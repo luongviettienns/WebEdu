@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { StatusTag } from '@/features/common/components/StatusTag';
 import { COURSE_LEVEL_HAN, type CourseItemDto } from '@/features/courses/api/courses.api';
 
 export interface CourseTableProps {
@@ -76,7 +77,7 @@ export function CourseTable({
                     ) : null}
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-1.5 rounded-md border border-[var(--red)]/25 bg-[var(--red-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--red-ink)]">
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[5px] border border-[var(--red)]/25 bg-[var(--red-soft)] px-2.5 py-0.5 text-xs font-semibold text-[var(--red-ink)]">
                       <span className="font-han">{COURSE_LEVEL_HAN[course.level]}</span>
                       <span>{course.levelLabel}</span>
                     </span>
@@ -90,15 +91,9 @@ export function CourseTable({
                     <span>{course.totalClassesCount}</span>
                   </td>
                   <td className="px-4 py-3.5">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        course.isActive
-                          ? 'bg-[var(--jade-soft)] text-[var(--jade)]'
-                          : 'bg-[var(--grey-soft)] text-[var(--grey)]'
-                      }`}
-                    >
+                    <StatusTag tone={course.isActive ? 'jade' : 'grey'}>
                       {course.isActive ? 'Đang sử dụng' : 'Ngừng sử dụng'}
-                    </span>
+                    </StatusTag>
                   </td>
                   <td className="px-4 py-3.5 text-right whitespace-nowrap space-x-2">
                     <button

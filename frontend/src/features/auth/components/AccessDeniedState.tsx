@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React from 'react';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { getDefaultRouteForRole } from '@/features/auth/roles';
+import { StatusTag } from '@/features/common/components/StatusTag';
 import { ROLE_LABELS, type Role } from '@/types/user';
 
 export interface AccessDeniedStateProps {
@@ -66,9 +67,9 @@ export function AccessDeniedState({
         </svg>
       </div>
 
-      <span className="mt-4 inline-flex items-center rounded-full border border-[var(--red)]/20 bg-[var(--red-soft)] px-3 py-0.5 text-xs font-semibold text-[var(--red-ink)]">
+      <StatusTag tone="red" className="mt-4">
         403 — Giới hạn quyền truy cập
-      </span>
+      </StatusTag>
 
       <h1 className="mt-3 text-xl font-bold tracking-tight text-[var(--ink)] sm:text-2xl">
         {title}

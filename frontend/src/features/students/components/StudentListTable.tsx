@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import { type StudentItemDto } from '../api/students.api';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
 import { STATUS_LABELS } from '@/types/user';
@@ -92,17 +93,9 @@ export function StudentListTable({
                     )}
                   </td>
                   <td className="px-4 py-3.5">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        student.status === 'ACTIVE'
-                          ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
-                          : student.status === 'PENDING_CLASS'
-                            ? 'bg-[var(--amber-soft)] text-[var(--amber)] border border-[var(--amber)]/20'
-                            : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
-                      }`}
-                    >
+                    <StatusTag tone={getUserStatusTone(student.status)}>
                       {STATUS_LABELS[student.status] ?? student.status}
-                    </span>
+                    </StatusTag>
                   </td>
                   <td className="px-4 py-3.5 text-right">
                     <button
