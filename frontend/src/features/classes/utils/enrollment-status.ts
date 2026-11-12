@@ -2,33 +2,34 @@ import type {
   ClassStatus,
   EnrollmentStatus,
 } from '@/features/classes/api/classes.types';
+import type { StatusTagTone } from '@/features/common/components/StatusTag';
 import { getTodayVnIsoDate } from '@/features/classes/utils/schedule.util';
 
 export type EnrollmentDisplayKey = EnrollmentStatus | 'AWAITING_START';
 
 export const ENROLLMENT_DISPLAY_META: Record<
   EnrollmentDisplayKey,
-  { label: string; cls: string }
+  { label: string; tone: StatusTagTone }
 > = {
   AWAITING_START: {
     label: 'Đã xếp lớp – Chờ khai giảng',
-    cls: 'border border-[var(--blue)]/30 bg-[var(--blue-soft)] text-[var(--blue)]',
+    tone: 'blue',
   },
   ACTIVE: {
     label: 'Đang học',
-    cls: 'border border-[var(--jade)]/30 bg-[var(--jade-soft)] text-[var(--jade)]',
+    tone: 'jade',
   },
   TRANSFERRED: {
     label: 'Đã chuyển lớp',
-    cls: 'border border-[var(--line-2)] bg-[var(--surface-2)] text-[var(--ink-2)]',
+    tone: 'grey',
   },
   DROPPED: {
     label: 'Tạm nghỉ / Rút lớp',
-    cls: 'border border-[var(--amber)]/30 bg-[var(--amber-soft)] text-[var(--amber)]',
+    tone: 'amber',
   },
   COMPLETED: {
     label: 'Đã hoàn thành',
-    cls: 'border border-[var(--jade)]/30 bg-[var(--jade-soft)] text-[var(--jade)]',
+    tone: 'jade',
   },
 };
 

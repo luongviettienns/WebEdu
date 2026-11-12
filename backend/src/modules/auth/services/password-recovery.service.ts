@@ -1,24 +1,29 @@
 import {
   BadRequestException,
-  HttpException,
-  HttpStatus,
   Injectable,
   Logger,
 } from '@nestjs/common';
-import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
+import {
+  acquireEmailCooldownOrThrow,
+  assertRateLimitNotExceeded,
+} from '../../../common/auth/auth-rate-limit.util.js';
+import {
+  assertPasswordWithinLimit,
+  hashPassword,
+} from '../../../common/auth/password-hash.util.js';
 import { MailService } from '../../../common/mail/mail.service.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { EMAIL_REGEX } from '../../../common/utils/contact-validation.util.js';
-import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
 import type { ForgotPasswordDto, ResetPasswordDto } from '../dto/auth.dto.js';
 
-const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000; // 60 seconds
-const RATE_LIMIT_RETENTION_MS = 10 * 60 * 1000; // 10 minutes cleanup window
+const FORGOT_PASSWORD_COOLDOWN_MS = 60 * 1000;
 const RESET_TOKEN_TTL_MINUTES = 15;
-const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000; // 15 minutes
+const RESET_TOKEN_TTL_MS = RESET_TOKEN_TTL_MINUTES * 60 * 1000;
 const MAX_FORGOT_REQUESTS_PER_IP = 5;
-const IP_FORGOT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_RESET_ATTEMPTS_PER_IP = 10;
+const IP_WINDOW_MS = 15 * 60 * 1000;
+const MIN_FORGOT_PASSWORD_RESPONSE_MS = 250;
 
 @Injectable()
 export class PasswordRecoveryService {
@@ -28,6 +33,14 @@ export class PasswordRecoveryService {
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
   ) {}
+
+  private async padMinimumDuration(startedAtMs: number): Promise<void> {
+    const elapsed = Date.now() - startedAtMs;
+    const remaining = MIN_FORGOT_PASSWORD_RESPONSE_MS - elapsed;
+    if (remaining > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+    }
+  }
 
   async forgotPassword(
     dto: ForgotPasswordDto,
@@ -41,13 +54,12 @@ export class PasswordRecoveryService {
       throw new BadRequestException('Email không hợp lệ');
     }
 
-    // IP-based rate limiting across multi-instances without Redis
-    if (clientIp) {
+    if (clientIp && clientIp !== 'unknown') {
       await assertRateLimitNotExceeded(this.prisma, {
         key: `forgot:ip:${clientIp}`,
         maxPoints: MAX_FORGOT_REQUESTS_PER_IP,
-        windowMs: IP_FORGOT_WINDOW_MS,
-        blockDurationMs: IP_FORGOT_WINDOW_MS,
+        windowMs: IP_WINDOW_MS,
+        blockDurationMs: IP_WINDOW_MS,
         errorMessage:
           'Quá nhiều yêu cầu khôi phục mật khẩu từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
       });
@@ -59,81 +71,57 @@ export class PasswordRecoveryService {
       .digest('hex');
     const now = new Date();
     const nowMs = now.getTime();
-    const cutoff = new Date(nowMs - FORGOT_PASSWORD_COOLDOWN_MS);
-    const pruneBefore = new Date(nowMs - RATE_LIMIT_RETENTION_MS);
 
-    // Opportunistically clean stale rate-limit rows with bounded probabilistic cleanup
-    if (Math.random() < 0.05) {
-      await this.prisma.$executeRaw`
-        DELETE FROM "email_rate_limits"
-        WHERE "email_hash" IN (
-          SELECT "email_hash" FROM "email_rate_limits"
-          WHERE "last_requested_at" < ${pruneBefore}
-          LIMIT 500
-        )
-      `.catch(() => {});
-    }
+    await acquireEmailCooldownOrThrow(
+      this.prisma,
+      emailHash,
+      FORGOT_PASSWORD_COOLDOWN_MS,
+      'Vui lòng đợi trước khi gửi lại yêu cầu',
+      now,
+    );
 
-    // Atomic PostgreSQL conditional upsert enforcing 60s cooldown across all instances
-    // regardless of whether the target email exists (anti-enumeration).
-    const allowedRows = await this.prisma.$queryRaw<Array<{ email_hash: string }>>`
-      INSERT INTO "email_rate_limits" ("email_hash", "last_requested_at")
-      VALUES (${emailHash}, ${now})
-      ON CONFLICT ("email_hash") DO UPDATE
-        SET "last_requested_at" = EXCLUDED."last_requested_at"
-        WHERE "email_rate_limits"."last_requested_at" <= ${cutoff}
-      RETURNING "email_hash"
-    `;
-
-    if (allowedRows.length === 0) {
-      throw new HttpException(
-        'Vui lòng đợi trước khi gửi lại yêu cầu',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-
-    if (user) {
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-      const expiresAt = new Date(nowMs + RESET_TOKEN_TTL_MS);
-
-      const createdToken = await this.prisma.passwordResetToken.create({
-        data: {
-          userId: user.id,
-          tokenHash,
-          expiresAt,
-        },
+    const startedAt = Date.now();
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { email: normalizedEmail },
       });
 
-      try {
-        await this.mailService.sendPasswordResetEmail({
-          toEmail: user.email,
-          fullName: user.fullName,
-          rawToken,
-          expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+      if (user) {
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const expiresAt = new Date(nowMs + RESET_TOKEN_TTL_MS);
+
+        const createdToken = await this.prisma.passwordResetToken.create({
+          data: {
+            userId: user.id,
+            tokenHash,
+            expiresAt,
+          },
         });
-      } catch (err: unknown) {
-        // Revoke orphaned unsent token + release cooldown slot on mail failure,
-        // and log sanitized diagnostics without leaking rawToken or user existence.
-        await this.prisma.passwordResetToken.deleteMany({
-          where: { id: createdToken.id },
-        });
-        await this.prisma.emailRateLimit.deleteMany({
-          where: { emailHash },
-        });
-        const reason = err instanceof Error ? err.message : 'Unknown mail error';
-        this.logger.error(
-          `Password reset email delivery failed for hash=${emailHash.slice(0, 12)}: ${reason}`,
-        );
+
+        try {
+          await this.mailService.sendPasswordResetEmail({
+            toEmail: user.email,
+            fullName: user.fullName,
+            rawToken,
+            expiresInMinutes: RESET_TOKEN_TTL_MINUTES,
+          });
+        } catch (err: unknown) {
+          await this.prisma.passwordResetToken.deleteMany({
+            where: { id: createdToken.id },
+          });
+          await this.prisma.emailRateLimit.deleteMany({
+            where: { emailHash },
+          });
+          const reason = err instanceof Error ? err.message : 'Unknown mail error';
+          this.logger.error(
+            `Password reset email delivery failed for hash=${emailHash.slice(0, 12)}: ${reason}`,
+          );
+        }
       }
-    } else {
-      // Lightweight constant-time pad mitigating timing side-channels without CPU starvation DoS (FIX-04)
-      const dummyBuf = crypto.createHash('sha256').update(normalizedEmail).digest();
-      crypto.timingSafeEqual(dummyBuf, dummyBuf);
+    } finally {
+      // Flatten timing side-channel between existing vs non-existing emails
+      await this.padMinimumDuration(startedAt);
     }
 
     return {
@@ -142,27 +130,49 @@ export class PasswordRecoveryService {
     };
   }
 
-  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+  async resetPassword(
+    dto: ResetPasswordDto,
+    clientIp?: string,
+  ): Promise<{ message: string }> {
+    if (clientIp && clientIp !== 'unknown') {
+      await assertRateLimitNotExceeded(this.prisma, {
+        key: `reset:ip:${clientIp}`,
+        maxPoints: MAX_RESET_ATTEMPTS_PER_IP,
+        windowMs: IP_WINDOW_MS,
+        blockDurationMs: IP_WINDOW_MS,
+        errorMessage:
+          'Quá nhiều yêu cầu đặt lại mật khẩu từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+      });
+    }
+
     const rawToken = (dto.token ?? '').trim();
     if (!rawToken) {
       throw new BadRequestException('Link đã hết hạn, vui lòng gửi lại');
     }
 
     const newPassword = dto.newPassword ?? '';
-    if (newPassword.length < 8) {
-      throw new BadRequestException('Mật khẩu phải có ít nhất 8 ký tự');
-    }
-    if (newPassword.length > 72) {
-      throw new BadRequestException('Mật khẩu không được vượt quá 72 ký tự');
-    }
+    assertPasswordWithinLimit(newPassword, 'Mật khẩu');
 
     if (dto.confirmPassword !== undefined && dto.confirmPassword !== newPassword) {
       throw new BadRequestException('Xác nhận mật khẩu không khớp');
     }
 
     const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const passwordHash = await bcrypt.hash(newPassword, 10);
     const now = new Date();
+
+    // Verify token validity BEFORE spending CPU on bcrypt hashing to prevent public CPU DoS
+    const existingToken = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+    });
+    if (
+      !existingToken ||
+      existingToken.usedAt !== null ||
+      existingToken.expiresAt.getTime() <= now.getTime()
+    ) {
+      throw new BadRequestException('Link đã hết hạn, vui lòng gửi lại');
+    }
+
+    const passwordHash = await hashPassword(newPassword);
 
     await this.prisma.$transaction(async (tx) => {
       const consumed = await tx.passwordResetToken.updateMany({
@@ -180,18 +190,9 @@ export class PasswordRecoveryService {
         throw new BadRequestException('Link đã hết hạn, vui lòng gửi lại');
       }
 
-      const tokenRecord = await tx.passwordResetToken.findUnique({
-        where: { tokenHash },
-      });
-
-      if (!tokenRecord) {
-        throw new BadRequestException('Link đã hết hạn, vui lòng gửi lại');
-      }
-
-      // Invalidate any other unused reset tokens belonging to this user
       await tx.passwordResetToken.updateMany({
         where: {
-          userId: tokenRecord.userId,
+          userId: existingToken.userId,
           usedAt: null,
         },
         data: {
@@ -200,12 +201,10 @@ export class PasswordRecoveryService {
       });
 
       await tx.user.update({
-        where: { id: tokenRecord.userId },
+        where: { id: existingToken.userId },
         data: {
           passwordHash,
           tokenVersion: { increment: 1 },
-          failedLoginAttempts: 0,
-          lockedUntil: null,
         },
       });
     });

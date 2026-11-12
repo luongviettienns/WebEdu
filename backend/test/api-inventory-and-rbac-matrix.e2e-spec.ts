@@ -13,6 +13,7 @@ import {
   extractAuthCookie,
   type RealE2eAppHarness,
 } from './helpers/e2e-app-harness.js';
+import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
  * Canonical 28-endpoint inventory for Phase 2 (`docs/test-inventory-api.md`).
@@ -63,8 +64,9 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'GET', path: '/api/v1/courses', isPublic: false },
   { method: 'POST', path: '/api/v1/courses', isPublic: false },
   { method: 'PATCH', path: '/api/v1/courses/:id', isPublic: false },
-  // ClassesController (9)
+  // ClassesController (10)
   { method: 'GET', path: '/api/v1/classes', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/preview-schedule', isPublic: false },
   { method: 'GET', path: '/api/v1/classes/:id', isPublic: false },
   { method: 'POST', path: '/api/v1/classes', isPublic: false },
   { method: 'PATCH', path: '/api/v1/classes/:id', isPublic: false },
@@ -166,7 +168,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(41);
+    expect(actualRoutes).toHaveLength(42);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -515,6 +517,33 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .set('Authorization', `Bearer ${activeTeacherToken}`)
       .send({ code: 'HSK3', name: 'HSK 3', level: CourseLevel.HSK3 })
       .expect(403);
+    await request(server)
+      .post('/api/v1/classes/preview-schedule')
+      .set('Authorization', `Bearer ${activeTeacherToken}`)
+      .send({
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 24,
+      })
+      .expect(403);
+    await request(server)
+      .post('/api/v1/classes/preview-schedule')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        scheduleDays: [5, 1, 3],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 24,
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.normalizedScheduleDays).toEqual([1, 3, 5]);
+        expect(body.scheduleText).toBe('T2-T4-T6 · 18:00–19:30');
+        expect(body.expectedEndDate).toBe('2026-12-25');
+      });
 
     // 4. Pure SUPERADMIN vs Dual [SUPERADMIN, ADMIN] (roles-permissions.md §2.1 & FUNC-009)
     for (const saDeniedUrl of [
@@ -798,17 +827,27 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .expect(429);
     assertRfc7807ProblemDetails(res429.body, 429);
 
-    // 4. Concurrent duplicate student registrations (Step 3.C) -> exactly 1 201 Created, rest 409 Conflict
+    // 4. Concurrent duplicate student registrations with distinct verified emails colliding on phone (Step 3.C) -> 1x 201 Created, 3x 409 Conflict
+    const concurrentEmails = Array.from(
+      { length: 4 },
+      (_, idx) => `race.student.${idx}@webedu.vn`,
+    );
+    const concurrentCodes = await Promise.all(
+      concurrentEmails.map((email) =>
+        obtainVerificationCodeViaHttp(harness.app, harness.smtpServer, email),
+      ),
+    );
     const regOutcomes = await Promise.all(
-      Array.from({ length: 4 }, (_, idx) =>
+      concurrentEmails.map((email, idx) =>
         request(server)
           .post('/api/v1/auth/register')
           .send({
             fullName: `Concurrent Student ${idx}`,
             dateOfBirth: '2003-04-15',
             phone: '0904449999',
-            email: 'race.student@webedu.vn',
+            email,
             password: 'Password123',
+            verificationCode: concurrentCodes[idx],
           }),
       ),
     );
@@ -820,8 +859,8 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     }
 
     // 5. Concurrent initial class placement (Step 3.B & 3.C) -> at most 1 ACTIVE enrollment in DB
-    const registeredStudent = await harness.prisma.user.findUniqueOrThrow({
-      where: { email: 'race.student@webedu.vn' },
+    const registeredStudent = await harness.prisma.user.findFirstOrThrow({
+      where: { phone: '0904449999' },
     });
     const teacher = await harness.prisma.user.create({
       data: {
@@ -862,5 +901,54 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       where: { studentId: registeredStudent.id, status: EnrollmentStatus.ACTIVE },
     });
     expect(activeEnrollments).toBe(1);
+  });
+
+  it('SEC-RISK-02 & SEC-RISK-03: Sets Helmet security headers and enforces 100kb global JSON limit while allowing 4mb on PUT /system-settings/config', async () => {
+    const server = harness.app.getHttpServer();
+
+    // 1. Helmet headers present on public health endpoint
+    const healthRes = await request(server).get('/api/v1/health').expect(200);
+    expect(healthRes.headers['x-content-type-options']).toBe('nosniff');
+    expect(healthRes.headers['x-frame-options']).toBe('SAMEORIGIN');
+
+    // 2. Oversized payload (> 100kb) on non-upload endpoint is rejected with 413
+    const oversizedPayload = {
+      email: 'oversized@webedu.vn',
+      password: 'Password123',
+      padding: 'x'.repeat(160 * 1024),
+    };
+    const rejectedRes = await request(server)
+      .post('/api/v1/auth/login')
+      .send(oversizedPayload)
+      .expect(413);
+    assertRfc7807ProblemDetails(rejectedRes.body, 413);
+
+    // 3. Superadmin PUT /api/v1/system-settings/config accepts payload > 100kb (route-scoped 4mb parser)
+    const passwordHash = await bcrypt.hash('Super123456', 10);
+    await harness.prisma.user.create({
+      data: {
+        email: 'sa.payload@webedu.vn',
+        phone: '0909888777',
+        fullName: 'SA Payload',
+        passwordHash,
+        roles: [Role.SUPERADMIN],
+        status: UserStatus.ACTIVE,
+      },
+    });
+    const saLogin = await request(server)
+      .post('/api/v1/auth/login')
+      .send({ email: 'sa.payload@webedu.vn', password: 'Super123456' })
+      .expect(200);
+    const { cookiePair: saCookie } = extractAuthCookie(saLogin);
+    const largeConfigRes = await request(server)
+      .put('/api/v1/system-settings/config')
+      .set('Cookie', [saCookie])
+      .set('Origin', 'http://localhost:3000')
+      .send({
+        centerName: 'TD Han Ngu',
+        logoDataUri: `data:image/png;base64,${'A'.repeat(180 * 1024)}`,
+      });
+    // Must not fail with 413 Payload Too Large (route-scoped 4mb allows parsing; validation returns 400 invalid image)
+    expect(largeConfigRes.status).toBe(400);
   });
 });

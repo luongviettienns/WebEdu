@@ -1,76 +1,127 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+#!/usr/bin/env node
+/**
+ * Guardrail check enforcing WebEdu Anti-God-File & Single-Responsibility LOC limits
+ * across backend modules and frontend App Router / feature slices.
+ */
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const fs = require('node:fs');
+const path = require('node:path');
+
 const ROOT = path.resolve(__dirname, '..');
 
 const BACKEND_SERVICE_MAX_LOC = 350;
+const BACKEND_GUARD_MAX_LOC = 200;
+const BACKEND_MODULE_PART_MAX_LOC = 250;
 const FRONTEND_PAGE_MAX_LOC = 250;
+const FRONTEND_HOOK_MAX_LOC = 300;
+const FRONTEND_COMPONENT_MAX_LOC = 300;
 
-function scanDir(dir, filterFn, acc = []) {
-  if (!fs.existsSync(dir)) return acc;
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
+const IGNORED_DIRS = new Set(['node_modules', 'dist', '.next', 'coverage', '.git']);
+
+function scanDir(dir, predicate, results = []) {
+  if (!fs.existsSync(dir)) return results;
+
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (IGNORED_DIRS.has(entry.name)) continue;
+
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      scanDir(fullPath, filterFn, acc);
-    } else if (entry.isFile() && filterFn(fullPath)) {
-      acc.push(fullPath);
+      scanDir(fullPath, predicate, results);
+    } else if (entry.isFile()) {
+      const normalized = fullPath.split(path.sep).join('/');
+      if (predicate(normalized)) {
+        results.push(fullPath);
+      }
     }
   }
-  return acc;
+  return results;
 }
 
 function countLines(filePath) {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  return content.split(/\r?\n/).length;
+  const raw = fs.readFileSync(filePath, 'utf8');
+  if (raw.length === 0) return 0;
+  return raw.replace(/\r?\n$/, '').split(/\r?\n/).length;
 }
 
-const backendServices = scanDir(
-  path.join(ROOT, 'backend', 'src'),
-  (p) => p.endsWith('.service.ts') && !p.endsWith('.spec.ts'),
-);
+const isTestFile = (p) => /\.(spec|test)\.(ts|tsx)$/.test(p);
 
-const frontendPages = scanDir(
-  path.join(ROOT, 'frontend', 'src', 'app'),
-  (p) => path.basename(p) === 'page.tsx',
-);
+const checks = [
+  {
+    label: 'Backend Services',
+    maxLoc: BACKEND_SERVICE_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'backend', 'src'),
+      (p) => p.endsWith('.service.ts') && !isTestFile(p),
+    ),
+  },
+  {
+    label: 'Backend Guards',
+    maxLoc: BACKEND_GUARD_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'backend', 'src'),
+      (p) => p.endsWith('.guard.ts') && !isTestFile(p),
+    ),
+  },
+  {
+    label: 'Backend Controllers / Policies / Mappers',
+    maxLoc: BACKEND_MODULE_PART_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'backend', 'src'),
+      (p) => /\.(controller|policy|mapper)\.ts$/.test(p) && !isTestFile(p),
+    ),
+  },
+  {
+    label: 'Frontend App Pages',
+    maxLoc: FRONTEND_PAGE_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'frontend', 'src', 'app'),
+      (p) => path.basename(p) === 'page.tsx',
+    ),
+  },
+  {
+    label: 'Frontend Feature Hooks',
+    maxLoc: FRONTEND_HOOK_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'frontend', 'src', 'features'),
+      (p) => /\/hooks\/[^/]+\.ts$/.test(p) && !isTestFile(p),
+    ),
+  },
+  {
+    label: 'Frontend Feature Components',
+    maxLoc: FRONTEND_COMPONENT_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'frontend', 'src', 'features'),
+      (p) => /\/components\/[^/]+\.tsx$/.test(p) && !isTestFile(p),
+    ),
+  },
+];
 
-let failures = 0;
+const violations = [];
+let totalFilesChecked = 0;
 
-console.log('--- Anti-God-File LOC Guardrails Check ---\n');
-
-console.log(`Checking Backend Services (limit: ${BACKEND_SERVICE_MAX_LOC} LOC):`);
-for (const file of backendServices) {
-  const lines = countLines(file);
-  const relPath = path.relative(ROOT, file);
-  if (lines > BACKEND_SERVICE_MAX_LOC) {
-    console.error(`  [FAIL] ${relPath}: ${lines} LOC > ${BACKEND_SERVICE_MAX_LOC} LOC`);
-    failures++;
-  } else {
-    console.log(`  [PASS] ${relPath}: ${lines} LOC`);
+for (const group of checks) {
+  totalFilesChecked += group.files.length;
+  for (const filePath of group.files) {
+    const loc = countLines(filePath);
+    if (loc > group.maxLoc) {
+      violations.push({
+        label: group.label,
+        file: path.relative(ROOT, filePath).split(path.sep).join('/'),
+        loc,
+        maxLoc: group.maxLoc,
+      });
+    }
   }
 }
 
-console.log(`\nChecking Frontend Pages (limit: ${FRONTEND_PAGE_MAX_LOC} LOC):`);
-for (const file of frontendPages) {
-  const lines = countLines(file);
-  const relPath = path.relative(ROOT, file);
-  if (lines > FRONTEND_PAGE_MAX_LOC) {
-    console.error(`  [FAIL] ${relPath}: ${lines} LOC > ${FRONTEND_PAGE_MAX_LOC} LOC`);
-    failures++;
-  } else {
-    console.log(`  [PASS] ${relPath}: ${lines} LOC`);
+if (violations.length > 0) {
+  console.error('LOC check failed. The following files exceed the allowed limit:');
+  for (const v of violations) {
+    console.error(`  - [${v.label}] ${v.file}: ${v.loc} LOC (max ${v.maxLoc})`);
   }
-}
-
-console.log('\n------------------------------------------');
-if (failures > 0) {
-  console.error(`\nLOC Guardrail Failed with ${failures} violations.`);
   process.exit(1);
-} else {
-  console.log(`\nAll ${backendServices.length} backend services and ${frontendPages.length} frontend pages pass LOC guardrails!`);
-  process.exit(0);
 }
+
+console.log(
+  `LOC check passed (${totalFilesChecked} files checked across ${checks.length} categories).`,
+);

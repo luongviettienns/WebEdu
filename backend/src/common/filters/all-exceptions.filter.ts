@@ -40,6 +40,38 @@ export interface ProblemDetailsPayload {
   invalidParams?: string[];
 }
 
+function extractClientHttpError(
+  err: unknown,
+): { status: number; detail: string } | null {
+  if (typeof err !== 'object' || err === null) {
+    return null;
+  }
+  const obj = err as { status?: unknown; statusCode?: unknown; message?: unknown; type?: unknown };
+  const rawStatus = typeof obj.status === 'number' ? obj.status : obj.statusCode;
+  if (typeof rawStatus !== 'number' || rawStatus < 400 || rawStatus >= 500) {
+    return null;
+  }
+  if (obj.type === 'entity.too.large' || rawStatus === 413) {
+    return {
+      status: HttpStatus.PAYLOAD_TOO_LARGE,
+      detail: 'Kích thước dữ liệu gửi lên vượt quá giới hạn cho phép',
+    };
+  }
+  if (obj.type === 'entity.parse.failed') {
+    return {
+      status: HttpStatus.BAD_REQUEST,
+      detail: 'Dữ liệu JSON không hợp lệ',
+    };
+  }
+  return {
+    status: rawStatus,
+    detail:
+      typeof obj.message === 'string' && obj.message.trim()
+        ? obj.message
+        : (HTTP_ERROR_TITLES[rawStatus] ?? 'Bad Request'),
+  };
+}
+
 function isPrismaUniqueConstraintError(err: unknown): boolean {
   return (
     typeof err === 'object' &&
@@ -122,8 +154,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       status = HttpStatus.CONFLICT;
       title = HTTP_ERROR_TITLES[HttpStatus.CONFLICT] ?? 'Conflict';
       detail = resolvePrismaUniqueConstraintDetail(exception);
-    } else if (exception instanceof Error) {
-      this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
+    } else {
+      const clientErr = extractClientHttpError(exception);
+      if (clientErr) {
+        status = clientErr.status;
+        title = HTTP_ERROR_TITLES[status] ?? 'Bad Request';
+        detail = clientErr.detail;
+      } else if (exception instanceof Error) {
+        this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
+      }
     }
 
     const instance = request?.originalUrl || request?.url || '';

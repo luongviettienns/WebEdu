@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { TokenService } from '../../common/auth/token.service.js';
 import { ProfileService } from './profile.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 
@@ -51,6 +52,7 @@ describe('ProfileService (FUNC-078)', () => {
     };
 
     const mockPrisma = {
+      $queryRaw: vi.fn(async () => []),
       user: {
         findUnique: vi.fn(async () => userState),
         findFirst: vi.fn(async () => null),
@@ -87,11 +89,11 @@ describe('ProfileService (FUNC-078)', () => {
     const configService = {
       get: vi.fn(() => 'test-jwt-secret-key-minimum-32-chars'),
     } as unknown as ConfigService;
+    const tokenService = new TokenService(jwtService, configService);
 
     service = new ProfileService(
       mockPrisma as unknown as PrismaService,
-      jwtService,
-      configService,
+      tokenService,
     );
   });
 
@@ -152,6 +154,7 @@ describe('ProfileService (FUNC-078)', () => {
 
   it('maps P2002 unique violation during concurrent profile update to 409 Conflict', async () => {
     const p2002Prisma = {
+      $queryRaw: vi.fn(async () => []),
       user: {
         findUnique: vi.fn(async () => userState),
         findFirst: vi.fn(async () => null),
@@ -165,10 +168,13 @@ describe('ProfileService (FUNC-078)', () => {
       ),
     };
 
-    const raceService = new ProfileService(
-      p2002Prisma as unknown as PrismaService,
+    const raceTokenService = new TokenService(
       { signAsync: signAsyncMock } as unknown as JwtService,
       { get: vi.fn(() => 'secret') } as unknown as ConfigService,
+    );
+    const raceService = new ProfileService(
+      p2002Prisma as unknown as PrismaService,
+      raceTokenService,
     );
 
     await expect(
@@ -250,5 +256,23 @@ describe('ProfileService (FUNC-078)', () => {
     });
     expect(res.profile.fullName).toBe('Học Viên Đổi Tên');
     expect(res.rotatedSession).toBeUndefined();
+  });
+
+  it('re-verifies currentPassword inside transaction lock when passwordHash rotated concurrently', async () => {
+    const newConcurrentHash = await bcrypt.hash('DifferentConcurrentPass123', 10);
+    const compareSpy = vi.spyOn(bcrypt, 'hash').mockImplementationOnce(async () => {
+      // Simulate concurrent resetPassword updating passwordHash while hashPassword() runs
+      userState.passwordHash = newConcurrentHash;
+      return '$2b$12$simulatedNewHashValue000000000000000000000000000000000';
+    });
+
+    await expect(
+      service.changePassword('u-1', {
+        currentPassword: 'CurrentPass123',
+        newPassword: 'BrandNewPassword@456',
+      }),
+    ).rejects.toThrowError(new BadRequestException('Mật khẩu hiện tại không đúng'));
+
+    compareSpy.mockRestore();
   });
 });

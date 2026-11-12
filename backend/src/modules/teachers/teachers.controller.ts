@@ -8,7 +8,6 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -21,12 +20,9 @@ import {
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../../common/guards/roles.guard.js';
 
 @ApiTags('Teachers')
 @Controller('teachers')
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.SUPERADMIN)
 export class TeachersController {
   constructor(private readonly teachersService: TeachersService) {}

@@ -6,6 +6,7 @@ import {
   ENROLLMENT_DISPLAY_META,
   resolveEnrollmentDisplayKey,
 } from '@/features/classes/utils/enrollment-status';
+import { StatusTag } from '@/features/common/components/StatusTag';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
 
 export interface ClassStudentsTableProps {
@@ -87,9 +88,7 @@ export function ClassStudentsTable({
                     </td>
                     <td className="num px-3.5 py-3 text-xs text-[var(--ink-2)]">{formatDateDdMmYyyy(enr.leftDate)}</td>
                     <td className="px-3.5 py-3">
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${meta.cls}`}>
-                        {meta.label}
-                      </span>
+                      <StatusTag tone={meta.tone}>{meta.label}</StatusTag>
                     </td>
                     {canManageEnrollments ? (
                       <td className="space-x-1.5 whitespace-nowrap px-3.5 py-3 text-right">

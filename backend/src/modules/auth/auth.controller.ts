@@ -7,11 +7,11 @@ import {
   Post,
   Req,
   Res,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { resolveClientIp } from '../../common/auth/auth-rate-limit.util.js';
+import { TokenService } from '../../common/auth/token.service.js';
 import { AuthLoginService } from './services/auth-login.service.js';
 import { AuthRegistrationService } from './services/auth-registration.service.js';
 import { AuthSessionService } from './services/auth-session.service.js';
@@ -23,29 +23,34 @@ import {
   ResetPasswordDto,
   SendVerificationCodeDto,
 } from './dto/auth.dto.js';
-import { Public } from '../../common/decorators/roles.decorator.js';
+import {
+  AuthenticatedOnly,
+  Public,
+} from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
-import { AUTH_COOKIE_NAME, JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../../common/guards/roles.guard.js';
 
 @ApiTags('Auth')
 @Controller('auth')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class AuthController {
   constructor(
     private readonly registrationService: AuthRegistrationService,
     private readonly loginService: AuthLoginService,
     private readonly sessionService: AuthSessionService,
     private readonly passwordRecoveryService: PasswordRecoveryService,
+    private readonly tokenService: TokenService,
   ) {}
 
   @Public()
   @Post('send-verification-code')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Gửi mã xác thực OTP qua Email' })
-  async sendVerificationCode(@Body() dto: SendVerificationCodeDto) {
-    return this.registrationService.sendVerificationCode(dto.email);
+  async sendVerificationCode(
+    @Body() dto: SendVerificationCodeDto,
+    @Req() req: Request,
+  ) {
+    const clientIp = resolveClientIp(req);
+    return this.registrationService.sendVerificationCode(dto.email, clientIp);
   }
 
   @Public()
@@ -53,7 +58,7 @@ export class AuthController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Đăng ký tài khoản học viên mới' })
   async register(@Body() dto: RegisterDto, @Req() req: Request) {
-    const ipAddress = (req.ip || 'unknown').slice(0, 64);
+    const ipAddress = resolveClientIp(req);
     const userAgent =
       typeof req.headers['user-agent'] === 'string'
         ? req.headers['user-agent']
@@ -77,23 +82,23 @@ export class AuthController {
       clientIp,
     );
 
-    res.cookie(AUTH_COOKIE_NAME, accessToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: publicResult.expiresIn * 1000,
-    });
+    this.tokenService.setAuthCookie(
+      res,
+      accessToken,
+      publicResult.expiresIn,
+    );
 
     return publicResult;
   }
 
+  @AuthenticatedOnly()
   @Get('me')
   @ApiOperation({ summary: 'Lấy thông tin người dùng hiện tại' })
   async getMe(@CurrentUser() user: AuthenticatedUser) {
     return this.sessionService.getMe(user.id);
   }
 
+  @AuthenticatedOnly()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Đăng xuất và thu hồi phiên hiện tại' })
@@ -102,12 +107,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.sessionService.logout(user.id);
-    res.clearCookie(AUTH_COOKIE_NAME, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-    });
+    this.tokenService.clearAuthCookie(res);
     return result;
   }
 
@@ -127,7 +127,8 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Đặt lại mật khẩu bằng liên kết xác thực' })
-  async resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.passwordRecoveryService.resetPassword(dto);
+  async resetPassword(@Body() dto: ResetPasswordDto, @Req() req: Request) {
+    const clientIp = resolveClientIp(req);
+    return this.passwordRecoveryService.resetPassword(dto, clientIp);
   }
 }

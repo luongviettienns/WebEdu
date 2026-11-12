@@ -2,12 +2,14 @@ import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
+import { Public } from '../../common/decorators/roles.decorator.js';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Check system health, database connectivity, and canonical timezone' })
   @ApiResponse({

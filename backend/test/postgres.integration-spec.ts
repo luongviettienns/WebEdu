@@ -39,6 +39,10 @@ import {
   type IsolatedPostgresHarness,
 } from './helpers/postgres-test-container.js';
 import { LocalSmtpTestServer } from './helpers/local-smtp-server.js';
+import {
+  obtainVerificationCodeViaService,
+  registerStudentViaServiceWithOtp,
+} from './helpers/auth-test-helpers.js';
 
 describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)', () => {
   const vnYear = Number(
@@ -113,13 +117,17 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
   });
 
   it('Scenario 1 (P0-B1): Commits failedLoginAttempts (1..4 -> 401, 5th -> 403 15m lock) to PostgreSQL, survives backend restart, blocks right password while locked, and resets after expiry', async () => {
-    const reg = await authService.register({
-      fullName: 'Trần Minh Khôi',
-      dateOfBirth: '2001-05-12',
-      phone: '0901000001',
-      email: 'khoi.lockout@example.com',
-      password: 'CorrectPassword@123',
-    });
+    const reg = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Trần Minh Khôi',
+        dateOfBirth: '2001-05-12',
+        phone: '0901000001',
+        email: 'khoi.lockout@example.com',
+        password: 'CorrectPassword@123',
+      },
+    );
 
     // Attempts 1..4 -> 401 and persisted in PostgreSQL (would stay 0 if $transaction rolled back!)
     for (let i = 1; i <= 4; i += 1) {
@@ -210,13 +218,17 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
   });
 
   it('Scenario 2 (P0-B1 Multi-Instance Concurrency): 12 concurrent wrong logins across 2 independent NestJS instances serialize via PostgreSQL FOR UPDATE', async () => {
-    const reg = await authService.register({
-      fullName: 'Lê Thị Song Song',
-      dateOfBirth: '2000-08-20',
-      phone: '0901000002',
-      email: 'concurrent.lock@example.com',
-      password: 'CorrectPassword@123',
-    });
+    const reg = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Lê Thị Song Song',
+        dateOfBirth: '2000-08-20',
+        phone: '0901000002',
+        email: 'concurrent.lock@example.com',
+        password: 'CorrectPassword@123',
+      },
+    );
 
     const secondInstance = await bootNestModule();
     const secondAuthService = resolveAuthServices(secondInstance);
@@ -251,15 +263,25 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     }
   });
 
-  it('Scenario 3 (Duplicate Registration Concurrency): Concurrent registrations with identical email/phone map PostgreSQL P2002 to 409 Conflict with zero orphan rows', async () => {
+  it('Scenario 3 (Duplicate Registration Concurrency): Concurrent registrations with distinct verified emails colliding on phone map PostgreSQL P2002 to 409 Conflict with zero orphan rows', async () => {
+    const emails = Array.from(
+      { length: 4 },
+      (_, idx) => `race.register.${idx + 1}@example.com`,
+    );
+    const otps = await Promise.all(
+      emails.map((email) =>
+        obtainVerificationCodeViaService(authService, smtpServer, email),
+      ),
+    );
     const outcomes = await Promise.allSettled(
-      Array.from({ length: 4 }, (_, idx) =>
+      emails.map((email, idx) =>
         authService.register({
           fullName: `Ứng Viên ${idx + 1}`,
           dateOfBirth: '2001-03-10',
           phone: '0901000003',
-          email: 'race.register@example.com',
+          email,
           password: 'Password@123',
+          verificationCode: otps[idx],
         }),
       ),
     );
@@ -290,7 +312,9 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     ).rejects.toThrowError(BadRequestException);
 
     // Under-16 students register using parent email + consent checkbox
-    const s1 = await authService.register(
+    const s1 = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
       {
         fullName: 'Nguyễn Minh Châu',
         dateOfBirth: DOB_TEEN_14,
@@ -302,7 +326,9 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       { ipAddress: '203.113.10.5', userAgent: 'IntegrationTest/1.0' },
     );
 
-    const s2 = await authService.register(
+    const s2 = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
       {
         fullName: 'Nguyễn Minh Khang',
         dateOfBirth: DOB_TEEN_13,
@@ -336,13 +362,17 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     expect(consentAfterUpdate?.guardianEmail).toBe('parent.chau@example.com');
 
     // Adult >= 16 requires no guardianEmail
-    const adult = await authService.register({
-      fullName: 'Phạm Hoàng Nam',
-      dateOfBirth: '2004-02-29',
-      phone: '0901000013',
-      email: 'nam.leap@example.com',
-      password: 'Password@123',
-    });
+    const adult = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Phạm Hoàng Nam',
+        dateOfBirth: '2004-02-29',
+        phone: '0901000013',
+        email: 'nam.leap@example.com',
+        password: 'Password@123',
+      },
+    );
     expect(adult.user.dateOfBirth).toBe('2004-02-29');
 
     // Leap-year boundary check in Asia/Ho_Chi_Minh (born 2012-02-29: on 2024-02-28 VN is 11, on 2024-02-29 VN is 12)
@@ -355,13 +385,17 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
   });
 
   it('Scenario 5 (FUNC-005 Real SMTP Reset Flow): Delivers reset link over TCP SMTP, hashes token in DB, enforces atomic DB 60s cooldown, handles SMTP failure safely, and enforces single-use + 15m TTL', async () => {
-    const reg = await authService.register({
-      fullName: 'Đỗ Thanh Hà',
-      dateOfBirth: '2000-11-11',
-      phone: '0901000021',
-      email: 'ha.reset@example.com',
-      password: 'OldPassword@123',
-    });
+    const reg = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Đỗ Thanh Hà',
+        dateOfBirth: '2000-11-11',
+        phone: '0901000021',
+        email: 'ha.reset@example.com',
+        password: 'OldPassword@123',
+      },
+    );
 
     // Concurrent forgot-password calls -> strictly 1 returns 200, rest return 429 via email_rate_limits
     const burst = await Promise.allSettled(
@@ -488,13 +522,17 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       },
     });
 
-    const pendingReg = await authService.register({
-      fullName: 'Vũ Ngọc Bích',
-      dateOfBirth: '2002-06-15',
-      phone: '0902000003',
-      email: 'bich.pending@example.com',
-      password: 'Student@123456',
-    });
+    const pendingReg = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Vũ Ngọc Bích',
+        dateOfBirth: '2002-06-15',
+        phone: '0902000003',
+        email: 'bich.pending@example.com',
+        password: 'Student@123456',
+      },
+    );
 
     // Bypass attempt via updateStudent -> 400
     await expect(
@@ -710,14 +748,18 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       },
     });
 
-    const teenReg = await authService.register({
-      fullName: 'Hoàng Bảo Ngọc',
-      dateOfBirth: DOB_TEEN_14,
-      phone: '0905000005',
-      email: 'parent.ngoc@example.com',
-      password: 'Password@123',
-      guardianConsent: true,
-    });
+    const teenReg = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Hoàng Bảo Ngọc',
+        dateOfBirth: DOB_TEEN_14,
+        phone: '0905000005',
+        email: 'parent.ngoc@example.com',
+        password: 'Password@123',
+        guardianConsent: true,
+      },
+    );
 
     const adminActor: AuthenticatedUser = {
       id: admin.id,
@@ -946,13 +988,17 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       },
     });
 
-    const reg = await authService.register({
-      fullName: 'Trần Song Song',
-      dateOfBirth: '2001-03-10',
-      phone: '0907000003',
-      email: 'songsong@example.com',
-      password: 'Password@123',
-    });
+    const reg = await registerStudentViaServiceWithOtp(
+      authService,
+      smtpServer,
+      {
+        fullName: 'Trần Song Song',
+        dateOfBirth: '2001-03-10',
+        phone: '0907000003',
+        email: 'songsong@example.com',
+        password: 'Password@123',
+      },
+    );
 
     // 1. Concurrent updateStudent(internalNotes) + assignInitialClass -> both commit cleanly without reverting status to PENDING_CLASS
     await Promise.all([
@@ -1289,5 +1335,314 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
 
     expect(newAssignment.teacherId).toBe(teacherB.id);
     expect(newAssignment.assignedTo).toBeNull();
+  });
+
+  it('Scenario 16 (Atomic OTP Brute-Force + EPQ Single-Use Race & AuthMaintenanceService Cleanup): Caps attempts at 5, prevents READ COMMITTED EPQ double-consume/revert, and purges expired tables', async () => {
+    // 16.A: Concurrent [realOtp, wrongOtp, realOtp] under READ COMMITTED EPQ -> strictly 1 succeeds, wrongOtp NEVER clears verified_at
+    const raceEmail = 'otp.epq.race@example.com';
+    const raceOtp = await obtainVerificationCodeViaService(
+      authService,
+      smtpServer,
+      raceEmail,
+    );
+    const raceWrongOtp = raceOtp === '000000' ? '111111' : '000000';
+
+    const epqOutcomes = await Promise.allSettled([
+      authService.register({
+        fullName: 'EPQ Valid 1',
+        dateOfBirth: '2000-01-01',
+        phone: '0909100001',
+        email: raceEmail,
+        password: 'Password@123',
+        verificationCode: raceOtp,
+      }),
+      authService.register({
+        fullName: 'EPQ Wrong 2',
+        dateOfBirth: '2000-01-01',
+        phone: '0909100002',
+        email: raceEmail,
+        password: 'Password@123',
+        verificationCode: raceWrongOtp,
+      }),
+      authService.register({
+        fullName: 'EPQ Valid 3',
+        dateOfBirth: '2000-01-01',
+        phone: '0909100003',
+        email: raceEmail,
+        password: 'Password@123',
+        verificationCode: raceOtp,
+      }),
+    ]);
+
+    expect(epqOutcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    expect(epqOutcomes.filter((o) => o.status === 'rejected')).toHaveLength(2);
+    const epqRow = await prisma.emailVerification.findFirstOrThrow({
+      where: { email: raceEmail },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(epqRow.verifiedAt).not.toBeNull();
+
+    // 16.B: Brute-force 8 concurrent wrong guesses -> capped atomically at 5
+    const targetEmail = 'otp.race@example.com';
+    const realOtp = await obtainVerificationCodeViaService(
+      authService,
+      smtpServer,
+      targetEmail,
+    );
+    const wrongOtp = realOtp === '000000' ? '111111' : '000000';
+
+    // Fire 8 concurrent wrong guesses simultaneously
+    await Promise.allSettled(
+      Array.from({ length: 8 }, (_, idx) =>
+        authService.register({
+          fullName: `OTP Attacker ${idx}`,
+          dateOfBirth: '2000-01-01',
+          phone: `090911000${idx}`,
+          email: targetEmail,
+          password: 'Password@123',
+          verificationCode: wrongOtp,
+        }),
+      ),
+    );
+
+    const verificationRow = await prisma.emailVerification.findFirstOrThrow({
+      where: { email: targetEmail },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(verificationRow.attempts).toBe(5);
+    expect(verificationRow.verifiedAt).toBeNull();
+
+    // Even supplying the genuine OTP now MUST be rejected because attempts === 5
+    await expect(
+      authService.register({
+        fullName: 'Late Genuine Attempt',
+        dateOfBirth: '2000-01-01',
+        phone: '0909110099',
+        email: targetEmail,
+        password: 'Password@123',
+        verificationCode: realOtp,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Bạn đã nhập sai mã xác thực quá nhiều lần. Vui lòng yêu cầu mã mới',
+      ),
+    );
+
+    // Seed expired rows across all 4 ephemeral tables and verify deterministic cleanup
+    const expiredDate = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const cleanupUser = await prisma.user.create({
+      data: {
+        email: 'cleanup.pg@example.com',
+        phone: '0909110888',
+        fullName: 'Cleanup PG User',
+        passwordHash: 'hash',
+        roles: [Role.STUDENT],
+        status: UserStatus.ACTIVE,
+      },
+    });
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: cleanupUser.id,
+        tokenHash: crypto.createHash('sha256').update('expired-pg-token').digest('hex'),
+        expiresAt: expiredDate,
+      },
+    });
+    await prisma.emailVerification.updateMany({
+      where: { email: { in: [raceEmail, targetEmail] } },
+      data: { expiresAt: expiredDate },
+    });
+    await prisma.emailRateLimit.create({
+      data: {
+        emailHash: crypto.createHash('sha256').update('old@example.com').digest('hex'),
+        lastRequestedAt: expiredDate,
+      },
+    });
+    await prisma.authRateLimit.create({
+      data: {
+        key: 'login:ip:198.51.100.123',
+        points: 2,
+        lastAttemptAt: expiredDate,
+      },
+    });
+
+    const summary = await authService.maintenance.purgeExpiredAuthData();
+    expect(summary.deletedResetTokens).toBe(1);
+    expect(summary.deletedEmailVerifications).toBe(2);
+    expect(summary.deletedEmailRateLimits).toBe(1);
+    expect(summary.deletedAuthRateLimits).toBe(1);
+  });
+
+  it('Scenario 17 (PostgreSQL Schema CHECK Constraints & Triggers): Enforces bounds, race-safe active_classes_count trigger under concurrency, and blocks GuardianConsent mutations', async () => {
+    const teacher = await prisma.user.create({
+      data: {
+        email: 'pg.constraints.teacher@webedu.vn',
+        phone: '0909220001',
+        fullName: 'Constraint Teacher',
+        passwordHash: 'hash',
+        roles: [Role.TEACHER],
+        status: UserStatus.ACTIVE,
+        teacherProfile: { create: {} },
+      },
+    });
+    const course = await prisma.course.create({
+      data: { code: 'PG-CHK-1', name: 'HSK Check', level: CourseLevel.HSK1 },
+    });
+
+    // 1. total_sessions out of 1..200 bounds -> PG CHECK violation
+    await expect(
+      prisma.class.create({
+        data: {
+          code: 'CHK-ZERO',
+          courseId: course.id,
+          teacherId: teacher.id,
+          totalSessions: 0,
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    await expect(
+      prisma.class.create({
+        data: {
+          code: 'CHK-201',
+          courseId: course.id,
+          teacherId: teacher.id,
+          totalSessions: 201,
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    // 2. schedule_days out of 0..6 or empty -> PG CHECK violation
+    await expect(
+      prisma.class.create({
+        data: {
+          code: 'CHK-DAY7',
+          courseId: course.id,
+          teacherId: teacher.id,
+          scheduleDays: [1, 7],
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    // 3. schedule_end_time <= schedule_start_time -> PG CHECK violation
+    await expect(
+      prisma.class.create({
+        data: {
+          code: 'CHK-TIME',
+          courseId: course.id,
+          teacherId: teacher.id,
+          scheduleStartTime: '19:30',
+          scheduleEndTime: '18:00',
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    // 4. Valid class triggers trg_classes_sync_teacher_active_count (0 -> 1 -> 0)
+    const validClass = await prisma.class.create({
+      data: {
+        code: 'CHK-OK-01',
+        courseId: course.id,
+        teacherId: teacher.id,
+        status: ClassStatus.ACTIVE,
+        totalSessions: 24,
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: new Date('2026-11-01T00:00:00.000Z'),
+      },
+    });
+    const tpAfterCreate = await prisma.teacherProfile.findUniqueOrThrow({
+      where: { userId: teacher.id },
+    });
+    expect(tpAfterCreate.activeClassesCount).toBe(1);
+
+    await prisma.class.update({
+      where: { id: validClass.id },
+      data: { status: ClassStatus.COMPLETED },
+    });
+    const tpAfterComplete = await prisma.teacherProfile.findUniqueOrThrow({
+      where: { userId: teacher.id },
+    });
+    expect(tpAfterComplete.activeClassesCount).toBe(0);
+
+    // Concurrent insert ACTIVE + complete existing ACTIVE under lock-ordered trigger -> exact final count = 1
+    const cExisting = await prisma.class.create({
+      data: {
+        code: 'CHK-CONC-1',
+        courseId: course.id,
+        teacherId: teacher.id,
+        status: ClassStatus.ACTIVE,
+        startDate: new Date('2026-11-01T00:00:00.000Z'),
+      },
+    });
+    await Promise.all([
+      prisma.class.create({
+        data: {
+          code: 'CHK-CONC-2',
+          courseId: course.id,
+          teacherId: teacher.id,
+          status: ClassStatus.ACTIVE,
+          startDate: new Date('2026-11-02T00:00:00.000Z'),
+        },
+      }),
+      prisma.class.update({
+        where: { id: cExisting.id },
+        data: { status: ClassStatus.COMPLETED },
+      }),
+    ]);
+    const tpAfterConcurrent = await prisma.teacherProfile.findUniqueOrThrow({
+      where: { userId: teacher.id },
+    });
+    expect(tpAfterConcurrent.activeClassesCount).toBe(1);
+
+    // 5. assigned_to < assigned_from and left_date < enrolled_date -> PG CHECK violations
+    await expect(
+      prisma.classTeacherAssignment.create({
+        data: {
+          classId: validClass.id,
+          teacherId: teacher.id,
+          assignedFrom: new Date('2026-11-10T00:00:00.000Z'),
+          assignedTo: new Date('2026-11-05T00:00:00.000Z'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    const teen = await registerStudentViaServiceWithOtp(authService, smtpServer, {
+      fullName: 'Consent Immutable Teen',
+      dateOfBirth: DOB_TEEN_14,
+      phone: '0909220002',
+      email: 'parent.immutable@example.com',
+      password: 'Password@123',
+      guardianConsent: true,
+    });
+
+    await expect(
+      prisma.enrollment.create({
+        data: {
+          classId: validClass.id,
+          studentId: teen.user.id,
+          status: EnrollmentStatus.DROPPED,
+          enrolledDate: new Date('2026-11-10T00:00:00.000Z'),
+          leftDate: new Date('2026-11-09T00:00:00.000Z'),
+        },
+      }),
+    ).rejects.toThrow();
+
+    // 6. GuardianConsent UPDATE & DELETE blocked by DB trigger trg_guardian_consents_immutable
+    const consent = await prisma.guardianConsent.findFirstOrThrow();
+    await expect(
+      prisma.guardianConsent.update({
+        where: { id: consent.id },
+        data: { guardianEmail: 'tampered@example.com' },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      prisma.guardianConsent.delete({
+        where: { id: consent.id },
+      }),
+    ).rejects.toThrow();
   });
 });

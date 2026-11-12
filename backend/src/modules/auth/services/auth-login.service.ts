@@ -5,22 +5,24 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
-import bcrypt from 'bcryptjs';
 import type { AuthUserDto } from '../../../common/auth/auth.types.js';
 import {
   assertIpNotBlocked,
   assertRateLimitNotExceeded,
   resetRateLimitKey,
 } from '../../../common/auth/auth-rate-limit.util.js';
+import {
+  comparePassword,
+  hashPasswordSync,
+} from '../../../common/auth/password-hash.util.js';
 import { IDLE_TIMEOUT_MS } from '../../../common/guards/jwt-auth.guard.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { EMAIL_REGEX } from '../../../common/utils/contact-validation.util.js';
 import type { LoginDto } from '../dto/auth.dto.js';
 import { AuthSessionService } from './auth-session.service.js';
 
-export const DUMMY_PASSWORD_HASH = bcrypt.hashSync(
+export const DUMMY_PASSWORD_HASH = hashPasswordSync(
   'webedu_dummy_anti_timing_secret_2026',
-  10,
 );
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
@@ -61,7 +63,7 @@ export class AuthLoginService {
     });
 
     if (!initialUser) {
-      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      await comparePassword(password, DUMMY_PASSWORD_HASH);
       if (clientIp) {
         await assertRateLimitNotExceeded(this.prisma, {
           key: `login:ip:${clientIp}`,
@@ -77,7 +79,10 @@ export class AuthLoginService {
 
     // CPU-bound bcrypt runs outside DB transaction so slow hashing never holds row locks,
     // and BEFORE INACTIVE status check so wrong passwords on INACTIVE accounts return uniform 401.
-    const isPasswordValid = await bcrypt.compare(password, initialUser.passwordHash);
+    const isPasswordValid = await comparePassword(
+      password,
+      initialUser.passwordHash,
+    );
 
     // P0-B1 Fix: Return a discriminated outcome from $transaction so PostgreSQL COMMITS
     // failedLoginAttempts / lockedUntil updates BEFORE any HTTP exception is thrown.
@@ -102,7 +107,7 @@ export class AuthLoginService {
       const effectivePasswordValid =
         freshUser.passwordHash === initialUser.passwordHash
           ? isPasswordValid
-          : await bcrypt.compare(password, freshUser.passwordHash);
+          : await comparePassword(password, freshUser.passwordHash);
 
       if (!effectivePasswordValid) {
         const isExpiredLock =

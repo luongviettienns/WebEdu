@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { StatusTag } from '@/features/common/components/StatusTag';
 import { type PendingStudentDto } from '../api/students.api';
 import { formatDateDdMmYyyy, formatDateTimeVn } from '@/lib/utils/date';
 
@@ -91,15 +92,9 @@ export function PendingStudentListTable({
                       )}
                     </td>
                     <td className="px-4 py-3.5">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          consentDisplay.isConfirmed
-                            ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
-                            : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
-                        }`}
-                      >
+                      <StatusTag tone={consentDisplay.isConfirmed ? 'jade' : 'grey'}>
                         {consentDisplay.label}
-                      </span>
+                      </StatusTag>
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <button

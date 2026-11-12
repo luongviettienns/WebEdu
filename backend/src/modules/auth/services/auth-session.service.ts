@@ -1,12 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import type { Role, UserStatus } from '@prisma/client';
-import type { AuthUserDto, JwtPayload } from '../../../common/auth/auth.types.js';
+import type { AuthUserDto } from '../../../common/auth/auth.types.js';
 import {
   getDefaultRedirectByRole,
   getHighestRole,
 } from '../../../common/auth/role-hierarchy.util.js';
+import { TokenService } from '../../../common/auth/token.service.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
 
@@ -27,8 +26,7 @@ export interface AuthUserWithOptionalStudentProfile {
 export class AuthSessionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
+    private readonly tokenService: TokenService,
   ) {}
 
   toAuthUserDto(
@@ -63,23 +61,15 @@ export class AuthSessionService {
     redirectTo: string;
     user: AuthUserDto;
   }> {
-    const expiresInSeconds = rememberMe ? 7 * 24 * 60 * 60 : 3600;
-    const payload: JwtPayload = {
-      sub: user.id,
-      email: user.email,
-      tokenVersion: user.tokenVersion,
-      ...(rememberMe ? { rememberMe: true } : {}),
-    };
-    const secret = this.configService.get<string>('JWT_SECRET');
-    const accessToken = await this.jwtService.signAsync(payload, {
-      secret,
-      expiresIn: rememberMe ? '7d' : 3600,
-    });
+    const { accessToken, expiresIn } = await this.tokenService.signAccessToken(
+      user,
+      rememberMe,
+    );
 
     const userDto = this.toAuthUserDto(user);
     return {
       accessToken,
-      expiresIn: expiresInSeconds,
+      expiresIn,
       redirectTo: getDefaultRedirectByRole(userDto.effectiveRole),
       user: userDto,
     };

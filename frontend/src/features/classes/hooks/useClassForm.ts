@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   createClass,
+  previewClassSchedule,
   updateClass,
   type ClassItem,
   type ClassStatus,
@@ -10,9 +11,8 @@ import {
   type TeacherOptionItem,
 } from '@/features/classes/api/classes.api';
 import {
-  calculateExpectedEndDateIso,
+  MAX_CLASS_TOTAL_SESSIONS,
   getTodayVnIsoDate,
-  normalizeScheduleDays,
   validateClassFormInput,
 } from '@/features/classes/utils/schedule.util';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -45,7 +45,7 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
   const [teacherAssignedFrom, setTeacherAssignedFrom] = useState(todayIso);
   const [teacherChangeReason, setTeacherChangeReason] = useState('');
   const [scheduleDays, setScheduleDays] = useState<number[]>(
-    initialData?.scheduleDays?.length ? normalizeScheduleDays(initialData.scheduleDays) : [1, 3, 5],
+    initialData?.scheduleDays?.length ? [...initialData.scheduleDays] : [1, 3, 5],
   );
   const [scheduleStartTime, setScheduleStartTime] = useState(initialData?.scheduleStartTime ?? '18:00');
   const [scheduleEndTime, setScheduleEndTime] = useState(initialData?.scheduleEndTime ?? '19:30');
@@ -55,16 +55,88 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
   const [notes, setNotes] = useState(initialData?.notes ?? '');
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [previewResult, setPreviewResult] = useState<{
+    expectedEndDate: string | null;
+    scheduleText: string;
+  }>({
+    expectedEndDate: initialData?.expectedEndDate ?? null,
+    scheduleText: initialData?.scheduleText ?? 'Đang tính lịch học...',
+  });
 
   const isCourseLocked =
     mode === 'edit' &&
     Boolean(initialData && (initialData.totalEnrollmentsCount > 0 || initialData.status === 'ACTIVE'));
   const isTeacherChanged =
     mode === 'edit' && Boolean(initialData && teacher && teacher.id !== initialData.teacherId);
-  const expectedEndDatePreview = useMemo(
-    () => calculateExpectedEndDateIso(startDate, scheduleDays, Number(totalSessions.trim())),
-    [startDate, scheduleDays, totalSessions],
-  );
+
+  const parsedSessions = Number(totalSessions.trim());
+  const isScheduleComplete =
+    scheduleDays.length > 0 &&
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleStartTime) &&
+    /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(scheduleEndTime) &&
+    scheduleStartTime < scheduleEndTime &&
+    /^\d{4}-\d{2}-\d{2}$/.test(startDate.trim()) &&
+    Number.isInteger(parsedSessions) &&
+    parsedSessions >= 1 &&
+    parsedSessions <= MAX_CLASS_TOTAL_SESSIONS;
+
+  const expectedEndDatePreview = isScheduleComplete
+    ? previewResult.expectedEndDate
+    : null;
+  const scheduleTextPreview = isScheduleComplete
+    ? previewResult.scheduleText
+    : 'Chưa chọn đầy đủ lịch học';
+
+  useEffect(() => {
+    if (!isScheduleComplete) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const preview = await previewClassSchedule(
+          {
+            scheduleDays,
+            scheduleStartTime,
+            scheduleEndTime,
+            startDate: startDate.trim(),
+            totalSessions: parsedSessions,
+            ...(teacher?.id ? { teacherId: teacher.id } : {}),
+            ...(initialData?.id ? { excludeClassId: initialData.id } : {}),
+          },
+          { signal: controller.signal },
+        );
+        if (!controller.signal.aborted) {
+          setPreviewResult({
+            expectedEndDate: preview.expectedEndDate,
+            scheduleText: preview.scheduleText,
+          });
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setPreviewResult({
+            expectedEndDate: null,
+            scheduleText: 'Không thể tải xem trước lịch học',
+          });
+        }
+      }
+    }, 80);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    isScheduleComplete,
+    parsedSessions,
+    scheduleDays,
+    scheduleStartTime,
+    scheduleEndTime,
+    startDate,
+    teacher?.id,
+    initialData?.id,
+  ]);
 
   const setCourseId = (nextCourseId: string) => {
     setCourseIdState(nextCourseId);
@@ -79,8 +151,8 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
   const toggleDay = (dayValue: number) =>
     setScheduleDays((prev) =>
       prev.includes(dayValue)
-        ? normalizeScheduleDays(prev.filter((d) => d !== dayValue))
-        : normalizeScheduleDays([...prev, dayValue]),
+        ? prev.filter((d) => d !== dayValue)
+        : [...prev, dayValue],
     );
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -177,7 +249,12 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
       notes: setNotes,
     },
     toggleDay,
-    derived: { isCourseLocked, isTeacherChanged, expectedEndDatePreview },
+    derived: {
+      isCourseLocked,
+      isTeacherChanged,
+      expectedEndDatePreview,
+      scheduleTextPreview,
+    },
     formError,
     submitting,
     submit,

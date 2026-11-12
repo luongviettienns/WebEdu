@@ -67,6 +67,14 @@ export class LocalSmtpTestServer {
     return match?.[1] ?? null;
   }
 
+  extractVerificationCodeFromMessage(msg: CapturedSmtpMessage): string | null {
+    const match =
+      /là:\s*(\d{6})/.exec(msg.decodedBody) ??
+      /là:\s*(\d{6})/.exec(msg.rawData) ??
+      /font-size:\s*28px[^>]*>(\d{6})</.exec(msg.decodedBody);
+    return match?.[1] ?? null;
+  }
+
   async start(): Promise<{ host: string; port: number }> {
     if (this.server) {
       return { host: this.host, port: this.port };

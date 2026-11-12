@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import { type TeacherItemDto } from '../api/teachers.api';
 import { STATUS_LABELS } from '@/types/user';
 
@@ -106,15 +107,9 @@ export function TeacherListTable({
                       {teacher.activeClassesCount ?? 0}
                     </td>
                     <td className="px-4 py-3.5">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          teacher.status === 'ACTIVE'
-                            ? 'bg-[var(--jade-soft)] text-[var(--jade)] border border-[var(--jade)]/20'
-                            : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
-                        }`}
-                      >
+                      <StatusTag tone={getUserStatusTone(teacher.status)}>
                         {STATUS_LABELS[teacher.status] ?? teacher.status}
-                      </span>
+                      </StatusTag>
                     </td>
                     <td className="px-4 py-3.5 text-right">
                       <div className="inline-flex items-center gap-2">

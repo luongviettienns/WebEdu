@@ -25,26 +25,6 @@ export const QUICK_SCHEDULE_PRESETS: ReadonlyArray<{
   { id: '7-0', label: 'T7 - CN', days: [6, 0] },
 ];
 
-const ACADEMIC_WEEKDAY_ORDER: Readonly<Record<number, number>> = {
-  1: 1,
-  2: 2,
-  3: 3,
-  4: 4,
-  5: 5,
-  6: 6,
-  0: 7,
-};
-
-const WEEKDAY_SHORT_MAP: Readonly<Record<number, string>> = {
-  1: 'T2',
-  2: 'T3',
-  3: 'T4',
-  4: 'T5',
-  5: 'T6',
-  6: 'T7',
-  0: 'CN',
-};
-
 export const CLASS_STATUS_LABELS: Record<ClassStatus, string> = {
   UPCOMING: 'Sắp mở',
   ACTIVE: 'Đang học',
@@ -61,81 +41,7 @@ export function getTodayVnIsoDate(now: Date = new Date()): string {
   }).format(now);
 }
 
-export function normalizeScheduleDays(days: readonly number[]): number[] {
-  const uniqueValid = Array.from(
-    new Set(days.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)),
-  );
-  return uniqueValid.sort(
-    (a, b) => (ACADEMIC_WEEKDAY_ORDER[a] ?? 99) - (ACADEMIC_WEEKDAY_ORDER[b] ?? 99),
-  );
-}
-
-export function formatSchedulePreviewText(
-  scheduleDays: readonly number[],
-  startTime: string,
-  endTime: string,
-): string {
-  const normalized = normalizeScheduleDays(scheduleDays);
-  if (normalized.length === 0) {
-    return 'Chưa chọn thứ trong tuần';
-  }
-  const daysPart = normalized.map((d) => WEEKDAY_SHORT_MAP[d] ?? '').join('-');
-  return `${daysPart} · ${startTime || '--:--'}–${endTime || '--:--'}`;
-}
-
 export const MAX_CLASS_TOTAL_SESSIONS = 200;
-
-export function calculateExpectedEndDateIso(
-  startDateIso: string,
-  scheduleDays: readonly number[],
-  totalSessions: number,
-): string | null {
-  const trimmedDate = startDateIso.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
-    return null;
-  }
-  const validDays = normalizeScheduleDays(scheduleDays);
-  if (
-    validDays.length === 0 ||
-    !Number.isInteger(totalSessions) ||
-    totalSessions < 1 ||
-    totalSessions > MAX_CLASS_TOTAL_SESSIONS
-  ) {
-    return null;
-  }
-
-  const [yearStr, monthStr, dayStr] = trimmedDate.split('-');
-  const year = Number(yearStr);
-  const month = Number(monthStr);
-  const day = Number(dayStr);
-
-  const current = new Date(Date.UTC(year, month - 1, day));
-  if (
-    Number.isNaN(current.getTime()) ||
-    current.getUTCFullYear() !== year ||
-    current.getUTCMonth() !== month - 1 ||
-    current.getUTCDate() !== day
-  ) {
-    return null;
-  }
-
-  const daySet = new Set(validDays);
-  let matchedSessions = 0;
-  let safetyCounter = 0;
-
-  while (matchedSessions < totalSessions && safetyCounter < 4000) {
-    if (daySet.has(current.getUTCDay())) {
-      matchedSessions += 1;
-      if (matchedSessions === totalSessions) {
-        return current.toISOString().slice(0, 10);
-      }
-    }
-    current.setUTCDate(current.getUTCDate() + 1);
-    safetyCounter += 1;
-  }
-
-  return null;
-}
 
 export function formatClassStatusLabel(status: ClassStatus): string {
   return CLASS_STATUS_LABELS[status] ?? status;

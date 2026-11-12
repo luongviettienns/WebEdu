@@ -10,7 +10,6 @@ import {
   Post,
   Put,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -27,12 +26,9 @@ import {
 import { Public, Roles } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
-import { RolesGuard } from '../../common/guards/roles.guard.js';
 
 @ApiTags('System Settings')
 @Controller('system-settings')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class SystemSettingsController {
   constructor(
     private readonly systemUsersService: SystemUsersService,

@@ -1,12 +1,11 @@
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module.js';
-import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
-import { AUTH_COOKIE_NAME } from './common/guards/jwt-auth.guard.js';
+import { AUTH_COOKIE_NAME } from './common/auth/token.service.js';
+import { configureAppSecurityAndPipes } from './common/http/configure-app.util.js';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -20,13 +19,7 @@ async function bootstrap() {
     app.set('trust proxy', 1);
   }
 
-  // Allow up to 4MB JSON payloads so <=2MB PNG/JPG base64 logos (~2.7MB JSON) succeed
-  app.useBodyParser('json', { limit: '4mb' });
-  app.use(cookieParser());
-
   const port = configService.get<number>('PORT', 3001);
-
-  // Enable CORS safely with production fail-fast protection (FIX-07)
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const corsOriginEnv = configService.get<string>('CORS_ORIGIN');
   if (nodeEnv === 'production' && !corsOriginEnv) {
@@ -34,46 +27,15 @@ async function bootstrap() {
       'CORS_ORIGIN must be explicitly configured in production environment',
     );
   }
+
   const effectiveCors = corsOriginEnv || 'http://localhost:3000';
   const allowedOrigins = effectiveCors
     .split(',')
     .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean);
 
-  app.enableCors({
-    origin: (
-      requestOrigin: string | undefined,
-      callback: (err: Error | null, allow?: boolean) => void,
-    ) => {
-      // Allow requests with no origin (e.g. mobile apps, server-to-server)
-      if (!requestOrigin) {
-        return callback(null, true);
-      }
-      const normalizedOrigin = requestOrigin.trim().replace(/\/+$/, '');
-      if (allowedOrigins.includes(normalizedOrigin)) {
-        return callback(null, true);
-      }
-      return callback(null, false);
-    },
-    credentials: true,
-  });
+  configureAppSecurityAndPipes(app, { nodeEnv, allowedOrigins });
 
-  // Global prefix
-  app.setGlobalPrefix('api/v1');
-
-  // Global Validation Pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  // Global RFC 7807 Exception Filter
-  app.useGlobalFilters(new AllExceptionsFilter());
-
-  // Swagger Documentation (only available in non-production)
   if (nodeEnv !== 'production') {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('WebEdu API — Trung Tâm TD Hán Ngữ')

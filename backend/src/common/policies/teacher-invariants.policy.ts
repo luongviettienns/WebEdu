@@ -14,14 +14,12 @@ export async function countEffectiveActiveClasses(
   teacherId: string,
   profileActiveClassesCount: number = 0,
 ): Promise<{ effective: number; fromDb: number }> {
-  const fromDb = tx.class?.count
-    ? await tx.class.count({
-        where: {
-          teacherId,
-          status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
-        },
-      })
-    : 0;
+  const fromDb = await tx.class.count({
+    where: {
+      teacherId,
+      status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+    },
+  });
   return {
     effective: Math.max(profileActiveClassesCount, fromDb),
     fromDb,
@@ -40,20 +38,16 @@ export async function syncTeacherActiveClassesCount(
   tx: Prisma.TransactionClient,
   teacherId: string,
 ): Promise<number> {
-  const activeCount = tx.class?.count
-    ? await tx.class.count({
-        where: {
-          teacherId,
-          status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
-        },
-      })
-    : 0;
-  if (tx.teacherProfile?.updateMany) {
-    await tx.teacherProfile.updateMany({
-      where: { userId: teacherId },
-      data: { activeClassesCount: activeCount },
-    });
-  }
+  const activeCount = await tx.class.count({
+    where: {
+      teacherId,
+      status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+    },
+  });
+  await tx.teacherProfile.updateMany({
+    where: { userId: teacherId },
+    data: { activeClassesCount: activeCount },
+  });
   return activeCount;
 }
 

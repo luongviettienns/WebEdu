@@ -153,6 +153,9 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
       teacherProfile: {
         upsert: vi.fn().mockResolvedValue({}),
       },
+      studentProfile: {
+        upsert: vi.fn().mockResolvedValue({}),
+      },
       systemSetting: {
         findMany: vi.fn(async () => {
           return Array.from(settingsStore.entries()).map(([key, value]) => ({

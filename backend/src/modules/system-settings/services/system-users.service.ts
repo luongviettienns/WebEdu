@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../../../common/auth/password-hash.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { rethrowDuplicateContactConflict } from '../../../common/utils/prisma-error.util.js';
@@ -86,7 +86,7 @@ export class SystemUsersService {
       throw new ConflictException('Email/Số điện thoại đã được sử dụng');
     }
 
-    const passwordHash = await bcrypt.hash(initialPassword, 10);
+    const passwordHash = await hashPassword(initialPassword);
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -101,7 +101,7 @@ export class SystemUsersService {
           },
         });
 
-        if (uniqueRoles.includes(Role.TEACHER) && tx.teacherProfile?.upsert) {
+        if (uniqueRoles.includes(Role.TEACHER)) {
           await tx.teacherProfile.upsert({
             where: { userId: user.id },
             update: {},
@@ -109,7 +109,7 @@ export class SystemUsersService {
           });
         }
 
-        if (uniqueRoles.includes(Role.STUDENT) && tx.studentProfile?.upsert) {
+        if (uniqueRoles.includes(Role.STUDENT)) {
           await tx.studentProfile.upsert({
             where: { userId: user.id },
             update: {},

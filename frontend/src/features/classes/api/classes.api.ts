@@ -10,6 +10,8 @@ import type {
   CreateClassPayload,
   ListClassesParams,
   PaginatedClassesResponse,
+  PreviewClassSchedulePayload,
+  PreviewClassScheduleResponse,
   ReopenClassPayload,
   UpdateClassPayload,
 } from '@/features/classes/api/classes.types';
@@ -99,5 +101,16 @@ export async function reopenClass(
   return requestJson<ClassDetail>(`/classes/${encodeURIComponent(classId)}/reopen`, {
     method: 'POST',
     body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function previewClassSchedule(
+  payload: PreviewClassSchedulePayload,
+  signal?: AbortSignal | RequestOptions,
+): Promise<PreviewClassScheduleResponse> {
+  return requestJson<PreviewClassScheduleResponse>('/classes/preview-schedule', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    signal: resolveSignal(signal),
   });
 }

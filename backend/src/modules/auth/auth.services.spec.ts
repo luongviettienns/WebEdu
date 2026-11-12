@@ -10,10 +10,14 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { AuthLoginService } from './services/auth-login.service.js';
+import { AuthMaintenanceService } from './services/auth-maintenance.service.js';
 import { AuthRegistrationService } from './services/auth-registration.service.js';
 import { AuthSessionService } from './services/auth-session.service.js';
 import { PasswordRecoveryService } from './services/password-recovery.service.js';
+import type { RegisterDto } from './dto/auth.dto.js';
+import { TokenService } from '../../common/auth/token.service.js';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { MailService, type PasswordResetEmailInput } from '../../common/mail/mail.service.js';
 import { CONSENT_TEXT_V1_0, CONSENT_VERSION } from '../../common/auth/auth.types.js';
@@ -30,6 +34,7 @@ interface AuthTestFacade {
 
 describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)', () => {
   let service: AuthTestFacade;
+  let maintenanceService: AuthMaintenanceService;
   let jwtService: JwtService;
   let signAsyncMock: ReturnType<typeof vi.fn>;
   let configService: ConfigService;
@@ -315,7 +320,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           where: Record<string, unknown>;
           orderBy?: Record<string, string>;
         }) => {
-          const items = Array.from(emailVerificationsStore.values());
+          const items = Array.from(emailVerificationsStore.values()).reverse();
           if (orderBy?.createdAt === 'desc') {
             items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
           }
@@ -361,6 +366,16 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           return rec;
         },
       ),
+      deleteMany: vi.fn(async ({ where }: { where: { id?: string } }) => {
+        let count = 0;
+        for (const [id] of emailVerificationsStore.entries()) {
+          if (!where.id || id === where.id) {
+            emailVerificationsStore.delete(id);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
     };
 
     mockPrisma = {
@@ -433,13 +448,88 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
             ];
           }
         }
+        if (sql.includes('UPDATE "email_verifications"')) {
+          const inputHash = String(values[0]);
+          const now = values[1] as Date;
+          const email = String(values[2]);
+          const maxAttempts = Number(values[4] ?? 5);
+          const candidates = Array.from(emailVerificationsStore.values())
+            .reverse()
+            .filter(
+              (v) =>
+                v.email === email &&
+                v.verifiedAt === null &&
+                v.expiresAt.getTime() > now.getTime(),
+            )
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+          const latest = candidates[0];
+          if (!latest || latest.attempts >= maxAttempts) {
+            return [];
+          }
+          latest.attempts += 1;
+          if (latest.codeHash === inputHash) {
+            latest.verifiedAt = now;
+          }
+          return [
+            {
+              id: latest.id,
+              code_hash: latest.codeHash,
+              attempts: latest.attempts,
+              verified_at: latest.verifiedAt,
+            },
+          ];
+        }
         return [];
       }),
       $executeRaw: vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
         const sql = strings.join('?');
         if (sql.includes('DELETE FROM "auth_rate_limits"')) {
+          if (sql.includes('"last_attempt_at" <')) {
+            const cutoff = values[0] as Date;
+            let count = 0;
+            for (const [key, rec] of authRateLimitStore.entries()) {
+              if (rec.lastAttemptAt.getTime() < cutoff.getTime()) {
+                authRateLimitStore.delete(key);
+                count += 1;
+              }
+            }
+            return count;
+          }
           const key = String(values[0]);
-          authRateLimitStore.delete(key);
+          return authRateLimitStore.delete(key) ? 1 : 0;
+        }
+        if (sql.includes('DELETE FROM "password_reset_tokens"')) {
+          const cutoff = values[0] as Date;
+          let count = 0;
+          for (const [hash, rec] of resetTokensStore.entries()) {
+            if (rec.expiresAt.getTime() < cutoff.getTime()) {
+              resetTokensStore.delete(hash);
+              count += 1;
+            }
+          }
+          return count;
+        }
+        if (sql.includes('DELETE FROM "email_verifications"')) {
+          const cutoff = values[0] as Date;
+          let count = 0;
+          for (const [id, rec] of emailVerificationsStore.entries()) {
+            if (rec.expiresAt.getTime() < cutoff.getTime()) {
+              emailVerificationsStore.delete(id);
+              count += 1;
+            }
+          }
+          return count;
+        }
+        if (sql.includes('DELETE FROM "email_rate_limits"')) {
+          const cutoff = values[0] as Date;
+          let count = 0;
+          for (const [hash, ts] of emailRateLimitStore.entries()) {
+            if (ts.getTime() < cutoff.getTime()) {
+              emailRateLimitStore.delete(hash);
+              count += 1;
+            }
+          }
+          return count;
         }
         return 1;
       }),
@@ -497,13 +587,17 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       }),
       sendVerificationCodeEmail: vi.fn(
         async (input: { toEmail: string; code: string; expiresInMinutes: number }) => {
+          if (shouldFailEmailSend) {
+            throw new Error('SMTP connection refused');
+          }
           sentVerificationEmails.push(input);
         },
       ),
     } as unknown as MailService;
 
     const prisma = mockPrisma as unknown as PrismaService;
-    const sessionService = new AuthSessionService(prisma, jwtService, configService);
+    const tokenService = new TokenService(jwtService, configService);
+    const sessionService = new AuthSessionService(prisma, tokenService);
     const registrationService = new AuthRegistrationService(
       prisma,
       sessionService,
@@ -511,6 +605,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     );
     const loginService = new AuthLoginService(prisma, sessionService);
     const recoveryService = new PasswordRecoveryService(prisma, mailService);
+    maintenanceService = new AuthMaintenanceService(prisma);
 
     service = {
       register: registrationService.register.bind(registrationService),
@@ -523,6 +618,39 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       resetPassword: recoveryService.resetPassword.bind(recoveryService),
     };
   });
+
+  async function issueOtpCode(email: string, clientIp?: string): Promise<string> {
+    await service.sendVerificationCode(email, clientIp);
+    const normalizedEmail = email.trim().toLowerCase();
+    const sent = [...sentVerificationEmails]
+      .reverse()
+      .find((entry) => entry.toEmail === normalizedEmail);
+    if (!sent) {
+      throw new Error(`No verification code sent for ${normalizedEmail}`);
+    }
+    return sent.code;
+  }
+
+  async function seedOtpCode(email: string, code = '654321'): Promise<string> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    await (mockPrisma.emailVerification as { create: (args: unknown) => Promise<unknown> }).create({
+      data: {
+        email: normalizedEmail,
+        codeHash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+    return code;
+  }
+
+  async function registerWithRealOtp(
+    dto: Omit<RegisterDto, 'verificationCode'>,
+    metadata?: { ipAddress?: string; userAgent?: string },
+  ) {
+    const code = await issueOtpCode(dto.email);
+    return service.register({ ...dto, verificationCode: code }, metadata);
+  }
 
   describe('FUNC-001 & FUNC-002: Register & Guardian Consent', () => {
     it('rejects registration when student is under 12 years old', async () => {
@@ -553,7 +681,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('registers student aged 12-15 using parent email and records immutable GuardianConsent snapshot', async () => {
-      const reg = await service.register(
+      const reg = await registerWithRealOtp(
         {
           fullName: 'Nguyễn Văn An',
           dateOfBirth: '2012-03-15',
@@ -581,7 +709,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('rejects duplicate email or phone with clear, specific 409 Conflict messages', async () => {
-      await service.register({
+      await registerWithRealOtp({
         fullName: 'Học Viên 1',
         dateOfBirth: '2000-01-01',
         phone: '0903334444',
@@ -589,7 +717,8 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         password: 'Password123',
       });
 
-      // Duplicate email only
+      // Duplicate email only (even if a valid OTP row exists from before user creation)
+      const preIssuedCode = await seedOtpCode('DUP@example.com');
       await expect(
         service.register({
           fullName: 'Học Viên 2',
@@ -597,6 +726,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           phone: '0909998888',
           email: 'DUP@example.com',
           password: 'Password123',
+          verificationCode: preIssuedCode,
         }),
       ).rejects.toThrowError(
         new ConflictException(
@@ -606,7 +736,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
 
       // Duplicate phone only
       await expect(
-        service.register({
+        registerWithRealOtp({
           fullName: 'Học Viên 3',
           dateOfBirth: '2000-01-01',
           phone: '0903334444',
@@ -616,6 +746,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       ).rejects.toThrowError(new ConflictException('Số điện thoại này đã được đăng ký'));
 
       // Duplicate both email and phone
+      const preIssuedCodeBoth = await seedOtpCode('dup@example.com');
       await expect(
         service.register({
           fullName: 'Học Viên 4',
@@ -623,6 +754,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           phone: '0903334444',
           email: 'dup@example.com',
           password: 'Password123',
+          verificationCode: preIssuedCodeBoth,
         }),
       ).rejects.toThrowError(
         new ConflictException('Email và số điện thoại này đã được sử dụng'),
@@ -680,7 +812,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('returns uniform 401 on wrong password for INACTIVE account and 403 only on right password', async () => {
-      const reg = await service.register({
+      const reg = await registerWithRealOtp({
         fullName: 'Học Viên Khóa',
         dateOfBirth: '2000-05-05',
         phone: '0905557777',
@@ -702,7 +834,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('honors rememberMe=true with 7-day JWT expiry and 3600s when omitted', async () => {
-      await service.register({
+      await registerWithRealOtp({
         fullName: 'Học Viên Ghi Nhớ',
         dateOfBirth: '2000-05-05',
         phone: '0905558888',
@@ -729,7 +861,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('commits failedLoginAttempts & lockedUntil BEFORE throwing on 6 concurrent wrong logins (P0-B1)', async () => {
-      const reg = await service.register({
+      const reg = await registerWithRealOtp({
         fullName: 'Học Viên Test Khóa',
         dateOfBirth: '2000-05-05',
         phone: '0905556666',
@@ -774,7 +906,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         service.forgotPassword({ email: 'ghost@example.com' }),
       ).rejects.toThrowError('Vui lòng đợi trước khi gửi lại yêu cầu');
 
-      await service.register({
+      await registerWithRealOtp({
         fullName: 'Học Viên Quên MK',
         dateOfBirth: '2001-02-02',
         phone: '0907778888',
@@ -805,7 +937,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('revokes orphaned token and preserves uniform anti-enumeration response when SMTP delivery fails', async () => {
-      await service.register({
+      await registerWithRealOtp({
         fullName: 'Học Viên Lỗi SMTP',
         dateOfBirth: '2001-02-02',
         phone: '0907779999',
@@ -901,7 +1033,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
 
   describe('FUNC-004: AuthSessionService getMe, logout & Registration Contact Validation', () => {
     it('returns AuthUserDto on getMe, throws NotFoundException on unknown id, and increments tokenVersion on logout', async () => {
-      const reg = await service.register({
+      const reg = await registerWithRealOtp({
         fullName: 'Học Viên Phiên',
         dateOfBirth: '2002-04-15',
         phone: '0904445555',
@@ -1003,7 +1135,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     });
 
     it('enforces exact 15m lockout expiry, 60s forgot-password cooldown, and 15m reset token TTL under fake clock (Bước 3.D)', async () => {
-      await service.register({
+      await registerWithRealOtp({
         fullName: 'Học Viên Đồng Hồ',
         dateOfBirth: '2000-01-01',
         phone: '0906667777',
@@ -1011,7 +1143,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         password: 'CorrectPassword123',
       });
 
-      vi.useFakeTimers();
+      vi.useFakeTimers({ toFake: ['Date'] });
       try {
         const baseNow = new Date('2026-11-07T23:59:59+07:00');
         vi.setSystemTime(baseNow);
@@ -1068,6 +1200,163 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  describe('Security & Maintenance Hardening (Zero OTP Backdoor, UTF-8 Byte Cap, Pre-Hash Token Check, IP Throttle & Purge)', () => {
+    it('rejects empty or "999999" verificationCode even when NODE_ENV === "test"', async () => {
+      await service.sendVerificationCode('strict.otp@example.com');
+
+      await expect(
+        service.register({
+          fullName: 'Strict OTP User',
+          dateOfBirth: '2000-01-01',
+          phone: '0901234567',
+          email: 'strict.otp@example.com',
+          password: 'Password123',
+          verificationCode: '',
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException('Vui lòng nhập mã xác thực đã gửi tới email'),
+      );
+
+      await expect(
+        service.register({
+          fullName: 'Strict OTP User',
+          dateOfBirth: '2000-01-01',
+          phone: '0901234567',
+          email: 'strict.otp@example.com',
+          password: 'Password123',
+          verificationCode: '999999',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Mã xác thực không chính xác'));
+    });
+
+    it('rejects accented Vietnamese passwords exceeding 72 UTF-8 bytes even when <= 72 characters', async () => {
+      // 'ệ' takes 3 UTF-8 bytes: 30 characters = 90 bytes (> 72 byte bcrypt truncation limit)
+      const accentedPassword = 'ệ'.repeat(30);
+
+      await expect(
+        service.register({
+          fullName: 'Byte Cap Student',
+          dateOfBirth: '2000-01-01',
+          phone: '0901234568',
+          email: 'bytecap@example.com',
+          password: accentedPassword,
+          verificationCode: '123456',
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException(
+          'Mật khẩu không được vượt quá 72 byte UTF-8 (ký tự có dấu tốn nhiều byte hơn)',
+        ),
+      );
+
+      await expect(
+        service.resetPassword({
+          token: 'dummy-token',
+          newPassword: accentedPassword,
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException(
+          'Mật khẩu không được vượt quá 72 byte UTF-8 (ký tự có dấu tốn nhiều byte hơn)',
+        ),
+      );
+    });
+
+    it('validates reset token BEFORE invoking bcrypt.hash (prevents public CPU DoS)', async () => {
+      const hashSpy = vi.spyOn(bcrypt, 'hash');
+
+      await expect(
+        service.resetPassword({
+          token: 'invalid-or-expired-reset-token',
+          newPassword: 'ValidPassword123',
+        }),
+      ).rejects.toThrowError(new BadRequestException('Link đã hết hạn, vui lòng gửi lại'));
+
+      expect(hashSpy).not.toHaveBeenCalled();
+      hashSpy.mockRestore();
+    });
+
+    it('enforces IP rate limiting on sendVerificationCode (15/15m) and resetPassword (10/15m)', async () => {
+      const otpIp = '203.0.113.10';
+      for (let i = 1; i <= 15; i++) {
+        await service.sendVerificationCode(`otp-spam-${i}@example.com`, otpIp);
+      }
+
+      await expect(
+        service.sendVerificationCode('otp-spam-16@example.com', otpIp),
+      ).rejects.toThrowError(
+        new HttpException(
+          'Quá nhiều yêu cầu gửi mã xác thực từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+          429,
+        ),
+      );
+
+      const resetIp = '203.0.113.11';
+      for (let i = 1; i <= 10; i++) {
+        await expect(
+          service.resetPassword(
+            { token: `nonexistent-token-${i}`, newPassword: 'ValidPassword123' },
+            resetIp,
+          ),
+        ).rejects.toThrowError(BadRequestException);
+      }
+
+      await expect(
+        service.resetPassword(
+          { token: 'nonexistent-token-11', newPassword: 'ValidPassword123' },
+          resetIp,
+        ),
+      ).rejects.toThrowError(
+        new HttpException(
+          'Quá nhiều yêu cầu đặt lại mật khẩu từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+          429,
+        ),
+      );
+    });
+
+    it('purges expired tokens, OTPs, and stale rate limits via AuthMaintenanceService', async () => {
+      await registerWithRealOtp({
+        fullName: 'Cleanup Target',
+        dateOfBirth: '2000-01-01',
+        phone: '0909876543',
+        email: 'cleanup@example.com',
+        password: 'ValidPassword123',
+      });
+      await service.forgotPassword({ email: 'cleanup@example.com' });
+      await expect(
+        service.login(
+          { email: 'cleanup@example.com', password: 'WrongPassword!' },
+          '203.0.113.77',
+        ),
+      ).rejects.toThrowError(UnauthorizedException);
+
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date(Date.now() + 72 * 60 * 60 * 1000));
+        const summary = await maintenanceService.purgeExpiredAuthData();
+        expect(summary.deletedResetTokens).toBeGreaterThanOrEqual(1);
+        expect(summary.deletedEmailVerifications).toBeGreaterThanOrEqual(1);
+        expect(summary.deletedEmailRateLimits).toBeGreaterThanOrEqual(1);
+        expect(summary.deletedAuthRateLimits).toBeGreaterThanOrEqual(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cleans up pending OTP & cooldown rows when SMTP delivery fails so immediate retry works', async () => {
+      shouldFailEmailSend = true;
+      await expect(
+        service.sendVerificationCode('smtp.otp.retry@example.com'),
+      ).rejects.toThrowError('SMTP connection refused');
+
+      expect(emailVerificationsStore.size).toBe(0);
+      expect(emailRateLimitStore.size).toBe(0);
+
+      shouldFailEmailSend = false;
+      const retryRes = await service.sendVerificationCode('smtp.otp.retry@example.com');
+      expect(retryRes.expiresInSeconds).toBe(600);
+      expect(sentVerificationEmails).toHaveLength(1);
     });
   });
 });

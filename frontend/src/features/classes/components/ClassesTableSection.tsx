@@ -6,22 +6,21 @@ import type { ClassItem, ClassStatus } from '@/features/classes/api/classes.api'
 import { hasClassStarted } from '@/features/classes/utils/enrollment-status';
 import { formatClassStatusLabel } from '@/features/classes/utils/schedule.util';
 import { PaginationBar } from '@/features/common/components/PaginationBar';
+import { StatusTag, type StatusTagTone } from '@/features/common/components/StatusTag';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
 
-const STATUS_BADGE_STYLES: Record<ClassStatus, string> = {
-  UPCOMING: 'border border-[var(--amber)]/30 bg-[var(--amber-soft)] text-[var(--amber)]',
-  ACTIVE: 'border border-[var(--jade)]/30 bg-[var(--jade-soft)] text-[var(--jade)]',
-  COMPLETED: 'border border-[var(--line-2)] bg-[var(--surface-2)] text-[var(--ink-2)]',
-  ARCHIVED: 'border border-[var(--line-2)] bg-[var(--grey-soft)] text-[var(--grey)]',
+const CLASS_STATUS_TONE: Record<ClassStatus, StatusTagTone> = {
+  UPCOMING: 'amber',
+  ACTIVE: 'jade',
+  COMPLETED: 'grey',
+  ARCHIVED: 'grey',
 };
 
 export function ClassStatusBadge({ status }: { status: ClassStatus }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_BADGE_STYLES[status] ?? STATUS_BADGE_STYLES.UPCOMING}`}
-    >
+    <StatusTag tone={CLASS_STATUS_TONE[status] ?? 'amber'}>
       {formatClassStatusLabel(status)}
-    </span>
+    </StatusTag>
   );
 }
 
@@ -67,13 +66,13 @@ export function ClassesTableSection({
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-[var(--line)] bg-[var(--surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
             <tr>
-              <th className="px-4 py-3">Mã lớp</th>
-              <th className="px-4 py-3">Khóa học HSK</th>
-              <th className="px-4 py-3">Lịch học &amp; Thời gian</th>
-              {showTeacherColumn ? <th className="px-4 py-3">Giáo viên phụ trách</th> : null}
-              <th className="px-4 py-3 text-center">Sĩ số</th>
-              <th className="px-4 py-3">Trạng thái</th>
-              <th className="px-4 py-3 text-right">Thao tác</th>
+              <th className="whitespace-nowrap px-4 py-3">Mã lớp</th>
+              <th className="whitespace-nowrap px-4 py-3">Khóa học HSK</th>
+              <th className="whitespace-nowrap px-4 py-3">Lịch học &amp; Thời gian</th>
+              {showTeacherColumn ? <th className="whitespace-nowrap px-4 py-3">Giáo viên phụ trách</th> : null}
+              <th className="whitespace-nowrap px-4 py-3 text-center">Sĩ số</th>
+              <th className="whitespace-nowrap px-4 py-3">Trạng thái</th>
+              <th className="whitespace-nowrap px-4 py-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className={`divide-y divide-[var(--line)] ${loading && !isInitialLoading ? 'opacity-60' : ''}`}>

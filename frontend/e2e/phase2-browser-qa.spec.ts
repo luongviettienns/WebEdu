@@ -186,7 +186,7 @@ test.describe('Phase 2 Browser QA — Auth, Users & RBAC (Desktop & Mobile)', ()
     await loginThroughUi(page, 'active.student@webedu.vn');
     await expect(page).toHaveURL(/\/student\/overview/);
     await expect(
-      page.getByRole('heading', { name: 'Tình Trạng Học Tập Cá Nhân' }),
+      page.getByRole('heading', { name: /Chào Gia Huy, hôm nay học gì\?/ }),
     ).toBeVisible();
     await assertZeroClientSideTokenLeakage(page);
     await assertNoHorizontalOverflow(page);
