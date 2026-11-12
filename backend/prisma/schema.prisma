@@ -53,6 +53,33 @@ enum EnrollmentStatus {
   COMPLETED
 }
 
+enum SessionType {
+  REGULAR
+  MANUAL
+  MAKEUP
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+enum SessionChangeAction {
+  GENERATE
+  UPDATE_RECURRING_RULE
+  ADD_MANUAL
+  RESCHEDULE
+  CANCEL
+  ADD_MAKEUP
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
 model User {
   id                  String      @id @default(uuid())
   email               String      @unique @db.VarChar(255)
@@ -77,6 +104,14 @@ model User {
   enrollments               Enrollment[]             @relation("StudentEnrollments")
   teacherAssignments        ClassTeacherAssignment[] @relation("TeacherAssignmentHistory")
   changedTeacherAssignments ClassTeacherAssignment[] @relation("TeacherAssignmentActor")
+  cancelledSessions         LessonSession[]          @relation("SessionCancelledBy")
+  markedAttendanceSessions  LessonSession[]          @relation("SessionAttendanceMarker")
+  sessionChangeLogs         SessionChangeLog[]       @relation("SessionChangeActor")
+  attendanceRecords         AttendanceRecord[]       @relation("StudentAttendanceRecords")
+  markedAttendances         AttendanceRecord[]       @relation("AttendanceMarkedBy")
+  updatedAttendances        AttendanceRecord[]       @relation("AttendanceUpdatedBy")
+  studentAttendanceAudits   AttendanceAuditLog[]     @relation("AttendanceAuditStudent")
+  actedAttendanceAudits     AttendanceAuditLog[]     @relation("AttendanceAuditActor")
 
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -229,6 +264,9 @@ model Class {
   enrollments       Enrollment[]
   currentStudents   StudentProfile[]         @relation("CurrentStudentClass")
   teacherHistory    ClassTeacherAssignment[]
+  sessions          LessonSession[]
+  sessionChangeLogs SessionChangeLog[]
+  attendanceRecords AttendanceRecord[]
 
   @@index([teacherId, status])
   @@index([courseId])
@@ -290,4 +328,117 @@ model SystemAuditLog {
   @@index([actorId])
   @@index([targetType, targetId, createdAt(sort: Desc)])
   @@map("system_audit_logs")
+}
+
+model LessonSession {
+  id                   String        @id @default(uuid())
+  classId              String        @map("class_id")
+  sessionNumber        Int?          @map("session_number")
+  type                 SessionType   @default(REGULAR)
+  sessionDate          DateTime      @map("session_date") @db.Date
+  startTime            String        @map("start_time") @db.VarChar(5)
+  endTime              String        @map("end_time") @db.VarChar(5)
+  status               SessionStatus @default(SCHEDULED)
+  isRescheduled        Boolean       @default(false) @map("is_rescheduled")
+  isMakeup             Boolean       @default(false) @map("is_makeup")
+  makeupForSessionId   String?       @unique @map("makeup_for_session_id")
+  topic                String?       @db.VarChar(255)
+  cancelReason         String?       @map("cancel_reason") @db.Text
+  cancelledById        String?       @map("cancelled_by_id")
+  cancelledAt          DateTime?     @map("cancelled_at") @db.Timestamptz(3)
+  attendanceMarkedById String?       @map("attendance_marked_by_id")
+  attendanceMarkedAt   DateTime?     @map("attendance_marked_at") @db.Timestamptz(3)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  class              Class                @relation(fields: [classId], references: [id], onDelete: Restrict)
+  makeupForSession   LessonSession?       @relation("MakeupSessionLink", fields: [makeupForSessionId], references: [id], onDelete: Restrict)
+  makeupReplacement  LessonSession?       @relation("MakeupSessionLink")
+  cancelledBy        User?                @relation("SessionCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  attendanceMarkedBy User?                @relation("SessionAttendanceMarker", fields: [attendanceMarkedById], references: [id], onDelete: SetNull)
+  changeLogs         SessionChangeLog[]
+  attendanceRecords  AttendanceRecord[]
+  attendanceAudits   AttendanceAuditLog[]
+
+  @@index([classId, sessionDate, startTime])
+  @@index([sessionDate, status])
+  @@map("lesson_sessions")
+}
+
+model SessionChangeLog {
+  id                String              @id @default(uuid())
+  classId           String              @map("class_id")
+  sessionId         String?             @map("session_id")
+  action            SessionChangeAction
+  actorId           String              @map("actor_id")
+  actorName         String              @map("actor_name") @db.VarChar(100)
+  previousDate      DateTime?           @map("previous_date") @db.Date
+  previousStartTime String?             @map("previous_start_time") @db.VarChar(5)
+  previousEndTime   String?             @map("previous_end_time") @db.VarChar(5)
+  newDate           DateTime?           @map("new_date") @db.Date
+  newStartTime      String?             @map("new_start_time") @db.VarChar(5)
+  newEndTime        String?             @map("new_end_time") @db.VarChar(5)
+  reason            String              @db.Text
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  class   Class          @relation(fields: [classId], references: [id], onDelete: Restrict)
+  session LessonSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  actor   User           @relation("SessionChangeActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([classId, createdAt(sort: Desc)])
+  @@index([sessionId])
+  @@index([actorId])
+  @@index([createdAt(sort: Desc)])
+  @@map("session_change_logs")
+}
+
+model AttendanceRecord {
+  id          String           @id @default(uuid())
+  sessionId   String           @map("session_id")
+  classId     String           @map("class_id")
+  studentId   String           @map("student_id")
+  status      AttendanceStatus
+  note        String?          @db.VarChar(255)
+  markedById  String           @map("marked_by_id")
+  markedAt    DateTime         @default(now()) @map("marked_at") @db.Timestamptz(3)
+  updatedById String?          @map("updated_by_id")
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  session   LessonSession        @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  class     Class                @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student   User                 @relation("StudentAttendanceRecords", fields: [studentId], references: [id], onDelete: Restrict)
+  markedBy  User                 @relation("AttendanceMarkedBy", fields: [markedById], references: [id], onDelete: Restrict)
+  updatedBy User?                @relation("AttendanceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  auditLogs AttendanceAuditLog[]
+
+  @@unique([sessionId, studentId])
+  @@index([classId, studentId, status])
+  @@index([studentId])
+  @@map("attendance_records")
+}
+
+model AttendanceAuditLog {
+  id                 String           @id @default(uuid())
+  attendanceRecordId String           @map("attendance_record_id")
+  sessionId          String           @map("session_id")
+  studentId          String           @map("student_id")
+  previousStatus     AttendanceStatus @map("previous_status")
+  newStatus          AttendanceStatus @map("new_status")
+  previousNote       String?          @map("previous_note") @db.VarChar(255)
+  newNote            String?          @map("new_note") @db.VarChar(255)
+  reason             String           @db.Text
+  actorId            String           @map("actor_id")
+  actorRole          Role             @map("actor_role")
+  isAdminOverride    Boolean          @default(false) @map("is_admin_override")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  attendanceRecord AttendanceRecord @relation(fields: [attendanceRecordId], references: [id], onDelete: Restrict)
+  session          LessonSession    @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  student          User             @relation("AttendanceAuditStudent", fields: [studentId], references: [id], onDelete: Restrict)
+  actor            User             @relation("AttendanceAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([sessionId, createdAt(sort: Desc)])
+  @@index([studentId, createdAt(sort: Desc)])
+  @@index([attendanceRecordId])
+  @@map("attendance_audit_logs")
 }

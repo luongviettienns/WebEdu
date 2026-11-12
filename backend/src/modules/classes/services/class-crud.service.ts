@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
+import { ClassStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
@@ -11,6 +11,8 @@ import type { ClassItemDto } from '../classes.types.js';
 import {
   assertClassIsEditable,
   assertOpenClassStatus,
+  assertValidActiveCourseInDb,
+  assertValidActiveTeacherInDb,
   assertValidTimeRange,
   calculateExpectedEndDate,
   findTeacherScheduleConflictWarning,
@@ -25,10 +27,14 @@ import {
   validateClassTotalSessions,
   type ClassItemEntity,
 } from '../mappers/class.mapper.js';
+import { SessionGeneratorService } from '../../schedules/services/session-generator.service.js';
 
 @Injectable()
 export class ClassCrudService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sessionGenerator: SessionGeneratorService,
+  ) {}
 
   async createClass(actor: AuthenticatedUser, dto: CreateClassDto): Promise<ClassItemDto> {
     const code = normalizeAndValidateClassCode(dto.code ?? '');
@@ -44,9 +50,9 @@ export class ClassCrudService {
     try {
       const { created, scheduleConflictWarning } = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${dto.teacherId} FOR UPDATE`;
-        await this.assertValidActiveTeacher(dto.teacherId, tx);
+        await assertValidActiveTeacherInDb(tx, dto.teacherId);
         await tx.$queryRaw`SELECT id FROM "courses" WHERE id = ${dto.courseId} FOR SHARE`;
-        const course = await this.assertValidActiveCourse(dto.courseId, tx);
+        const course = await assertValidActiveCourseInDb(tx, dto.courseId);
 
         const duplicate = await tx.class.findUnique({ where: { code } });
         if (duplicate) throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
@@ -86,6 +92,15 @@ export class ClassCrudService {
             changedById: actor.id,
             reason: 'Phân công giáo viên khi khởi tạo lớp học',
           },
+        });
+        await this.sessionGenerator.generateInitialSessionsForClass(tx, actor, {
+          id: cls.id,
+          code: cls.code,
+          startDate,
+          scheduleDays,
+          scheduleStartTime,
+          scheduleEndTime,
+          totalSessions,
         });
         await syncTeacherActiveClassesCount(tx, dto.teacherId);
         await writeAuditLog(tx, actor, {
@@ -141,7 +156,7 @@ export class ClassCrudService {
               'Không thể đổi khóa học HSK khi lớp đã có học viên hoặc đang diễn ra',
             );
           }
-          nextCourseId = (await this.assertValidActiveCourse(dto.courseId, tx)).id;
+          nextCourseId = (await assertValidActiveCourseInDb(tx, dto.courseId)).id;
         }
 
         const nextTeacherId = dto.teacherId ?? existing.teacherId;
@@ -203,11 +218,36 @@ export class ClassCrudService {
             scheduleDays: nextScheduleDays,
             scheduleStartTime: nextStartTime,
             scheduleEndTime: nextEndTime,
-            expectedEndDate: nextExpectedEndDate,
+            expectedEndDate: existing.expectedEndDate ?? nextExpectedEndDate,
             notes: nextNotes,
           },
           include: CLASS_ITEM_INCLUDE,
         })) as unknown as ClassItemEntity;
+
+        const reconciled = await this.sessionGenerator.reconcileRecurringSessionsAfterRuleUpdate(
+          tx,
+          actor,
+          {
+            classId: cls.id,
+            classCode: cls.code,
+            previousRule: {
+              startDate: existing.startDate,
+              scheduleDays: existing.scheduleDays,
+              scheduleStartTime: existing.scheduleStartTime,
+              scheduleEndTime: existing.scheduleEndTime,
+              totalSessions: existing.totalSessions,
+              expectedEndDate: existing.expectedEndDate,
+            },
+            nextRule: {
+              startDate: nextStartDate,
+              scheduleDays: nextScheduleDays,
+              scheduleStartTime: nextStartTime,
+              scheduleEndTime: nextEndTime,
+              totalSessions: nextTotalSessions,
+            },
+          },
+        );
+        cls.expectedEndDate = reconciled.expectedEndDate;
 
         if (nextCode !== existing.code) {
           await tx.studentProfile.updateMany({
@@ -244,7 +284,7 @@ export class ClassCrudService {
             teacherId: cls.teacherId,
             status: cls.status,
             totalSessions: cls.totalSessions,
-            expectedEndDate: formatIsoDateUtc(nextExpectedEndDate),
+            expectedEndDate: formatIsoDateUtc(reconciled.expectedEndDate ?? nextExpectedEndDate),
           },
         });
         return { updated: cls, warning: scheduleWarning };
@@ -278,7 +318,7 @@ export class ClassCrudService {
     for (const tid of sortedTeachers) {
       await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${tid} FOR UPDATE`;
     }
-    await this.assertValidActiveTeacher(nextTeacherId, tx);
+    await assertValidActiveTeacherInDb(tx, nextTeacherId);
 
     const openAssignment = await tx.classTeacherAssignment.findFirst({
       where: { classId, assignedTo: null },
@@ -289,30 +329,5 @@ export class ClassCrudService {
       );
     }
     return assignedFromDate;
-  }
-
-  private async assertValidActiveCourse(
-    courseId: string,
-    db: Prisma.TransactionClient | PrismaService = this.prisma,
-  ): Promise<{ id: string; defaultSessions: number | null }> {
-    const course = await db.course.findUnique({ where: { id: courseId } });
-    if (!course) throw new NotFoundException('Không tìm thấy khóa học');
-    if (!course.isActive) {
-      throw new BadRequestException('Khóa học đã ngừng sử dụng, không thể mở lớp mới');
-    }
-    return course;
-  }
-
-  private async assertValidActiveTeacher(
-    teacherId: string,
-    db: Prisma.TransactionClient | PrismaService = this.prisma,
-  ): Promise<void> {
-    const teacher = await db.user.findUnique({
-      where: { id: teacherId },
-      select: { id: true, roles: true, status: true },
-    });
-    if (!teacher || !teacher.roles.includes(Role.TEACHER) || teacher.status !== UserStatus.ACTIVE) {
-      throw new BadRequestException('Giáo viên phụ trách không hợp lệ hoặc đã ngừng hoạt động');
-    }
   }
 }

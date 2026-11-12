@@ -75,6 +75,20 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'POST', path: '/api/v1/classes/:id/enrollments/:studentId/drop', isPublic: false },
   { method: 'POST', path: '/api/v1/classes/:id/complete', isPublic: false },
   { method: 'POST', path: '/api/v1/classes/:id/reopen', isPublic: false },
+  // SchedulesController (8 — Phase 4)
+  { method: 'GET', path: '/api/v1/schedules/calendar', isPublic: false },
+  { method: 'GET', path: '/api/v1/schedules/change-logs', isPublic: false },
+  { method: 'GET', path: '/api/v1/classes/:classId/sessions', isPublic: false },
+  { method: 'POST', path: '/api/v1/classes/:classId/sessions', isPublic: false },
+  { method: 'GET', path: '/api/v1/sessions/:sessionId', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/sessions/:sessionId/reschedule', isPublic: false },
+  { method: 'POST', path: '/api/v1/sessions/:sessionId/cancel', isPublic: false },
+  { method: 'POST', path: '/api/v1/sessions/:sessionId/makeup', isPublic: false },
+  // AttendanceController (4 — Phase 4)
+  { method: 'GET', path: '/api/v1/sessions/:sessionId/attendance', isPublic: false },
+  { method: 'PUT', path: '/api/v1/sessions/:sessionId/attendance', isPublic: false },
+  { method: 'GET', path: '/api/v1/classes/:classId/attendance/matrix', isPublic: false },
+  { method: 'GET', path: '/api/v1/attendance/me', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -168,7 +182,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(42);
+    expect(actualRoutes).toHaveLength(54);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -425,6 +439,18 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'post', url: `/api/v1/classes/${activeClass.id}/enrollments/${studentA.id}/drop` },
       { method: 'post', url: `/api/v1/classes/${activeClass.id}/complete` },
       { method: 'post', url: `/api/v1/classes/${completedClass.id}/reopen` },
+      { method: 'get', url: '/api/v1/schedules/calendar?from=2026-11-01&to=2026-11-30' },
+      { method: 'get', url: '/api/v1/schedules/change-logs' },
+      { method: 'get', url: `/api/v1/classes/${activeClass.id}/sessions` },
+      { method: 'post', url: `/api/v1/classes/${activeClass.id}/sessions` },
+      { method: 'get', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000' },
+      { method: 'patch', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000/reschedule' },
+      { method: 'post', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000/cancel' },
+      { method: 'post', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000/makeup' },
+      { method: 'get', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000/attendance' },
+      { method: 'put', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000/attendance' },
+      { method: 'get', url: `/api/v1/classes/${activeClass.id}/attendance/matrix` },
+      { method: 'get', url: '/api/v1/attendance/me' },
     ];
 
     for (const ep of protectedEndpoints) {

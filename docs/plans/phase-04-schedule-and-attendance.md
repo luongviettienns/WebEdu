@@ -1,9 +1,8 @@
 # Phase 4 Implementation Sub-Plan: Module 04 & 05 — Lịch Học, Buổi Học & Điểm Danh (`FUNC-026..032`, `FUNC-034..037`)
 
-> [!WARNING]
-> **TRẠNG THÁI THỰC THI (BLOCKER GATE — `ATT-01a`):**
-> Theo chỉ đạo của Quản lý Dự án ngày `11/11/2026`, mục **`ATT-01a` (`FUNC-036`: Công thức cảnh báo nghỉ chạm ngưỡng 30%)** đang được giữ lại để **chốt với khách hàng**.
-> **TUYỆT ĐỐI CHƯA THỰC THI CODE PHASE 4** cho đến khi chốt xong `ATT-01a` với khách hàng và nhận lệnh thực thi từ người dùng.
+> [!NOTE]
+> **TRẠNG THÁI THỰC THI (UNBLOCKED — READY FOR EXECUTION):**
+> Cổng chờ `ATT-01a` (`FUNC-036`) đã được chốt hoàn tất theo **`DEC-033` (12/11/2026)**: `(absentCount + excusedCount) * 100 >= totalSessions * 30`, UI hiển thị tách biệt `Vắng` và `Có phép`, tỷ lệ chuyên cần (`%`) tính theo `Math.round((presentCount / markedSessionsSinceEnrolled) * 100)`. Toàn bộ Phase 4 sẵn sàng thực thi theo 5 Vertical Slices TDD.
 
 > **Execution Mode:** Thực thi theo quy trình **Superpowers Subagent-Driven Development (SDD)** & **Vertical Slice TDD (`RED -> GREEN -> REFACTOR`)** (`akit-plan`, `akit-implement`) trên nhánh Git Flow `feature/phase-04-schedule-and-attendance` tách từ `develop`.
 > **Prior-Art & Architecture Grounding (`akit-prior-art`):** Đã đối chiếu 3 giải pháp mã nguồn mở (`frappe/education`, `calcom/cal.com`, `jkbrzt/rrule`) và quyết định áp dụng chiến lược **Adapt**:
@@ -48,7 +47,7 @@
 | **`SCHED-01a`** | Ai có quyền sửa lịch định kỳ, đổi lịch buổi, hủy buổi, tạo buổi bù (`FUNC-026, 029, 030, 031`)? | **ĐÃ CHỐT (`DEC-031` — 11/11/2026):**<br>- Chỉ **`ADMIN`** có quyền khai báo/sửa lịch định kỳ (`FUNC-026`), thêm buổi thủ công (`FUNC-027`), đổi lịch buổi (`FUNC-029`), hủy buổi (`FUNC-030`) và tạo buổi học bù (`FUNC-031`).<br>- Giáo viên và Học viên chỉ xem lịch (`FUNC-028`); Giáo viên (lớp phụ trách) và Admin (`DEC-026`) thực hiện điểm danh (`FUNC-034`). |
 | **`SCHED-01b`** | Khi hủy buổi mà chưa tạo buổi bù ngay (`FUNC-027, 030, DEC-009`), Tổng số buổi của lớp (`totalSessions`) xử lý thế nào? | **ĐÃ CHỐT (`DEC-031` — 11/11/2026):**<br>- Giữ nguyên `Class.totalSessions`.<br>- Buổi bị hủy chuyển sang `status = CANCELLED`, `sessionNumber = null` (không tính vào số thứ tự buổi và không tính vào số buổi đã học).<br>- Các buổi hoạt động (`status != CANCELLED`) được đánh lại số thứ tự liên tục `1..N` theo thứ tự thời gian (`sessionDate ASC, startTime ASC`). Hệ thống không tự động đẻ thêm buổi ở cuối khóa (`DEC-009`) mà chờ Admin tạo buổi học bù (`FUNC-031`, tối đa 1 buổi bù cho 1 buổi hủy) hoặc thêm buổi thủ công (`FUNC-027`). |
 | **`ATT-01b`** | Mốc thời gian tính cửa sổ 2 ngày Giáo viên được sửa điểm danh bị nhầm (`FUNC-037`, `DEC-010`)? | **ĐÃ CHỐT (`DEC-032` — 11/11/2026):**<br>- Giáo viên phụ trách lớp được sửa điểm danh từ ngày diễn ra buổi học (`00:00:00.000` GMT+7) cho đến **hết `23:59:59.999` (múi giờ `Asia/Ho_Chi_Minh`, GMT+7) của ngày thứ 2 sau ngày học** (VD: buổi học ngày `10/11` sửa được đến hết `23:59:59` ngày `12/11`).<br>- Khi sửa điểm danh đã lưu (thay đổi trạng thái của học viên), bắt buộc nhập `reason` và ghi vào `AttendanceAuditLog`. Sau hạn 2 ngày, chỉ `ADMIN` mới sửa được (Admin sửa bất kỳ lúc nào kèm `reason`). |
-| **`ATT-01a`** ⚠️ | Công thức tính ngưỡng cảnh báo nghỉ 30% (`FUNC-036`, `DEC-010`):<br>1. Tử số tính chỉ `Vắng không phép` (`ABSENT`) hay cộng cả `Vắng có phép` (`EXCUSED`)?<br>2. Mẫu số là `Tổng số buổi của lớp (totalSessions)` hay `Số buổi đã điểm danh thực tế` của học viên? | **⏳ CHỜ CHỐT VỚI KHÁCH HÀNG (`TBD — BLOCKING PHASE 4 EXECUTION`):**<br>- Ghi chú rõ trong kế hoạch theo yêu cầu của Quản lý Dự án.<br>- **Chưa thực thi code Phase 4 cho đến khi chốt được công thức `ATT-01a` với khách hàng.** |
+| **`ATT-01a`** | Công thức tính ngưỡng cảnh báo nghỉ 30% (`FUNC-036`, `DEC-010`):<br>1. Tử số tính chỉ `Vắng không phép` (`ABSENT`) hay cộng cả `Vắng có phép` (`EXCUSED`)?<br>2. Mẫu số là `Tổng số buổi của lớp (totalSessions)` hay `Số buổi đã điểm danh thực tế` của học viên? | **ĐÃ CHỐT (`DEC-033` — 12/11/2026):**<br>- Tử số cộng cả `Vắng không phép` (`ABSENT`) + `Vắng có phép` (`EXCUSED`); trên UI vẫn tách rõ 2 cột/bộ đếm `Vắng` và `Có phép`.<br>- Mẫu số là `Class.totalSessions`, cảnh báo đỏ khi `(absentCount + excusedCount) * 100 >= totalSessions * 30` (VD: 24 buổi $\rightarrow$ từ 8 buổi nghỉ trở lên).<br>- Tỷ lệ chuyên cần (`%`) tính theo `Math.round((presentCount / markedSessionsSinceEnrolled) * 100)`. |
 
 ---
 
@@ -268,7 +267,7 @@ Tuân thủ 100% bố cục và CSS/layout của `prototype/TD Hán Ngữ (Copy)
 | `Enrollment.enrolledDate`, `leftDate`, `status` | Phase 3 (`ClassEnrollmentService`) | Phase 4 (`AttendancePolicy.resolveSessionRoster`) | Danh sách điểm danh buổi học ngày $D$ lọc học viên có `enrolledDate <= D && (leftDate == null \|\| leftDate >= D)` | **Clean** |
 | `isWithinTeacherAttendanceWindow` (`timezone.util.ts`) | Phase 1 (`timezone.util.ts`) | Phase 4 (`AttendancePolicy`) | Đã có sẵn hàm tính hạn `23:59:59.999` GMT+7 của ngày $T+2$ kèm unit test pass 100% | **Clean** |
 | `LessonSession.status = COMPLETED` | Phase 4 (`AttendanceCrudService`) | Phase 8 (`CourseProgressService` — `FUNC-071`) | Tiến độ lớp (`done/total`) chỉ đếm buổi có `status === COMPLETED` (đã điểm danh — `DEC-009`) | **Clean** |
-| Công thức cảnh báo nghỉ 30% (`FUNC-036`) | Quyết định khách hàng (`ATT-01a`) | Phase 4 (`AttendancePolicy`, `CLS_TABS.stu`, `studentCal`) | **Đang chờ khách hàng chốt (`ATT-01a`)** — tạm dừng thực thi Phase 4 cho đến khi chốt xong | **⏳ Pending Client (`ATT-01a`)** |
+| Công thức cảnh báo nghỉ 30% (`FUNC-036`) | Quyết định khách hàng (`ATT-01a`, `DEC-033`) | Phase 4 (`AttendancePolicy`, `CLS_TABS.stu`, `studentCal`) | `(absentCount + excusedCount) * 100 >= totalSessions * 30`, UI tách `Vắng` và `Có phép`, chuyên cần `%` theo `presentCount / markedSessions` | **Clean (`DEC-033`)** |
 
 ---
 

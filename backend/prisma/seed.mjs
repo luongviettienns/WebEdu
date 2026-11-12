@@ -7,6 +7,7 @@ import {
   EnrollmentStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { seedInitialClassSessions } from './seed-sessions.util.mjs';
 
 const prisma = new PrismaClient();
 
@@ -157,6 +158,9 @@ async function main() {
       startDate: new Date('2026-10-01T00:00:00.000Z'),
     },
   });
+
+  await seedInitialClassSessions(prisma, classHsk1, adminUser);
+  await seedInitialClassSessions(prisma, classHsk2, adminUser);
 
   await prisma.classTeacherAssignment.createMany({
     data: [

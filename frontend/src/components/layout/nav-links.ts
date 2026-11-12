@@ -39,8 +39,10 @@ export function getGroupedNavLinks(
                   },
                   { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
                   { href: '/admin/classes', label: 'Quản lý lớp học', han: '班级' },
+                  { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
                 ]
               : []),
+            { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
             { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
             ...(hasTeacherRole
               ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]
@@ -77,6 +79,8 @@ export function getGroupedNavLinks(
             },
             { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
             { href: '/admin/classes', label: 'Quản lý lớp học', han: '班级' },
+            { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
+            { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
             { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
             ...(hasTeacherRole
               ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]
@@ -103,7 +107,10 @@ export function getGroupedNavLinks(
       return [
         {
           title: 'GIẢNG DẠY',
-          items: [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }],
+          items: [
+            { href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' },
+            { href: '/teacher/schedules', label: 'Lịch dạy', han: '课表' },
+          ],
         },
         ...(hasStudentRole
           ? [
@@ -111,6 +118,7 @@ export function getGroupedNavLinks(
                 title: 'HỌC TẬP',
                 items: [
                   { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
+                  { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
                 ],
               },
             ]
@@ -126,7 +134,10 @@ export function getGroupedNavLinks(
       return [
         {
           title: 'HỌC TẬP',
-          items: [{ href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' }],
+          items: [
+            { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
+            { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
+          ],
         },
         {
           title: 'TÀI KHOẢN',

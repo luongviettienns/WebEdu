@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
+import { ClassAttendanceMatrixTab } from '@/features/attendance/components/ClassAttendanceMatrixTab';
 import {
   reopenClass,
   type ClassDetail,
   type ClassEnrollmentItem,
 } from '@/features/classes/api/classes.api';
+import { ClassSessionsTab } from '@/features/schedules/components/ClassSessionsTab';
 import { AddStudentsToClassModal } from '@/features/classes/components/AddStudentsToClassModal';
 import { ClassFormModal } from '@/features/classes/components/ClassFormModal';
 import { ClassHeader } from '@/features/classes/components/ClassHeader';
@@ -57,7 +59,11 @@ export function ClassDetailView({
   const [editWarning, setEditWarning] = useState('');
   const [transferTarget, setTransferTarget] = useState<ClassEnrollmentItem | null>(null);
   const [dropTarget, setDropTarget] = useState<ClassEnrollmentItem | null>(null);
+  const [activeTab, setActiveTab] = useState<'info' | 'sessions' | 'attendance'>('info');
   const activeScheduleWarning = detail.scheduleConflictWarning || editWarning;
+  const canMarkAttendance =
+    permissions.assignedRoles.includes('ADMIN') ||
+    (!permissions.isReadOnly && permissions.effectiveRole === 'TEACHER');
 
   return (
     <div className="space-y-6">
@@ -82,18 +88,67 @@ export function ClassDetailView({
         </div>
       ) : null}
 
-      <ClassSummary detail={detail} />
+      <div
+        role="tablist"
+        aria-label="Phân mục lớp học"
+        className="flex flex-wrap gap-1 border-b border-[var(--line)]"
+      >
+        {(
+          [
+            ['info', 'Thông tin & Học viên'],
+            ['sessions', 'Lịch học'],
+            ['attendance', 'Điểm danh'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === key}
+            onClick={() => setActiveTab(key)}
+            className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
+              activeTab === key
+                ? 'border-[var(--red)] text-[var(--red)]'
+                : 'border-transparent text-[var(--ink-2)] hover:text-[var(--ink)]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      <ClassStudentsTable
-        detail={detail}
-        includeInactive={includeInactiveEnrollments}
-        onToggleIncludeInactive={onToggleIncludeInactive}
-        canManageEnrollments={permissions.canManageEnrollments}
-        onTransfer={setTransferTarget}
-        onDrop={setDropTarget}
-      />
+      {activeTab === 'info' ? (
+        <>
+          <ClassSummary detail={detail} />
 
-      <ClassTeacherHistory detail={detail} />
+          <ClassStudentsTable
+            detail={detail}
+            includeInactive={includeInactiveEnrollments}
+            onToggleIncludeInactive={onToggleIncludeInactive}
+            canManageEnrollments={permissions.canManageEnrollments}
+            onTransfer={setTransferTarget}
+            onDrop={setDropTarget}
+          />
+
+          <ClassTeacherHistory detail={detail} />
+        </>
+      ) : null}
+
+      {activeTab === 'sessions' ? (
+        <ClassSessionsTab
+          detail={detail}
+          canMutateSchedule={permissions.canEditClass}
+          canViewChangeLogs={
+            permissions.assignedRoles.includes('ADMIN') ||
+            permissions.assignedRoles.includes('SUPERADMIN')
+          }
+          onClassChanged={(msg) => onRefresh(msg)}
+        />
+      ) : null}
+
+      {activeTab === 'attendance' ? (
+        <ClassAttendanceMatrixTab classId={detail.id} canMarkAttendance={canMarkAttendance} />
+      ) : null}
 
       {permissions.canEditClass ? (
         <ClassFormModal

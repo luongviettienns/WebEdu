@@ -14,6 +14,8 @@ import { StudentsModule } from './modules/students/students.module.js';
 import { SystemSettingsModule } from './modules/system-settings/system-settings.module.js';
 import { CoursesModule } from './modules/courses/courses.module.js';
 import { ClassesModule } from './modules/classes/classes.module.js';
+import { SchedulesModule } from './modules/schedules/schedules.module.js';
+import { AttendanceModule } from './modules/attendance/attendance.module.js';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { ClassesModule } from './modules/classes/classes.module.js';
     SystemSettingsModule,
     CoursesModule,
     ClassesModule,
+    SchedulesModule,
+    AttendanceModule,
   ],
   providers: [
     {
