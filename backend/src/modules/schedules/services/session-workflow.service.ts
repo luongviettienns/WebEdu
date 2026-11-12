@@ -203,6 +203,10 @@ export class SessionWorkflowService {
           cancelReason: reason,
           cancelledById: actor.id,
           cancelledAt: new Date(),
+          // A cancelled makeup no longer replaces its original, so the original becomes eligible for a new makeup.
+          ...(target.type === SessionType.MAKEUP && target.makeupForSessionId
+            ? { makeupForSessionId: null }
+            : {}),
         },
       });
       await tx.sessionChangeLog.create({

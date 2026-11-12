@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import {
+  AttendanceStatus,
   ClassStatus,
   EnrollmentStatus,
   Role,
@@ -377,6 +378,92 @@ describe('SessionWorkflowService & ScheduleAccessPolicy (TDD Slice 4.2)', () => 
         endTime: '19:30',
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('cancelling a MAKEUP session unlinks it so the original can get a new makeup', async () => {
+    sessionsStore.set('sess-orig-cancelled', {
+      id: 'sess-orig-cancelled',
+      classId: 'class-1',
+      sessionNumber: null,
+      type: SessionType.REGULAR,
+      sessionDate: new Date('2026-11-20T00:00:00.000Z'),
+      startTime: '18:00',
+      endTime: '19:30',
+      status: SessionStatus.CANCELLED,
+      isRescheduled: false,
+      isMakeup: false,
+      makeupForSessionId: null,
+      topic: null,
+      cancelReason: 'Giáo viên ốm',
+      cancelledAt: new Date(),
+      attendanceMarkedAt: null,
+      createdAt: new Date('2026-11-10T08:00:00.000Z'),
+      updatedAt: new Date('2026-11-10T08:00:00.000Z'),
+      class: {
+        id: 'class-1',
+        code: 'HSK1-K26-01',
+        status: ClassStatus.ACTIVE,
+        teacherId: 'teacher-1',
+        course: { name: 'Tiếng Trung HSK 1' },
+        teacher: { id: 'teacher-1', fullName: 'Trương Mỹ Lan' },
+      },
+      makeupForSession: null,
+      makeupReplacement: { id: 'sess-makeup-orphan' },
+      attendanceRecords: [],
+      changeLogs: [],
+    });
+    sessionsStore.set('sess-makeup-orphan', {
+      id: 'sess-makeup-orphan',
+      classId: 'class-1',
+      sessionNumber: 25,
+      type: SessionType.MAKEUP,
+      sessionDate: new Date('2026-12-18T00:00:00.000Z'),
+      startTime: '18:00',
+      endTime: '19:30',
+      status: SessionStatus.SCHEDULED,
+      isRescheduled: false,
+      isMakeup: true,
+      makeupForSessionId: 'sess-orig-cancelled',
+      topic: null,
+      cancelReason: null,
+      cancelledAt: null,
+      attendanceMarkedAt: null,
+      createdAt: new Date('2026-11-10T08:00:00.000Z'),
+      updatedAt: new Date('2026-11-10T08:00:00.000Z'),
+      class: {
+        id: 'class-1',
+        code: 'HSK1-K26-01',
+        status: ClassStatus.ACTIVE,
+        teacherId: 'teacher-1',
+        course: { name: 'Tiếng Trung HSK 1' },
+        teacher: { id: 'teacher-1', fullName: 'Trương Mỹ Lan' },
+      },
+      makeupForSession: null,
+      makeupReplacement: null,
+      attendanceRecords: [],
+      changeLogs: [],
+    });
+
+    const cancelled = await workflow.cancelSession(adminActor, 'sess-makeup-orphan', {
+      reason: 'Hủy buổi bù nhầm',
+    });
+
+    expect(cancelled.session.status).toBe(SessionStatus.CANCELLED);
+    expect(sessionsStore.get('sess-makeup-orphan')!.makeupForSessionId).toBeNull();
+  });
+
+  it('hides Mark attendance on SCHEDULED session that already has records (matches sheet mapper)', () => {
+    const base = sessionsStore.get('sess-2') as unknown as LessonSessionEntity;
+    const withRecords = {
+      ...base,
+      attendanceRecords: [{ studentId: 'student-1', status: AttendanceStatus.PRESENT, note: null }],
+    } as unknown as LessonSessionEntity;
+    const view = toLessonSessionItemDto(withRecords, adminActor, 'ADMIN', new Date('2026-12-03T12:00:00.000Z'));
+    expect(view.canMarkAttendance).toBe(false);
+
+    const withoutRecords = { ...base, attendanceRecords: [] } as unknown as LessonSessionEntity;
+    const fresh = toLessonSessionItemDto(withoutRecords, adminActor, 'ADMIN', new Date('2026-12-03T12:00:00.000Z'));
+    expect(fresh.canMarkAttendance).toBe(true);
   });
 
   it('prevents Student from viewing ScheduleChangeLogs (FUNC-032)', () => {
