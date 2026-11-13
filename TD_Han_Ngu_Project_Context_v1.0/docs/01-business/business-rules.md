@@ -14,7 +14,7 @@
 | BR-10 | 1 HV học tối đa 1 lớp đang hoạt động cùng lúc; giữ lịch sử các lớp cũ. | FUNC-020, 022 | CONFIRMED |
 | BR-11 | Buổi học không tự 'Đã học' khi chưa điểm danh; lịch hủy/bù bảo toàn lịch sử. | FUNC-027, 030, 031 | CONFIRMED |
 | BR-12 | Điểm danh có 3 trạng thái: Có mặt/Vắng/Có phép. | FUNC-034 | CONFIRMED |
-| BR-13 | GV sửa điểm danh giới hạn 2 ngày; Admin không giới hạn. | FUNC-037 | CONFIRMED, mốc thời gian TBD |
+| BR-13 | GV sửa điểm danh giới hạn 2 ngày; Admin không giới hạn. | FUNC-037 | CONFIRMED (mốc thời gian đã chốt tại `DEC-032`: hết `23:59:59.999` GMT+7 ngày `T+2`) |
 | BR-14 | Nộp bài chính thức 1 lần; GV có cơ chế cho nộp lại đặc biệt. | FUNC-054 | CONFIRMED, reset/reopen TBD |
 | BR-15 | Chấm tự động câu có đáp án xác định; GV chấm tự luận. | FUNC-056, 058 | CONFIRMED |
 | BR-16 | GV xác nhận điểm rồi mới công bố; chỉ sau công bố học viên được xem kết quả. | FUNC-059, 060 | CONFIRMED |

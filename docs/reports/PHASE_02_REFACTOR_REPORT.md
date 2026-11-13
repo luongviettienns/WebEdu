@@ -1,5 +1,8 @@
 # BÁO CÁO REFACTOR KIẾN TRÚC SAU PHASE 2 (POST-PHASE-2 CODEBASE REFACTOR REPORT)
 
+> [!NOTE]
+> **Snapshot Lịch Sử (07/11/2026 — `refactor/phase-02-codebase-cleanup`, base `578cc72`):** Lưu nguyên trạng báo cáo refactor Phase 2. Lưu ý đối soát `13/11/2026` (`#6`): hook `useIdleTimeout.ts` tách trong đợt này hiện vẫn chưa được mount vào Portal layout trên `develop` (xem `TD-07` tại [TECH_DEBT_AND_SECURITY_BACKLOG.md](../TECH_DEBT_AND_SECURITY_BACKLOG.md)).
+
 - **Dự án:** WebEdu — Hệ thống Quản lý Lớp học & Học tập Trung tâm TD Hán Ngữ
 - **Repository:** `https://github.com/luongviettienns/WebEdu`
 - **Nhánh thực hiện:** `refactor/phase-02-codebase-cleanup` (tách từ `develop` @ `578cc72`)
@@ -176,4 +179,4 @@
 1. **Sẵn sàng 100% cho `CoursesModule`, `ClassesModule` & `EnrollmentsModule`:**
    - `StudentEnrollmentService`, `student-enrollment-facts.policy.ts` và `teacher-assignment.policy.ts` đã được tách độc lập khỏi CRUD tài khoản, cho phép Phase 3 mở rộng nghiệp vụ Xếp lớp (`FUNC-020`), Chuyển lớp (`FUNC-022`), Rút lớp (`FUNC-077`) và Đóng lớp (`FUNC-079`) mà không làm phình to `StudentsModule` hay `TeachersModule`.
 2. **Chuẩn hóa Quy tắc Chống "God File" trong Context Dự án:**
-   - Đã cập nhật trực tiếp vào Hiến chương Kiến trúc [`TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md`](../../TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md) (Mục 4) và [`.agents/rules/akit.md`](../../.agents/rules/akit.md) (Mục 7) để cưỡng chế ngưỡng LOC (`<= 350 LOC` cho Backend service, `<= 250 LOC` cho Frontend route page) ngay từ khi viết code ở mọi Phase tiếp theo (`Phase 3..9`).
+   - Đã cập nhật trực tiếp vào Hiến chương Kiến trúc [`TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md`](../../TD_Han_Ngu_Project_Context_v1.0/docs/03-technical/architecture-decision-contract.md) (Mục 4) và `.agents/rules/akit.md` (Mục 7; `.agents/` đã gỡ khỏi repo sau này ở commit `0dde9ec`) để cưỡng chế ngưỡng LOC (`<= 350 LOC` cho Backend service, `<= 250 LOC` cho Frontend route page) ngay từ khi viết code ở mọi Phase tiếp theo (`Phase 3..9`).

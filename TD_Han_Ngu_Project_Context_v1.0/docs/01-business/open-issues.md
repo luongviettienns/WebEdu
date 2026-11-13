@@ -6,7 +6,7 @@
 
 | ID | Module | FUNC | Vấn đề | Khi nào giải quyết |
 |---|---|---|---|---|
-| AUTH-01 | Tài khoản & phân quyền | FUNC-001, FUNC-002, FUNC-003 | Đã chốt (`DEC-023`, xác nhận lại 12/11/2026): Khi HV $< 16$ tuổi đăng ký, nhập **1 ô email là email phụ huynh** (lưu làm `User.email` để đăng nhập và ghi bất biến vào `StudentProfile.guardianEmail` + `GuardianConsent.guardianEmail`); từ $\ge 16$ tuổi HV được phép đổi sang email cá nhân tại `/profile`. | RESOLVED (`DEC-023`) |
+| AUTH-01 | Tài khoản & phân quyền | FUNC-001, FUNC-002, FUNC-003 | Đã chốt (`DEC-023`, xác nhận lại 12/11/2026): Khi HV $< 16$ tuổi đăng ký, nhập **1 ô email là email phụ huynh** (lưu làm `User.email` để đăng nhập và ghi bất biến vào `StudentProfile.guardianEmail` + `GuardianConsent.guardianEmail`); từ $\ge 16$ tuổi HV được phép đổi sang email cá nhân tại `/profile`. *(Ghi chú đối soát `13/11/2026` [`TD-10`]: đăng ký trên `develop` đã khớp `DEC-023`, riêng `ProfileService` tại `/profile` hiện chưa khóa đổi email đối với HV $< 16$ tuổi và chưa yêu cầu OTP khi đổi email.)* | RESOLVED (`DEC-023`) |
 | AUTH-02 | Tài khoản & phân quyền | FUNC-001, FUNC-003 | Đã chốt (`DEC-023`): Cả `User.email` và `User.phone` đều bắt buộc và `UNIQUE` trên toàn hệ thống. Đăng nhập (`FUNC-003`) **chỉ dùng `email` làm tên đăng nhập**. | RESOLVED (`DEC-023`) |
 | AUTH-03 | Tài khoản & phân quyền | FUNC-002 | Cơ chế `CONFIRMED` (`DEC-001`, `BR-07`): Nhập `guardianEmail` + tự khai checkbox xác nhận đồng ý + lưu vết bất biến trên server trong bảng `GuardianConsent` (`guardianEmail`, `consentVersion = 'v1.0'`, `consentTextSnapshot`, `consentedAt` `TIMESTAMPTZ(3)`, `ipAddress`, `userAgent`). Cơ chế gửi link xác thực chủ động tới email phụ huynh chưa được khách hàng yêu cầu/chốt nên giữ `UNCONFIRMED / DEFERRED` (không tự ý triển khai ngoài phạm vi). | RESOLVED (`DEC-001`, `Phase 2`) / Active Guardian Email Link: `DEFERRED` |
 | AUTH-04 | Tài khoản & phân quyền | FUNC-006, FUNC-007, FUNC-008, FUNC-078 | Triển khai đầy đủ cả 4 chức năng Quản lý GV, Quản lý HV, Hàng đợi chờ xếp lớp và Hồ sơ cá nhân trong Phase 2. | RESOLVED (`Phase 2 Plan`) |
@@ -42,7 +42,7 @@
 - **Q21** đã chốt phụ huynh đăng ký thay, nhưng cách nhận dạng email đã bị cập nhật bởi quyết định mới; không dùng quy tắc SĐT cũ.
 - **Q47** đã Closed với nội dung “không được điểm tối đa”; **không đồng nghĩa** chọn thiếu đáp án = 0 điểm.
 - **Q44** đã mô tả cách cộng chuyên cần; cách tính tỉ lệ, tình trạng “Có phép” và thế nào là hoàn thành BTVN chưa rõ.
-- **Q46** nói dùng `.doc` hoặc PDF; quy trình kỹ thuật nhận `.docx`/PDF và xử lý `.doc` cũ chưa thống nhất.
+- **Q46** nói dùng `.doc` hoặc PDF; quy trình kỹ thuật nhận `.docx`/PDF và xử lý `.doc` cũ chưa thống nhất. *(Ghi chú đối soát `13/11/2026`: Theo đặc tả tại [06-bai-tap-ngan-hang-de.md](../02-requirements/modules/06-bai-tap-ngan-hang-de.md) và cài đặt Phase 5 trên nhánh `feature/phase-05-question-bank-and-import`, hệ thống chỉ nhận `.docx` và `.pdf` có lớp văn bản; file `.doc` cũ bị từ chối với thông báo hướng dẫn lưu sang `.docx`/`.pdf`.)*
 - **Q18** đồng ý gửi file mẫu nhưng mẫu chưa được đính kèm trong nguồn đã kiểm tra.
 
 ## Hướng dẫn cập nhật

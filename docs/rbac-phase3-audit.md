@@ -1,5 +1,8 @@
 # Rà soát RBAC và tính nhất quán dữ liệu trước Phase 3
 
+> [!NOTE]
+> **Snapshot Lịch Sử (commit `9e2382c` trên `test/hardening-phase-02`, trước Phase 3):** Ghi nhận kết quả rà soát trước khi triển khai Phase 3. Toàn bộ findings `F1..F9` (bao gồm `F6`) đã được khắc phục trên `develop`; danh mục route và RBAC matrix hiện hành (`54` API trên `develop`, `71` API trên Phase 5) xem [test-inventory-api.md](./test-inventory-api.md) và [TEST_SCENARIOS_COMPREHENSIVE.md](./TEST_SCENARIOS_COMPREHENSIVE.md).
+
 **ĐÃ ĐẠT ĐIỀU KIỆN TRIỂN KHAI PHASE 3 (100% FINDINGS F1..F9 RESOLVED & VERIFIED).** Toàn bộ 9/9 phát hiện bảo mật, xung đột đồng thời và bất biến dữ liệu đã được khắc phục triệt để và kiểm chứng tự động bằng bộ test độc lập `rbac-phase3.audit-spec.ts` (9/9 pass) cùng toàn bộ test suite backend (117 unit + 11 integration + 23 E2E pass) và frontend (20 Playwright E2E pass).
 
 ## Phạm vi và chuẩn đối chiếu

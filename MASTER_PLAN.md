@@ -3,8 +3,8 @@
 > **Execution Mode:** Kiến trúc phân cấp **Master Plan $\rightarrow$ Phase Sub-Plans (`docs/plans/phase-XX-<slug>.md`)** thực thi theo phương pháp **Vertical Slice TDD (`RED -> GREEN -> REFACTOR`)** và **Subagent-Driven Development (SDD)** (`akit-plan`, `akit-implement`).
 
 - **Goal:** Xây dựng hoàn chỉnh hệ thống Quản lý lớp học và học tập trực tuyến cho Trung tâm TD Hán Ngữ (WebEdu Phase 1) bao phủ 10 nhóm module nghiệp vụ, đảm bảo phân quyền chặt chẽ cấp Server-side, bảo toàn 100% lịch sử học tập và tuân thủ 6 Cổng Kỹ Thuật AKit.
-- **Architecture:** Modular Monolith (`backend/` với NestJS + Prisma ORM + PostgreSQL 16+; `frontend/` với React/Next.js + Tailwind CSS theo định hướng xanh lá tối giản Á Đông).
-- **Tech Stack:** TypeScript (`"strict": true`, cấm `any`), NestJS, Prisma ORM (kỷ luật SQL Migration, cấm `prisma db push`), PostgreSQL 16+, Jest + Supertest (Unit/Integration/E2E), Playwright (Browser QA), `date-fns` / `date-fns-tz` (neo múi giờ `Asia/Ho_Chi_Minh`).
+- **Architecture:** Modular Monolith (`backend/` với NestJS 12 + Prisma ORM 6 + PostgreSQL 16+; `frontend/` với React 19 / Next.js 16 App Router + Tailwind CSS v4 theo định hướng xanh lá tối giản Á Đông).
+- **Tech Stack:** TypeScript (`"strict": true`, cấm `any`), NestJS, Prisma ORM (kỷ luật SQL Migration, cấm `prisma db push`), PostgreSQL 16+, Vitest + Supertest (Unit/Integration/E2E), Playwright (Browser QA), `date-fns` / `date-fns-tz` (neo múi giờ `Asia/Ho_Chi_Minh`). *(Lưu ý đồng bộ: `backend/` dùng Vitest thay cho Jest kế hoạch ban đầu.)*
 - **Binding Specs & Authority Order:**
   1. Quyết định mới nhất của người phụ trách dự án
   2. [`decision-log.md`](file:///c:/Users/ASUS/Desktop/WebEdu/TD_Han_Ngu_Project_Context_v1.0/docs/01-business/decision-log.md) & [`open-issues.md`](file:///c:/Users/ASUS/Desktop/WebEdu/TD_Han_Ngu_Project_Context_v1.0/docs/01-business/open-issues.md)
@@ -70,39 +70,34 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 ---
 
-### Phase 1: Khởi Tạo Nền Tảng Kỹ Thuật Fullstack (Foundation & Monorepo Bootstrap)
-- **File Sub-Plan dự kiến:** `docs/plans/phase-01-foundation-bootstrap.md`
+### Phase 1: Khởi Tạo Nền Tảng Kỹ Thuật Fullstack (Foundation & Monorepo Bootstrap) *(ĐÃ HOÀN THÀNH — MERGED `develop`)*
+- **File Sub-Plan:** [`docs/plans/phase-01-foundation-bootstrap.md`](./docs/plans/phase-01-foundation-bootstrap.md)
 - **Mục tiêu:** Dựng bộ khung thực thi chuẩn cho cả `backend/` (NestJS + Prisma + PostgreSQL) và `frontend/` (Next.js/React + Tailwind CSS + Design Tokens), thiết lập cổng kiểm thử tự động.
-- **Open Issues cần chốt trước khi chạy Phase 1:**
-  - `SYS-01`: Xác nhận lựa chọn Frontend stack (Next.js App Router / Vite React SPA), cấu hình Docker Compose cho PostgreSQL 16 local và thư mục lưu trữ file upload local/S3-compatible.
+- **Open Issues:** `SYS-01` **ĐÃ CHỐT** (Next.js 16 App Router + PostgreSQL 16 Docker Compose + `uploads/` local có magic-bytes gate).
 - **Interfaces (`Consumes` / `Produces`):**
   - **Consumes:** Quy chuẩn từ `architecture-decision-contract.md`.
-  - **Produces:**
+  - **Produces (thực tế):**
     - `backend/src/common/prisma/prisma.service.ts` (`PrismaService` quản lý kết nối DB)
-    - `backend/src/common/filters/all-exceptions.filter.ts` (Chuẩn hóa lỗi RFC 7807)
-    - `backend/src/common/pipes/validation.pipe.ts` (`whitelist: true, forbidNonWhitelisted: true, transform: true`)
+    - `backend/src/common/filters/all-exceptions.filter.ts` (Chuẩn hóa lỗi RFC 7807 `type`, `title`, `status`, `detail`, `instance`, `timestamp`, `invalidParams?`; *không sinh `requestId`*)
+    - `backend/src/common/http/configure-app.util.ts` (Global `ValidationPipe` với `whitelist: true, forbidNonWhitelisted: true, transform: true`, `helmet`, giới hạn JSON `100kb` + `4mb` cho `/system-settings/config`)
     - `backend/src/common/utils/timezone.util.ts` (Helper múi giờ `Asia/Ho_Chi_Minh`)
-    - Endpoint `GET /api/v1/health` và Swagger UI tại `/api/docs`
-    - `frontend/` khung layout cơ bản theo định hướng xanh lá tối giản, **loại bỏ hoàn toàn thanh "Prototype · Xem với vai trò" (Cleanup #1) và nhãn "FUNC-xxx" (Cleanup #6, #7, #8)**.
+    - Endpoint `GET /api/v1/health` và Swagger UI tại `/api/docs` (non-production)
+    - `frontend/` khung layout cơ bản theo định hướng xanh lá tối giản, loại bỏ thanh "Prototype · Xem với vai trò" (**Cleanup #1**) và nhãn "FUNC-xxx" (**Cleanup #6, #7, #8**).
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 1:**
-  - [ ] **Task 1.1:** Khởi tạo `backend/` NestJS (Strict TS, ESLint cấm `any`), cấu hình `@nestjs/config` với schema validation (`.env.example`).
-  - [ ] **Task 1.2:** Thiết lập `docker-compose.yml` (PostgreSQL 16) + khởi tạo Prisma ORM (`prisma/schema.prisma`) với bảng `SystemConfig` & `AuditLog` nền tảng.
-  - [ ] **Task 1.3:** Xây dựng Global `ValidationPipe`, `AllExceptionsFilter`, CORS, prefix `/api/v1`, Swagger `/api/docs` và `GET /api/v1/health` (kèm Unit + E2E test).
-  - [ ] **Task 1.4:** Xây dựng tiện ích thời gian `timezone.util.ts` (`Asia/Ho_Chi_Minh`) kèm bộ unit test kiểm chứng chuyển đổi UTC $\leftrightarrow$ GMT+7.
-  - [ ] **Task 1.5:** Khởi tạo `frontend/` (React/Next.js + Tailwind CSS), thiết lập Design System tokens (`DESIGN.md`: bảng màu xanh lá trúc, typography tiếng Việt + chữ Hán hiển thị rõ nét Pinyin/Hán tự) và API Client chuẩn.
+  - [x] **Task 1.1:** Khởi tạo `backend/` NestJS (Strict TS, OxLint cấm `any`), cấu hình `@nestjs/config` với schema validation (`.env.example`).
+  - [x] **Task 1.2:** Thiết lập `docker-compose.yml` (PostgreSQL 16) + khởi tạo Prisma ORM (`prisma/schema.prisma`) với bảng `SystemSetting` (`system_settings`) & `SystemAuditLog` (`system_audit_logs`).
+  - [x] **Task 1.3:** Xây dựng Global `ValidationPipe`, `AllExceptionsFilter`, CORS, prefix `/api/v1`, Swagger `/api/docs` và `GET /api/v1/health` (kèm Unit + E2E test).
+  - [x] **Task 1.4:** Xây dựng tiện ích thời gian `timezone.util.ts` (`Asia/Ho_Chi_Minh`) kèm bộ unit test kiểm chứng chuyển đổi UTC $\leftrightarrow$ GMT+7.
+  - [x] **Task 1.5:** Khởi tạo `frontend/` (React 19 / Next.js 16 + Tailwind CSS v4), thiết lập Design System tokens (`DESIGN.md`), API Client chuẩn và Shell layout phân rã (`PortalShell`, `PortalSidebar`, `PortalTopbar`, `MobileNavDrawer`).
 
 ---
 
-### Phase 2: Module 01 — Tài Khoản, Xác Thực & Phân Quyền (Auth, Users & RBAC)
-- **File Sub-Plan dự kiến:** `docs/plans/phase-02-auth-users-rbac.md`
+### Phase 2: Module 01 — Tài Khoản, Xác Thực & Phân Quyền (Auth, Users & RBAC) *(ĐÃ HOÀN THÀNH — MERGED `develop`, CÒN DRIFT NHỎ `TD-07..10`)*
+- **File Sub-Plan:** [`docs/plans/phase-02-auth-users-rbac.md`](./docs/plans/phase-02-auth-users-rbac.md)
 - **Phạm vi Mã Chức Năng (14 FUNCs):**
-  - `Phase 1 (10)`: `FUNC-001` (HV tự đăng ký, $\ge 12$ tuổi), `FUNC-002` (Đồng ý của cha mẹ qua **Email phụ huynh** cho HV $< 16$ tuổi — `DEC-001`), `FUNC-003` (Đăng nhập, khóa 15 phút khi sai 5 lần), `FUNC-004` (Đăng xuất), `FUNC-005` (Khôi phục mật khẩu qua email — `DEC-016`), `FUNC-009` (Một người dùng nhiều vai trò, quyền theo role cao nhất — `DEC-020`), `FUNC-010` (HV chỉ xem dữ liệu mình), `FUNC-011` (GV chỉ truy cập lớp được giao), `FUNC-012` (Admin xem tất cả lớp), `FUNC-013` (Superadmin vận hành hệ thống & cấu hình tên trung tâm/logo).
+  - `Phase 1 (10)`: `FUNC-001` (HV tự đăng ký, $\ge 12$ tuổi), `FUNC-002` (Đồng ý của cha mẹ qua **Email phụ huynh** cho HV $< 16$ tuổi — `DEC-001`), `FUNC-003` (Đăng nhập, khóa 15 phút khi sai 5 lần), `FUNC-004` (Đăng xuất), `FUNC-005` (Khôi phục mật khẩu qua email — `DEC-016`), `FUNC-009` (Một người dùng nhiều vai trò, quyền hợp nhất đa vai trò — `DEC-020`), `FUNC-010` (HV chỉ xem dữ liệu mình), `FUNC-011` (GV chỉ truy cập lớp được giao), `FUNC-012` (Admin xem tất cả lớp), `FUNC-013` (Superadmin vận hành hệ thống & cấu hình tên trung tâm/logo).
   - `Dự kiến P1 (4)`: `FUNC-006` (Quản lý tài khoản GV), `FUNC-007` (Quản lý thông tin HV), `FUNC-008` (Liên kết tài khoản với hồ sơ và xếp lớp), `FUNC-078` (Hồ sơ cá nhân & đổi mật khẩu).
-- **Open Issues Gate cần chốt đầu Phase 2 (`BLOCKS`):**
-  - `AUTH-01`: Chốt cơ chế định danh khi 2 anh/chị em dưới 16 tuổi dùng chung email phụ huynh (dùng `username`/mã HV làm login ID hay cơ chế khác).
-  - `AUTH-02`: SĐT học viên có bắt buộc/duy nhất không sau khi đổi SĐT phụ huynh sang email phụ huynh.
-  - `AUTH-03`: Nội dung văn bản đồng ý (consent) của phụ huynh cần lưu vết.
-  - `AUTH-04`: Xác nhận phạm vi các trường trong `FUNC-006, 007, 008, 078`.
+- **Open Issues Gate (`AUTH-01..04`):** **ĐÃ CHỐT (`RESOLVED`)** tại `open-issues.md` & `DEC-023`.
 - **Prototype Cleanup áp dụng tại Phase 2:**
   - Loại bỏ khối "Tài khoản demo" ở màn Đăng nhập (**Cleanup #2**).
   - Loại bỏ dòng gợi ý "Thử lỗi" ở màn Đăng nhập & Đăng ký (**Cleanup #3**).
@@ -111,91 +106,83 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
   - Loại bỏ trường "Đăng ký lúc" trong Hồ sơ học viên (**Cleanup #13**).
   - Loại bỏ trường "Múi giờ" trong Cấu hình hệ thống của Superadmin (**Cleanup #15**).
   - Giữ tag "Admin" cạnh tên GV kiêm nhiệm trong Danh sách giáo viên (**Cleanup #16**).
-- **Interfaces (`Consumes` / `Produces`):**
+- **Interfaces (`Consumes` / `Produces` thực tế):**
   - **Consumes:** `PrismaService`, `AllExceptionsFilter`, `ValidationPipe` từ Phase 1.
   - **Produces:**
-    - Models: `User`, `StudentProfile`, `TeacherProfile`, `GuardianConsent`, `PasswordResetToken`, `CenterConfig`.
-    - Guards & Decorators: `JwtAuthGuard`, `RolesGuard`, `@CurrentUser()`, `@Roles()`, `ContextualRoleInterceptor` (xử lý đa vai trò `FUNC-009` + cờ `isAdminOverride`).
-    - APIs: `/api/v1/auth/*`, `/api/v1/users/*`, `/api/v1/students/*`, `/api/v1/teachers/*`, `/api/v1/system-config`.
+    - Models: `User`, `StudentProfile`, `TeacherProfile`, `GuardianConsent`, `PasswordResetToken`, `SystemSetting`, `EmailVerification`, `EmailRateLimit`, `AuthRateLimit`.
+    - Guards & Decorators: `JwtAuthGuard`, `RolesGuard`, `@CurrentUser()`, `@Roles()`, `@Public()`, `@AuthenticatedOnly()`, `role-hierarchy.util.ts` (đa vai trò `FUNC-009`).
+    - APIs: `/api/v1/auth/*`, `/api/v1/profile/*`, `/api/v1/students/*`, `/api/v1/teachers/*`, `/api/v1/system-settings/*`.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 2:**
-  - [ ] **Task 2.1:** Thiết kế Prisma schema & migration cho `User`, `Role[]`, `GuardianConsent`, `LoginAttempt` (lockout 15p sau 5 lần sai).
-  - [ ] **Task 2.2:** Triển khai `FUNC-001, 002`: API & UI Học viên tự đăng ký ($\ge 12$ tuổi) + Luồng xác nhận Email phụ huynh cho HV $< 16$ tuổi (`DEC-001`, chặn đăng ký thiếu thông tin).
-  - [ ] **Task 2.3:** Triển khai `FUNC-003, 004, 005`: Đăng nhập (rate-limit 5 lần sai khóa 15p ở backend), Đăng xuất, Quên mật khẩu qua Email (`DEC-016`).
-  - [ ] **Task 2.4:** Triển khai RBAC Guards (`FUNC-009, 010, 011, 012, 013`): Đa vai trò (quyền cao nhất) + bộ test kiểm증 IDOR chéo giữa Student A và Student B.
-  - [ ] **Task 2.5:** Triển khai `FUNC-006, 007, 008, 078`: Quản lý danh sách GV (kèm tag Admin), Quản lý hồ sơ HV, Danh sách tài khoản chờ xếp lớp, Đổi mật khẩu & Cấu hình hệ thống Superadmin.
+  - [x] **Task 2.1:** Thiết kế Prisma schema & migration cho `User`, `Role[]`, `GuardianConsent`, `AuthRateLimit` / `EmailVerification` (lockout 15p sau 5 lần sai + OTP 6 số).
+  - [x] **Task 2.2:** Triển khai `FUNC-001, 002`: API & UI Học viên tự đăng ký ($\ge 12$ tuổi) + Luồng xác nhận Email phụ huynh cho HV $< 16$ tuổi (`DEC-001`, `DEC-023`).
+  - [x] **Task 2.3:** Triển khai `FUNC-003, 004, 005`: Đăng nhập (rate-limit 5 lần sai khóa 15p ở backend, `rememberMe` 7 ngày), Đăng xuất, Quên mật khẩu qua Email (`DEC-016`). *(Lưu ý drift `TD-07`: hook `useIdleTimeout.ts` chưa mount vào Portal layout.)*
+  - [x] **Task 2.4:** Triển khai RBAC Guards (`FUNC-009..013`): Đa vai trò + bộ test kiểm증 IDOR chéo giữa Student A và Student B.
+  - [x] **Task 2.5:** Triển khai `FUNC-006, 007, 008, 078`: Quản lý danh sách GV, Hồ sơ HV, Chờ xếp lớp, Đổi mật khẩu & Cấu hình hệ thống Superadmin. *(Lưu ý drift `TD-10`: `ProfileService` chưa chặn HV `<16` đổi email/OTP đổi email tại `/profile`.)*
 
 ---
 
-### Phase 3: Module 02 & 03 — Danh Mục Khóa Học HSK & Quản Lý Lớp Học (Courses & Classes)
-- **File Sub-Plan dự kiến:** `docs/plans/phase-03-courses-and-classes.md`
+### Phase 3: Module 02 & 03 — Danh Mục Khóa Học HSK & Quản Lý Lớp Học (Courses & Classes) *(ĐÃ HOÀN THÀNH — MERGED `develop`)*
+- **File Sub-Plan:** [`docs/plans/phase-03-courses-and-classes.md`](./docs/plans/phase-03-courses-and-classes.md)
 - **Phạm vi Mã Chức Năng (10 FUNCs):**
   - `Module 02 — Khóa HSK (1)`: `FUNC-014` (Danh mục khóa học HSK1–HSK4 theo chuẩn HSK 3.0 & Giao tiếp cơ bản — `DEC-017`).
   - `Module 03 — Lớp học (9)`: `FUNC-016` (Tạo lớp học — không giới hạn cứng 5 HV theo `DEC-005`), `FUNC-017` (Chỉnh sửa thông tin lớp), `FUNC-018` (Phân công đúng 1 giáo viên phụ trách, không trợ giảng — `DEC-006`), `FUNC-020` (Thêm học viên vào lớp — 1 HV chỉ học 1 lớp active tại 1 thời điểm theo `DEC-007`), `FUNC-022` (Chuyển học viên sang lớp khác — giữ nguyên lịch sử lớp cũ theo `DEC-008`), `FUNC-023` (Xem lịch sử các lớp đã học), `FUNC-024` (Danh sách và chi tiết lớp theo phân quyền), `FUNC-077` (Rút học viên khỏi lớp), `FUNC-079` (Kết thúc / lưu trữ lớp — cho phép dừng trước khi đủ số buổi dự kiến theo `DEC-019`).
-- **Open Issues Gate cần chốt đầu Phase 3:**
-  - `COURSE-01`: Số buổi mặc định từng khóa HSK và quyền CRUD danh mục khóa.
-  - `CLASS-01` (**ĐÃ CHỐT — `DEC-024`, `DEC-025`**):
-    1. **Quyền xem lịch sử lớp của học viên (`FUNC-023`):** Học viên xem lịch sử lớp của chính mình; **Giáo viên hiện tại của lớp mới KHÔNG được xem lịch sử lớp cũ của học viên**; Admin xem lịch sử của tất cả học viên; Superadmin không mặc định xem dữ liệu học tập.
-    2. **Quyền của Giáo viên đối với lớp cũ của chính GV đó (`FUNC-011, 018, 024, 079`):** Nếu lớp đã kết thúc (`COMPLETED`/`ARCHIVED`) thì GV phụ trách có quyền xem; nếu GV đang dạy bị thay bằng GV khác (`FUNC-018`) thì **GV cũ mất hoàn toàn quyền xem**, chỉ GV mới có quyền.
-    3. **Quyền vận hành học thuật của Admin (`DEC-026`):** Admin có đầy đủ quyền thực hiện các chức năng `FUNC-034`, `FUNC-040..052`, `FUNC-060`, `FUNC-062`, `FUNC-065`, `FUNC-068`, `FUNC-080`.
-  - `CLASS-02`: Quy tắc sửa khóa và đóng/kết thúc lớp (`FUNC-079`) khi lớp đang có bài tập/điểm.
-- **Interfaces (`Consumes` / `Produces`):**
+- **Open Issues Gate (`COURSE-01`, `CLASS-01`, `CLASS-02`):** **ĐÃ CHỐT (`RESOLVED`)** tại `DEC-024`, `DEC-025`, `DEC-026`, `DEC-029`, `DEC-030`.
+- **Interfaces (`Consumes` / `Produces` thực tế):**
   - **Consumes:** `User`, `Role`, `JwtAuthGuard`, `RolesGuard` từ Phase 2.
   - **Produces:**
-    - Models: `Course`, `Class`, `ClassEnrollment` (kèm custom SQL migration `CREATE UNIQUE INDEX idx_unique_student_active_enrollment ON enrollments(student_id) WHERE status = 'ACTIVE'`), `EnrollmentHistoryLog`.
-    - Service helper: `ClassAccessService.assertTeacherCanViewClass(userId, classId)` (cho phép GV hiện tại của lớp, hoặc GV phụ trách khi lớp đã `COMPLETED`/`ARCHIVED`, chặn GV cũ đã bị thay thế theo `DEC-025`) và `ClassAccessService.assertStudentInClass(userId, classId)`.
-    - APIs: `/api/v1/courses/*`, `/api/v1/classes/*`, `/api/v1/classes/:id/enrollments/*`.
+    - Models: `Course`, `Class`, `ClassTeacherAssignment` (`class_teacher_assignments_active_unique_idx`), `Enrollment` (kèm custom SQL migration `CREATE UNIQUE INDEX idx_unique_student_active_enrollment ON enrollments(student_id) WHERE status = 'ACTIVE'`), `SystemAuditLog`.
+    - Service helper: `ClassAccessService` & `StudentAccessService` (cưỡng chế phân quyền `DEC-024`/`DEC-025`: GV cũ đã bị thay thế mất hoàn toàn quyền xem lớp, GV lớp mới bị chặn xem lịch sử lớp cũ của HV).
+    - APIs: `/api/v1/courses/*`, `/api/v1/classes/*` (bao gồm `/preview-schedule`, `/enrollments/*`, `/complete`, `/reopen`).
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 3:**
-  - [ ] **Task 3.1:** Schema & Migration cho `Course` (`FUNC-014`) và `Class` (`FUNC-016, 017, 018` — 1 GV/lớp, không giới hạn 5 HV).
-  - [ ] **Task 3.2:** Schema & Partial Unique Index Migration cho `ClassEnrollment` (`FUNC-020`) + Concurrency test chứng minh 1 HV không thể active ở 2 lớp cùng lúc.
-  - [ ] **Task 3.3:** Nghiệp vụ Chuyển lớp (`FUNC-022`), Rút khỏi lớp (`FUNC-077`) và Xem lịch sử lớp (`FUNC-023` — chặn GV lớp mới xem lịch sử lớp cũ của HV theo `DEC-024`) trong `prisma.$transaction`, bảo toàn 100% dữ liệu lớp cũ (`DEC-008`).
-  - [ ] **Task 3.4:** Nghiệp vụ Kết thúc / Lưu trữ lớp (`FUNC-079`, `DEC-019`) và Phân quyền xem Danh sách/Chi tiết lớp (`FUNC-024`, `DEC-025`: HV chỉ thấy lớp mình, GV thấy lớp đang phụ trách + lớp đã kết thúc của mình nhưng không thấy lớp đã bị thay GV, Admin thấy tất cả).
-  - [ ] **Task 3.5:** Giao diện Quản lý Khóa HSK, Danh sách Lớp, Chi tiết Lớp, Modal Xếp lớp / Chuyển lớp / Rút lớp và E2E Playwright tests.
+  - [x] **Task 3.1:** Schema & Migration cho `Course` (`FUNC-014`) và `Class` (`FUNC-016, 017, 018` — 1 GV/lớp, không giới hạn 5 HV).
+  - [x] **Task 3.2:** Schema & Partial Unique Index Migration cho `Enrollment` (`FUNC-020`) + Concurrency test chứng minh 1 HV không thể active ở 2 lớp cùng lúc.
+  - [x] **Task 3.3:** Nghiệp vụ Chuyển lớp (`FUNC-022`), Rút khỏi lớp (`FUNC-077`) và Xem lịch sử lớp (`FUNC-023`, `DEC-024`) trong `prisma.$transaction`, bảo toàn 100% dữ liệu lớp cũ (`DEC-008`).
+  - [x] **Task 3.4:** Nghiệp vụ Kết thúc / Lưu trữ / Mở lại trong 7 ngày (`FUNC-079`, `DEC-019`, `DEC-030`) và Phân quyền xem Danh sách/Chi tiết lớp (`FUNC-024`, `DEC-025`).
+  - [x] **Task 3.5:** Giao diện Quản lý Khóa HSK, Danh sách Lớp, Chi tiết Lớp, Modal Xếp/Chuyển/Rút lớp và E2E Playwright tests. *(Lưu ý drift `TD-08`/`TD-10`: bảng `/admin/classes` thiếu cột `12/30 buổi (40%)`, `completeClass` giữ buổi `SCHEDULED` còn lại thay vì đổi `CANCELLED`.)*
 
 ---
 
-### Phase 4: Module 04 & 05 — Lịch Học, Buổi Học & Điểm Danh (Schedules, Sessions & Attendance)
-- **File Sub-Plan dự kiến:** `docs/plans/phase-04-schedule-and-attendance.md`
+### Phase 4: Module 04 & 05 — Lịch Học, Buổi Học & Điểm Danh (Schedules, Sessions & Attendance) *(ĐÃ HOÀN THÀNH — MERGED `develop`, CÒN DRIFT UI NHỎ `TD-08..10`)*
+- **File Sub-Plan:** [`docs/plans/phase-04-schedule-and-attendance.md`](./docs/plans/phase-04-schedule-and-attendance.md)
 - **Phạm vi Mã Chức Năng (11 FUNCs):**
   - `Module 04 — Lịch & buổi học (7)`: `FUNC-026` (Khai báo lịch học định kỳ), `FUNC-027` (Tạo các buổi học theo lịch — **không tự chuyển thành 'Đã học' khi hết giờ nếu GV chưa điểm danh** theo `DEC-009`), `FUNC-028` (Xem lịch buổi học kèm trạng thái `Hôm nay` / `Chưa điểm danh` và dòng `Điểm danh: x/y có mặt` — **Cleanup #10, #11**), `FUNC-029` (Cập nhật lịch khi thay đổi), `FUNC-030` (Hủy buổi và lưu thông tin cũ — hủy không bù không tự sinh buổi mới theo `DEC-009`), `FUNC-031` (Tạo buổi học bù — tính thay cho buổi hủy, không cộng trùng tổng buổi theo `DEC-009`), `FUNC-032` (Nhật ký thay đổi lịch).
   - `Module 05 — Điểm danh (4)`: `FUNC-034` (Điểm danh từng buổi với 3 trạng thái: `Có mặt` / `Vắng` / `Có phép` — `DEC-010`), `FUNC-035` (Xem điểm danh theo lịch), `FUNC-036` (Tổng hợp số buổi nghỉ & cảnh báo khi chạm ngưỡng 30%), `FUNC-037` (Sửa điểm danh bị nhầm: GV sửa trong vòng 2 ngày theo múi giờ `Asia/Ho_Chi_Minh`, Admin sửa không giới hạn kèm Audit Log — `DEC-010`).
-- **Open Issues Gate cần chốt đầu Phase 4:**
-  - `SCHED-01`: Quyền sửa lịch giữa Admin vs GV; trạng thái buổi khi nghỉ.
-  - `ATT-01`: Ngưỡng vắng 30% có tính buổi "Có phép" không? Mẫu số là tổng buổi dự kiến hay tổng buổi đã diễn ra? Xác nhận mốc 2 ngày sửa điểm danh (hết 23:59:59 của ngày thứ 2 sau ngày học).
+- **Open Issues Gate (`SCHED-01`, `ATT-01`):** **ĐÃ CHỐT (`RESOLVED`)** tại `DEC-031`, `DEC-032`, `DEC-033`.
 - **Prototype Cleanup áp dụng tại Phase 4:**
   - **Loại bỏ màn hình menu "Điểm danh riêng" với danh sách "Buổi gần đây (14 ngày)" của Giáo viên (Cleanup #9)**: Giáo viên thực hiện điểm danh trực tiếp từ Lịch học (Calendar) hoặc Danh sách buổi học của lớp (`FUNC-034`).
   - Giữ trạng thái `Chưa điểm danh`, `Hôm nay` và chỉ số `Điểm danh: x/y có mặt` (**Cleanup #10, #11**).
-- **Interfaces (`Consumes` / `Produces`):**
-  - **Consumes:** `Class`, `ClassEnrollment`, `ClassAccessService`, `timezone.util.ts`.
+- **Interfaces (`Consumes` / `Produces` thực tế):**
+  - **Consumes:** `Class`, `Enrollment`, `ScheduleAccessPolicy`, `timezone.util.ts`.
   - **Produces:**
-    - Models: `ClassScheduleRule`, `LessonSession`, `SessionChangeLog`, `AttendanceRecord`, `AttendanceAuditLog`.
-    - Services: `SessionGeneratorService`, `AttendanceService` (cưỡng chế hạn sửa 2 ngày GMT+7 & Admin Override Audit Log).
+    - Models: `LessonSession`, `SessionChangeLog`, `AttendanceRecord`, `AttendanceAuditLog` (quy tắc định kỳ nằm trực tiếp trên `Class.scheduleDays`/`scheduleStartTime`/`scheduleEndTime`).
+    - Services: `SessionGeneratorService`, `SessionWorkflowService`, `SessionQueryService`, `AttendanceCrudService`, `AttendanceQueryService`.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 4:**
-  - [ ] **Task 4.1:** Schema & Migration cho `ClassScheduleRule`, `LessonSession`, `SessionChangeLog` + Thuật toán sinh buổi học định kỳ (`FUNC-026, 027`).
-  - [ ] **Task 4.2:** Nghiệp vụ Đổi lịch (`FUNC-029`), Hủy buổi (`FUNC-030`), Tạo buổi học bù liên kết buổi hủy (`FUNC-031`, bảo toàn tổng số buổi `DEC-009`) và Nhật ký thay đổi lịch (`FUNC-032`).
-  - [ ] **Task 4.3:** Nghiệp vụ Điểm danh từng buổi (`FUNC-034, 035`): Khi GV lưu điểm danh mới chuyển trạng thái buổi sang `COMPLETED` (`DEC-009`).
-  - [ ] **Task 4.4:** Nghiệp vụ Sửa điểm danh (`FUNC-037`): Cửa sổ 2 ngày theo giờ `Asia/Ho_Chi_Minh` cho GV + Cơ chế Admin Override bắt buộc nhập `reason` và ghi `AttendanceAuditLog` + Tổng hợp cảnh báo vắng 30% (`FUNC-036`).
-  - [ ] **Task 4.5:** Giao diện Calendar Lịch học, Popup chi tiết buổi học tích hợp Điểm danh tại chỗ (không làm menu Điểm danh rời theo Cleanup #9) và E2E tests.
+  - [x] **Task 4.1:** Schema & Migration cho `LessonSession`, `SessionChangeLog` + Thuật toán sinh buổi học định kỳ (`FUNC-026, 027`).
+  - [x] **Task 4.2:** Nghiệp vụ Đổi lịch (`FUNC-029`), Hủy buổi (`FUNC-030`), Tạo buổi học bù liên kết buổi hủy (`FUNC-031`, bảo toàn tổng số buổi `DEC-009`) và Nhật ký thay đổi lịch (`FUNC-032`).
+  - [x] **Task 4.3:** Nghiệp vụ Điểm danh từng buổi (`FUNC-034, 035`): Khi GV lưu điểm danh mới chuyển trạng thái buổi sang `COMPLETED` (`DEC-009`).
+  - [x] **Task 4.4:** Nghiệp vụ Sửa điểm danh (`FUNC-037`): Cửa sổ T+2 ngày GMT+7 cho GV + Admin Override bắt buộc `reason` & ghi `AttendanceAuditLog` + Tổng hợp cảnh báo vắng $\ge 30\%$ (`FUNC-036`, `DEC-033`).
+  - [x] **Task 4.5:** Giao diện Calendar Lịch học (`/admin/schedules`, `/teacher/schedules`, `/student/schedule`, `/admin/schedule-logs`), Tab Lịch học & Điểm danh trong Chi tiết lớp và E2E tests. *(Lưu ý drift `TD-08..10`: `/student/overview` vẫn hardcode `0%`/`100%`, `ClassStudentsTable` thiếu cột `Số buổi nghỉ`, `ClassAttendanceMatrixTab` thiếu icon/tooltip `"đã sửa"`.)*
 
 ---
 
-### Phase 5: Module 06 (Phần 1) — Ngân Hàng Câu Hỏi Đa Phương Tiện & Chuyển Đổi Đề Word/PDF
-- **File Sub-Plan dự kiến:** `docs/plans/phase-05-question-bank-and-import.md`
+### Phase 5: Module 06 (Phần 1) — Ngân Hàng Câu Hỏi Đa Phương Tiện & Chuyển Đổi Đề Word/PDF *(NHÁNH `feature/phase-05-question-bank-and-import` — CHƯA MERGE `develop`, CÒN BACKLOG `#7`)*
+- **File Sub-Plan:** [`docs/plans/phase-05-question-bank-and-import.md`](./docs/plans/phase-05-question-bank-and-import.md)
 - **Phạm vi Mã Chức Năng (12 FUNCs):**
-  - `FUNC-039` (Tạo/chỉnh sửa/xóa bài tập và bài kiểm tra), `FUNC-040` (Tải đề Word/PDF), `FUNC-041` (Chuyển đề thành câu hỏi tương tác), `FUNC-042` (GV kiểm tra/duyệt đề sau chuyển đổi — Dự kiến P1), `FUNC-043` (Biên tập câu hỏi thủ công), `FUNC-044` (Trắc nghiệm 1 đáp án), `FUNC-045` (Trắc nghiệm nhiều đáp án), `FUNC-046` (Điền từ / trả lời ngắn), `FUNC-047` (Sắp xếp từ thành câu), `FUNC-048` (Bài viết / dịch câu / tự luận), `FUNC-049` (Bài nghe kèm file Audio), `FUNC-050` (Câu hỏi kèm Hình ảnh).
-- **Open Issues Gate & Prior-Art cần thực hiện đầu Phase 5:**
-  - `ASSIGN-01` (`DEC-004`): Nhận file mẫu thực tế Word/PDF, mẫu bài sắp xếp từ (`Q37`), tiêu chí bài viết (`Q38`) từ khách hàng.
-  - Chạy `akit-prior-art` so sánh thư viện parse `.docx` (`mammoth.js` / `docx`) và PDF parser an toàn trong Node.js, cơ chế lưu trữ và bảo vệ file media (Audio MP3/WAV, Ảnh PNG/JPG/WebP) có kiểm tra MIME/magic-bytes và phân quyền tải file.
+  - `FUNC-039`..`FUNC-050`.
+- **Open Issues Gate & Prior-Art:**
+  - `ASSIGN-01` (`DEC-004`): Tiếp tục giữ **`TBD-DEFERRED`** — triển khai parser best-effort (`mammoth` cho `.docx`, `pdfjs-dist` cho `.pdf`, chặn `.doc` & PDF scan) kết hợp cờ `needsReview` bắt buộc duyệt trước khi phát hành.
 - **Prototype Cleanup áp dụng tại Phase 5:**
   - **Loại bỏ nút "Dùng file mẫu luyen-nghe-hsk1-bo3.docx" (Cleanup #5)** trên màn hình Tải đề Word/PDF.
-- **Interfaces (`Consumes` / `Produces`):**
-  - **Consumes:** `Course`, `Class`, `ClassAccessService`.
+- **Interfaces (`Consumes` / `Produces` thực tế):**
+  - **Consumes:** `Course`, `Class`, `AssessmentAccessPolicy` (ownership `TEACHER` / toàn quyền `ADMIN`).
   - **Produces:**
-    - Models: `Assessment` (loại: `HOMEWORK`, `MINI_TEST`, `MIDTERM`, `FINAL`), `Question` (polymorphic payload có kiểm tra schema theo 7 dạng câu `FUNC-044..050`), `MediaAsset` (Audio/Image bảo mật), `DocumentImportJob` (trạng thái `DRAFT_IMPORT -> REVIEWED -> READY`).
+    - Models: `Assessment`, `Question` (`payload JSONB` validate qua `QuestionSchemaPolicy` theo 7 dạng câu `FUNC-044..050`), `MediaAsset`, `QuestionMedia` *(chưa ghi từ CRUD)*.
+    - APIs: 17 endpoints tại `/api/v1/assessments/*` (`TeacherAssessmentDto` có đáp án; chưa mở endpoint `STUDENT` — Zero-Leak).
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 5:**
-  - [x] **Task 5.1:** Thiết kế Schema & Migration cho `Assessment`, `Question`, `QuestionOption`, `MediaAsset` và dịch vụ Upload Media an toàn (kiểm tra magic bytes, giới hạn dung lượng, chống truy cập trái phép `FUNC-049, 050`).
-  - [x] **Task 5.2:** Xây dựng CRUD Bài tập/Đề kiểm tra (`FUNC-039`) và Trình biên tập thủ công 7 dạng câu hỏi HSK (`FUNC-043..050`), đảm bảo **không trả về trường `correctAnswer` trong DTO của Học viên**.
-  - [x] **Task 5.3:** Xây dựng pipeline Upload & Parse đề Word/PDF (`FUNC-040, 041`) sang bản nháp câu hỏi + Màn hình Giáo viên kiểm duyệt/chỉnh sửa sau chuyển đổi (`FUNC-042`).
-  - [x] **Task 5.4:** Giao diện Ngân hàng đề, Trình tạo/sửa câu hỏi trực quan (Audio player, Image preview, Sắp xếp từ) và E2E tests.
+  - [x] **Task 5.1:** Thiết kế Schema & Migration (`20261113090000`, `20261113120000`, `20261113130000`) cho `Assessment`, `Question`, `MediaAsset`, `QuestionMedia` và dịch vụ Upload/Stream Media + tải file gốc (`/original`, `/media/:mediaId`) kiểm tra magic bytes (`FUNC-049, 050`).
+  - [x] **Task 5.2:** Xây dựng CRUD Bài tập/Đề kiểm tra (`FUNC-039`, `409 Conflict` khi đã phát hành/khóa) và Trình biên tập thủ công 7 dạng câu hỏi HSK (`FUNC-043..050`), chưa mở endpoint/DTO học viên (`Zero-Leak`).
+  - [x] **Task 5.3:** Xây dựng pipeline Upload & Parse đề `.docx`/`.pdf` (`FUNC-040, 041`) sang bản nháp `DRAFT` + Màn hình Giáo viên kiểm duyệt 2 cột (`ImportReviewPane`, `FUNC-042`).
+  - [x] **Task 5.4:** Giao diện Ngân hàng đề (`/teacher/assessments`), Trình tạo/sửa câu hỏi và Playwright E2E tests (`52/52` PASS). *(Mở backlog `#7`: `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01`, `TD-09` trong `TECH_DEBT_AND_SECURITY_BACKLOG.md`.)*
 
 ---
 
@@ -299,8 +286,9 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 | Cặp Giai Đoạn | Giao diện chia sẻ (`Produces` $\rightarrow$ `Consumes`) | Kiểm tra tính nhất quán (Consistency Check) | Phán quyết |
 | :--- | :--- | :--- | :---: |
-| `Phase 1 -> Phase 2..9` | `PrismaService`, `timezone.util.ts` (`Asia/Ho_Chi_Minh`), `AllExceptionsFilter` | Mọi module dùng chung helper thời gian GMT+7 và chuẩn lỗi RFC 7807 | **Clean** |
-| `Phase 2 -> Phase 3..9` | `JwtAuthGuard`, `RolesGuard`, `@CurrentUser()`, `ContextualRole` | User payload thống nhất `{ id, username, roles, actingRole }` | **Clean** |
-| `Phase 3 -> Phase 4, 6, 8` | `ClassEnrollment` (Partial Index `ACTIVE`), `ClassAccessService` | Mọi truy vấn lớp/bài tập/điểm danh đều gọi `ClassAccessService` để chống IDOR | **Clean** |
+| `Phase 1 -> Phase 2..9` | `PrismaService`, `timezone.util.ts` (`Asia/Ho_Chi_Minh`), `AllExceptionsFilter` | Mọi module dùng chung helper thời gian GMT+7 và chuẩn lỗi RFC 7807 (không sinh `requestId`) | **Clean** |
+| `Phase 2 -> Phase 3..9` | `JwtAuthGuard`, `RolesGuard`, `@CurrentUser()`, `user.roles` | User payload thống nhất `{ id, username, roles }` (kiêm nhiệm đa vai trò qua `role-hierarchy`) | **Clean** |
+| `Phase 3 -> Phase 4, 6, 8` | `Enrollment` (Partial Index `ACTIVE`), `ClassAccessService` | Mọi truy vấn lớp/bài tập/điểm danh đều dùng access policy riêng (`ClassAccessService` / `ScheduleAccessPolicy` / `AttendancePolicy`) để chống IDOR | **Clean** |
 | `Phase 4 -> Phase 8` | `LessonSession` (`COMPLETED` chỉ khi đã điểm danh), `AttendanceRecord` | Tiến độ lớp (`FUNC-071`) chỉ đếm buổi `COMPLETED` đã điểm danh (`DEC-009`) | **Clean** |
+| `Phase 5 -> Phase 6, 7` | `Assessment`, `Question`, `MediaAsset` (trên nhánh `feature/phase-05...`) | Tách biệt `TeacherAssessmentDto` trong Phase 5 (không có endpoint `STUDENT`); xử lý `QB-BUG-01`/`QB-SEC-01` trước khi nối Phase 6 | **Pending P5 Fixes** |
 | `Phase 7 -> Phase 8, 9` | `PublishedGradesRepository` (`status = 'PUBLISHED'`), `AssignmentScoresPublishedEvent` | Dashboard tiến độ (`Phase 8`) và Notification (`Phase 9`) chỉ đọc điểm `PUBLISHED` | **Clean** |

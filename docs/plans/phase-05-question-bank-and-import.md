@@ -4,6 +4,17 @@
 
 **Goal:** GV/Admin tạo đề thủ công với 7 dạng câu HSK, upload Word/PDF để hệ thống trích câu hỏi nháp, GV duyệt trước khi phát hành — HV chưa thấy đáp án đúng ở bất kỳ endpoint nào.
 
+**Trạng thái đối soát (13/11/2026):** **ĐANG Ở NHÁNH `feature/phase-05-question-bank-and-import` (CHƯA MERGE `develop`)** — Backend & Frontend Module 06 (P1) đã cài đặt và pass unit/integration/E2E/Playwright hiện có (`#7`), nhưng còn các bug/gap mở bên dưới cần user quyết định trước khi merge `develop` và mở Phase 6.
+
+**Đối soát triển khai thực tế (`#7`):**
+- **Schema & Migrations:** Đã thêm 4 models (`Assessment`, `Question`, `MediaAsset`, `QuestionMedia`) qua 3 migrations (`20261113090000_phase05_assessments`, `20261113120000_phase05_assessment_original_and_description`, `20261113130000_phase05_media_assessment_id`), nâng tổng schema lên **22 models / 13 migrations**. Lưu ý: `QuestionMedia` đã có trong schema nhưng hiện chưa được ghi bản ghi trong luồng upload/import.
+- **API & UI:** `AssessmentsController` thực tế cung cấp **17 HTTP endpoints** (gồm `PATCH /assessments/:id/questions/:qid`, `DELETE /assessments/:id/questions/:qid`, `GET /assessments/:id/original`, `GET /assessments/:id/media/:mediaId`, ...); guard trả `409` khi `isLocked || PUBLISHED`, `403` khi `TEACHER` không phải chủ sở hữu, và `POST /assessments/:id/questions` trả `201`. Frontend thêm `/teacher/assessments` (`ALLOWED_ROLES = ['ADMIN', 'TEACHER']`), nâng tổng số lên **21 `page.tsx` (`24` Next build entries)**.
+- **Open Backlog từ audit `#7` (xem chi tiết tại [TECH_DEBT_AND_SECURITY_BACKLOG.md](../TECH_DEBT_AND_SECURITY_BACKLOG.md)):**
+  - `QB-BUG-01`: `QuestionTypeFields.tsx` sinh option ID bằng `97 + options.length` (trùng ID khi xóa option giữa), `IMAGE_BASED` thiếu xóa ảnh/multi/text-only; `QuestionSchemaPolicy` chưa validate kiểu `pinyinSensitive`; `QuestionCrudService.update` tự clear `needsReview`; inactive course vẫn được chấp nhận khi tạo/import đề.
+  - `QB-SEC-01`: `DocumentImportService` khi tách ảnh nhúng `.docx` bỏ qua kiểm tra magic bytes.
+  - `QB-UI-01`: `AssessmentEditor` thiếu nút `Phát hành`, `Xóa câu`, reorder và sửa `prompt`/`points` câu có sẵn; `ImportReviewPane` thiếu nút `Xuống`, ô sửa `points` từng câu và `Lưu nháp` chỉ cập nhật trạng thái UI.
+  - `TD-09`: `PortalTopbar` `ROUTE_LABELS` chưa có nhãn cho route Phase 3–5 và `nav-links.ts` còn thiếu ánh xạ một số route đa vai trò.
+
 **Architecture:** Module `assessments/` mới theo đúng Anti-God-File của Phase 4 (`policies/` pure + `services/` ≤350 LOC + `mappers/`). Câu hỏi lưu polymorphic: cột chung (`prompt`, `points`, `position`) + `payload JSONB` validate theo từng dạng câu. Upload dùng multipart `FileInterceptor` (repo chưa có — logo hiện đi base64 qua JSON, không tái dùng được). Parse `.docx` bằng `mammoth`, `.pdf` có lớp chữ bằng `pdfjs-dist`; `.doc` cũ và PDF scan từ chối ngay với message rõ — không hứa nhận diện 100%.
 
 **Tech Stack:** NestJS 12, Prisma 6.4.1 (PostgreSQL 16), Next.js 16 + Tailwind, Vitest, Playwright. Thêm mới: `mammoth`, `pdfjs-dist` (backend).
@@ -39,12 +50,12 @@
 - Test: `backend/src/modules/assessments/policies/media-upload.policy.spec.ts`
 
 **Interfaces:**
-- Consumes: `PrismaService`, `ClassAccessService` (Phase 3, check GV dạy lớp khi giao — dùng ở Task 5.2).
+- Consumes: `PrismaService`, `AssessmentAccessPolicy` *(plan cũ dự kiến `ClassAccessService`, thực tế Phase 5 chưa giao bài nên dùng `AssessmentAccessPolicy`)*.
 - Produces: `AssessmentStatus (DRAFT|PUBLISHED)`, `QuestionType (7 giá trị)`, `MediaAsset {id, kind: AUDIO|IMAGE, mime, sizeBytes, storageKey}`; `assertSafeUpload(buffer, ext) -> {mime} | throw 400`.
 
 - [x] **Step 1: Write the failing test** — `media-upload.policy.spec.ts`: buffer `%PDF` gắn ext `.mp3` → throw; buffer PNG thật > 5MB → throw; MP3 thật ≤ 20MB → pass.
 - [x] **Step 2: Run it** — `npm --prefix backend run test -- --run src/modules/assessments` → FAIL (file chưa tồn tại).
-- [x] **Step 3: Implement** schema Prisma: `Assessment(id, title≤200, type: HOMEWORK|MINI_TEST|MIDTERM|FINAL, courseId, durationMinutes?, status=DRAFT, totalPoints derived, isLocked=false, createdById)`; `Question(id, assessmentId, type, position, prompt, payload Json, points>0, needsReview=false)` + partial unique `(assessmentId, position)`; `MediaAsset(id, kind, mime, sizeBytes, storageKey @unique)`; `QuestionMedia(questionId, mediaAssetId, role)`. Migration SQL + `media-upload.policy.ts` (magic bytes PNG `89 50 4E 47`, JPG `FF D8 FF`, MP3 `ID3`/frame sync, WAV `RIFF....WAVE`, M4A `ftyp`).
+- [x] **Step 3: Implement** schema Prisma: `Assessment(id, title≤200, description?, type: HOMEWORK|MINI_TEST|MIDTERM|FINAL, courseId, durationMinutes?, status=DRAFT, isLocked=false, originalFileName?, originalStorageKey?, createdById)`; `Question(id, assessmentId, type, position, prompt, payload Json, points>0, needsReview=false)` + **`@@unique([assessmentId, position])`** *(plan cũ ghi `totalPoints derived` & partial unique — thực tế không có cột `totalPoints` và dùng `@@unique` chuẩn)*; `MediaAsset(id, kind, mime, sizeBytes, storageKey @unique, assessmentId?)`; `QuestionMedia(questionId, mediaAssetId, role)` *(chưa ghi từ CRUD)*. Migration SQL + `media-upload.policy.ts` (magic bytes PNG `89 50 4E 47`, JPG `FF D8 FF`, MP3 `ID3`/frame sync, WAV `RIFF....WAVE`, M4A `ftyp`).
 - [x] **Step 4: Run tests + migrate dry-run** — unit PASS; `prisma migrate diff` không lỗi.
 - [x] **Step 5: Commit** — `feat(phase-05): assessment schema and safe media upload policy`.
 
@@ -52,18 +63,18 @@
 
 **Files:**
 - Create: `backend/src/modules/assessments/{assessments.module.ts,assessments.controller.ts,dto/assessments.dto.ts}`
-- Create: `backend/src/modules/assessments/policies/question-schema.policy.ts` (validate `payload` theo từng `QuestionType`, pure)
+- Create: `backend/src/modules/assessments/policies/{assessment-access.policy.ts,question-schema.policy.ts}` (pure)
 - Create: `backend/src/modules/assessments/services/assessment-crud.service.ts`, `services/question-crud.service.ts`
 - Create: `backend/src/modules/assessments/mappers/assessment.mapper.ts` (2 view: `TeacherDetailDto` full vs `StudentSafeDto` — Task này chỉ teacher view; student view để Phase 6)
 - Test: `backend/src/modules/assessments/services/assessment-crud.service.spec.ts`, `policies/question-schema.policy.spec.ts`
 
 **Interfaces:**
-- Consumes: `assertSafeUpload` (Task 5.1), `ClassAccessService.assertTeacherCanViewClass`, `AssessmentStatus`, `QuestionType`.
-- Produces: `POST/GET/PATCH/DELETE /api/v1/assessments`, `POST /assessments/:id/questions`, `PUT/DELETE /assessments/:id/questions/:qid`, `POST /assessments/:id/duplicate`, `POST /assessments/:id/publish`; `TeacherAssessmentDto` (có đáp án) — tuyệt đối chưa có student endpoint.
+- Consumes: `assertSafeUpload` (Task 5.1), `AssessmentAccessPolicy` *(thay cho `ClassAccessService` trong plan cũ)*, `AssessmentStatus`, `QuestionType`.
+- Produces: `POST/GET/PATCH/DELETE /api/v1/assessments`, `GET /assessments/:id/original`, `GET/POST /assessments/:id/media`, `GET /assessments/:id/media/:mediaId`, `POST /assessments/:id/questions`, `PATCH/DELETE /assessments/:id/questions/:qid` *(plan cũ ghi `PUT`)*, `PUT /assessments/:id/questions/reorder`, `POST /assessments/:id/duplicate`, `POST /assessments/:id/publish` (`201`); `TeacherAssessmentDto` (có đáp án) — tuyệt đối chưa có student endpoint.
 
-- [x] **Step 1: Write failing tests** — policy spec: 7 payload mẫu (1 đúng + 1 sai mỗi dạng, lấy giá trị từ module spec: trắc nghiệm 1 đáp án đúng 1/4; nhiều đáp án ≥2 đúng; điền từ có `acceptedAnswers`; sắp xếp có `tokens`; viết có `maxLength`; nghe bắt buộc `mediaId`; ảnh bắt buộc `mediaId`); service spec: publish khi còn `needsReview=true` → 400; sửa câu khi `isLocked` → 403; xóa đề PUBLISHED có submission → 409 (mock submission count).
+- [x] **Step 1: Write failing tests** — policy spec: 7 payload mẫu (1 đúng + 1 sai mỗi dạng, lấy giá trị từ module spec: trắc nghiệm 1 đáp án đúng 1/4; nhiều đáp án ≥2 đúng; điền từ có `acceptedAnswers`; sắp xếp có `tokens`; viết có `maxLength`; nghe bắt buộc `mediaId`; ảnh bắt buộc `mediaId`); service spec: publish khi còn `needsReview=true` → 400; sửa câu khi `isLocked` / `PUBLISHED` → **`409 Conflict`** trong `assertEditableAssessment` *(`403` cho GV khác chủ sở hữu; plan cũ ghi nhầm `403` cho `isLocked`)*; xóa đề `PUBLISHED`/`isLocked` → `409`.
 - [x] **Step 2: Run** → FAIL.
-- [x] **Step 3: Implement** — DTO validation + policy switch theo `QuestionType` (điểm > 0, trắc nghiệm 2–4 options, `correctOptionIds` ⊆ options, điền từ ≥1 accepted answer, sắp xếp `tokens.length ≥ 2`); service bọc `$transaction` + `FOR UPDATE` assessment khi reorder (đánh lại `position 1..N`); `publish` kiểm tra: hết `needsReview`, câu tự chấm có đáp án, tự luận có rubric/mẫu; `duplicate` deep-copy questions + reset status DRAFT.
+- [x] **Step 3: Implement** — DTO validation + policy switch theo `QuestionType` (điểm > 0, trắc nghiệm 2–4 options, `correctOptionIds` ⊆ options, điền từ ≥1 accepted answer, sắp xếp `tokens.length ≥ 2`); service bọc `$transaction` + `FOR UPDATE` assessment khi reorder (đánh lại `position 1..N`); `publish` kiểm tra: hết `needsReview`, câu tự chấm có đáp án, tự luận có rubric/mẫu; `duplicate` deep-copy questions + file gốc + media & reset status DRAFT.
 - [x] **Step 4: Run** — unit PASS, `check-loc` PASS.
 - [x] **Step 5: Commit** — `feat(phase-05): assessment CRUD and 7-type manual editor`.
 
@@ -71,8 +82,8 @@
 
 **Files:**
 - Create: `backend/src/modules/assessments/services/document-import.service.ts` (parse + tạo nháp)
-- Create: `backend/src/modules/assessments/dto/import.dto.ts` (`POST /assessments/import` multipart, `GET /assessments/:id/review`)
-- Modify: `assessments.controller.ts`, `assessment-crud.service.ts` (gắn `importJobId`)
+- Create: `backend/src/modules/assessments/dto/import.dto.ts` (`POST /assessments/import` multipart)
+- Modify: `assessments.controller.ts`, `assessment-crud.service.ts` *(thực tế lưu `originalFileName` & `originalStorageKey` trực tiếp trên `Assessment`; không tạo model `ImportJob` / `importJobId`)*
 - Test: `backend/src/modules/assessments/services/document-import.service.spec.ts` (dùng fixture `.docx`/`pdf` thật tự tạo tối thiểu, không chờ file khách hàng)
 
 **Interfaces:**
@@ -89,8 +100,8 @@
 
 **Files:**
 - Create: `frontend/src/features/assessments/api/assessments.api.ts`, `hooks/useAssessments.ts` (+`AbortController`)
-- Create: `frontend/src/features/assessments/components/{AssessmentList.tsx, AssessmentEditor.tsx, QuestionTypeFields.tsx, ImportReviewPane.tsx}`
-- Modify: `frontend/src/app/(portal)/teacher/assessments/page.tsx` (≤250 LOC, gọi components), sidebar `nav-links.ts` (menu Ngân hàng đề cho GV/Admin)
+- Create: `frontend/src/features/assessments/components/{AssessmentList.tsx, AssessmentEditor.tsx, QuestionTypeFields.tsx, ImportUploadPane.tsx, ImportReviewPane.tsx, MediaAttach.tsx}`, `utils/`
+- Modify: `frontend/src/app/(portal)/teacher/assessments/page.tsx` (≤250 LOC, gọi components), sidebar `nav-links.ts` (menu Ngân hàng đề cho GV/Admin — lưu ý `TD-09` còn thiếu ánh xạ với `[SUPERADMIN, TEACHER]` không có `ADMIN`)
 - Test: `frontend/e2e/phase05-question-bank.spec.ts` (CRUD 1 đề trắc nghiệm, upload fixture lỗi → message, publish bị chặn khi còn câu cần kiểm tra)
 
 **Interfaces:**
@@ -98,10 +109,11 @@
 - Produces: trang GV `/teacher/assessments` khớp style Paper-Ink; preview 2 cột file gốc/nháp ở `ImportReviewPane`.
 
 - [x] **Step 1: Write failing e2e** — 3 case trên, chạy → FAIL (route chưa tồn tại).
-- [x] **Step 2: Implement** — list (lọc Loại/Khóa/Trạng thái, tìm tên), editor form theo từng dạng câu (đổi `QuestionType` thì đổi fields, giữ UI soạn ở mức cơ bản theo Q15), nút Nhân bản/Phát hành/Xem trước như HV (preview dùng student-safe render, không gọi API đáp án), `ImportReviewPane` filter "chỉ câu cần kiểm tra".
+- [x] **Step 2: Implement** — list (lọc Loại/Khóa/Trạng thái, tìm tên), editor form theo từng dạng câu (đổi `QuestionType` thì đổi fields, giữ UI soạn ở mức cơ bản theo Q15; lưu ý `QB-UI-01`/`QB-BUG-01`: `AssessmentEditor` hiện chưa có nút `Phát hành`/`Xóa câu`/reorder và nút `Nhân bản`/`Phát hành` đặt ở list/review), xem trước như HV (dùng student-safe render, không gọi API đáp án), `ImportReviewPane` filter "chỉ câu cần kiểm tra".
 - [x] **Step 3: Run** — `typecheck`, `lint`, `build`, Playwright PASS; `check-loc` PASS.
 - [x] **Step 4: Commit** — `feat(phase-05): question bank UI and import review`.
-- [x] **Step 5: Phase exit gate** — chạy full `typecheck/lint/test/test:e2e` cả repo + cập nhật `PROJECT_PROGRESS.md` Phase 5 hoàn thành + mở nhánh Phase 6.
+- [x] **Step 5: Phase exit gate (trên nhánh `feature/phase-05-question-bank-and-import`)** — đã chạy verify test suite Phase 5 (`37` unit files / `266` tests, `1` PG integration / `16` tests, `8` BE HTTP E2E / `43` tests, `6` Playwright files / `52` runs) & cập nhật trạng thái vào `PROJECT_PROGRESS.md`.
+- [ ] **Merge Gate (`feature/phase-05-question-bank-and-import` -> `develop`) & Mở Phase 6** — **CHƯA THỰC HIỆN** (còn open backlog/bugs từ audit `#7`: `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01`, `TD-09` — chờ user duyệt hướng xử lý trước khi merge `develop` và mở nhánh Phase 6).
 
 ## Self-review
 
