@@ -1,10 +1,9 @@
 import { expect, request as playwrightRequest, test, type Page } from '@playwright/test';
 import { Buffer } from 'node:buffer';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 const INSPECTOR_URL = `http://127.0.0.1:${process.env.QA_MAIL_INSPECTOR_PORT || 4026}`;
-const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
+const FIXTURES = join(__dirname, 'fixtures');
 
 async function reseedQaDatabase(): Promise<void> {
   const ctx = await playwrightRequest.newContext();
@@ -62,7 +61,7 @@ test.describe('Phase 5 — Question bank & import review', () => {
       mimeType: 'application/msword',
       buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
     });
-    await expect(page.getByRole('alert')).toContainText(/Chỉ hỗ trợ file \.docx, \.pdf/i);
+    await expect(page.getByText('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB')).toBeVisible();
   });
 
   test('publish is blocked while imported questions still need review', async ({ page }) => {
@@ -73,8 +72,8 @@ test.describe('Phase 5 — Question bank & import review', () => {
     if (courseValue) await courseSelect.selectOption(courseValue);
 
     await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
-    await expect(page.getByText(/câu cần kiểm tra/i)).toBeVisible();
+    await expect(page.getByText('Nhận diện 3 câu; 1 câu cần kiểm tra')).toBeVisible();
     await page.getByRole('button', { name: 'Phát hành' }).click();
-    await expect(page.getByRole('alert')).toContainText(/cần kiểm tra/i);
+    await expect(page.getByText(/Còn câu hỏi cần kiểm tra/i)).toBeVisible();
   });
 });

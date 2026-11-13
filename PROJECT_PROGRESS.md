@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 5: Module 06 (Phần 1) — Ngân hàng Câu hỏi & Import Đề Word/PDF (`FUNC-039..050`) — CHƯA BẮT ĐẦU, CẦN CHỐT `ASSIGN-01`**
+* **Giai đoạn hiện tại**: **Phase 5: Module 06 (Phần 1) — Ngân hàng Câu hỏi & Import Đề Word/PDF (`FUNC-039..050`) — EXIT GATE PASS, CHƯA MERGE `develop`**
 ---
 
 ## 🎨 Hạng Mục Đặc Biệt: Đại Tu UI/UX Chuẩn 100% Prototype Á Đông & Dọn Dẹp Chức Năng Thừa *(HOÀN THÀNH — 100% PASS)*
@@ -207,11 +207,12 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 - [x] **Merge Phase 4 vào `develop`**: 3 commit (`0a0d936` feat + `0dde9ec` chore/lint + `1d78093` fix audit) qua merge commit `2eb07e9`; schedules 12/12 + attendance 7/7 unit PASS trên `develop`.
 
 ### Phase 5: Module 06 (Phần 1) — Ngân hàng Câu hỏi HSK & Import Đề Word/PDF (`FUNC-039..050`)
-- [ ] Lập Sub-Plan `docs/plans/phase-05-question-bank-and-import.md`, chạy `akit-prior-art` & chốt `ASSIGN-01`.
-- [ ] **Slice 5.1**: Schema `Assessment`, `Question`, `MediaAsset` + Dịch vụ upload Audio/Image bảo mật (`FUNC-049, 050`).
-- [ ] **Slice 5.2**: CRUD Bài tập/Đề kiểm tra (`FUNC-039`) & Trình biên tập 7 dạng câu hỏi HSK (`FUNC-043..048`).
-- [ ] **Slice 5.3**: Pipeline chuyển đổi đề Word/PDF sang câu hỏi tương tác (`FUNC-040, 041`) + Màn hình GV duyệt đề (`FUNC-042`).
-- [ ] **Slice 5.4**: Giao diện Ngân hàng đề & Soạn thảo câu hỏi (bỏ nút dùng file mẫu demo theo Cleanup #5).
+- [x] Lập Sub-Plan `docs/plans/phase-05-question-bank-and-import.md`. Parser best-effort + `needsReview` bắt buộc; `ASSIGN-01` vẫn `TBD-DEFERRED` (không chặn đóng Phase 5).
+- [x] **Slice 5.1**: Schema `Assessment`, `Question`, `MediaAsset` + `assertSafeUpload` magic bytes (`FUNC-049, 050` nền). Media ghi `uploads/` local (gitignore); chưa có HTTP GET file.
+- [x] **Slice 5.2**: CRUD Bài tập/Đề kiểm tra (`FUNC-039`) & Trình biên tập 7 dạng câu hỏi HSK (`FUNC-043..048`). DTO chỉ `TeacherAssessmentDto` (có đáp án); không có student endpoint.
+- [x] **Slice 5.3**: Pipeline chuyển đổi đề Word/PDF sang câu hỏi tương tác (`FUNC-040, 041`) + Màn hình GV duyệt đề (`FUNC-042`). Publish bị chặn khi còn `needsReview`.
+- [x] **Slice 5.4**: Giao diện `/teacher/assessments` & soạn thảo (bỏ nút dùng file mẫu demo theo Cleanup #5).
+- [x] **Exit gate (2026-11-13)**: `check-loc` 164 file PASS; backend `typecheck`/`lint` sạch; unit **225/225**; PG integration **16/16** (Scenario 18 flake 1 lần, retry PASS); HTTP E2E **32/32** (67 route, STUDENT 403 toàn assessments); frontend `typecheck`/`lint`/`build` (24 route, gồm `/teacher/assessments`); Playwright **52/52** (Desktop + Mobile, gồm 6 case ngân hàng đề). `ASSIGN-01` vẫn `TBD-DEFERRED`. Chưa merge `develop`.
 
 ### Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`)
 - [ ] Lập Sub-Plan `docs/plans/phase-06-assignment-delivery-and-submission.md` & chốt `ASSIGN-02..03`.

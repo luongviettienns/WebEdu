@@ -1,6 +1,6 @@
 # Phase 5 Implementation Plan: Module 06 (P1) — Question Bank & Word/PDF Import (`FUNC-039..050`)
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** GV/Admin tạo đề thủ công với 7 dạng câu HSK, upload Word/PDF để hệ thống trích câu hỏi nháp, GV duyệt trước khi phát hành — HV chưa thấy đáp án đúng ở bất kỳ endpoint nào.
 
@@ -42,11 +42,11 @@
 - Consumes: `PrismaService`, `ClassAccessService` (Phase 3, check GV dạy lớp khi giao — dùng ở Task 5.2).
 - Produces: `AssessmentStatus (DRAFT|PUBLISHED)`, `QuestionType (7 giá trị)`, `MediaAsset {id, kind: AUDIO|IMAGE, mime, sizeBytes, storageKey}`; `assertSafeUpload(buffer, ext) -> {mime} | throw 400`.
 
-- [ ] **Step 1: Write the failing test** — `media-upload.policy.spec.ts`: buffer `%PDF` gắn ext `.mp3` → throw; buffer PNG thật > 5MB → throw; MP3 thật ≤ 20MB → pass.
-- [ ] **Step 2: Run it** — `npm --prefix backend run test -- --run src/modules/assessments` → FAIL (file chưa tồn tại).
-- [ ] **Step 3: Implement** schema Prisma: `Assessment(id, title≤200, type: HOMEWORK|MINI_TEST|MIDTERM|FINAL, courseId, durationMinutes?, status=DRAFT, totalPoints derived, isLocked=false, createdById)`; `Question(id, assessmentId, type, position, prompt, payload Json, points>0, needsReview=false)` + partial unique `(assessmentId, position)`; `MediaAsset(id, kind, mime, sizeBytes, storageKey @unique)`; `QuestionMedia(questionId, mediaAssetId, role)`. Migration SQL + `media-upload.policy.ts` (magic bytes PNG `89 50 4E 47`, JPG `FF D8 FF`, MP3 `ID3`/frame sync, WAV `RIFF....WAVE`, M4A `ftyp`).
-- [ ] **Step 4: Run tests + migrate dry-run** — unit PASS; `prisma migrate diff` không lỗi.
-- [ ] **Step 5: Commit** — `feat(phase-05): assessment schema and safe media upload policy`.
+- [x] **Step 1: Write the failing test** — `media-upload.policy.spec.ts`: buffer `%PDF` gắn ext `.mp3` → throw; buffer PNG thật > 5MB → throw; MP3 thật ≤ 20MB → pass.
+- [x] **Step 2: Run it** — `npm --prefix backend run test -- --run src/modules/assessments` → FAIL (file chưa tồn tại).
+- [x] **Step 3: Implement** schema Prisma: `Assessment(id, title≤200, type: HOMEWORK|MINI_TEST|MIDTERM|FINAL, courseId, durationMinutes?, status=DRAFT, totalPoints derived, isLocked=false, createdById)`; `Question(id, assessmentId, type, position, prompt, payload Json, points>0, needsReview=false)` + partial unique `(assessmentId, position)`; `MediaAsset(id, kind, mime, sizeBytes, storageKey @unique)`; `QuestionMedia(questionId, mediaAssetId, role)`. Migration SQL + `media-upload.policy.ts` (magic bytes PNG `89 50 4E 47`, JPG `FF D8 FF`, MP3 `ID3`/frame sync, WAV `RIFF....WAVE`, M4A `ftyp`).
+- [x] **Step 4: Run tests + migrate dry-run** — unit PASS; `prisma migrate diff` không lỗi.
+- [x] **Step 5: Commit** — `feat(phase-05): assessment schema and safe media upload policy`.
 
 ### Task 5.2: CRUD đề + biên tập thủ công 7 dạng câu (`FUNC-039, 043..050`)
 
@@ -61,11 +61,11 @@
 - Consumes: `assertSafeUpload` (Task 5.1), `ClassAccessService.assertTeacherCanViewClass`, `AssessmentStatus`, `QuestionType`.
 - Produces: `POST/GET/PATCH/DELETE /api/v1/assessments`, `POST /assessments/:id/questions`, `PUT/DELETE /assessments/:id/questions/:qid`, `POST /assessments/:id/duplicate`, `POST /assessments/:id/publish`; `TeacherAssessmentDto` (có đáp án) — tuyệt đối chưa có student endpoint.
 
-- [ ] **Step 1: Write failing tests** — policy spec: 7 payload mẫu (1 đúng + 1 sai mỗi dạng, lấy giá trị từ module spec: trắc nghiệm 1 đáp án đúng 1/4; nhiều đáp án ≥2 đúng; điền từ có `acceptedAnswers`; sắp xếp có `tokens`; viết có `maxLength`; nghe bắt buộc `mediaId`; ảnh bắt buộc `mediaId`); service spec: publish khi còn `needsReview=true` → 400; sửa câu khi `isLocked` → 403; xóa đề PUBLISHED có submission → 409 (mock submission count).
-- [ ] **Step 2: Run** → FAIL.
-- [ ] **Step 3: Implement** — DTO validation + policy switch theo `QuestionType` (điểm > 0, trắc nghiệm 2–4 options, `correctOptionIds` ⊆ options, điền từ ≥1 accepted answer, sắp xếp `tokens.length ≥ 2`); service bọc `$transaction` + `FOR UPDATE` assessment khi reorder (đánh lại `position 1..N`); `publish` kiểm tra: hết `needsReview`, câu tự chấm có đáp án, tự luận có rubric/mẫu; `duplicate` deep-copy questions + reset status DRAFT.
-- [ ] **Step 4: Run** — unit PASS, `check-loc` PASS.
-- [ ] **Step 5: Commit** — `feat(phase-05): assessment CRUD and 7-type manual editor`.
+- [x] **Step 1: Write failing tests** — policy spec: 7 payload mẫu (1 đúng + 1 sai mỗi dạng, lấy giá trị từ module spec: trắc nghiệm 1 đáp án đúng 1/4; nhiều đáp án ≥2 đúng; điền từ có `acceptedAnswers`; sắp xếp có `tokens`; viết có `maxLength`; nghe bắt buộc `mediaId`; ảnh bắt buộc `mediaId`); service spec: publish khi còn `needsReview=true` → 400; sửa câu khi `isLocked` → 403; xóa đề PUBLISHED có submission → 409 (mock submission count).
+- [x] **Step 2: Run** → FAIL.
+- [x] **Step 3: Implement** — DTO validation + policy switch theo `QuestionType` (điểm > 0, trắc nghiệm 2–4 options, `correctOptionIds` ⊆ options, điền từ ≥1 accepted answer, sắp xếp `tokens.length ≥ 2`); service bọc `$transaction` + `FOR UPDATE` assessment khi reorder (đánh lại `position 1..N`); `publish` kiểm tra: hết `needsReview`, câu tự chấm có đáp án, tự luận có rubric/mẫu; `duplicate` deep-copy questions + reset status DRAFT.
+- [x] **Step 4: Run** — unit PASS, `check-loc` PASS.
+- [x] **Step 5: Commit** — `feat(phase-05): assessment CRUD and 7-type manual editor`.
 
 ### Task 5.3: Upload + parse Word/PDF → câu nháp, GV duyệt (`FUNC-040, 041, 042`)
 
@@ -79,11 +79,11 @@
 - Consumes: `question-schema.policy.validatePayload`, `assertSafeUpload`, `Question`/`MediaAsset` create.
 - Produces: `POST /api/v1/assessments/import {file, courseId, type}` → `{assessmentId, recognizedCount, needsReviewCount}`; nguyên tắc: câu nào parser không chắc → `needsReview=true`, không bao giờ tự publish.
 
-- [ ] **Step 1: Write failing tests** — `.doc` cũ → 400; PDF scan (không lớp chữ) → 400 message rõ; `.docx` fixture 3 câu trắc nghiệm → tạo 3 `Question` DRAFT, câu thiếu đáp án gắn `needsReview`; ảnh nhúng trích ra `MediaAsset` và hiển thị ở review.
-- [ ] **Step 2: Run** → FAIL.
-- [ ] **Step 3: Implement** — `mammoth.convertToHtml` + trích `<img>` base64 → MediaAsset; `pdfjs-dist` `getTextContent` theo dòng, heuristic nhận diện `Câu N.` + phương án `A.`; giữ nguyên chữ Hán/pinyin (không normalize NFKC làm mất dấu thanh); tóm tắt `Nhận diện [n] câu; [m] câu cần kiểm tra`; `add mammoth, pdfjs-dist` vào `package.json`.
-- [ ] **Step 4: Run** — unit PASS với fixture tự tạo; ghi rõ trong PR: chất lượng phụ thuộc đề thật (`ASSIGN-01` vẫn mở).
-- [ ] **Step 5: Commit** — `feat(phase-05): word/pdf import pipeline with mandatory review`.
+- [x] **Step 1: Write failing tests** — `.doc` cũ → 400; PDF scan (không lớp chữ) → 400 message rõ; `.docx` fixture 3 câu trắc nghiệm → tạo 3 `Question` DRAFT, câu thiếu đáp án gắn `needsReview`; ảnh nhúng trích ra `MediaAsset` và hiển thị ở review.
+- [x] **Step 2: Run** → FAIL.
+- [x] **Step 3: Implement** — `mammoth.convertToHtml` + trích `<img>` base64 → MediaAsset; `pdfjs-dist` `getTextContent` theo dòng, heuristic nhận diện `Câu N.` + phương án `A.`; giữ nguyên chữ Hán/pinyin (không normalize NFKC làm mất dấu thanh); tóm tắt `Nhận diện [n] câu; [m] câu cần kiểm tra`; `add mammoth, pdfjs-dist` vào `package.json`.
+- [x] **Step 4: Run** — unit PASS với fixture tự tạo; ghi rõ trong PR: chất lượng phụ thuộc đề thật (`ASSIGN-01` vẫn mở).
+- [x] **Step 5: Commit** — `feat(phase-05): word/pdf import pipeline with mandatory review`.
 
 ### Task 5.4: UI ngân hàng đề + soạn thảo + duyệt import (Cleanup #5)
 
@@ -97,11 +97,11 @@
 - Consumes: API Task 5.2/5.3 (`TeacherAssessmentDto`), `requestJson` + `buildQueryString` hiện có.
 - Produces: trang GV `/teacher/assessments` khớp style Paper-Ink; preview 2 cột file gốc/nháp ở `ImportReviewPane`.
 
-- [ ] **Step 1: Write failing e2e** — 3 case trên, chạy → FAIL (route chưa tồn tại).
-- [ ] **Step 2: Implement** — list (lọc Loại/Khóa/Trạng thái, tìm tên), editor form theo từng dạng câu (đổi `QuestionType` thì đổi fields, giữ UI soạn ở mức cơ bản theo Q15), nút Nhân bản/Phát hành/Xem trước như HV (preview dùng student-safe render, không gọi API đáp án), `ImportReviewPane` filter "chỉ câu cần kiểm tra".
-- [ ] **Step 3: Run** — `typecheck`, `lint`, `build`, Playwright PASS; `check-loc` PASS.
-- [ ] **Step 4: Commit** — `feat(phase-05): question bank UI and import review`.
-- [ ] **Step 5: Phase exit gate** — chạy full `typecheck/lint/test/test:e2e` cả repo + cập nhật `PROJECT_PROGRESS.md` Phase 5 hoàn thành + mở nhánh Phase 6.
+- [x] **Step 1: Write failing e2e** — 3 case trên, chạy → FAIL (route chưa tồn tại).
+- [x] **Step 2: Implement** — list (lọc Loại/Khóa/Trạng thái, tìm tên), editor form theo từng dạng câu (đổi `QuestionType` thì đổi fields, giữ UI soạn ở mức cơ bản theo Q15), nút Nhân bản/Phát hành/Xem trước như HV (preview dùng student-safe render, không gọi API đáp án), `ImportReviewPane` filter "chỉ câu cần kiểm tra".
+- [x] **Step 3: Run** — `typecheck`, `lint`, `build`, Playwright PASS; `check-loc` PASS.
+- [x] **Step 4: Commit** — `feat(phase-05): question bank UI and import review`.
+- [x] **Step 5: Phase exit gate** — chạy full `typecheck/lint/test/test:e2e` cả repo + cập nhật `PROJECT_PROGRESS.md` Phase 5 hoàn thành + mở nhánh Phase 6.
 
 ## Self-review
 

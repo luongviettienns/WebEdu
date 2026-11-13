@@ -1,10 +1,12 @@
-# Kiểm kê Toàn diện API Endpoints — Phase 2 & Phase 3 (`docs/test-inventory-api.md`)
+# Kiểm kê Toàn diện API Endpoints — Phase 2 → Phase 5 (`docs/test-inventory-api.md`)
 
 > **Phương pháp trích xuất:** Quét tự động từ toàn bộ 8 Controller trong `backend/src/modules/**` và kiểm chứng 1-1 bằng bài test tự động `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts` trên Express router của ứng dụng NestJS (`app.getHttpAdapter().getInstance()`). Bất kỳ endpoint mới nào được thêm vào controller mà chưa khai báo trong ma trận kiểm thử sẽ làm bài test tự kiểm **FAIL** ngay lập tức.
 
 ---
 
-## 1. Bảng Tổng hợp Toàn bộ 42 HTTP Endpoints (Phase 2 & Phase 3)
+## 1. Bảng Tổng hợp Toàn bộ 67 HTTP Endpoints (Phase 2 → Phase 5)
+
+Bảng dưới giữ 42 endpoint Phase 2–3. Phase 4 thêm 12 route lịch/điểm danh (đã có trong ma trận E2E). Phase 5 thêm 13 route assessments (§1b).
 
 | # | Module / Controller | HTTP Method | Đường dẫn đầy đủ (`/api/v1/...`) | FUNC / DEC / SEC | Vai trò được phép (Guard + Object Policy) | DTO Đầu vào | Cấu trúc JSON Đầu ra / Mã trạng thái |
 |---|---|---|---|---|---|---|---|
@@ -50,6 +52,28 @@
 | 40 | `ClassesController` | `POST` | `/api/v1/classes/:id/complete` | `FUNC-018`, `CLASS-08` | Chỉ `ADMIN` (chuyển lớp sang `COMPLETED`, chỉ chuyển `Enrollment` `ACTIVE` -> `COMPLETED`, giải phóng HV về `PENDING_CLASS`, đồng bộ `activeClassesCount`) | `CompleteClassDto` (`actualEndDate?`, `reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'READ_ONLY'`) |
 | 41 | `ClassesController` | `POST` | `/api/v1/classes/:id/reopen` | `FUNC-018`, `CLASS-08`, `DEC-002` | Chỉ `ADMIN` (chỉ trong thời hạn 7 ngày kể từ `closedAt`, kiểm tra GV còn `ACTIVE`, khôi phục an toàn các `Enrollment` `COMPLETED` chưa vào lớp mới) | `ReopenClassDto` (`reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'FULL'`) |
 | 42 | `ClassesController` | `POST` | `/api/v1/classes/preview-schedule` | `TD-06`, `FUNC-015`, `FUNC-016` | Chỉ `ADMIN` (`SUPERADMIN` thuần, `TEACHER`, `STUDENT` nhận `403`) | `PreviewClassScheduleDto` (`scheduleDays`, `scheduleStartTime`, `scheduleEndTime`, `startDate`, `totalSessions`, `teacherId?`, `excludeClassId?`) | `200 OK`: `{ normalizedScheduleDays, scheduleText, expectedEndDate, totalSessions, scheduleConflictWarning }` |
+
+### 1b. Phase 5 — `AssessmentsController` (13 endpoint, `FUNC-039..050`)
+
+Toàn bộ route assessments: `ADMIN` + `TEACHER`; `STUDENT` / unauthenticated → `401`/`403`. Không có student-safe DTO trong Phase 5 (Zero-Leak để Phase 6/7). Parser Word/PDF best-effort; `ASSIGN-01` vẫn `TBD-DEFERRED`.
+
+| # | HTTP | Đường dẫn | FUNC | DTO đầu vào | Đầu ra |
+|---|---|---|---|---|---|
+| 55 | `POST` | `/api/v1/assessments/import` | `FUNC-040..042` | multipart `file` + `ImportAssessmentDto` (`courseId`, `type`, `title?`); `.docx`/`.pdf` ≤ 20MB, từ chối `.doc` | `{ assessmentId, recognizedCount, needsReviewCount, summary }` — luôn DRAFT, không tự publish |
+| 56 | `GET` | `/api/v1/assessments/:id/review` | `FUNC-042` | `@Param('id')` | `TeacherAssessmentDto` + `recognizedCount`, `needsReviewCount`, `summary` |
+| 57 | `POST` | `/api/v1/assessments` | `FUNC-039` | `CreateAssessmentDto` (`title≤200`, `type`, `courseId`, `durationMinutes?`) | `201`: `TeacherAssessmentDto` (`status=DRAFT`) |
+| 58 | `GET` | `/api/v1/assessments` | `FUNC-039` | `ListAssessmentsQueryDto` (`type?`, `courseId?`, `search?`, `status?`) | `TeacherAssessmentDto[]` |
+| 59 | `GET` | `/api/v1/assessments/:id` | `FUNC-039`, `FUNC-043` | `@Param('id')` | `TeacherAssessmentDto` (kèm `questions`, có đáp án — chỉ GV/Admin) |
+| 60 | `PATCH` | `/api/v1/assessments/:id` | `FUNC-039` | `UpdateAssessmentDto` (`title?`, `durationMinutes?`) | `TeacherAssessmentDto`; `403` khi `isLocked` |
+| 61 | `DELETE` | `/api/v1/assessments/:id` | `FUNC-039` | `@Param('id')` | `{ success: true }`; `409` nếu đã có bài làm |
+| 62 | `POST` | `/api/v1/assessments/:id/duplicate` | `FUNC-039` | — | bản sao DRAFT, `needsReview` giữ nguyên |
+| 63 | `POST` | `/api/v1/assessments/:id/publish` | `FUNC-039`, `FUNC-042` | — | `TeacherAssessmentDto` `PUBLISHED`; `400` nếu còn `needsReview` |
+| 64 | `POST` | `/api/v1/assessments/:id/questions` | `FUNC-043..050` | `CreateQuestionDto` (`type`, `prompt`, `payload`, `points>0`) | `TeacherQuestionDto`; payload validate theo 7 dạng |
+| 65 | `PUT` | `/api/v1/assessments/:id/questions/reorder` | `FUNC-043` | `ReorderQuestionsDto` (`questionIds`) | đánh lại `position` 1..N trong transaction |
+| 66 | `PATCH` | `/api/v1/assessments/:id/questions/:qid` | `FUNC-043..050` | `UpdateQuestionDto` | `TeacherQuestionDto`; `403` khi đề `isLocked` |
+| 67 | `DELETE` | `/api/v1/assessments/:id/questions/:qid` | `FUNC-043` | — | `{ success: true }` |
+
+Phase 4 (12 route, đã có trong ma trận E2E, không lặp bảng): `GET /schedules/calendar`, `GET /schedules/change-logs`, `GET|POST /classes/:classId/sessions`, `GET /sessions/:sessionId`, `PATCH /sessions/:sessionId/reschedule`, `POST /sessions/:sessionId/cancel`, `POST /sessions/:sessionId/makeup`, `GET|PUT /sessions/:sessionId/attendance`, `GET /classes/:classId/attendance/matrix`, `GET /attendance/me`.
 
 ---
 

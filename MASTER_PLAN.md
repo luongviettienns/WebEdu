@@ -192,10 +192,10 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
   - **Produces:**
     - Models: `Assessment` (loại: `HOMEWORK`, `MINI_TEST`, `MIDTERM`, `FINAL`), `Question` (polymorphic payload có kiểm tra schema theo 7 dạng câu `FUNC-044..050`), `MediaAsset` (Audio/Image bảo mật), `DocumentImportJob` (trạng thái `DRAFT_IMPORT -> REVIEWED -> READY`).
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 5:**
-  - [ ] **Task 5.1:** Thiết kế Schema & Migration cho `Assessment`, `Question`, `QuestionOption`, `MediaAsset` và dịch vụ Upload Media an toàn (kiểm tra magic bytes, giới hạn dung lượng, chống truy cập trái phép `FUNC-049, 050`).
-  - [ ] **Task 5.2:** Xây dựng CRUD Bài tập/Đề kiểm tra (`FUNC-039`) và Trình biên tập thủ công 7 dạng câu hỏi HSK (`FUNC-043..050`), đảm bảo **không trả về trường `correctAnswer` trong DTO của Học viên**.
-  - [ ] **Task 5.3:** Xây dựng pipeline Upload & Parse đề Word/PDF (`FUNC-040, 041`) sang bản nháp câu hỏi + Màn hình Giáo viên kiểm duyệt/chỉnh sửa sau chuyển đổi (`FUNC-042`).
-  - [ ] **Task 5.4:** Giao diện Ngân hàng đề, Trình tạo/sửa câu hỏi trực quan (Audio player, Image preview, Sắp xếp từ) và E2E tests.
+  - [x] **Task 5.1:** Thiết kế Schema & Migration cho `Assessment`, `Question`, `QuestionOption`, `MediaAsset` và dịch vụ Upload Media an toàn (kiểm tra magic bytes, giới hạn dung lượng, chống truy cập trái phép `FUNC-049, 050`).
+  - [x] **Task 5.2:** Xây dựng CRUD Bài tập/Đề kiểm tra (`FUNC-039`) và Trình biên tập thủ công 7 dạng câu hỏi HSK (`FUNC-043..050`), đảm bảo **không trả về trường `correctAnswer` trong DTO của Học viên**.
+  - [x] **Task 5.3:** Xây dựng pipeline Upload & Parse đề Word/PDF (`FUNC-040, 041`) sang bản nháp câu hỏi + Màn hình Giáo viên kiểm duyệt/chỉnh sửa sau chuyển đổi (`FUNC-042`).
+  - [x] **Task 5.4:** Giao diện Ngân hàng đề, Trình tạo/sửa câu hỏi trực quan (Audio player, Image preview, Sắp xếp từ) và E2E tests.
 
 ---
 
