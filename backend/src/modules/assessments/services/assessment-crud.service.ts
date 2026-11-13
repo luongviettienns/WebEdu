@@ -48,6 +48,9 @@ export class AssessmentCrudService {
     if (!title) throw new BadRequestException('Tên đề không được để trống');
     const course = await this.prisma.course.findUnique({ where: { id: dto.courseId } });
     if (!course) throw new NotFoundException('Không tìm thấy khóa học');
+    if (course.isActive === false) {
+      throw new BadRequestException('Khóa học HSK hiện đang ngừng hoạt động');
+    }
     const created = await this.prisma.assessment.create({
       data: {
         title,
@@ -303,17 +306,22 @@ export class AssessmentCrudService {
         throw new NotFoundException('Không tìm thấy file đính kèm');
       }
     }
-    return this.streamKey(asset.storageKey, asset.storageKey.split('/').pop() ?? 'media', false);
+    return this.streamKey(asset.storageKey, asset.storageKey.split('/').pop() ?? 'media', false, asset.mime);
   }
 
-  private async streamKey(storageKey: string, filename: string, asDownload: boolean): Promise<StreamableFile> {
+  private async streamKey(
+    storageKey: string,
+    filename: string,
+    asDownload: boolean,
+    mimeOverride?: string,
+  ): Promise<StreamableFile> {
     const bytes = await readStoredFile(storageKey);
     if (!bytes) throw new NotFoundException('Không tìm thấy file đính kèm');
     const safe = filename.replace(/[\r\n"]/g, '_');
     const ascii = safe.replace(/[^\x20-\x7E]/g, '_');
     const kind = asDownload ? 'attachment' : 'inline';
     return new StreamableFile(bytes, {
-      type: mimeFromFilename(filename),
+      type: mimeOverride || mimeFromFilename(filename),
       disposition: `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(safe)}`,
     });
   }

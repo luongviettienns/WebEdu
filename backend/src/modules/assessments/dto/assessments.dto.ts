@@ -2,6 +2,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -102,6 +103,10 @@ export class UpdateQuestionDto {
   @IsPositive()
   @Max(1000)
   points?: number;
+
+  @ValidateIf((_, value) => value !== undefined)
+  @IsBoolean()
+  needsReview?: boolean;
 }
 
 export class ReorderQuestionsDto {

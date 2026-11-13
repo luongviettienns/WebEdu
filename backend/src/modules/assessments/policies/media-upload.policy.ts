@@ -4,13 +4,20 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 const MAX_DOC_BYTES = 20 * 1024 * 1024;
 
-function detectMime(buffer: Buffer): string | null {
+/** Detects safe raster image MIME types (PNG/JPEG) strictly from magic bytes. */
+export function detectSafeImageMime(buffer: Buffer): 'image/png' | 'image/jpeg' | null {
   if (buffer.length >= 4 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
     return 'image/png';
   }
   if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
     return 'image/jpeg';
   }
+  return null;
+}
+
+function detectMime(buffer: Buffer): string | null {
+  const safeImage = detectSafeImageMime(buffer);
+  if (safeImage) return safeImage;
   if (buffer.length >= 3 && buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) {
     return 'audio/mpeg';
   }

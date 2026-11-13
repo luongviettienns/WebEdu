@@ -68,13 +68,19 @@ export class QuestionCrudService {
       const payload = (dto.payload ?? existing.payload) as Record<string, unknown>;
       this.schemaPolicy.validatePayload(existing.type, payload);
       await this.assertMediaOwned(tx, assessmentId, existing.type, payload);
+      const nextNeedsReview =
+        dto.needsReview !== undefined
+          ? dto.needsReview
+          : dto.payload !== undefined
+            ? false
+            : existing.needsReview;
       const updated = await tx.question.update({
         where: { id: questionId },
         data: {
           ...(prompt !== undefined ? { prompt } : {}),
           ...(dto.payload !== undefined ? { payload: dto.payload as Prisma.InputJsonValue } : {}),
           ...(dto.points !== undefined ? { points: dto.points } : {}),
-          needsReview: false,
+          needsReview: nextNeedsReview,
         },
       });
       return toTeacherQuestionDto(updated);

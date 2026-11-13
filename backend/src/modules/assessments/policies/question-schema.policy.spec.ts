@@ -28,10 +28,25 @@ describe('QuestionSchemaPolicy (Task 5.2 TDD)', () => {
       },
     ],
     [QuestionType.FILL_BLANK, { acceptedAnswers: ['你好', '您好'] }],
+    [QuestionType.FILL_BLANK, { acceptedAnswers: ['你好'], caseSensitive: false, pinyinSensitive: true }],
     [QuestionType.ORDERING, { tokens: ['我', '是', '学生'], correctSentence: '我是学生' }],
     [QuestionType.ESSAY, { sampleAnswer: '我是学生', rubric: 'Đúng ngữ pháp', maxLength: 500 }],
     [QuestionType.LISTENING, { mediaId: 'media-1', maxListens: 3 }],
     [QuestionType.IMAGE_BASED, { mediaId: 'media-1' }],
+    [QuestionType.IMAGE_BASED, { mediaId: 'media-1', caption: 'Nhìn tranh chọn đáp án' }],
+    [
+      QuestionType.IMAGE_BASED,
+      {
+        mediaId: 'media-1',
+        multiple: true,
+        options: [
+          { id: 'a', text: '猫' },
+          { id: 'b', text: '狗' },
+          { id: 'c', text: '鸟' },
+        ],
+        correctOptionIds: ['a', 'b'],
+      },
+    ],
     [
       QuestionType.IMAGE_BASED,
       {
@@ -91,12 +106,40 @@ describe('QuestionSchemaPolicy (Task 5.2 TDD)', () => {
     ],
     [QuestionType.FILL_BLANK, { acceptedAnswers: [] }],
     [QuestionType.FILL_BLANK, { acceptedAnswers: ['  '] }],
+    [QuestionType.FILL_BLANK, { acceptedAnswers: ['你好'], caseSensitive: 'true' }],
+    [QuestionType.FILL_BLANK, { acceptedAnswers: ['你好'], pinyinSensitive: 'yes' }],
     [QuestionType.ORDERING, { tokens: ['我'] }],
     [QuestionType.ORDERING, { tokens: ['我', '好'] }],
     [QuestionType.ESSAY, { maxLength: -5 }],
     [QuestionType.LISTENING, { mediaId: 'media-1', maxListens: 'abc' }],
     [QuestionType.LISTENING, {}],
     [QuestionType.IMAGE_BASED, { mediaId: '' }],
+    [QuestionType.IMAGE_BASED, { mediaId: 'media-1', caption: 123 }],
+    [QuestionType.IMAGE_BASED, { mediaId: 'media-1', multiple: 'yes' }],
+    [
+      QuestionType.IMAGE_BASED,
+      {
+        mediaId: 'media-1',
+        multiple: false,
+        options: [
+          { id: 'a', text: '猫' },
+          { id: 'b', text: '狗' },
+        ],
+        correctOptionIds: ['a', 'b'],
+      },
+    ],
+    [
+      QuestionType.IMAGE_BASED,
+      {
+        mediaId: 'media-1',
+        multiple: true,
+        options: [
+          { id: 'a', text: '猫' },
+          { id: 'b', text: '狗' },
+        ],
+        correctOptionIds: ['a'],
+      },
+    ],
     [
       QuestionType.IMAGE_BASED,
       {

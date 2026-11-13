@@ -1,7 +1,11 @@
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { QuestionType, Role } from '@prisma/client';
-import { vi } from 'vitest';
+import { AssessmentType, QuestionType, Role } from '@prisma/client';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, vi } from 'vitest';
 import { AssessmentCrudService } from './assessment-crud.service.js';
+import { persistMediaBytes } from './document-extract.js';
 import { QuestionCrudService } from './question-crud.service.js';
 import { QuestionSchemaPolicy } from '../policies/question-schema.policy.js';
 
@@ -45,7 +49,7 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
       $queryRaw: vi.fn(async () => []),
     };
     return {
-      course: { findUnique: vi.fn(async () => ({ id: 'course-1' })) },
+      course: { findUnique: vi.fn(async () => ({ id: 'course-1', isActive: true })) },
       assessment: {
         create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
           id: 'asm-1',
@@ -151,10 +155,10 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
     expect(prisma.tx.question.update).not.toHaveBeenCalled();
   });
 
-  it('update question clears needsReview', async () => {
+  it('update question preserves needsReview on prompt/points-only edits and clears on payload or explicit needsReview: false', async () => {
     const state = {
       assessment: draft,
-      question: { id: 'q-1', assessmentId: 'asm-1', type: QuestionType.SINGLE_CHOICE, payload: validChoice },
+      question: { id: 'q-1', assessmentId: 'asm-1', type: QuestionType.SINGLE_CHOICE, payload: validChoice, needsReview: true },
     };
     const prisma = makePrisma(state);
     prisma.tx.question.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
@@ -164,15 +168,97 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
       prompt: '你好吗？',
       payload: validChoice,
       points: 1,
-      needsReview: false,
+      needsReview: true,
       ...args.data,
     })) as never);
     const service = new QuestionCrudService(prisma as never, schemaPolicy);
-    const updated = await service.update('asm-1', 'q-1', { prompt: '你好吗？' }, owner);
-    expect(updated.needsReview).toBe(false);
-    expect(prisma.tx.question.update).toHaveBeenCalledWith(
+
+    const promptOnly = await service.update('asm-1', 'q-1', { prompt: '你好吗？' }, owner);
+    expect(promptOnly.needsReview).toBe(true);
+    expect(prisma.tx.question.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ prompt: '你好吗？', needsReview: true }) }),
+    );
+
+    const pointsOnly = await service.update('asm-1', 'q-1', { points: 2 }, owner);
+    expect(pointsOnly.needsReview).toBe(true);
+    expect(prisma.tx.question.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ points: 2, needsReview: true }) }),
+    );
+
+    const payloadEdited = await service.update('asm-1', 'q-1', { payload: validChoice }, owner);
+    expect(payloadEdited.needsReview).toBe(false);
+    expect(prisma.tx.question.update).toHaveBeenLastCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ needsReview: false }) }),
     );
+
+    const confirmed = await service.update('asm-1', 'q-1', { needsReview: false } as never, owner);
+    expect(confirmed.needsReview).toBe(false);
+    expect(prisma.tx.question.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ needsReview: false }) }),
+    );
+  });
+
+  it('update question rejects clearing needsReview: false when payload is invalid', async () => {
+    const invalidChoice = {
+      options: [
+        { id: 'a', text: '你' },
+        { id: 'b', text: '我' },
+      ],
+      correctOptionIds: [],
+    };
+    const prisma = makePrisma({
+      assessment: draft,
+      question: { id: 'q-1', assessmentId: 'asm-1', type: QuestionType.SINGLE_CHOICE, payload: invalidChoice, needsReview: true },
+    });
+    const service = new QuestionCrudService(prisma as never, schemaPolicy);
+    await expect(service.update('asm-1', 'q-1', { needsReview: false } as never, owner)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(prisma.tx.question.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects create on inactive course (isActive: false)', async () => {
+    const prisma = makePrisma({});
+    prisma.course.findUnique.mockResolvedValueOnce({ id: 'course-1', isActive: false });
+    const service = new AssessmentCrudService(prisma as never, schemaPolicy);
+    await expect(
+      service.create({ title: 'Đề mới', type: AssessmentType.HOMEWORK, courseId: 'course-1' }, owner.id),
+    ).rejects.toMatchObject({
+      status: 400,
+      message: 'Khóa học HSK hiện đang ngừng hoạt động',
+    });
+    expect(prisma.assessment.create).not.toHaveBeenCalled();
+  });
+
+  describe('streamMedia Content-Type integrity', () => {
+    const dirs: string[] = [];
+    const prevUploadDir = process.env.UPLOAD_DIR;
+
+    afterEach(() => {
+      if (prevUploadDir === undefined) delete process.env.UPLOAD_DIR;
+      else process.env.UPLOAD_DIR = prevUploadDir;
+      while (dirs.length > 0) rmSync(dirs.pop()!, { recursive: true, force: true });
+    });
+
+    it('uses verified MediaAsset.mime instead of filename extension guessing when streaming media', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'webedu-stream-'));
+      dirs.push(dir);
+      process.env.UPLOAD_DIR = dir;
+
+      const storageKey = await persistMediaBytes(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]), 'application/octet-stream');
+      expect(storageKey.endsWith('.bin')).toBe(true);
+
+      const prisma = makePrisma({ assessment: draft });
+      (prisma.mediaAsset as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi.fn(async () => ({
+        id: 'm-1',
+        assessmentId: 'asm-1',
+        mime: 'image/png',
+        storageKey,
+      }));
+      const service = new AssessmentCrudService(prisma as never, schemaPolicy);
+      const streamed = await service.streamMedia('asm-1', 'm-1', owner);
+      expect(streamed.getHeaders().type).toBe('image/png');
+    });
   });
 
   it('reorder shifts positions out of the unique range before writing finals', async () => {

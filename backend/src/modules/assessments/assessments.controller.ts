@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -60,6 +61,7 @@ export class AssessmentsController {
   }
 
   @Get(':id/original')
+  @Header('X-Content-Type-Options', 'nosniff')
   streamOriginal(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.assessments.streamOriginal(id, actor);
   }
@@ -81,6 +83,7 @@ export class AssessmentsController {
   }
 
   @Get(':id/media/:mediaId')
+  @Header('X-Content-Type-Options', 'nosniff')
   streamMedia(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,

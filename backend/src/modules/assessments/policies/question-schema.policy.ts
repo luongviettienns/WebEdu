@@ -3,6 +3,8 @@ import { QuestionType } from '@prisma/client';
 
 type Option = { id: string; text: string; imageMediaId?: string };
 
+const trimmed = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
 function optionsOf(payload: Record<string, unknown>): Option[] {
   return Array.isArray(payload.options)
     ? (payload.options as Option[]).filter((o) => typeof o?.id === 'string')
@@ -31,6 +33,8 @@ export class QuestionSchemaPolicy {
           ? (p.acceptedAnswers as unknown[]).filter((a) => typeof a === 'string' && a.trim())
           : [];
         if (answers.length === 0) throw new BadRequestException('Câu điền từ cần ít nhất 1 đáp án chấp nhận');
+        this.assertOptionalBoolean(p.caseSensitive, 'caseSensitive phải là boolean');
+        this.assertOptionalBoolean(p.pinyinSensitive, 'pinyinSensitive phải là boolean');
         return;
       }
       case QuestionType.ORDERING: {
@@ -57,16 +61,27 @@ export class QuestionSchemaPolicy {
         return;
       }
       case QuestionType.IMAGE_BASED: {
+        this.assertOptionalString(p.caption, 'Chú thích ảnh phải là chuỗi');
+        this.assertOptionalBoolean(p.multiple, 'multiple phải là boolean');
         const options = optionsOf(p);
-        const stem = typeof p.mediaId === 'string' ? p.mediaId.trim() : '';
-        const optionImages = options.filter((o) => o.imageMediaId?.trim());
+        const stem = trimmed(p.mediaId);
+        const optionImages = options.filter((o) => trimmed(o.imageMediaId));
         if (!stem && optionImages.length < 2) {
           throw new BadRequestException('Câu kèm hình cần ảnh đề hoặc ít nhất 2 phương án ảnh');
         }
-        const hasOptionContent = options.some((o) => o.text?.trim() || o.imageMediaId?.trim());
-        if (hasOptionContent) this.validateChoice(options, p, 1, false);
+        const hasOptionContent = options.some((o) => trimmed(o.text) || trimmed(o.imageMediaId));
+        if (hasOptionContent) {
+          this.validateChoice(options, p, p.multiple === true ? 2 : 1, false);
+        }
         return;
       }
+    }
+  }
+
+  private assertOptionalBoolean(value: unknown, message: string): void {
+    if (value === undefined || value === null) return;
+    if (typeof value !== 'boolean') {
+      throw new BadRequestException(message);
     }
   }
 
@@ -93,7 +108,7 @@ export class QuestionSchemaPolicy {
     if (options.length < 2 || options.length > 4) {
       throw new BadRequestException('Trắc nghiệm cần 2–4 phương án');
     }
-    if (requireContent && options.some((o) => !o.text?.trim() && !o.imageMediaId?.trim())) {
+    if (requireContent && options.some((o) => !trimmed(o.text) && !trimmed(o.imageMediaId))) {
       throw new BadRequestException('Mỗi phương án cần có nội dung hoặc ảnh');
     }
     const optionIds = options.map((o) => o.id);

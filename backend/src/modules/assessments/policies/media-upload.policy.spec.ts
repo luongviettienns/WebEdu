@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { assertSafeDocxZip, assertSafeUpload } from './media-upload.policy.js';
+import { assertSafeDocxZip, assertSafeUpload, detectSafeImageMime } from './media-upload.policy.js';
 
 function buf(bytes: number[], size: number): Buffer {
   const b = Buffer.alloc(size);
@@ -40,5 +40,14 @@ describe('media-upload.policy (Task 5.1 TDD)', () => {
     eocd.writeUInt32LE(4, 16);
     const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), cd, eocd]);
     expect(() => assertSafeDocxZip(zip)).toThrow(BadRequestException);
+  });
+
+  it('detectSafeImageMime accepts PNG and JPEG magic bytes and rejects spoofed/unsupported payloads', () => {
+    expect(detectSafeImageMime(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]))).toBe('image/png');
+    expect(detectSafeImageMime(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg');
+    expect(detectSafeImageMime(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>'))).toBeNull();
+    expect(detectSafeImageMime(Buffer.from('<html><body>xss</body></html>'))).toBeNull();
+    expect(detectSafeImageMime(Buffer.from('plain text masquerading as png'))).toBeNull();
+    expect(detectSafeImageMime(Buffer.from([0x89, 0x50]))).toBeNull();
   });
 });

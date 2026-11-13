@@ -2,7 +2,7 @@ import { BadRequestException, HttpException, Injectable, NotFoundException } fro
 import { MediaKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { assertCanViewAssessment, type AssessmentActor } from '../policies/assessment-access.policy.js';
-import { assertSafeDocxZip, assertSafeUpload } from '../policies/media-upload.policy.js';
+import { assertSafeDocxZip, assertSafeUpload, detectSafeImageMime } from '../policies/media-upload.policy.js';
 import {
   parseImportedQuestions,
   type ExtractedImage,
@@ -18,6 +18,7 @@ const MAX_IMPORT_QUESTIONS = 200;
 const MAX_IMPORT_IMAGES = 30;
 const MAX_IMPORT_IMAGE_BYTES = 5 * 1024 * 1024;
 const EXTRACT_TIMEOUT_MS = 15_000;
+const DECORATION_IMAGE_MIMES = new Set(['image/x-emf', 'image/emf', 'image/x-wmf', 'image/wmf']);
 
 export type ImportResult = {
   assessmentId: string;
@@ -85,6 +86,23 @@ export class DocumentImportService {
 
     const course = await this.prisma.course.findUnique({ where: { id: dto.courseId } });
     if (!course) throw new NotFoundException('Không tìm thấy khóa học');
+    if (course.isActive === false) {
+      throw new BadRequestException('Khóa học HSK hiện đang ngừng hoạt động');
+    }
+
+    const validatedImages: Array<{ bytes: Buffer; mime: 'image/png' | 'image/jpeg' }> = [];
+    for (const image of extracted.images.slice(0, MAX_IMPORT_IMAGES)) {
+      if (image.bytes.byteLength === 0) continue;
+      if (image.bytes.byteLength > MAX_IMPORT_IMAGE_BYTES) {
+        throw new BadRequestException('Ảnh nhúng vượt quá 5MB');
+      }
+      const verifiedMime = detectSafeImageMime(image.bytes);
+      if (!verifiedMime) {
+        if (DECORATION_IMAGE_MIMES.has(image.mime.trim().toLowerCase())) continue;
+        throw new BadRequestException('Ảnh nhúng trong file đề chỉ hỗ trợ định dạng PNG hoặc JPEG hợp lệ');
+      }
+      validatedImages.push({ bytes: image.bytes, mime: verifiedMime });
+    }
 
     const title = (dto.title?.trim() || filename.replace(/\.[^.]+$/, '')).slice(0, 200);
     const storedKeys: string[] = [];
@@ -92,11 +110,7 @@ export class DocumentImportService {
       const originalStorageKey = await this.extractors.persistBytes(buffer, mime);
       storedKeys.push(originalStorageKey);
       const images: Array<ExtractedImage & { storageKey: string }> = [];
-      for (const image of extracted.images.slice(0, MAX_IMPORT_IMAGES)) {
-        if (!image.mime.startsWith('image/') || image.bytes.byteLength === 0) continue;
-        if (image.bytes.byteLength > MAX_IMPORT_IMAGE_BYTES) {
-          throw new BadRequestException('Ảnh nhúng vượt quá 5MB');
-        }
+      for (const image of validatedImages) {
         const storageKey = await this.extractors.persistBytes(image.bytes, image.mime);
         storedKeys.push(storageKey);
         images.push({ ...image, storageKey });

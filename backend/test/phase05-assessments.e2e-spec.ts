@@ -434,4 +434,130 @@ describe('Phase 5 assessments hardening (real PostgreSQL, HTTP)', () => {
     await owner.del(`/api/v1/assessments/${id}`).expect(200);
     expect(fs.readdirSync(uploadDir)).toHaveLength(0);
   });
+
+  it('sets X-Content-Type-Options: nosniff on original and media endpoints and rejects inactive courses on create/import', async () => {
+    const owner = await user('owner@webedu.vn', [Role.TEACHER], '0901000001');
+    const inactive = await harness.prisma.course.create({
+      data: { code: 'HSK1-OFF', name: 'HSK 1 Tạm ngưng', level: CourseLevel.HSK1, isActive: false },
+    });
+
+    const createBlocked = await owner
+      .post('/api/v1/assessments')
+      .send({ title: 'Đề khóa ngưng', type: 'HOMEWORK', courseId: inactive.id });
+    expect(createBlocked.status).toBe(400);
+
+    const importBlocked = await owner
+      .post('/api/v1/assessments/import')
+      .field('courseId', inactive.id)
+      .field('type', 'HOMEWORK')
+      .attach('file', fs.readFileSync(SAMPLE_DOCX), {
+        filename: 'sample-questions.docx',
+        contentType: 'application/octet-stream',
+      });
+    expect(importBlocked.status).toBe(400);
+    expect(fs.readdirSync(uploadDir)).toHaveLength(0);
+
+    const imported = await owner
+      .post('/api/v1/assessments/import')
+      .field('courseId', courseId)
+      .field('type', 'HOMEWORK')
+      .attach('file', fs.readFileSync(SAMPLE_DOCX), {
+        filename: 'sample-questions.docx',
+        contentType: 'application/octet-stream',
+      })
+      .expect(201);
+    const id = (imported.body as { assessmentId: string }).assessmentId;
+    const mediaId = await upload(owner, id, 'image');
+
+    const orig = await owner.get(`/api/v1/assessments/${id}/original`).expect(200);
+    expect(orig.headers['x-content-type-options']).toBe('nosniff');
+
+    const media = await owner.get(`/api/v1/assessments/${id}/media/${mediaId}`).expect(200);
+    expect(media.headers['x-content-type-options']).toBe('nosniff');
+    expect(media.headers['content-type']).toContain('image/png');
+  });
+
+  it('preserves needsReview on prompt/points-only edits, clears on payload or explicit needsReview: false, and validates schema extras', async () => {
+    const owner = await user('owner@webedu.vn', [Role.TEACHER], '0901000001');
+    const id = await createDraft(owner);
+    const qid = await addChoice(owner, id);
+    await harness.prisma.question.update({ where: { id: qid }, data: { needsReview: true } });
+
+    const promptEdit = await owner
+      .patch(`/api/v1/assessments/${id}/questions/${qid}`)
+      .send({ prompt: 'Sửa câu hỏi' })
+      .expect(200);
+    expect((promptEdit.body as { needsReview: boolean }).needsReview).toBe(true);
+
+    const pointsEdit = await owner
+      .patch(`/api/v1/assessments/${id}/questions/${qid}`)
+      .send({ points: 3 })
+      .expect(200);
+    expect((pointsEdit.body as { needsReview: boolean }).needsReview).toBe(true);
+
+    await owner
+      .patch(`/api/v1/assessments/${id}/questions/${qid}`)
+      .send({ needsReview: 'not-a-bool' })
+      .expect(400);
+
+    const confirmed = await owner
+      .patch(`/api/v1/assessments/${id}/questions/${qid}`)
+      .send({ needsReview: false })
+      .expect(200);
+    expect((confirmed.body as { needsReview: boolean }).needsReview).toBe(false);
+
+    await harness.prisma.question.update({ where: { id: qid }, data: { needsReview: true } });
+    const payloadEdit = await owner
+      .patch(`/api/v1/assessments/${id}/questions/${qid}`)
+      .send({ payload: choice('b').payload })
+      .expect(200);
+    expect((payloadEdit.body as { needsReview: boolean }).needsReview).toBe(false);
+
+    const badImportQ = await harness.prisma.question.create({
+      data: {
+        assessmentId: id,
+        type: 'SINGLE_CHOICE',
+        position: 2,
+        prompt: 'Thiếu đáp án',
+        payload: { options: [{ id: 'a', text: 'A' }, { id: 'b', text: 'B' }], correctOptionIds: [] },
+        points: 1,
+        needsReview: true,
+      },
+    });
+    await owner
+      .patch(`/api/v1/assessments/${id}/questions/${badImportQ.id}`)
+      .send({ needsReview: false })
+      .expect(400);
+
+    const imgId = await upload(owner, id, 'image');
+    await owner
+      .post(`/api/v1/assessments/${id}/questions`)
+      .send({
+        type: 'IMAGE_BASED',
+        prompt: 'Chọn 2 đáp án',
+        payload: {
+          mediaId: imgId,
+          caption: 'Chú thích',
+          multiple: true,
+          options: [
+            { id: 'a', text: '猫' },
+            { id: 'b', text: '狗' },
+            { id: 'c', text: '鸟' },
+          ],
+          correctOptionIds: ['a', 'b'],
+        },
+        points: 2,
+      })
+      .expect(201);
+
+    await owner
+      .post(`/api/v1/assessments/${id}/questions`)
+      .send({
+        type: 'FILL_BLANK',
+        prompt: 'Điền từ',
+        payload: { acceptedAnswers: ['你好'], pinyinSensitive: 'invalid' },
+        points: 1,
+      })
+      .expect(400);
+  });
 });

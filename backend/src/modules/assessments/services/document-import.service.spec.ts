@@ -45,7 +45,7 @@ describe('DocumentImportService (Task 5.3 TDD)', () => {
       mediaAsset: { create: vi.fn(async () => ({ id: 'media-1' })) },
     };
     return {
-      course: { findUnique: vi.fn(async () => ({ id: 'course-1' })) },
+      course: { findUnique: vi.fn(async () => ({ id: 'course-1', isActive: true })) },
       $transaction: vi.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
       tx,
     };
@@ -181,5 +181,74 @@ describe('DocumentImportService (Task 5.3 TDD)', () => {
     const review = await service.getReview('asm-imp-1', { id: 'teacher-1', roles: ['TEACHER' as never] });
     expect(review.needsReviewCount).toBe(1);
     expect(review.summary).toContain('1 câu cần kiểm tra');
+  });
+
+  it('rejects import into an inactive course (isActive: false)', async () => {
+    const prisma = makePrisma();
+    prisma.course.findUnique.mockResolvedValueOnce({ id: 'course-1', isActive: false });
+    const persistBytes = vi.fn(async () => 'uploads/media/orig.docx');
+    const service = new DocumentImportService(prisma as never);
+    service.extractors = {
+      extractDocx: vi.fn(async () => ({ text: THREE_QUESTIONS, images: [] })),
+      extractPdf: vi.fn(),
+      persistBytes,
+    };
+    await expect(service.importFile('teacher-1', 'de.docx', DOCX, dto)).rejects.toMatchObject({
+      status: 400,
+      message: 'Khóa học HSK hiện đang ngừng hoạt động',
+    });
+    expect(persistBytes).not.toHaveBeenCalled();
+    expect(prisma.tx.assessment.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['image/svg+xml', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script /></svg>')],
+    ['text/html', Buffer.from('<html><body>xss</body></html>')],
+    ['image/png', Buffer.from('not-a-real-png-payload')],
+  ])('rejects spoofed/unsafe embedded %s without persisting any media or assessment', async (mime, bytes) => {
+    const prisma = makePrisma();
+    const persistBytes = vi.fn(async () => 'uploads/media/should-not-write');
+    const service = new DocumentImportService(prisma as never);
+    service.extractors = {
+      extractDocx: vi.fn(async () => ({
+        text: THREE_QUESTIONS,
+        images: [{ mime, bytes }],
+      })),
+      extractPdf: vi.fn(),
+      persistBytes,
+    };
+    await expect(service.importFile('teacher-1', 'de.docx', DOCX, dto)).rejects.toMatchObject({
+      status: 400,
+      message: 'Ảnh nhúng trong file đề chỉ hỗ trợ định dạng PNG hoặc JPEG hợp lệ',
+    });
+    expect(persistBytes).not.toHaveBeenCalled();
+    expect(prisma.tx.mediaAsset.create).not.toHaveBeenCalled();
+  });
+
+  it('skips .emf/.wmf decorations safely while persisting verified PNG/JPEG bytes using detected MIME', async () => {
+    const prisma = makePrisma();
+    const persistBytes = vi.fn(async () => 'uploads/media/asset.jpg');
+    const service = new DocumentImportService(prisma as never);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+    service.extractors = {
+      extractDocx: vi.fn(async () => ({
+        text: THREE_QUESTIONS,
+        images: [
+          { mime: 'image/x-emf', bytes: Buffer.from('emf-decoration') },
+          { mime: 'image/wmf', bytes: Buffer.from('wmf-decoration') },
+          { mime: 'image/png', bytes: jpeg },
+        ],
+      })),
+      extractPdf: vi.fn(),
+      persistBytes,
+    };
+    await service.importFile('teacher-1', 'de.docx', DOCX, dto);
+    expect(persistBytes).toHaveBeenCalledTimes(2);
+    expect(persistBytes).toHaveBeenNthCalledWith(2, jpeg, 'image/jpeg');
+    expect(prisma.tx.mediaAsset.create).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.mediaAsset.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ assessmentId: 'asm-imp-1', kind: 'IMAGE', mime: 'image/jpeg' }),
+    });
+    expect(prisma.tx).not.toHaveProperty('questionMedia');
   });
 });
