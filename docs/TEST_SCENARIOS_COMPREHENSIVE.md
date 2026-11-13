@@ -1,21 +1,21 @@
 # Bộ Kịch Bản Kiểm Thử Toàn Diện (Comprehensive Test Scenarios — Phases 1–5)
 
-> **Cập nhật lần cuối:** 2026-11-13 (Phiên bản v2.0 — đồng bộ trạng thái thực tế của `develop` [Modules 01–05] và nhánh `feature/phase-05-question-bank-and-import` [Module 06 P1] theo kiểm toán `#6` & `#7`)
-> **Phạm vi hệ thống hiện tại:** **21 màn hình `page.tsx`** (`20` trên `develop` + `1` trên Phase 5) · **71 API Endpoints trên 11 Controllers** (`54` trên `develop` + `17` trên Phase 5) · **22 Models Prisma / 13 SQL Migrations** (`18` models / `10` migrations trên `develop` + `4` models / `3` migrations trên Phase 5).
+> **Cập nhật lần cuối:** 2026-11-13 (Phiên bản v2.1 — đồng bộ sau hoàn tất 3 Wave SDD `TD-07..10`, `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01` & khắc phục review toàn nhánh tới `743df24` trên nhánh `feature/phase-05-question-bank-and-import`)
+> **Phạm vi hệ thống hiện tại:** **21 màn hình `page.tsx`** (`20` trên `develop` + `1` trên Phase 5) · **72 API Endpoints trên 11 Controllers** (`55` Modules 01–05 gồm `POST /profile/me/send-email-change-code` + `17` Phase 5) · **22 Models Prisma / 13 SQL Migrations** (`18` models / `10` migrations trên `develop` + `4` models / `3` migrations trên Phase 5).
 
 ---
 
 ## 1. Tổng Quan Phạm Vi & Bộ Kiểm Thử Tự Động Đã Xác Minh
 
-| Lớp kiểm thử | Công cụ & Lệnh chạy | Độ phủ thực tế (`feature/phase-05...` working tree, theo `#7`) | Tài liệu tham chiếu |
+| Lớp kiểm thử | Công cụ & Lệnh chạy | Độ phủ thực tế (`feature/phase-05...` @ `743df24`) | Tài liệu tham chiếu |
 | :--- | :--- | :--- | :--- |
-| **LOC & Structure Gate** | `node scripts/check-loc.js` | **167 files checked — PASS** | [`scripts/check-loc.js`](file:///c:/Users/ASUS/Desktop/WebEdu/scripts/check-loc.js) |
-| **Backend Static & Build** | `cd backend && npm run typecheck && npm run lint && npm run build` | `tsc --noEmit` PASS · `oxlint --type-aware` (**178 files**, 0 errors, 0 warnings) PASS · `nest build` PASS | [`backend/package.json`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/package.json) |
-| **Backend Unit Tests** | `cd backend && npm run test` (Vitest; `npm run test:cov` để đo coverage) | **37/37 files, 266/266 PASS** (`89.55%` Stmts / `80.32%` Branch / `90.31%` Funcs / `90.41%` Lines) | [`backend/src/`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/src) |
-| **PostgreSQL Integration** | `cd backend && npm run test:integration` | **1/1 file, 16/16 PASS** (`postgres.integration-spec.ts`: lockout DB, token rotation, partial unique index, concurrency) | [`postgres.integration-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/postgres.integration-spec.ts) |
-| **Backend HTTP E2E** | `cd backend && npm run test:e2e` | **8/8 files, 43/43 PASS** (`*.e2e-spec.ts`; lưu ý `rbac-phase3.audit-spec.ts` 9 cases nằm ngoài pattern của `vitest.config.e2e.ts`) | [`backend/test/`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test) |
+| **LOC & Structure Gate** | `node scripts/check-loc.js` | **175 files checked across 6 categories — PASS** | [`scripts/check-loc.js`](file:///c:/Users/ASUS/Desktop/WebEdu/scripts/check-loc.js) |
+| **Backend Static & Build** | `cd backend && npm run typecheck && npm run lint && npm run build` | `tsc --noEmit` PASS · `oxlint --type-aware` (**179 files**, 0 errors, 0 warnings) PASS · `nest build` PASS | [`backend/package.json`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/package.json) |
+| **Backend Unit & Coverage** | `cd backend && npm test` / `npm run test:cov` (Vitest) | **37/37 files, 299/299 PASS** (`37.16s`); `test:cov`: **90.27%** Stmts / **81.74%** Branch / **90.94%** Funcs / **91.18%** Lines *(lưu ý: `auth.services.spec.ts:863` bị timeout 1 lần ở `5116ms` do tải bcrypt + V8 coverage, pass ở lần chạy lại `45.80s`)* | [`backend/src/`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/src) |
+| **PostgreSQL Integration** | `cd backend && npm run test:integration` | **1/1 file, 16/16 PASS** (`postgres.integration-spec.ts` chạy lại `29.30s`; ghi nhận flake phụ thuộc thứ tự khóa ở Scenario 18 `cancelVsReschedule` khi `rescheduleSession` lấy lock trước `cancelSession`) | [`postgres.integration-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/postgres.integration-spec.ts) |
+| **Backend HTTP E2E** | `cd backend && npm run test:e2e` | **8/8 files, 46/46 PASS** (`169.78s`; khớp **72 endpoints / 11 controllers**; lưu ý `rbac-phase3.audit-spec.ts` 9 cases nằm ngoài pattern của `vitest.config.e2e.ts`) | [`backend/test/`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test) |
 | **Frontend Static & Build** | `cd frontend && npm run typecheck && npm run lint && npm run build` | `tsc --noEmit` PASS · `eslint` PASS · `next build` (**24 entries** gồm 21 `page.tsx` + `/_not-found` + Next metadata routes) PASS | [`frontend/package.json`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/package.json) |
-| **Playwright Browser E2E** | `cd frontend && npm run test:e2e` | **6 spec files, 52/52 PASS** (2 projects) | [`frontend/e2e/`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/e2e) |
+| **Playwright Browser E2E** | `cd frontend && npm run test:e2e` | **8 spec files, 72/72 PASS** (`3.6m` trên 2 projects: `desktop-chromium` 36/36 + `mobile-chromium` 36/36, gồm `wave3-admin-profile-attendance.spec.ts` & `wave3-classes-lifecycle.spec.ts` có kiểm tra Axe WCAG) | [`frontend/e2e/`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/e2e) |
 
 > Chi tiết toàn bộ bề mặt API và UI được lập danh mục tại [`test-inventory-api.md`](file:///c:/Users/ASUS/Desktop/WebEdu/docs/test-inventory-api.md) và [`test-inventory-ui.md`](file:///c:/Users/ASUS/Desktop/WebEdu/docs/test-inventory-ui.md).
 
