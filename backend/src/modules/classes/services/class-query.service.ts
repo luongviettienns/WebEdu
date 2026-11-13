@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ClassStatus, EnrollmentStatus, type Prisma } from '@prisma/client';
+import {
+  ClassStatus,
+  EnrollmentStatus,
+  SessionStatus,
+  type Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
 import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
@@ -143,8 +148,12 @@ export class ClassQueryService {
       this.prisma.class.count({ where }),
     ]);
 
-    const items = (rows as unknown as ClassItemEntity[]).map((row) =>
-      toClassItemDto(row),
+    const classEntities = rows as unknown as ClassItemEntity[];
+    const completedCountMap = await this.getCompletedSessionsCountMap(
+      classEntities.map((row) => row.id),
+    );
+    const items = classEntities.map((row) =>
+      toClassItemDto(row, null, completedCountMap.get(row.id) ?? 0),
     );
 
     return { items, total, page, limit };
@@ -173,20 +182,23 @@ export class ClassQueryService {
       cls.status === ClassStatus.COMPLETED ||
       cls.status === ClassStatus.ARCHIVED;
 
-    const scheduleConflictWarning = isEndedClass
-      ? null
-      : await findTeacherScheduleConflictWarning(
-          this.prisma,
-          cls.teacherId,
-          {
-            scheduleDays: cls.scheduleDays,
-            scheduleStartTime: cls.scheduleStartTime,
-            scheduleEndTime: cls.scheduleEndTime,
-            startDate: cls.startDate,
-            endDate: cls.actualEndDate ?? cls.expectedEndDate,
-          },
-          cls.id,
-        );
+    const [scheduleConflictWarning, completedCountMap] = await Promise.all([
+      isEndedClass
+        ? Promise.resolve(null)
+        : findTeacherScheduleConflictWarning(
+            this.prisma,
+            cls.teacherId,
+            {
+              scheduleDays: cls.scheduleDays,
+              scheduleStartTime: cls.scheduleStartTime,
+              scheduleEndTime: cls.scheduleEndTime,
+              startDate: cls.startDate,
+              endDate: cls.actualEndDate ?? cls.expectedEndDate,
+            },
+            cls.id,
+          ),
+      this.getCompletedSessionsCountMap([cls.id]),
+    ]);
 
     const filteredEnrollments = includeInactive
       ? cls.enrollments
@@ -208,7 +220,20 @@ export class ClassQueryService {
         effectiveRole: this.access.resolveEffectiveRole(actor),
         capabilities: this.access.resolveCapabilities(actor, cls),
       },
+      completedCountMap.get(cls.id) ?? 0,
     );
+  }
+
+  private async getCompletedSessionsCountMap(
+    classIds: string[],
+  ): Promise<Map<string, number>> {
+    if (classIds.length === 0) return new Map();
+    const rows = await this.prisma.lessonSession.groupBy({
+      by: ['classId'],
+      where: { classId: { in: classIds }, status: SessionStatus.COMPLETED },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((row) => [row.classId, row._count._all]));
   }
 
   async previewSchedule(dto: PreviewClassScheduleDto): Promise<{

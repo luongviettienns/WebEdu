@@ -124,6 +124,7 @@ export function validateClassTotalSessions(value: number): number {
 export function toClassItemDto(
   entity: ClassItemEntity,
   scheduleConflictWarning: string | null = null,
+  completedSessionsCount = 0,
 ): ClassItemDto {
   const enrollments = entity.enrollments ?? [];
   const activeStudentsCount = enrollments.filter(
@@ -172,6 +173,7 @@ export function toClassItemDto(
     notes: entity.notes ?? null,
     activeStudentsCount,
     totalEnrollmentsCount,
+    completedSessionsCount,
     scheduleConflictWarning,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
@@ -191,8 +193,13 @@ export function toClassDetailDto(
       canReopen: false,
     },
   },
+  completedSessionsCount = 0,
 ): ClassDetailDto {
-  const base = toClassItemDto(entity, scheduleConflictWarning);
+  const base = toClassItemDto(
+    entity,
+    scheduleConflictWarning,
+    completedSessionsCount,
+  );
   const resolvedAccessMode: ClassAccessMode =
     accessMode ??
     (entity.status === ClassStatus.COMPLETED ||

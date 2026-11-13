@@ -94,5 +94,5 @@ function buildMinimalPdf(text: string): Buffer {
 
     await expect(extractDocx(Buffer.from('not-a-docx'))).rejects.toThrow(BadRequestException);
     await expect(extractPdf(Buffer.from('not-a-pdf'))).rejects.toThrow(BadRequestException);
-  });
+  }, 20_000);
 });

@@ -82,6 +82,7 @@ export interface ClassItemDto {
   notes: string | null;
   activeStudentsCount: number;
   totalEnrollmentsCount: number;
+  completedSessionsCount: number;
   scheduleConflictWarning?: string | null;
   createdAt: string;
   updatedAt: string;

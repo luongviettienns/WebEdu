@@ -9,6 +9,7 @@ import {
   CourseLevel,
   EnrollmentStatus,
   Role,
+  SessionStatus,
   UserStatus,
 } from '@prisma/client';
 import { ClassAccessService } from './services/class-access.service.js';
@@ -86,6 +87,12 @@ interface MockTeacherAssignmentRecord {
   createdAt: Date;
 }
 
+interface MockLessonSessionRecord {
+  id: string;
+  classId: string;
+  status: SessionStatus;
+}
+
 describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => {
   let accessService: ClassAccessService;
   let queryService: ClassQueryService;
@@ -96,6 +103,7 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
   let classesStore: Map<string, MockClassRecord>;
   let enrollmentsStore: MockEnrollmentRecord[];
   let assignmentsStore: MockTeacherAssignmentRecord[];
+  let sessionsStore: MockLessonSessionRecord[];
   let teacherActiveCounts: Map<string, number>;
   let auditLogs: Array<Record<string, unknown>>;
   let lockedUserIdsOrder: string[];
@@ -434,6 +442,7 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       ['teacher-01', 1],
       ['teacher-02', 1],
     ]);
+    sessionsStore = [];
     auditLogs = [];
     lockedUserIdsOrder = [];
 
@@ -921,6 +930,29 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
           return data;
         }),
       },
+      lessonSession: {
+        groupBy: vi.fn(
+          async ({
+            where,
+          }: {
+            by: ['classId'];
+            where?: { classId?: { in?: string[] }; status?: SessionStatus };
+            _count?: { _all?: boolean };
+          }) => {
+            const allowedIds = new Set(where?.classId?.in ?? []);
+            const counts = new Map<string, number>();
+            for (const s of sessionsStore) {
+              if (where?.classId?.in && !allowedIds.has(s.classId)) continue;
+              if (where?.status && s.status !== where.status) continue;
+              counts.set(s.classId, (counts.get(s.classId) ?? 0) + 1);
+            }
+            return Array.from(counts.entries()).map(([classId, count]) => ({
+              classId,
+              _count: { _all: count },
+            }));
+          },
+        ),
+      },
       $transaction: vi.fn(
         async (cb: (tx: Record<string, unknown>) => Promise<unknown>) =>
           cb(mockPrisma),
@@ -1038,6 +1070,60 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
 
       const endedDetail = await queryService.getClassById(adminActor, 'class-completed-1');
       expect(endedDetail.scheduleConflictWarning).toBeNull();
+    });
+
+    it('TD-08: batches completedSessionsCount via single lessonSession.groupBy in listClasses (no N+1) and includes it in getClassById', async () => {
+      sessionsStore.push(
+        { id: 's-1', classId: 'class-active-1', status: SessionStatus.COMPLETED },
+        { id: 's-2', classId: 'class-active-1', status: SessionStatus.COMPLETED },
+        { id: 's-3', classId: 'class-active-1', status: SessionStatus.COMPLETED },
+        { id: 's-4', classId: 'class-active-1', status: SessionStatus.SCHEDULED },
+        { id: 's-5', classId: 'class-active-1', status: SessionStatus.CANCELLED },
+        { id: 's-6', classId: 'class-other', status: SessionStatus.SCHEDULED },
+        { id: 's-7', classId: 'class-completed-1', status: SessionStatus.COMPLETED },
+        { id: 's-8', classId: 'class-completed-1', status: SessionStatus.COMPLETED },
+      );
+
+      const groupBySpy = (
+        mockPrisma.lessonSession as { groupBy: ReturnType<typeof vi.fn> }
+      ).groupBy;
+      groupBySpy.mockClear();
+
+      const listRes = await queryService.listClasses(adminActor, {});
+      expect(groupBySpy).toHaveBeenCalledTimes(1);
+      expect(groupBySpy).toHaveBeenCalledWith({
+        by: ['classId'],
+        where: {
+          classId: { in: ['class-active-1', 'class-other'] },
+          status: SessionStatus.COMPLETED,
+        },
+        _count: { _all: true },
+      });
+
+      const activeItem = listRes.items.find((c) => c.id === 'class-active-1');
+      const otherItem = listRes.items.find((c) => c.id === 'class-other');
+      expect(activeItem?.completedSessionsCount).toBe(3);
+      expect(otherItem?.completedSessionsCount).toBe(0);
+
+      // Empty page skips lessonSession.groupBy completely
+      groupBySpy.mockClear();
+      const emptyRes = await queryService.listClasses(adminActor, {
+        search: 'NO_MATCH_999',
+      });
+      expect(emptyRes.items).toEqual([]);
+      expect(groupBySpy).not.toHaveBeenCalled();
+
+      // getClassById populates accurate completedSessionsCount for each class
+      groupBySpy.mockClear();
+      const activeDetail = await queryService.getClassById(adminActor, 'class-active-1');
+      expect(activeDetail.completedSessionsCount).toBe(3);
+      expect(groupBySpy).toHaveBeenCalledTimes(1);
+
+      const otherDetail = await queryService.getClassById(adminActor, 'class-other');
+      expect(otherDetail.completedSessionsCount).toBe(0);
+
+      const completedDetail = await queryService.getClassById(adminActor, 'class-completed-1');
+      expect(completedDetail.completedSessionsCount).toBe(2);
     });
   });
 

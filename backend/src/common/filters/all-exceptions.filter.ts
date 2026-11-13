@@ -6,7 +6,10 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
+
+const SAFE_REQUEST_ID_REGEX = /^[a-zA-Z0-9_-]{8,64}$/;
 
 export const HTTP_ERROR_TITLES: Record<number, string> = {
   400: 'Bad Request',
@@ -37,7 +40,17 @@ export interface ProblemDetailsPayload {
   detail: string;
   instance: string;
   timestamp: string;
+  requestId: string;
   invalidParams?: string[];
+}
+
+function resolveRequestId(request: Request | undefined): string {
+  const raw = request?.headers?.['x-request-id'];
+  const candidate = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof candidate === 'string' && SAFE_REQUEST_ID_REGEX.test(candidate)) {
+    return candidate;
+  }
+  return randomUUID();
 }
 
 function extractClientHttpError(
@@ -122,6 +135,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+    const requestId = resolveRequestId(request);
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let title = 'Internal Server Error';
@@ -150,6 +164,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
           detail = exception.message || title;
         }
       }
+      if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+        this.logger.error(
+          `[requestId=${requestId}] HTTP ${status}: ${exception.message}`,
+          exception.stack,
+        );
+      }
     } else if (isPrismaUniqueConstraintError(exception)) {
       status = HttpStatus.CONFLICT;
       title = HTTP_ERROR_TITLES[HttpStatus.CONFLICT] ?? 'Conflict';
@@ -161,7 +181,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
         title = HTTP_ERROR_TITLES[status] ?? 'Bad Request';
         detail = clientErr.detail;
       } else if (exception instanceof Error) {
-        this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
+        this.logger.error(
+          `[requestId=${requestId}] Unhandled Exception: ${exception.message}`,
+          exception.stack,
+        );
+      } else {
+        this.logger.error(
+          `[requestId=${requestId}] Unhandled Exception: ${String(exception)}`,
+        );
       }
     }
 
@@ -174,9 +201,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       detail,
       instance,
       timestamp: new Date().toISOString(),
+      requestId,
       ...(invalidParams ? { invalidParams } : {}),
     };
 
+    response.setHeader('X-Request-Id', requestId);
     response
       .setHeader('Content-Type', 'application/problem+json')
       .status(status)
