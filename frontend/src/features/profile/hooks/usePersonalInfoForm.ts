@@ -54,13 +54,15 @@ export function usePersonalInfoForm({
     !isUnder16EmailLocked &&
     activeEmail.trim().toLowerCase() !== profile.email.trim().toLowerCase();
 
+  const isCoolingDown = cooldownSeconds > 0;
+
   useEffect(() => {
-    if (cooldownSeconds <= 0) return;
+    if (!isCoolingDown) return;
     const timer = window.setInterval(() => {
       setCooldownSeconds((prev) => (prev > 1 ? prev - 1 : 0));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [cooldownSeconds]);
+  }, [isCoolingDown]);
 
   const handleEmailChange = (nextEmail: string) => {
     if (isUnder16EmailLocked) return;

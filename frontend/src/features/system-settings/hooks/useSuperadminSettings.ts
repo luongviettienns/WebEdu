@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useDebounce } from '@/features/common/hooks/useDebounce';
 import {
   getSystemConfig,
   listAuditLogs,
@@ -21,6 +20,7 @@ export function useSuperadminSettings(onAuthError: (error: unknown) => boolean) 
   const [userTotal, setUserTotal] = useState<number>(0);
   const [userPage, setUserPage] = useState<number>(1);
   const [userSearch, setUserSearch] = useState<string>('');
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState<string>('');
   const [userRoleFilter, setUserRoleFilter] = useState<Role | ''>('');
   const [userStatusFilter, setUserStatusFilter] = useState<UserStatus | ''>('');
   const [usersLoading, setUsersLoading] = useState<boolean>(true);
@@ -39,7 +39,14 @@ export function useSuperadminSettings(onAuthError: (error: unknown) => boolean) 
   const [refreshUsersTick, setRefreshUsersTick] = useState<number>(0);
   const [refreshAuditTick, setRefreshAuditTick] = useState<number>(0);
 
-  const debouncedUserSearch = useDebounce(userSearch, 250);
+  useEffect(() => {
+    if (userSearch === debouncedUserSearch) return;
+    const timer = window.setTimeout(() => {
+      setDebouncedUserSearch(userSearch);
+      setUserPage(1);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [userSearch, debouncedUserSearch]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -155,7 +162,6 @@ export function useSuperadminSettings(onAuthError: (error: unknown) => boolean) 
     userStatusFilter,
     handleUserSearchChange: (value: string) => {
       setUserSearch(value);
-      setUserPage(1);
     },
     handleUserRoleChange: (value: Role | '') => {
       setUserRoleFilter(value);

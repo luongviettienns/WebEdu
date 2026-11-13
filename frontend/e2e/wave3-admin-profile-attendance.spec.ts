@@ -463,6 +463,17 @@ test.describe('Wave 3 Task 7 — Profile <16/OTP, SystemSettings Filters & Atten
     await expect(usersSection.getByText('Trang 2 / 2')).toBeVisible();
     await expect(usersSection.getByText('Trương Mỹ Lan')).toBeVisible();
 
+    // Typing in search from page 2 debounces cleanly without an extra stale-search page=1 request
+    const queriesBeforeSearch = userQueries.length;
+    await usersSection.getByLabel('Tìm kiếm tài khoản').fill('lan');
+    await expect(usersSection.getByText('Trang 1 / 1')).toBeVisible();
+    await expect(usersSection.getByText('teacher.lan@webedu.vn')).toBeVisible();
+    expect(userQueries.slice(queriesBeforeSearch)).toEqual([
+      { search: 'lan', role: null, status: null, page: '1' },
+    ]);
+    await usersSection.getByLabel('Tìm kiếm tài khoản').fill('');
+    await expect(usersSection.getByText('Trang 1 / 2')).toBeVisible();
+
     // Role + status + search filters reset page to 1 and query backend
     await usersSection.getByLabel('Lọc theo vai trò').selectOption('TEACHER');
     await expect(usersSection.getByText('Trang 1 / 1')).toBeVisible();
@@ -486,10 +497,12 @@ test.describe('Wave 3 Task 7 — Profile <16/OTP, SystemSettings Filters & Atten
       has: page.getByRole('heading', { name: '3. Nhật ký hệ thống' }),
     });
     const auditBody = auditSection.locator('tbody');
+    // Regression guard for phase2-browser-qa.spec.ts:425 (<option> labels must not contain raw enum codes)
+    await expect(page.getByText('UPDATE_SYSTEM_CONFIG').first()).toBeVisible();
     await expect(auditBody.getByText('UPDATE_SYSTEM_CONFIG')).toBeVisible();
     await auditSection.getByLabel('Lọc theo hành động').selectOption('UPDATE_MY_PROFILE');
     await expect(auditBody.getByText('UPDATE_MY_PROFILE')).toBeVisible();
-    await expect(auditBody.getByText('UPDATE_SYSTEM_CONFIG')).toHaveCount(0);
+    await expect(page.getByText('UPDATE_SYSTEM_CONFIG')).toHaveCount(0);
 
     await auditSection.getByRole('button', { name: 'Làm mới' }).click();
     await expect(auditBody.getByText('Học Viên Mới')).toBeVisible();
