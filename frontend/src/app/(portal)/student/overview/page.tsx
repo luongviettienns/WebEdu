@@ -3,6 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
+import {
+  getMyAttendance,
+  type StudentMyAttendance,
+} from '@/features/attendance/api/attendance.api';
 import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import {
@@ -33,6 +37,9 @@ function StudentOverviewContent({
   const [studentDetail, setStudentDetail] = useState<StudentItemDto | null>(
     null,
   );
+  const [myAttendance, setMyAttendance] = useState<StudentMyAttendance | null>(
+    null,
+  );
   const [detailLoading, setDetailLoading] = useState<boolean>(isStudentAccount);
   const [detailError, setDetailError] = useState<string>('');
 
@@ -45,25 +52,34 @@ function StudentOverviewContent({
 
     void (async () => {
       try {
-        const detail = await getStudentDetail(profile.id, {
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted) {
-          setStudentDetail(detail);
-          setDetailError('');
-        }
-      } catch (error) {
+        const [detailRes, attendanceRes] = await Promise.allSettled([
+          getStudentDetail(profile.id, { signal: controller.signal }),
+          getMyAttendance(undefined, controller.signal),
+        ]);
         if (controller.signal.aborted) return;
-        if (onAuthError(error)) return;
-        if (error instanceof ApiClientError && error.status === 404) {
+
+        if (detailRes.status === 'fulfilled') {
+          setStudentDetail(detailRes.value);
           setDetailError('');
         } else {
-          setDetailError(
-            extractErrorMessage(
-              error,
-              'Không thể tải chi tiết học tập lúc này. Vui lòng thử lại.',
-            ),
-          );
+          const error = detailRes.reason;
+          if (onAuthError(error)) return;
+          if (error instanceof ApiClientError && error.status === 404) {
+            setDetailError('');
+          } else {
+            setDetailError(
+              extractErrorMessage(
+                error,
+                'Không thể tải chi tiết học tập lúc này. Vui lòng thử lại.',
+              ),
+            );
+          }
+        }
+
+        if (attendanceRes.status === 'fulfilled') {
+          setMyAttendance(attendanceRes.value);
+        } else {
+          setMyAttendance(null);
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -123,6 +139,7 @@ function StudentOverviewContent({
           studentDetail={studentDetail}
           assignedClass={assignedClass}
           enrolledAt={enrolledAt}
+          myAttendance={myAttendance}
         />
       )}
     </div>

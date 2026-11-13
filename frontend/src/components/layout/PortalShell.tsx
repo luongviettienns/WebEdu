@@ -1,16 +1,26 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { getCurrentUser, type AuthUserDto } from '@/features/auth/api/auth.api';
+import { useRouter } from 'next/navigation';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  getCurrentUser,
+  logoutUser,
+  type AuthUserDto,
+} from '@/features/auth/api/auth.api';
+import { IdleTimeoutWarningModal } from '@/features/auth/components/IdleTimeoutWarningModal';
+import { useIdleTimeout } from '@/features/auth/hooks/useIdleTimeout';
 import { usePendingEnrollmentCount } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { PortalSidebar } from './PortalSidebar';
 import { PortalTopbar } from './PortalTopbar';
 import { MobileNavDrawer } from './MobileNavDrawer';
 
 export function PortalShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<AuthUserDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const loggingOutRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -33,6 +43,34 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       controller.abort();
     };
   }, []);
+
+  const executeLogout = useCallback(
+    async (redirectUrl: string) => {
+      if (loggingOutRef.current) return;
+      loggingOutRef.current = true;
+      setLoggingOut(true);
+      try {
+        await logoutUser().catch(() => undefined);
+      } finally {
+        router.replace(redirectUrl);
+      }
+    },
+    [router],
+  );
+
+  const handleIdleExpire = useCallback(() => {
+    void executeLogout('/login?reason=idle_timeout');
+  }, [executeLogout]);
+
+  const handleManualLogout = useCallback(() => {
+    void executeLogout('/login');
+  }, [executeLogout]);
+
+  const isAuthenticated = Boolean(user) && !loading;
+  const { remainingSeconds, markActive } = useIdleTimeout(
+    isAuthenticated,
+    handleIdleExpire,
+  );
 
   const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
   const pendingCount = usePendingEnrollmentCount(hasAdminRole);
@@ -83,6 +121,13 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      <IdleTimeoutWarningModal
+        remainingSeconds={remainingSeconds}
+        onContinue={markActive}
+        onLogoutNow={handleManualLogout}
+        loggingOut={loggingOut}
+      />
     </div>
   );
 }

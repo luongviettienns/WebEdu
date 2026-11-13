@@ -74,6 +74,7 @@ export interface ClassItem {
   scheduleText: string;
   startDate: string;
   totalSessions: number;
+  completedSessionsCount?: number;
   expectedEndDate: string | null;
   actualEndDate: string | null;
   closedReason: string | null;
