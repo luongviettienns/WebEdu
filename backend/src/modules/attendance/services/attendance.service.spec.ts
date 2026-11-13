@@ -155,6 +155,28 @@ describe('AttendanceCrudService & AttendanceQueryService (TDD Slice 4.3-4.4)', (
           }
           return { count: data.length };
         }),
+        findMany: vi.fn().mockImplementation(
+          async (args?: {
+            where?: { session?: { classId?: string } };
+            distinct?: string[];
+          }) => {
+            const targetClassId = args?.where?.session?.classId;
+            const filtered = auditEntries.filter((e) => {
+              const entryClassId = (e.classId as string | undefined) ?? 'class-1';
+              return !targetClassId || entryClassId === targetClassId;
+            });
+            if (args?.distinct?.includes('studentId') && args.distinct.includes('sessionId')) {
+              const seen = new Set<string>();
+              return filtered.filter((e) => {
+                const key = `${String(e.studentId)}:${String(e.sessionId)}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+            }
+            return filtered;
+          },
+        ),
       },
       $transaction: vi.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
     };
@@ -294,5 +316,45 @@ describe('AttendanceCrudService & AttendanceQueryService (TDD Slice 4.3-4.4)', (
     const mine = await queryService.getStudentMyAttendance(student1, {});
     expect(mine.classes).toHaveLength(1);
     expect(mine.classes[0]?.enrollmentStatus).toBe(EnrollmentStatus.ACTIVE);
+  });
+
+  it('returns deduplicated editedRecordKeys (${studentId}:${sessionId}) in getClassAttendanceMatrix (FUNC-040..042)', async () => {
+    // 1. Initial save -> no audit logs yet -> empty editedRecordKeys
+    await crudService.saveSessionAttendance(teacherActor, 'sess-1', {
+      records: [
+        { studentId: 'stu-1', status: AttendanceStatus.PRESENT },
+        { studentId: 'stu-2', status: AttendanceStatus.ABSENT },
+      ],
+    });
+    const beforeEdit = await queryService.getClassAttendanceMatrix(teacherActor, 'class-1');
+    expect(beforeEdit.editedRecordKeys).toEqual([]);
+
+    // 2. Edit stu-2 twice and stu-1 once (plus another class audit entry that must be filtered out)
+    await crudService.saveSessionAttendance(teacherActor, 'sess-1', {
+      reason: 'Chỉnh lần 1',
+      records: [
+        { studentId: 'stu-1', status: AttendanceStatus.PRESENT },
+        { studentId: 'stu-2', status: AttendanceStatus.EXCUSED },
+      ],
+    });
+    await crudService.saveSessionAttendance(teacherActor, 'sess-1', {
+      reason: 'Chỉnh lần 2',
+      records: [
+        { studentId: 'stu-1', status: AttendanceStatus.ABSENT },
+        { studentId: 'stu-2', status: AttendanceStatus.PRESENT },
+      ],
+    });
+    auditEntries.push({
+      id: 'aud-other-class',
+      classId: 'other-class',
+      sessionId: 'sess-other',
+      studentId: 'stu-99',
+    });
+
+    const afterEdits = await queryService.getClassAttendanceMatrix(teacherActor, 'class-1');
+    expect([...afterEdits.editedRecordKeys].sort()).toEqual([
+      'stu-1:sess-1',
+      'stu-2:sess-1',
+    ]);
   });
 });

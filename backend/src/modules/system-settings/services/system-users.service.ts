@@ -37,7 +37,19 @@ export class SystemUsersService {
     limit: number;
   }> {
     const { page, limit, skip } = resolvePagination(query, 50);
-    const where: Prisma.UserWhereInput = buildUserSearchFilter(query?.search);
+    const conditions: Prisma.UserWhereInput[] = [];
+    const searchFilter = buildUserSearchFilter(query?.search);
+    if (searchFilter.OR) {
+      conditions.push(searchFilter);
+    }
+    if (query?.role) {
+      conditions.push({ roles: { has: query.role } });
+    }
+    if (query?.status) {
+      conditions.push({ status: query.status });
+    }
+    const where: Prisma.UserWhereInput =
+      conditions.length > 0 ? { AND: conditions } : {};
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({

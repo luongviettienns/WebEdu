@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 71-endpoint inventory through Phase 5 (`docs/test-inventory-api.md`).
+ * Canonical 72-endpoint inventory through Phase 5 (`docs/test-inventory-api.md`).
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -36,9 +36,10 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'POST', path: '/api/v1/auth/reset-password', isPublic: true },
   { method: 'GET', path: '/api/v1/auth/me', isPublic: false },
   { method: 'POST', path: '/api/v1/auth/logout', isPublic: false },
-  // ProfileController (3)
+  // ProfileController (4)
   { method: 'GET', path: '/api/v1/profile/me', isPublic: false },
   { method: 'PATCH', path: '/api/v1/profile/me', isPublic: false },
+  { method: 'POST', path: '/api/v1/profile/me/send-email-change-code', isPublic: false },
   { method: 'POST', path: '/api/v1/profile/change-password', isPublic: false },
   // TeachersController (3)
   { method: 'GET', path: '/api/v1/teachers', isPublic: false },
@@ -200,7 +201,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(71);
+    expect(actualRoutes).toHaveLength(72);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -429,6 +430,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'post', url: '/api/v1/auth/logout' },
       { method: 'get', url: '/api/v1/profile/me' },
       { method: 'patch', url: '/api/v1/profile/me' },
+      { method: 'post', url: '/api/v1/profile/me/send-email-change-code' },
       { method: 'post', url: '/api/v1/profile/change-password' },
       { method: 'get', url: '/api/v1/teachers' },
       { method: 'post', url: '/api/v1/teachers' },

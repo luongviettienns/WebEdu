@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  AttendanceStatus,
   ClassStatus,
   EnrollmentStatus,
   SessionStatus,
@@ -29,6 +30,7 @@ import {
 import {
   assertValidTimeRange,
   calculateExpectedEndDate,
+  computeStudentAbsencesMap,
   findTeacherScheduleConflictWarning,
   formatScheduleText,
   normalizeScheduleDays,
@@ -182,7 +184,13 @@ export class ClassQueryService {
       cls.status === ClassStatus.COMPLETED ||
       cls.status === ClassStatus.ARCHIVED;
 
-    const [scheduleConflictWarning, completedCountMap] = await Promise.all([
+    const [
+      scheduleConflictWarning,
+      completedCountMap,
+      scheduledSessionsCount,
+      attendanceRecordsCount,
+      absenceRecords,
+    ] = await Promise.all([
       isEndedClass
         ? Promise.resolve(null)
         : findTeacherScheduleConflictWarning(
@@ -198,7 +206,30 @@ export class ClassQueryService {
             cls.id,
           ),
       this.getCompletedSessionsCountMap([cls.id]),
+      this.prisma.lessonSession.count({
+        where: { classId: cls.id, status: SessionStatus.SCHEDULED },
+      }),
+      this.prisma.attendanceRecord.count({ where: { classId: cls.id } }),
+      this.prisma.attendanceRecord.findMany({
+        where: {
+          classId: cls.id,
+          status: { in: [AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED] },
+          session: { status: SessionStatus.COMPLETED },
+        },
+        select: {
+          studentId: true,
+          session: { select: { sessionDate: true } },
+        },
+      }),
     ]);
+
+    const completedSessionsCount = completedCountMap.get(cls.id) ?? 0;
+    const isStartDateLocked =
+      completedSessionsCount > 0 || attendanceRecordsCount > 0;
+    const absencesByStudentId = computeStudentAbsencesMap(
+      cls.enrollments,
+      absenceRecords,
+    );
 
     const filteredEnrollments = includeInactive
       ? cls.enrollments
@@ -220,7 +251,12 @@ export class ClassQueryService {
         effectiveRole: this.access.resolveEffectiveRole(actor),
         capabilities: this.access.resolveCapabilities(actor, cls),
       },
-      completedCountMap.get(cls.id) ?? 0,
+      completedSessionsCount,
+      {
+        scheduledSessionsCount,
+        isStartDateLocked,
+        absencesByStudentId,
+      },
     );
   }
 

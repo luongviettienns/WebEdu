@@ -127,7 +127,7 @@ export class AttendanceQueryService {
 
     this.policy.assertCanReadClassAttendance(actor, cls);
 
-    const [sessions, enrollments, records] = await Promise.all([
+    const [sessions, enrollments, records, auditedEntries] = await Promise.all([
       this.prisma.lessonSession.findMany({
         where: { classId, status: { not: SessionStatus.CANCELLED } },
         orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
@@ -153,6 +153,11 @@ export class AttendanceQueryService {
         where: { classId },
         select: { sessionId: true, studentId: true, status: true },
       }),
+      this.prisma.attendanceAuditLog.findMany({
+        where: { session: { classId } },
+        select: { studentId: true, sessionId: true },
+        distinct: ['studentId', 'sessionId'],
+      }),
     ]);
 
     const now = new Date();
@@ -160,6 +165,9 @@ export class AttendanceQueryService {
     for (const r of records) {
       recordLookup.set(`${r.studentId}:${r.sessionId}`, r.status);
     }
+    const editedRecordKeys = Array.from(
+      new Set(auditedEntries.map((entry) => `${entry.studentId}:${entry.sessionId}`)),
+    );
 
     const students = Array.from(groupByKey(enrollments, (e) => e.studentId).values()).map(
       (studentRows) => {
@@ -210,6 +218,7 @@ export class AttendanceQueryService {
         isRescheduled: s.isRescheduled,
       })),
       students,
+      editedRecordKeys,
     };
   }
 

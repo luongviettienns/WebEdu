@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
@@ -125,9 +126,14 @@ export class SystemConfigService {
     limit: number;
   }> {
     const { page, limit, skip } = resolvePagination(query, 20);
+    const trimmedAction = query?.action?.trim();
+    const where: Prisma.SystemAuditLogWhereInput = trimmedAction
+      ? { action: trimmedAction }
+      : {};
 
     const [items, total] = await Promise.all([
       this.prisma.systemAuditLog.findMany({
+        where,
         include: {
           actor: {
             select: {
@@ -141,7 +147,7 @@ export class SystemConfigService {
         skip,
         take: limit,
       }),
-      this.prisma.systemAuditLog.count(),
+      this.prisma.systemAuditLog.count({ where }),
     ]);
 
     return {

@@ -11,11 +11,13 @@ import type { ClassItemDto } from '../classes.types.js';
 import {
   assertClassIsEditable,
   assertOpenClassStatus,
+  assertStartDateMutableInTx,
   assertValidActiveCourseInDb,
   assertValidActiveTeacherInDb,
   assertValidTimeRange,
   calculateExpectedEndDate,
   findTeacherScheduleConflictWarning,
+  getCompletedSessionsCountInTx,
   normalizeScheduleDays,
   parseRequiredCalendarDate,
   resolveUpdatedClassSchedule,
@@ -131,7 +133,8 @@ export class ClassCrudService {
     if (dto.status !== undefined) assertOpenClassStatus(dto.status);
 
     try {
-      const { updated, warning } = await this.prisma.$transaction(async (tx) => {
+      const { updated, warning, completedSessionsCount } =
+        await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
         const existing = (await tx.class.findUnique({
           where: { id: classId },
@@ -181,6 +184,13 @@ export class ClassCrudService {
           nextStatus,
           nextNotes,
         } = resolveUpdatedClassSchedule(existing, dto, validateClassTotalSessions);
+
+        const startDateChanged =
+          dto.startDate !== undefined &&
+          nextStartDate.getTime() !== existing.startDate.getTime();
+        if (startDateChanged) {
+          await assertStartDateMutableInTx(tx, classId);
+        }
 
         const scheduleWarning = await findTeacherScheduleConflictWarning(
           tx,
@@ -287,9 +297,12 @@ export class ClassCrudService {
             expectedEndDate: formatIsoDateUtc(reconciled.expectedEndDate ?? nextExpectedEndDate),
           },
         });
-        return { updated: cls, warning: scheduleWarning };
+        const completedSessionsCount = startDateChanged
+          ? 0
+          : await getCompletedSessionsCountInTx(tx, classId);
+        return { updated: cls, warning: scheduleWarning, completedSessionsCount };
       });
-      return toClassItemDto(updated, warning);
+      return toClassItemDto(updated, warning, completedSessionsCount);
     } catch (err: unknown) {
       if (isPrismaUniqueConstraintError(err)) {
         throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');

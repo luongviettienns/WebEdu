@@ -132,6 +132,33 @@ describe('MailService & SmtpEmailProvider (FUNC-005)', () => {
     expect(mail.html).toContain('824915');
   });
 
+  it('supports email_change purpose on sendVerificationCodeEmail while keeping SMTP OTP format', async () => {
+    const sentPayloads: SendEmailPayload[] = [];
+    const fakeProvider: EmailProvider = {
+      sendEmail: vi.fn(async (payload: SendEmailPayload) => {
+        sentPayloads.push(payload);
+      }),
+    };
+    const configService = { get: vi.fn(() => undefined) } as unknown as ConfigService;
+    const mailService = new MailService(fakeProvider, configService);
+
+    await mailService.sendVerificationCodeEmail({
+      toEmail: 'student.new@example.com',
+      code: '654321',
+      expiresInMinutes: 10,
+      purpose: 'email_change',
+    });
+
+    expect(sentPayloads).toHaveLength(1);
+    const mail = sentPayloads[0]!;
+    expect(mail.to).toBe('student.new@example.com');
+    expect(mail.subject).toContain('đổi email');
+    expect(mail.subject).toContain('654321');
+    expect(mail.text).toContain('đổi email');
+    expect(mail.text).toMatch(/là:\s*654321/);
+    expect(mail.html).toMatch(/font-size:\s*28px[^>]*>654321</);
+  });
+
   it('normalizes boundary pagination values (page <= 0, negative limit, limit > 100)', () => {
     expect(resolvePagination(undefined)).toEqual({ page: 1, limit: 20, skip: 0 });
     expect(resolvePagination({ page: 0, limit: 0 })).toEqual({ page: 1, limit: 20, skip: 0 });

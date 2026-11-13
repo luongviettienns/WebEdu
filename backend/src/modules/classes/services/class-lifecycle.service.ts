@@ -1,13 +1,23 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
 import { syncTeacherActiveClassesCount } from '../../../common/policies/teacher-invariants.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
-import { assertEffectiveDateNotInFuture } from '../policies/class-schedule.util.js';
+import {
+  assertEffectiveDateNotInFuture,
+  cancelScheduledSessionsOnCompleteInTx,
+  restoreAutoCancelledSessionsOnReopenInTx,
+} from '../policies/class-schedule.util.js';
 import type { CompleteClassDto, ReopenClassDto } from '../dto/classes.dto.js';
 import type { ClassDetailDto } from '../classes.types.js';
+import { SessionGeneratorService } from '../../schedules/services/session-generator.service.js';
 import { CLASS_REOPEN_WINDOW_MS } from './class-access.service.js';
 import { ClassQueryService } from './class-query.service.js';
 
@@ -17,6 +27,7 @@ export class ClassLifecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queryService: ClassQueryService,
+    @Optional() private readonly sessionGenerator?: SessionGeneratorService,
   ) {}
 
   async completeClass(
@@ -112,6 +123,8 @@ export class ClassLifecycleService {
       });
 
       await syncTeacherActiveClassesCount(tx, targetClass.teacherId);
+      const autoCancelledSessionsCount =
+        await cancelScheduledSessionsOnCompleteInTx(tx, classId, actor);
 
       await writeAuditLog(tx, actor, {
         action: 'CLASS_COMPLETED',
@@ -121,6 +134,7 @@ export class ClassLifecycleService {
           classCode: targetClass.code,
           actualEndDate: actualEndDate.toISOString(),
           completedStudentsCount: sortedStudentIds.length,
+          autoCancelledSessionsCount,
           reason: dto.reason?.trim() ?? null,
         },
       });
@@ -280,6 +294,17 @@ export class ClassLifecycleService {
       });
 
       await syncTeacherActiveClassesCount(tx, targetClass.teacherId);
+      const renumberFn = this.sessionGenerator
+        ? this.sessionGenerator.renumberActiveSessionsAndSyncExpectedEndDate.bind(
+            this.sessionGenerator,
+          )
+        : undefined;
+      const restoredSessionsCount = await restoreAutoCancelledSessionsOnReopenInTx(
+        tx,
+        classId,
+        actor,
+        renumberFn,
+      );
 
       await writeAuditLog(tx, actor, {
         action: 'CLASS_REOPENED',
@@ -290,6 +315,7 @@ export class ClassLifecycleService {
           reason: dto?.reason?.trim() ?? null,
           restoredStudentsCount,
           skippedStudentsCount: sortedCompleted.length - restoredStudentsCount,
+          restoredSessionsCount,
         },
       });
 

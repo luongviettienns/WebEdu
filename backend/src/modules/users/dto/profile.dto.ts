@@ -25,9 +25,25 @@ export class UpdateProfileDto {
   @MaxLength(256)
   currentPassword?: string;
 
+  @ApiPropertyOptional({
+    example: '123456',
+    description: 'Mã OTP 6 chữ số gửi về email mới khi tự đổi email',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(12)
+  verificationCode?: string;
+
   @ApiPropertyOptional({ description: 'Học viên không được phép tự sửa ngày sinh' })
   @IsOptional()
   dateOfBirth?: unknown;
+}
+
+export class SendEmailChangeCodeDto {
+  @ApiProperty({ example: 'an.new@example.com' })
+  @IsString()
+  @MaxLength(255)
+  newEmail!: string;
 }
 
 export class ChangePasswordDto {

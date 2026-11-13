@@ -4,12 +4,15 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../common/audit/audit-log.util.js';
 import {
   assertValidContactFields,
+  EMAIL_REGEX,
   normalizeEmail,
 } from '../../common/utils/contact-validation.util.js';
 import { rethrowDuplicateContactConflict } from '../../common/utils/prisma-error.util.js';
@@ -18,10 +21,20 @@ import {
   comparePassword,
   hashPassword,
 } from '../../common/auth/password-hash.util.js';
+import {
+  issueProfileEmailChangeOtp,
+  verifyEmailVerificationCodeOrThrow,
+} from '../../common/auth/email-otp.util.js';
 import { getHighestRole } from '../../common/auth/role-hierarchy.util.js';
 import { TokenService } from '../../common/auth/token.service.js';
-import type { ChangePasswordDto, UpdateProfileDto } from './dto/profile.dto.js';
+import { MailService } from '../../common/mail/mail.service.js';
+import type {
+  ChangePasswordDto,
+  SendEmailChangeCodeDto,
+  UpdateProfileDto,
+} from './dto/profile.dto.js';
 import {
+  isStudentUnder16,
   PROFILE_USER_INCLUDE,
   toUserProfileDto,
   type UserProfileDto,
@@ -43,24 +56,61 @@ export interface ChangePasswordResult {
   expiresIn: number;
 }
 
+const UNDER_16_SELF_EMAIL_CHANGE_ERROR =
+  'Học viên dưới 16 tuổi không được phép tự đổi email, vui lòng liên hệ Quản trị viên để được hỗ trợ';
+
 @Injectable()
 export class ProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokenService: TokenService,
+    @Optional() private readonly mailService?: MailService,
   ) {}
+
+  private async assertCurrentPasswordValid(
+    password: string | undefined,
+    passwordHash: string,
+  ): Promise<void> {
+    const pwd = password ?? '';
+    if (!pwd || !(await comparePassword(pwd, passwordHash))) {
+      throw new BadRequestException('Mật khẩu hiện tại không đúng');
+    }
+  }
 
   async getMyProfile(userId: string): Promise<UserProfileDto> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: PROFILE_USER_INCLUDE,
     });
+    if (!user) throw new NotFoundException('Tài khoản không tồn tại');
+    return toUserProfileDto(user);
+  }
 
-    if (!user) {
-      throw new NotFoundException('Tài khoản không tồn tại');
+  async sendEmailChangeCode(
+    userId: string,
+    dto: SendEmailChangeCodeDto,
+    clientIp?: string,
+  ): Promise<{ message: string; expiresInSeconds: number }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { studentProfile: true },
+    });
+    if (!user) throw new NotFoundException('Tài khoản không tồn tại');
+    if (isStudentUnder16(user)) {
+      throw new ForbiddenException(UNDER_16_SELF_EMAIL_CHANGE_ERROR);
     }
 
-    return toUserProfileDto(user);
+    const newEmail = normalizeEmail(dto.newEmail ?? '');
+    if (!EMAIL_REGEX.test(newEmail)) {
+      throw new BadRequestException('Email không hợp lệ');
+    }
+    if (newEmail === normalizeEmail(user.email)) {
+      throw new BadRequestException('Email mới phải khác email hiện tại');
+    }
+    if (!this.mailService) {
+      throw new ServiceUnavailableException('Dịch vụ gửi email chưa sẵn sàng');
+    }
+    return issueProfileEmailChangeOtp(this.prisma, this.mailService, userId, newEmail, clientIp);
   }
 
   async updateMyProfile(
@@ -71,79 +121,55 @@ export class ProfileService {
     if ('dateOfBirth' in dto && dto.dateOfBirth !== undefined) {
       throw new BadRequestException('Học viên không được phép tự sửa ngày sinh');
     }
-
-    assertValidContactFields({
-      fullName: dto.fullName,
-      phone: dto.phone,
-      email: dto.email,
-    });
+    assertValidContactFields({ fullName: dto.fullName, phone: dto.phone, email: dto.email });
 
     const preReadUser = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { studentProfile: true },
     });
+    if (!preReadUser) throw new NotFoundException('Tài khoản không tồn tại');
 
-    if (!preReadUser) {
-      throw new NotFoundException('Tài khoản không tồn tại');
-    }
-
-    const candidateEmailPre =
-      dto.email !== undefined
-        ? normalizeEmail(dto.email)
-        : preReadUser.email;
+    const candidateEmailPre = dto.email !== undefined ? normalizeEmail(dto.email) : preReadUser.email;
     let preVerifiedHash: string | null = null;
+    let preVerifiedOtpEmail: string | null = null;
     if (candidateEmailPre !== preReadUser.email) {
-      const currentPwd = dto.currentPassword ?? '';
-      if (!currentPwd) {
-        throw new BadRequestException('Mật khẩu hiện tại không đúng');
+      if (isStudentUnder16(preReadUser)) {
+        throw new ForbiddenException(UNDER_16_SELF_EMAIL_CHANGE_ERROR);
       }
-      const isValidPwd = await comparePassword(
-        currentPwd,
-        preReadUser.passwordHash,
-      );
-      if (!isValidPwd) {
-        throw new BadRequestException('Mật khẩu hiện tại không đúng');
-      }
+      await this.assertCurrentPasswordValid(dto.currentPassword, preReadUser.passwordHash);
       preVerifiedHash = preReadUser.passwordHash;
+      const dupPre = await this.prisma.user.findFirst({
+        where: { id: { not: userId }, email: candidateEmailPre },
+      });
+      if (dupPre) throw new ConflictException('Email/Số điện thoại đã được sử dụng');
+      await verifyEmailVerificationCodeOrThrow(this.prisma, candidateEmailPre, dto.verificationCode);
+      preVerifiedOtpEmail = candidateEmailPre;
     }
 
     try {
-      const { updated, isEmailChanged } = await this.prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`;
+      const { updated, isEmailChanged } = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`;
 
-          const user = await tx.user.findUnique({
-            where: { id: userId },
-            include: { studentProfile: true },
-          });
+        const user = await tx.user.findUnique({
+          where: { id: userId },
+          include: { studentProfile: true },
+        });
+        if (!user) throw new NotFoundException('Tài khoản không tồn tại');
 
-          if (!user) {
-            throw new NotFoundException('Tài khoản không tồn tại');
+        const nextFullName = dto.fullName !== undefined ? dto.fullName.trim() : user.fullName;
+        const nextPhone = dto.phone !== undefined ? dto.phone.trim() : user.phone;
+        const nextEmail = dto.email !== undefined ? normalizeEmail(dto.email) : user.email;
+
+        const emailChanged = nextEmail !== user.email;
+        if (emailChanged) {
+          if (isStudentUnder16(user)) throw new ForbiddenException(UNDER_16_SELF_EMAIL_CHANGE_ERROR);
+          if (preVerifiedHash !== user.passwordHash) {
+            await this.assertCurrentPasswordValid(dto.currentPassword, user.passwordHash);
           }
-
-          const nextFullName =
-            dto.fullName !== undefined ? dto.fullName.trim() : user.fullName;
-          const nextPhone =
-            dto.phone !== undefined ? dto.phone.trim() : user.phone;
-          const nextEmail =
-            dto.email !== undefined ? normalizeEmail(dto.email) : user.email;
-
-          const emailChanged = nextEmail !== user.email;
-          if (emailChanged) {
-            const currentPwd = dto.currentPassword ?? '';
-            if (!currentPwd) {
-              throw new BadRequestException('Mật khẩu hiện tại không đúng');
-            }
-            if (preVerifiedHash !== user.passwordHash) {
-              const isValidFreshPwd = await comparePassword(
-                currentPwd,
-                user.passwordHash,
-              );
-              if (!isValidFreshPwd) {
-                throw new BadRequestException('Mật khẩu hiện tại không đúng');
-              }
-            }
+          if (preVerifiedOtpEmail !== nextEmail) {
+            await verifyEmailVerificationCodeOrThrow(this.prisma, nextEmail, dto.verificationCode);
           }
+        }
 
           if (emailChanged || nextPhone !== user.phone) {
             const duplicate = await tx.user.findFirst({

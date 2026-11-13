@@ -1,10 +1,21 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
+import {
+  ClassStatus,
+  Prisma,
+  Role,
+  SessionChangeAction,
+  SessionStatus,
+  UserStatus,
+} from '@prisma/client';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
+import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import {
   assertVnDateNotInFuture,
   resolveVnCalendarDateForDb,
 } from '../../../common/utils/timezone.util.js';
+
+export const AUTO_CANCEL_ON_COMPLETE_REASON = 'Tự động hủy khi kết thúc lớp';
+export const RESTORE_ON_REOPEN_REASON = 'Khôi phục buổi học khi mở lại lớp';
 
 const TIME_24H_REGEX = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
@@ -340,4 +351,147 @@ export async function assertValidActiveTeacherInDb(
   if (!teacher || !teacher.roles.includes(Role.TEACHER) || teacher.status !== UserStatus.ACTIVE) {
     throw new BadRequestException('Giáo viên phụ trách không hợp lệ hoặc đã ngừng hoạt động');
   }
+}
+
+export async function getCompletedSessionsCountInTx(
+  tx: Prisma.TransactionClient,
+  classId: string,
+): Promise<number> {
+  return tx.lessonSession.count({
+    where: { classId, status: SessionStatus.COMPLETED },
+  });
+}
+
+export async function assertStartDateMutableInTx(
+  tx: Prisma.TransactionClient,
+  classId: string,
+): Promise<void> {
+  const [completedCount, attendanceCount] = await Promise.all([
+    tx.lessonSession.count({ where: { classId, status: SessionStatus.COMPLETED } }),
+    tx.attendanceRecord.count({ where: { classId } }),
+  ]);
+  if (completedCount > 0 || attendanceCount > 0) {
+    throw new BadRequestException(
+      'Không thể thay đổi ngày khai giảng khi lớp đã có buổi học hoàn thành hoặc đã có dữ liệu điểm danh',
+    );
+  }
+}
+
+export function computeStudentAbsencesMap(
+  enrollments: ReadonlyArray<{ studentId: string; enrolledDate: Date; leftDate: Date | null }>,
+  absenceRecords: ReadonlyArray<{ studentId: string; session: { sessionDate: Date } }>,
+): Map<string, number> {
+  const rangesByStudent = new Map<string, Array<{ enrolledDate: Date; leftDate: Date | null }>>();
+  for (const enr of enrollments) {
+    const list = rangesByStudent.get(enr.studentId) ?? [];
+    list.push({ enrolledDate: enr.enrolledDate, leftDate: enr.leftDate });
+    rangesByStudent.set(enr.studentId, list);
+  }
+
+  const absencesByStudentId = new Map<string, number>();
+  for (const r of absenceRecords) {
+    const sTime = r.session.sessionDate.getTime();
+    const ranges = rangesByStudent.get(r.studentId) ?? [];
+    const eligible = ranges.some(
+      (e) =>
+        e.enrolledDate.getTime() <= sTime &&
+        (e.leftDate === null || e.leftDate.getTime() >= sTime),
+    );
+    if (eligible) {
+      absencesByStudentId.set(r.studentId, (absencesByStudentId.get(r.studentId) ?? 0) + 1);
+    }
+  }
+  return absencesByStudentId;
+}
+
+export async function cancelScheduledSessionsOnCompleteInTx(
+  tx: Prisma.TransactionClient,
+  classId: string,
+  actor: Pick<AuthenticatedUser, 'id' | 'fullName'>,
+  cancelAt: Date = new Date(),
+): Promise<number> {
+  const scheduled = await tx.lessonSession.findMany({
+    where: { classId, status: SessionStatus.SCHEDULED },
+    orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, sessionDate: true, startTime: true, endTime: true },
+  });
+  if (scheduled.length === 0) return 0;
+
+  await tx.lessonSession.updateMany({
+    where: { id: { in: scheduled.map((s) => s.id) }, status: SessionStatus.SCHEDULED },
+    data: {
+      status: SessionStatus.CANCELLED,
+      sessionNumber: null,
+      cancelReason: AUTO_CANCEL_ON_COMPLETE_REASON,
+      cancelledById: actor.id,
+      cancelledAt: cancelAt,
+    },
+  });
+
+  for (const s of scheduled) {
+    await tx.sessionChangeLog.create({
+      data: {
+        classId,
+        sessionId: s.id,
+        action: SessionChangeAction.CANCEL,
+        actorId: actor.id,
+        actorName: actor.fullName,
+        previousDate: s.sessionDate,
+        previousStartTime: s.startTime,
+        previousEndTime: s.endTime,
+        reason: AUTO_CANCEL_ON_COMPLETE_REASON,
+      },
+    });
+  }
+  return scheduled.length;
+}
+
+export async function restoreAutoCancelledSessionsOnReopenInTx(
+  tx: Prisma.TransactionClient,
+  classId: string,
+  actor: Pick<AuthenticatedUser, 'id' | 'fullName'>,
+  renumberAndSyncFn?: (tx: Prisma.TransactionClient, classId: string) => Promise<unknown>,
+): Promise<number> {
+  const autoCancelled = await tx.lessonSession.findMany({
+    where: {
+      classId,
+      status: SessionStatus.CANCELLED,
+      cancelReason: AUTO_CANCEL_ON_COMPLETE_REASON,
+      makeupReplacement: { is: null },
+    },
+    orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
+    select: { id: true, sessionDate: true, startTime: true, endTime: true },
+  });
+  if (autoCancelled.length === 0) return 0;
+
+  for (const [idx, s] of autoCancelled.entries()) {
+    await tx.lessonSession.update({
+      where: { id: s.id },
+      data: {
+        status: SessionStatus.SCHEDULED,
+        sessionNumber: 200001 + idx,
+        cancelReason: null,
+        cancelledById: null,
+        cancelledAt: null,
+      },
+    });
+    await tx.sessionChangeLog.create({
+      data: {
+        classId,
+        sessionId: s.id,
+        action: SessionChangeAction.GENERATE,
+        actorId: actor.id,
+        actorName: actor.fullName,
+        newDate: s.sessionDate,
+        newStartTime: s.startTime,
+        newEndTime: s.endTime,
+        reason: RESTORE_ON_REOPEN_REASON,
+      },
+    });
+  }
+
+  if (renumberAndSyncFn) {
+    await renumberAndSyncFn(tx, classId);
+  }
+  return autoCancelled.length;
 }

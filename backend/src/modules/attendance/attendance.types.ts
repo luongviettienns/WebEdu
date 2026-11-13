@@ -105,6 +105,7 @@ export interface ClassAttendanceMatrixDto {
     isRescheduled: boolean;
   }>;
   students: ClassAttendanceMatrixStudentRowDto[];
+  editedRecordKeys: string[];
 }
 
 export interface StudentMyAttendanceDto {

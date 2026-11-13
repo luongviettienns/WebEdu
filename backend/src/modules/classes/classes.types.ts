@@ -59,6 +59,7 @@ export interface ClassEnrollmentItemDto {
   enrolledDate: string;
   leftDate: string | null;
   reason: string | null;
+  absencesCount?: number;
 }
 
 export interface ClassItemDto {
@@ -92,6 +93,8 @@ export interface ClassDetailDto extends ClassItemDto {
   accessMode: ClassAccessMode;
   effectiveRole: ClassEffectiveRole;
   capabilities: ClassCapabilitiesDto;
+  scheduledSessionsCount?: number;
+  isStartDateLocked?: boolean;
   /** Chỉ có trong phản hồi của thao tác mở lại lớp. */
   reopenSummary?: ClassReopenSummaryDto;
   enrollments: ClassEnrollmentItemDto[];

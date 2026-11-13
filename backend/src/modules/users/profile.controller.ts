@@ -6,15 +6,21 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { ProfileService } from './profile.service.js';
-import { ChangePasswordDto, UpdateProfileDto } from './dto/profile.dto.js';
+import {
+  ChangePasswordDto,
+  SendEmailChangeCodeDto,
+  UpdateProfileDto,
+} from './dto/profile.dto.js';
 import { AuthenticatedOnly } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
+import { resolveClientIp } from '../../common/auth/auth-rate-limit.util.js';
 import { TokenService } from '../../common/auth/token.service.js';
 
 @ApiTags('Profile')
@@ -54,6 +60,21 @@ export class ProfileController {
     }
 
     return result.profile;
+  }
+
+  @Post('me/send-email-change-code')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Gửi mã OTP xác thực đổi email về email mới' })
+  async sendEmailChangeCode(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SendEmailChangeCodeDto,
+    @Req() req: Request,
+  ) {
+    return this.profileService.sendEmailChangeCode(
+      user.id,
+      dto,
+      resolveClientIp(req),
+    );
   }
 
   @Post('change-password')
