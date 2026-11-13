@@ -30,8 +30,10 @@ const baseRow = {
 };
 
 function makeFullPrisma(overrides: Partial<Record<string, unknown>> = {}) {
+  const course = { findUnique: vi.fn(async () => ({ id: 'c-1', isActive: true })) };
   const tx = {
     $queryRaw: vi.fn(async () => []),
+    course,
     assessment: {
       findUnique: vi.fn(async () => baseRow),
       create: vi.fn(async (a: { data: Record<string, unknown> }) => ({ ...baseRow, id: 'asm-copy', ...a.data })),
@@ -57,7 +59,7 @@ function makeFullPrisma(overrides: Partial<Record<string, unknown>> = {}) {
     },
   };
   return {
-    course: { findUnique: vi.fn(async () => ({ id: 'c-1' })) },
+    course,
     assessment: {
       ...tx.assessment,
       findMany: vi.fn(async () => [{ ...baseRow, questions: [{ points: 2 }] }]),

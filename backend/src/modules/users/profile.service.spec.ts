@@ -572,4 +572,61 @@ describe('ProfileService (FUNC-078)', () => {
     });
     expect(ok.profile.email).toBe('teacher.verified@webedu.vn');
   });
+
+  it('checks phone uniqueness before consuming single-use email OTP so 409 phone conflict preserves OTP', async () => {
+    const svc = service as unknown as {
+      sendEmailChangeCode: (
+        userId: string,
+        dto: { newEmail: string },
+        clientIp?: string,
+      ) => Promise<{ message: string; expiresInSeconds: number }>;
+    };
+    await svc.sendEmailChangeCode('u-1', { newEmail: 'teacher.verified@webedu.vn' });
+    const issuedCode = sentOtps[0]?.code;
+    expect(emailVerifications[0]?.verifiedAt).toBeNull();
+
+    // Simulate a conflicting phone (with non-conflicting email)
+    (mockPrisma.user as { findFirst: ReturnType<typeof vi.fn> }).findFirst.mockImplementationOnce(
+      async ({ where }: { where: { OR?: Array<Record<string, unknown>> } }) => {
+        const hasPhoneClause = Array.isArray(where.OR) && where.OR.some((entry) => 'phone' in entry);
+        return hasPhoneClause ? { id: 'other-phone-owner' } : null;
+      },
+    );
+
+    await expect(
+      (
+        service as unknown as {
+          updateMyProfile: (
+            userId: string,
+            dto: Record<string, unknown>,
+          ) => ReturnType<ProfileService['updateMyProfile']>;
+        }
+      ).updateMyProfile('u-1', {
+        email: 'teacher.verified@webedu.vn',
+        phone: '0999888777',
+        currentPassword: 'CurrentPass123',
+        verificationCode: issuedCode,
+      }),
+    ).rejects.toThrow(ConflictException);
+
+    // OTP must still remain unused so user can retry with non-conflicting phone without waiting 60s
+    expect(emailVerifications[0]?.verifiedAt).toBeNull();
+
+    const ok = await (
+      service as unknown as {
+        updateMyProfile: (
+          userId: string,
+          dto: Record<string, unknown>,
+        ) => ReturnType<ProfileService['updateMyProfile']>;
+      }
+    ).updateMyProfile('u-1', {
+      email: 'teacher.verified@webedu.vn',
+      phone: '0999888776',
+      currentPassword: 'CurrentPass123',
+      verificationCode: issuedCode,
+    });
+    expect(ok.profile.email).toBe('teacher.verified@webedu.vn');
+    expect(ok.profile.phone).toBe('0999888776');
+    expect(emailVerifications[0]?.verifiedAt).not.toBeNull();
+  });
 });

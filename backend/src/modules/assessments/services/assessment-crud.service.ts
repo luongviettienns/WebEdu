@@ -8,6 +8,7 @@ import {
 import { AssessmentStatus, MediaKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
+  assertActiveCourseWithShareLockInTx,
   assertCanMutateAssessment,
   assertCanViewAssessment,
   assertEditableAssessment,
@@ -46,21 +47,19 @@ export class AssessmentCrudService {
   async create(dto: CreateAssessmentDto, actorId: string): Promise<TeacherAssessmentDto> {
     const title = dto.title.trim();
     if (!title) throw new BadRequestException('Tên đề không được để trống');
-    const course = await this.prisma.course.findUnique({ where: { id: dto.courseId } });
-    if (!course) throw new NotFoundException('Không tìm thấy khóa học');
-    if (course.isActive === false) {
-      throw new BadRequestException('Khóa học HSK hiện đang ngừng hoạt động');
-    }
-    const created = await this.prisma.assessment.create({
-      data: {
-        title,
-        description: dto.description?.trim() || null,
-        type: dto.type,
-        courseId: dto.courseId,
-        durationMinutes: dto.durationMinutes ?? null,
-        createdById: actorId,
-      },
-      include: { questions: QUESTIONS_ORDERED, ...WITH_AUTHOR },
+    const created = await this.prisma.$transaction(async (tx) => {
+      await assertActiveCourseWithShareLockInTx(tx, dto.courseId);
+      return tx.assessment.create({
+        data: {
+          title,
+          description: dto.description?.trim() || null,
+          type: dto.type,
+          courseId: dto.courseId,
+          durationMinutes: dto.durationMinutes ?? null,
+          createdById: actorId,
+        },
+        include: { questions: QUESTIONS_ORDERED, ...WITH_AUTHOR },
+      });
     });
     return toTeacherAssessmentDto(created);
   }

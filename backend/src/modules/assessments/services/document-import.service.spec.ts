@@ -35,7 +35,10 @@ C. 明天
 
 describe('DocumentImportService (Task 5.3 TDD)', () => {
   function makePrisma() {
+    const course = { findUnique: vi.fn(async () => ({ id: 'course-1', isActive: true })) };
     const tx = {
+      $queryRaw: vi.fn(async () => []),
+      course,
       assessment: {
         create: vi.fn(async () => ({ id: 'asm-imp-1' })),
       },
@@ -45,7 +48,7 @@ describe('DocumentImportService (Task 5.3 TDD)', () => {
       mediaAsset: { create: vi.fn(async () => ({ id: 'media-1' })) },
     };
     return {
-      course: { findUnique: vi.fn(async () => ({ id: 'course-1', isActive: true })) },
+      course,
       $transaction: vi.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
       tx,
     };
@@ -250,5 +253,24 @@ describe('DocumentImportService (Task 5.3 TDD)', () => {
       data: expect.objectContaining({ assessmentId: 'asm-imp-1', kind: 'IMAGE', mime: 'image/jpeg' }),
     });
     expect(prisma.tx).not.toHaveProperty('questionMedia');
+  });
+
+  it('re-checks course active status under FOR SHARE inside persistDraft transaction to guard against TOCTOU', async () => {
+    const prisma = makePrisma();
+    prisma.course.findUnique
+      .mockResolvedValueOnce({ id: 'course-1', isActive: true })
+      .mockResolvedValueOnce({ id: 'course-1', isActive: false });
+    const service = new DocumentImportService(prisma as never);
+    service.extractors = {
+      extractDocx: vi.fn(async () => ({ text: THREE_QUESTIONS, images: [] })),
+      extractPdf: vi.fn(),
+      persistBytes: vi.fn(async () => 'uploads/media/orig.docx'),
+    };
+    await expect(service.importFile('teacher-1', 'de.docx', DOCX, dto)).rejects.toMatchObject({
+      status: 400,
+      message: 'Khóa học HSK hiện đang ngừng hoạt động',
+    });
+    expect(prisma.tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.assessment.create).not.toHaveBeenCalled();
   });
 });

@@ -23,7 +23,9 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
     }));
     const questionUpdate = vi.fn(async () => ({}));
     const questionUpdateMany = vi.fn(async () => ({ count: 0 }));
+    const courseFindUnique = vi.fn(async () => ({ id: 'course-1', isActive: true }));
     const tx = {
+      course: { findUnique: courseFindUnique },
       assessment: {
         create: vi.fn(async (args: { data: Record<string, unknown> }) => ({ id: 'copy-1', ...args.data })),
         findUnique: assessmentFind,
@@ -49,16 +51,9 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
       $queryRaw: vi.fn(async () => []),
     };
     return {
-      course: { findUnique: vi.fn(async () => ({ id: 'course-1', isActive: true })) },
+      course: { findUnique: courseFindUnique },
       assessment: {
-        create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
-          id: 'asm-1',
-          ...args.data,
-          status: 'DRAFT',
-          isLocked: false,
-          updatedAt: new Date(),
-          questions: [],
-        })),
+        create: tx.assessment.create,
         findUnique: assessmentFind,
         findMany: vi.fn(async () => []),
         count: vi.fn(async () => 0),
@@ -217,7 +212,7 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
     expect(prisma.tx.question.update).not.toHaveBeenCalled();
   });
 
-  it('rejects create on inactive course (isActive: false)', async () => {
+  it('rejects create on inactive course (isActive: false) inside FOR SHARE transaction', async () => {
     const prisma = makePrisma({});
     prisma.course.findUnique.mockResolvedValueOnce({ id: 'course-1', isActive: false });
     const service = new AssessmentCrudService(prisma as never, schemaPolicy);
@@ -227,7 +222,8 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
       status: 400,
       message: 'Khóa học HSK hiện đang ngừng hoạt động',
     });
-    expect(prisma.assessment.create).not.toHaveBeenCalled();
+    expect(prisma.tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.tx.assessment.create).not.toHaveBeenCalled();
   });
 
   describe('streamMedia Content-Type integrity', () => {

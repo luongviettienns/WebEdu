@@ -130,6 +130,7 @@ export class ProfileService {
     if (!preReadUser) throw new NotFoundException('Tài khoản không tồn tại');
 
     const candidateEmailPre = dto.email !== undefined ? normalizeEmail(dto.email) : preReadUser.email;
+    const candidatePhonePre = dto.phone !== undefined ? dto.phone.trim() : preReadUser.phone;
     let preVerifiedHash: string | null = null;
     let preVerifiedOtpEmail: string | null = null;
     if (candidateEmailPre !== preReadUser.email) {
@@ -139,7 +140,13 @@ export class ProfileService {
       await this.assertCurrentPasswordValid(dto.currentPassword, preReadUser.passwordHash);
       preVerifiedHash = preReadUser.passwordHash;
       const dupPre = await this.prisma.user.findFirst({
-        where: { id: { not: userId }, email: candidateEmailPre },
+        where: {
+          id: { not: userId },
+          OR: [
+            { email: candidateEmailPre },
+            ...(candidatePhonePre !== preReadUser.phone ? [{ phone: candidatePhonePre }] : []),
+          ],
+        },
       });
       if (dupPre) throw new ConflictException('Email/Số điện thoại đã được sử dụng');
       await verifyEmailVerificationCodeOrThrow(this.prisma, candidateEmailPre, dto.verificationCode);

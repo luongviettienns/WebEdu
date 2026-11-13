@@ -98,7 +98,7 @@ export function SystemUsersSection({
             <option value="">Tất cả vai trò</option>
             {ROLE_FILTER_OPTIONS.map((role) => (
               <option key={role} value={role}>
-                {ROLE_LABELS[role]} ({role})
+                {ROLE_LABELS[role]}
               </option>
             ))}
           </select>
@@ -111,7 +111,7 @@ export function SystemUsersSection({
             <option value="">Tất cả trạng thái</option>
             {STATUS_FILTER_OPTIONS.map((status) => (
               <option key={status} value={status}>
-                {STATUS_LABELS[status]} ({status})
+                {STATUS_LABELS[status]}
               </option>
             ))}
           </select>

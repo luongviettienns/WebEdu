@@ -1,7 +1,12 @@
-import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
 import { MediaKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
-import { assertCanViewAssessment, type AssessmentActor } from '../policies/assessment-access.policy.js';
+import {
+  assertActiveCourseRow,
+  assertActiveCourseWithShareLockInTx,
+  assertCanViewAssessment,
+  type AssessmentActor,
+} from '../policies/assessment-access.policy.js';
 import { assertSafeDocxZip, assertSafeUpload, detectSafeImageMime } from '../policies/media-upload.policy.js';
 import {
   parseImportedQuestions,
@@ -84,11 +89,12 @@ export class DocumentImportService {
       throw new BadRequestException('Đề vượt quá 200 câu');
     }
 
-    const course = await this.prisma.course.findUnique({ where: { id: dto.courseId } });
-    if (!course) throw new NotFoundException('Không tìm thấy khóa học');
-    if (course.isActive === false) {
-      throw new BadRequestException('Khóa học HSK hiện đang ngừng hoạt động');
-    }
+    assertActiveCourseRow(
+      await this.prisma.course.findUnique({
+        where: { id: dto.courseId },
+        select: { isActive: true },
+      }),
+    );
 
     const validatedImages: Array<{ bytes: Buffer; mime: 'image/png' | 'image/jpeg' }> = [];
     for (const image of extracted.images.slice(0, MAX_IMPORT_IMAGES)) {
@@ -167,6 +173,7 @@ export class DocumentImportService {
       images: Array<ExtractedImage & { storageKey: string }>;
     },
   ): Promise<ImportResult> {
+    await assertActiveCourseWithShareLockInTx(tx, input.courseId);
     const assessment = await tx.assessment.create({
       data: {
         title: input.title,

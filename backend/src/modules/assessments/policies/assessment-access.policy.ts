@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AssessmentStatus, Prisma, Role } from '@prisma/client';
 
 export type AssessmentActor = { id: string; roles: Role[] };
@@ -41,4 +41,23 @@ export function assertEditableAssessment(actor: AssessmentActor, row: Assessment
     throw new ConflictException('Đề đã phát hành, chỉ được nhân bản bản mới');
   }
   return row;
+}
+
+export function assertActiveCourseRow(course: { isActive: boolean } | null): void {
+  if (!course) throw new NotFoundException('Không tìm thấy khóa học');
+  if (course.isActive === false) {
+    throw new BadRequestException('Khóa học HSK hiện đang ngừng hoạt động');
+  }
+}
+
+export async function assertActiveCourseWithShareLockInTx(
+  tx: Prisma.TransactionClient,
+  courseId: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "courses" WHERE id = ${courseId} FOR SHARE`;
+  const course = await tx.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, isActive: true },
+  });
+  assertActiveCourseRow(course);
 }
