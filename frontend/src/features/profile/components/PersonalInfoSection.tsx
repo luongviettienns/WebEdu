@@ -59,10 +59,23 @@ export function PersonalInfoSection({
         id="profile-email"
         type="email"
         required
+        disabled={form.isUnder16EmailLocked}
         value={form.email}
         onChange={(e) => form.setEmail(e.target.value)}
-        className={INPUT_CLS}
+        aria-describedby={
+          form.isUnder16EmailLocked ? 'profile-email-lock-note' : undefined
+        }
+        className={
+          form.isUnder16EmailLocked
+            ? 'w-full cursor-not-allowed rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-2.5 text-sm text-[var(--ink-2)]'
+            : INPUT_CLS
+        }
       />
+      {form.isUnder16EmailLocked ? (
+        <p id="profile-email-lock-note" className="text-xs text-[var(--ink-2)]">
+          Học viên dưới 16 tuổi không thể tự thay đổi email; vui lòng nhờ Admin hỗ trợ.
+        </p>
+      ) : null}
     </div>
   );
 
@@ -148,8 +161,8 @@ export function PersonalInfoSection({
           </div>
         )}
 
-        {form.emailChanged ? (
-          <div className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3.5">
+        {!form.isUnder16EmailLocked && form.emailChanged ? (
+          <div className="space-y-3 rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3.5">
             <PasswordInput
               id="profile-email-confirm-password"
               label="Nhập mật khẩu hiện tại để xác nhận đổi Email"
@@ -158,6 +171,60 @@ export function PersonalInfoSection({
               onChange={(e) => form.setEmailConfirmPassword(e.target.value)}
               placeholder="••••••••"
             />
+
+            <div className="space-y-1.5">
+              <label
+                htmlFor="profile-email-verification-code"
+                className="block text-sm font-medium text-[var(--ink)]"
+              >
+                Mã xác thực gửi tới email mới (6 số){' '}
+                <span className="text-[var(--red)]">*</span>
+              </label>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  id="profile-email-verification-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  value={form.verificationCode}
+                  onChange={(e) =>
+                    form.setVerificationCode(e.target.value.replace(/\D/g, ''))
+                  }
+                  placeholder="Nhập 6 chữ số"
+                  className={`${INPUT_CLS} font-mono tracking-widest`}
+                />
+                <button
+                  type="button"
+                  onClick={() => void form.requestEmailChangeCode()}
+                  disabled={form.sendingCode || form.cooldownSeconds > 0}
+                  className="shrink-0 rounded-lg border border-[var(--blue)]/30 bg-white px-3.5 py-2.5 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--blue-soft)] disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                >
+                  {form.sendingCode
+                    ? 'Đang gửi...'
+                    : form.cooldownSeconds > 0
+                      ? `Gửi lại sau ${form.cooldownSeconds}s`
+                      : 'Gửi mã xác thực'}
+                </button>
+              </div>
+              {form.codeFeedback ? (
+                <div
+                  role="status"
+                  className="rounded-lg border border-[var(--jade)]/30 bg-[var(--jade-soft)] px-3 py-2 text-xs font-medium text-[var(--jade)]"
+                >
+                  {form.codeFeedback}
+                </div>
+              ) : null}
+              {form.codeError ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-[var(--red)]/30 bg-[var(--red-soft)] px-3 py-2 text-xs font-medium text-[var(--red-ink)]"
+                >
+                  {form.codeError}
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

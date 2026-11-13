@@ -83,6 +83,7 @@ export interface ClassAttendanceMatrix {
   classCode: string;
   courseName: string;
   totalSessionsTarget: number;
+  editedRecordKeys?: string[];
   sessions: Array<{
     id: string;
     sessionNumber: number | null;

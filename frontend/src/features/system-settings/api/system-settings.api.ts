@@ -57,6 +57,21 @@ export interface AuditLogItemDto {
   createdAt: string;
 }
 
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface ListSystemUsersParams {
+  search?: string;
+  role?: Role;
+  status?: UserStatus;
+  page?: number;
+  limit?: number;
+}
+
 export interface AuditLogListResponse {
   items: AuditLogItemDto[];
   total: number;
@@ -67,6 +82,7 @@ export interface AuditLogListResponse {
 export interface ListAuditLogsParams {
   page?: number;
   limit?: number;
+  action?: string;
 }
 
 // ============================================================================
@@ -74,19 +90,37 @@ export interface ListAuditLogsParams {
 // ============================================================================
 
 export async function listSystemUsers(
+  query?: ListSystemUsersParams,
   options?: RequestOptions,
-): Promise<SystemUserDto[]> {
-  const res = await fetchApi<{ items?: SystemUserDto[] } | SystemUserDto[]>(
-    '/system-settings/users',
-    {
-      method: 'GET',
-      signal: options?.signal,
-    },
-  );
+): Promise<PaginatedResponse<SystemUserDto>> {
+  const qs = buildQueryString({
+    search: query?.search?.trim() || undefined,
+    role: query?.role || undefined,
+    status: query?.status || undefined,
+    page: query?.page,
+    limit: query?.limit,
+  });
+  const res = await fetchApi<
+    PaginatedResponse<SystemUserDto> | SystemUserDto[]
+  >(`/system-settings/users${qs}`, {
+    method: 'GET',
+    signal: options?.signal,
+  });
   if (Array.isArray(res)) {
-    return res;
+    return {
+      items: res,
+      total: res.length,
+      page: query?.page ?? 1,
+      limit: query?.limit ?? 20,
+    };
   }
-  return res.items ?? [];
+  const items = res.items ?? [];
+  return {
+    items,
+    total: res.total ?? items.length,
+    page: res.page ?? query?.page ?? 1,
+    limit: res.limit ?? query?.limit ?? 20,
+  };
 }
 
 export async function createSystemUser(
@@ -145,6 +179,7 @@ export async function listAuditLogs(
   const qs = buildQueryString({
     page: params?.page,
     limit: params?.limit,
+    action: params?.action?.trim() || undefined,
   });
   return fetchApi<AuditLogListResponse>(`/system-settings/audit-logs${qs}`, {
     method: 'GET',

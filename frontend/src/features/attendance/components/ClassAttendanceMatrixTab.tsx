@@ -65,6 +65,8 @@ export function ClassAttendanceMatrixTab({ classId, canMarkAttendance }: ClassAt
     );
   }
 
+  const editedKeys = new Set(matrix.editedRecordKeys ?? []);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-xs shadow-xs">
@@ -80,6 +82,12 @@ export function ClassAttendanceMatrixTab({ classId, canMarkAttendance }: ClassAt
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="mk NONE">·</span> Chưa điểm danh
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="rounded bg-[var(--amber-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--amber)]">
+              Đã sửa
+            </span>
+            Đã chỉnh sửa
           </span>
         </div>
         <span className="num font-semibold text-[var(--ink-2)]">
@@ -153,11 +161,27 @@ export function ClassAttendanceMatrixTab({ classId, canMarkAttendance }: ClassAt
                       );
                     }
                     const meta = stVal ? CELL_META[stVal] : { symbol: '·', cls: 'mk NONE', label: 'Chưa điểm danh' };
+                    const isEdited = editedKeys.has(`${st.studentId}:${s.id}`);
+                    const cellTitle = isEdited ? `${meta.label} (Đã sửa)` : meta.label;
                     return (
-                      <td key={s.id} className="px-2 py-2.5 text-center">
-                        <span className={meta.cls} title={meta.label}>
-                          {meta.symbol}
-                        </span>
+                      <td
+                        key={s.id}
+                        data-edited={isEdited ? 'true' : undefined}
+                        className="px-2 py-2.5 text-center align-top"
+                      >
+                        <div className="inline-flex flex-col items-center gap-0.5">
+                          <span className={meta.cls} title={cellTitle}>
+                            {meta.symbol}
+                          </span>
+                          {isEdited ? (
+                            <span
+                              title={cellTitle}
+                              className="rounded bg-[var(--amber-soft)] px-1 py-0.5 text-[10px] font-semibold leading-none text-[var(--amber)] whitespace-nowrap"
+                            >
+                              Đã sửa
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                     );
                   })}

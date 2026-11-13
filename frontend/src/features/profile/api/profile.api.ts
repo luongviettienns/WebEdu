@@ -6,6 +6,7 @@ export interface UserProfileDto extends AuthUserDto {
   guardianEmail?: string | null;
   enrolledAt?: string | null;
   createdAt?: string;
+  canSelfChangeEmail?: boolean;
 }
 
 export interface UpdateProfilePayload {
@@ -13,6 +14,12 @@ export interface UpdateProfilePayload {
   phone?: string;
   email?: string;
   currentPassword?: string;
+  verificationCode?: string;
+}
+
+export interface SendEmailChangeCodeResponse {
+  message: string;
+  expiresInSeconds?: number;
 }
 
 export type UpdateProfileResponse = UserProfileDto;
@@ -47,6 +54,18 @@ export async function updateMyProfile(
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
+}
+
+export async function sendEmailChangeCode(
+  newEmail: string,
+): Promise<SendEmailChangeCodeResponse> {
+  return fetchApi<SendEmailChangeCodeResponse>(
+    '/profile/me/send-email-change-code',
+    {
+      method: 'POST',
+      body: JSON.stringify({ newEmail }),
+    },
+  );
 }
 
 export async function changeMyPassword(
