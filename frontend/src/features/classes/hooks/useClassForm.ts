@@ -5,6 +5,7 @@ import {
   createClass,
   previewClassSchedule,
   updateClass,
+  type ClassDetail,
   type ClassItem,
   type ClassStatus,
   type CourseItem,
@@ -66,6 +67,13 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
   const isCourseLocked =
     mode === 'edit' &&
     Boolean(initialData && (initialData.totalEnrollmentsCount > 0 || initialData.status === 'ACTIVE'));
+  const isStartDateLocked =
+    mode === 'edit' &&
+    Boolean(
+      initialData &&
+        ((initialData as ClassDetail).isStartDateLocked ||
+          (initialData.completedSessionsCount ?? 0) > 0),
+    );
   const isTeacherChanged =
     mode === 'edit' && Boolean(initialData && teacher && teacher.id !== initialData.teacherId);
 
@@ -205,7 +213,7 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
               scheduleDays,
               scheduleStartTime,
               scheduleEndTime,
-              startDate: trimmedStartDate,
+              startDate: isStartDateLocked ? undefined : trimmedStartDate,
               totalSessions: parsedSessions,
               status,
               notes: notes.trim() || null,
@@ -251,6 +259,7 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
     toggleDay,
     derived: {
       isCourseLocked,
+      isStartDateLocked,
       isTeacherChanged,
       expectedEndDatePreview,
       scheduleTextPreview,

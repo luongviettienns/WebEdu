@@ -20,6 +20,7 @@ export interface CompleteClassModalProps {
   classCode: string;
   startDate: string;
   activeStudentsCount?: number;
+  scheduledSessionsCount?: number;
   onClose: () => void;
   onSuccess: (completed: ClassDetail) => void;
 }
@@ -34,6 +35,7 @@ function CompleteClassModalContent({
   classCode,
   startDate,
   activeStudentsCount = 0,
+  scheduledSessionsCount,
   onClose,
   onSuccess,
 }: CompleteClassModalProps) {
@@ -88,10 +90,15 @@ function CompleteClassModalContent({
       onClose={onClose}
       busy={submitting}
     >
-      <div className="mt-4 rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3.5 text-xs font-medium leading-relaxed text-[var(--amber)]">
-        Sau khi kết thúc, lớp học sẽ chuyển sang chế độ Chỉ đọc (Bảo toàn 100% lịch sử học tập). Học viên
-        trong lớp ({activeStudentsCount} học viên) sẽ hoàn thành khóa học này để sẵn sàng xếp lên lớp HSK cấp
-        tiếp theo. Bạn có thể mở lại lớp trong vòng 7 ngày nếu thao tác nhầm.
+      <div className="mt-4 space-y-2 rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-3.5 text-xs font-medium leading-relaxed text-[var(--amber)]">
+        <p className="font-semibold">
+          {`Kết thúc lớp ${classCode}? Các buổi Dự kiến còn lại (${scheduledSessionsCount ?? 0} buổi) sẽ tự động chuyển sang Đã hủy.`}
+        </p>
+        <p>
+          Sau khi kết thúc, lớp học sẽ chuyển sang chế độ Chỉ đọc (Bảo toàn 100% lịch sử học tập). Học viên
+          trong lớp ({activeStudentsCount} học viên) sẽ hoàn thành khóa học này để sẵn sàng xếp lên lớp HSK cấp
+          tiếp theo. Bạn có thể mở lại lớp trong vòng 7 ngày nếu thao tác nhầm.
+        </p>
       </div>
       {classNotStartedYet ? (
         <div role="alert" className="mt-3 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]">

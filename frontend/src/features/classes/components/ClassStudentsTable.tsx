@@ -10,7 +10,7 @@ import { StatusTag } from '@/features/common/components/StatusTag';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
 
 export interface ClassStudentsTableProps {
-  detail: Pick<ClassDetail, 'enrollments' | 'status' | 'startDate'>;
+  detail: Pick<ClassDetail, 'enrollments' | 'status' | 'startDate' | 'totalSessions'>;
   includeInactive: boolean;
   onToggleIncludeInactive: (next: boolean) => void;
   /** Chỉ truyền khi người xem có quyền quản lý ghi danh. */
@@ -27,7 +27,7 @@ export function ClassStudentsTable({
   onDrop,
   canManageEnrollments,
 }: ClassStudentsTableProps) {
-  const colCount = canManageEnrollments ? 6 : 5;
+  const colCount = canManageEnrollments ? 7 : 6;
   return (
     <section className="space-y-4 rounded-xl border border-[var(--line)] bg-white p-4 shadow-xs sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-3">
@@ -49,13 +49,14 @@ export function ClassStudentsTable({
       </div>
 
       <div tabIndex={0} role="region" aria-label="Danh sách học viên trong lớp" className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[700px] text-left text-sm">
           <thead className="border-b border-[var(--line)] bg-[var(--surface-2)] text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
             <tr>
               <th className="px-3.5 py-2.5">Họ và tên</th>
               <th className="px-3.5 py-2.5">Liên hệ</th>
               <th className="px-3.5 py-2.5">Ngày vào lớp</th>
               <th className="px-3.5 py-2.5">Ngày rời lớp</th>
+              <th className="whitespace-nowrap px-3.5 py-2.5">Số buổi nghỉ</th>
               <th className="px-3.5 py-2.5">Trạng thái</th>
               {canManageEnrollments ? <th className="px-3.5 py-2.5 text-right">Thao tác</th> : null}
             </tr>
@@ -73,6 +74,9 @@ export function ClassStudentsTable({
               detail.enrollments.map((enr) => {
                 const key = resolveEnrollmentDisplayKey(enr.status, detail);
                 const meta = ENROLLMENT_DISPLAY_META[key];
+                const absences = enr.absencesCount ?? 0;
+                const isAbsenceWarning =
+                  detail.totalSessions > 0 && absences * 100 >= detail.totalSessions * 30;
                 return (
                   <tr key={enr.id} className="hover:bg-[var(--hover)]/60" data-enrollment-status={key}>
                     <td className="px-3.5 py-3">
@@ -87,6 +91,24 @@ export function ClassStudentsTable({
                       {formatDateDdMmYyyy(enr.enrolledDate)}
                     </td>
                     <td className="num px-3.5 py-3 text-xs text-[var(--ink-2)]">{formatDateDdMmYyyy(enr.leftDate)}</td>
+                    <td className="num px-3.5 py-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-1.5 whitespace-nowrap">
+                        <span
+                          className={
+                            isAbsenceWarning
+                              ? 'font-bold text-[var(--red-ink)]'
+                              : 'font-medium text-[var(--ink)]'
+                          }
+                        >
+                          {absences} buổi
+                        </span>
+                        {isAbsenceWarning ? (
+                          <span className="inline-flex items-center rounded bg-[var(--red-soft)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--red-ink)]">
+                            Cảnh báo ≥ 30%
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="px-3.5 py-3">
                       <StatusTag tone={meta.tone}>{meta.label}</StatusTag>
                     </td>
