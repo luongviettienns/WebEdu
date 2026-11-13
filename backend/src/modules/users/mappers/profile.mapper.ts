@@ -1,5 +1,8 @@
 import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
-import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
+import {
+  calculateAgeInVnTimezone,
+  formatIsoDateUtc,
+} from '../../../common/utils/timezone.util.js';
 import { getHighestRole } from '../../../common/auth/role-hierarchy.util.js';
 
 export interface UserProfileDto {
@@ -13,6 +16,7 @@ export interface UserProfileDto {
   dateOfBirth?: string;
   assignedClass?: string | null;
   activeClassesCount?: number;
+  canSelfChangeEmail?: boolean;
 }
 
 export const PROFILE_USER_INCLUDE = {
@@ -48,6 +52,17 @@ export interface UserProfileSource {
   };
 }
 
+export function isStudentUnder16(
+  user: Pick<UserProfileSource, 'roles' | 'studentProfile'>,
+  referenceInstant: Date = new Date(),
+): boolean {
+  if (!user.roles.includes(Role.STUDENT) || !user.studentProfile?.dateOfBirth) {
+    return false;
+  }
+  const dobIso = formatIsoDateUtc(user.studentProfile.dateOfBirth);
+  return calculateAgeInVnTimezone(dobIso, referenceInstant) < 16;
+}
+
 export function toUserProfileDto(user: UserProfileSource): UserProfileDto {
   const activeClassesCount = Math.max(
     user.teacherProfile?.activeClassesCount ?? 0,
@@ -62,6 +77,7 @@ export function toUserProfileDto(user: UserProfileSource): UserProfileDto {
     roles: user.roles,
     effectiveRole: getHighestRole(user.roles),
     status: user.status,
+    canSelfChangeEmail: !isStudentUnder16(user),
     ...(user.studentProfile
       ? {
           dateOfBirth: formatIsoDateUtc(user.studentProfile.dateOfBirth),

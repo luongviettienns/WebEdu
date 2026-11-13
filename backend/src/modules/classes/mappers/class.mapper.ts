@@ -124,6 +124,8 @@ export function validateClassTotalSessions(value: number): number {
 export function toClassItemDto(
   entity: ClassItemEntity,
   scheduleConflictWarning: string | null = null,
+  completedSessionsCount = 0,
+  isStartDateLocked?: boolean,
 ): ClassItemDto {
   const enrollments = entity.enrollments ?? [];
   const activeStudentsCount = enrollments.filter(
@@ -154,49 +156,47 @@ export function toClassItemDto(
     scheduleDays: [...entity.scheduleDays],
     scheduleStartTime: entity.scheduleStartTime,
     scheduleEndTime: entity.scheduleEndTime,
-    scheduleText: formatScheduleText(
-      entity.scheduleDays,
-      entity.scheduleStartTime,
-      entity.scheduleEndTime,
-    ),
+    scheduleText: formatScheduleText(entity.scheduleDays, entity.scheduleStartTime, entity.scheduleEndTime),
     startDate: formatIsoDateUtc(entity.startDate),
     totalSessions: entity.totalSessions,
-    expectedEndDate: entity.expectedEndDate
-      ? formatIsoDateUtc(entity.expectedEndDate)
-      : null,
-    actualEndDate: entity.actualEndDate
-      ? formatIsoDateUtc(entity.actualEndDate)
-      : null,
+    expectedEndDate: entity.expectedEndDate ? formatIsoDateUtc(entity.expectedEndDate) : null,
+    actualEndDate: entity.actualEndDate ? formatIsoDateUtc(entity.actualEndDate) : null,
     closedReason: entity.closedReason ?? null,
     closedAt: entity.closedAt ? entity.closedAt.toISOString() : null,
     notes: entity.notes ?? null,
     activeStudentsCount,
     totalEnrollmentsCount,
+    completedSessionsCount,
+    ...(isStartDateLocked !== undefined && { isStartDateLocked }),
     scheduleConflictWarning,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
   };
 }
 
+const DEFAULT_VIEWER = {
+  effectiveRole: 'TEACHER' as ClassEffectiveRole,
+  capabilities: { canEditClass: false, canManageEnrollments: false, canComplete: false, canReopen: false },
+};
+
+export interface ClassDetailExtras {
+  scheduledSessionsCount?: number;
+  isStartDateLocked?: boolean;
+  absencesByStudentId?: Map<string, number>;
+}
+
 export function toClassDetailDto(
   entity: ClassDetailEntity,
   accessMode?: ClassAccessMode,
   scheduleConflictWarning: string | null = null,
-  viewer: { effectiveRole: ClassEffectiveRole; capabilities: ClassCapabilitiesDto } = {
-    effectiveRole: 'TEACHER',
-    capabilities: {
-      canEditClass: false,
-      canManageEnrollments: false,
-      canComplete: false,
-      canReopen: false,
-    },
-  },
+  viewer: { effectiveRole: ClassEffectiveRole; capabilities: ClassCapabilitiesDto } = DEFAULT_VIEWER,
+  completedSessionsCount = 0,
+  extras?: ClassDetailExtras,
 ): ClassDetailDto {
-  const base = toClassItemDto(entity, scheduleConflictWarning);
+  const base = toClassItemDto(entity, scheduleConflictWarning, completedSessionsCount, extras?.isStartDateLocked);
   const resolvedAccessMode: ClassAccessMode =
     accessMode ??
-    (entity.status === ClassStatus.COMPLETED ||
-    entity.status === ClassStatus.ARCHIVED
+    (entity.status === ClassStatus.COMPLETED || entity.status === ClassStatus.ARCHIVED
       ? 'READ_ONLY'
       : 'FULL');
 
@@ -210,27 +210,31 @@ export function toClassDetailDto(
     enrolledDate: formatIsoDateUtc(e.enrolledDate),
     leftDate: e.leftDate ? formatIsoDateUtc(e.leftDate) : null,
     reason: e.reason ?? null,
+    ...(extras?.absencesByStudentId && {
+      absencesCount: extras.absencesByStudentId.get(e.studentId) ?? 0,
+    }),
   }));
 
-  const teacherHistory: ClassTeacherHistoryItemDto[] =
-    entity.teacherHistory.map((h) => ({
-      id: h.id,
-      teacherId: h.teacherId,
-      teacherName: h.teacher.fullName,
-      teacherEmail: h.teacher.email,
-      assignedFrom: formatIsoDateUtc(h.assignedFrom),
-      assignedTo: h.assignedTo ? formatIsoDateUtc(h.assignedTo) : null,
-      changedById: h.changedById ?? null,
-      changedByName: h.changedBy?.fullName ?? null,
-      reason: h.reason ?? null,
-      createdAt: h.createdAt.toISOString(),
-    }));
+  const teacherHistory: ClassTeacherHistoryItemDto[] = entity.teacherHistory.map((h) => ({
+    id: h.id,
+    teacherId: h.teacherId,
+    teacherName: h.teacher.fullName,
+    teacherEmail: h.teacher.email,
+    assignedFrom: formatIsoDateUtc(h.assignedFrom),
+    assignedTo: h.assignedTo ? formatIsoDateUtc(h.assignedTo) : null,
+    changedById: h.changedById ?? null,
+    changedByName: h.changedBy?.fullName ?? null,
+    reason: h.reason ?? null,
+    createdAt: h.createdAt.toISOString(),
+  }));
 
   return {
     ...base,
     accessMode: resolvedAccessMode,
     effectiveRole: viewer.effectiveRole,
     capabilities: viewer.capabilities,
+    ...(extras?.scheduledSessionsCount !== undefined && { scheduledSessionsCount: extras.scheduledSessionsCount }),
+    ...(extras?.isStartDateLocked !== undefined && { isStartDateLocked: extras.isStartDateLocked }),
     enrollments,
     teacherHistory,
   };

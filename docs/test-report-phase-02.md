@@ -1,5 +1,8 @@
 # Báo Cáo Kiểm Thử Toàn Diện & Chứng Minh Độ Tin Cậy WebEdu — Phase 2
 
+> [!NOTE]
+> **Snapshot Lịch Sử (07/11/2026 — nhánh `test/hardening-phase-02`):** Tài liệu này lưu nguyên trạng số liệu kiểm thử tại thời điểm kết thúc Phase 2. Số lượng API/UI/test hiện hành toàn repo (`develop` & `feature/phase-05-question-bank-and-import`) xem [PROJECT_PROGRESS.md](../PROJECT_PROGRESS.md) và [TEST_SCENARIOS_COMPREHENSIVE.md](./TEST_SCENARIOS_COMPREHENSIVE.md).
+
 - **Dự án:** WebEdu — Trung Tâm Đào Tạo Tiếng Trung TD Hán Ngữ
 - **Nhánh thực hiện:** `test/hardening-phase-02` (phân nhánh từ `develop`)
 - **Phạm vi kiểm thử:** Phase 2 — Xác thực, Quản lý Người dùng, RBAC đa vai trò, Hồ sơ Học viên/Giáo viên, Cấu hình hệ thống (`FUNC-001..013, FUNC-078`)

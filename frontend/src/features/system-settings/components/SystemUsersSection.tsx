@@ -5,13 +5,31 @@ import { StatusTag, getUserStatusTone } from '@/features/common/components/Statu
 import { type SystemUserDto } from '@/features/system-settings/api/system-settings.api';
 import { CreateSystemUserModal } from '@/features/system-settings/components/CreateSystemUserModal';
 import { EditUserRolesModal } from '@/features/system-settings/components/EditUserRolesModal';
-import { ROLE_LABELS, STATUS_LABELS } from '@/types/user';
+import { SettingsPaginationFooter } from '@/features/system-settings/components/SettingsPaginationFooter';
+import { ROLE_LABELS, STATUS_LABELS, type Role, type UserStatus } from '@/types/user';
+
+const FILTER_CONTROL_CLS =
+  'rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
+
+const ROLE_FILTER_OPTIONS: Role[] = ['SUPERADMIN', 'ADMIN', 'TEACHER', 'STUDENT'];
+const STATUS_FILTER_OPTIONS: UserStatus[] = ['ACTIVE', 'PENDING_CLASS', 'INACTIVE'];
 
 interface SystemUsersSectionProps {
   users: SystemUserDto[];
   usersLoading: boolean;
   userErrorBanner: string;
   currentUserId: string;
+  userSearch: string;
+  userRoleFilter: Role | '';
+  userStatusFilter: UserStatus | '';
+  userPage: number;
+  totalUserPages: number;
+  userTotal: number;
+  onUserSearchChange: (value: string) => void;
+  onUserRoleChange: (value: Role | '') => void;
+  onUserStatusChange: (value: UserStatus | '') => void;
+  onPrevPage: () => void;
+  onNextPage: () => void;
   onAuthError: (error: unknown) => boolean;
   onMutated: () => void;
 }
@@ -21,12 +39,25 @@ export function SystemUsersSection({
   usersLoading,
   userErrorBanner,
   currentUserId,
+  userSearch,
+  userRoleFilter,
+  userStatusFilter,
+  userPage,
+  totalUserPages,
+  userTotal,
+  onUserSearchChange,
+  onUserRoleChange,
+  onUserStatusChange,
+  onPrevPage,
+  onNextPage,
   onAuthError,
   onMutated,
 }: SystemUsersSectionProps) {
   const [userActionBanner, setUserActionBanner] = useState<string>('');
   const [createModalOpen, setCreateModalOpen] = useState<boolean>(false);
   const [editingUser, setEditingUser] = useState<SystemUserDto | null>(null);
+
+  const hasActiveFilter = Boolean(userSearch.trim() || userRoleFilter || userStatusFilter);
 
   return (
     <>
@@ -47,6 +78,43 @@ export function SystemUsersSection({
           >
             + Thêm tài khoản quản trị
           </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-3.5">
+          <input
+            type="search"
+            aria-label="Tìm kiếm tài khoản"
+            placeholder="Tìm theo họ tên, email, SĐT..."
+            value={userSearch}
+            onChange={(e) => onUserSearchChange(e.target.value)}
+            className={`w-full placeholder:text-[var(--ink-3)] sm:w-72 ${FILTER_CONTROL_CLS}`}
+          />
+          <select
+            aria-label="Lọc theo vai trò"
+            value={userRoleFilter}
+            onChange={(e) => onUserRoleChange(e.target.value as Role | '')}
+            className={`w-full sm:w-auto ${FILTER_CONTROL_CLS}`}
+          >
+            <option value="">Tất cả vai trò</option>
+            {ROLE_FILTER_OPTIONS.map((role) => (
+              <option key={role} value={role}>
+                {ROLE_LABELS[role]}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Lọc theo trạng thái"
+            value={userStatusFilter}
+            onChange={(e) => onUserStatusChange(e.target.value as UserStatus | '')}
+            className={`w-full sm:w-auto ${FILTER_CONTROL_CLS}`}
+          >
+            <option value="">Tất cả trạng thái</option>
+            {STATUS_FILTER_OPTIONS.map((status) => (
+              <option key={status} value={status}>
+                {STATUS_LABELS[status]}
+              </option>
+            ))}
+          </select>
         </div>
 
         {userActionBanner ? (
@@ -100,7 +168,9 @@ export function SystemUsersSection({
                     colSpan={6}
                     className="px-4 py-8 text-center text-sm text-[var(--ink-2)]"
                   >
-                    Chưa có dữ liệu tài khoản quản trị.
+                    {hasActiveFilter
+                      ? 'Không tìm thấy tài khoản phù hợp với bộ lọc.'
+                      : 'Chưa có dữ liệu tài khoản quản trị.'}
                   </td>
                 </tr>
               ) : (
@@ -151,6 +221,16 @@ export function SystemUsersSection({
             </tbody>
           </table>
         </div>
+
+        <SettingsPaginationFooter
+          page={userPage}
+          totalPages={totalUserPages}
+          totalItems={userTotal}
+          itemLabel="tài khoản"
+          loading={usersLoading}
+          onPrevPage={onPrevPage}
+          onNextPage={onNextPage}
+        />
       </section>
 
       {createModalOpen ? (

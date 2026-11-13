@@ -53,6 +53,7 @@ export function useIdleTimeout(
     const intervalId = window.setInterval(() => {
       const elapsed = Date.now() - lastActivityRef.current;
       if (elapsed >= IDLE_TIMEOUT_MS) {
+        window.clearInterval(intervalId);
         setRemainingSeconds(0);
         onExpireRef.current();
       } else if (elapsed >= IDLE_WARNING_MS) {

@@ -9,6 +9,16 @@ export class ListSystemUsersQueryDto {
   @MaxLength(100)
   search?: string;
 
+  @ApiPropertyOptional({ enum: Role })
+  @IsOptional()
+  @IsEnum(Role)
+  role?: Role;
+
+  @ApiPropertyOptional({ enum: UserStatus })
+  @IsOptional()
+  @IsEnum(UserStatus)
+  status?: UserStatus;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   page?: number | string;
@@ -95,6 +105,12 @@ export class UpdateSystemConfigDto {
 }
 
 export class ListAuditLogsQueryDto {
+  @ApiPropertyOptional({ description: 'Lọc chính xác theo mã action' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  action?: string;
+
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()
   page?: number | string;

@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 28-endpoint inventory for Phase 2 (`docs/test-inventory-api.md`).
+ * Canonical 72-endpoint inventory through Phase 5 (`docs/test-inventory-api.md`).
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -36,9 +36,10 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'POST', path: '/api/v1/auth/reset-password', isPublic: true },
   { method: 'GET', path: '/api/v1/auth/me', isPublic: false },
   { method: 'POST', path: '/api/v1/auth/logout', isPublic: false },
-  // ProfileController (3)
+  // ProfileController (4)
   { method: 'GET', path: '/api/v1/profile/me', isPublic: false },
   { method: 'PATCH', path: '/api/v1/profile/me', isPublic: false },
+  { method: 'POST', path: '/api/v1/profile/me/send-email-change-code', isPublic: false },
   { method: 'POST', path: '/api/v1/profile/change-password', isPublic: false },
   // TeachersController (3)
   { method: 'GET', path: '/api/v1/teachers', isPublic: false },
@@ -89,6 +90,24 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'PUT', path: '/api/v1/sessions/:sessionId/attendance', isPublic: false },
   { method: 'GET', path: '/api/v1/classes/:classId/attendance/matrix', isPublic: false },
   { method: 'GET', path: '/api/v1/attendance/me', isPublic: false },
+  // AssessmentsController (17 — Phase 5)
+  { method: 'POST', path: '/api/v1/assessments/import', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/review', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/original', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/media', isPublic: false },
+  { method: 'POST', path: '/api/v1/assessments/:id/media', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/media/:mediaId', isPublic: false },
+  { method: 'POST', path: '/api/v1/assessments', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/assessments/:id', isPublic: false },
+  { method: 'DELETE', path: '/api/v1/assessments/:id', isPublic: false },
+  { method: 'POST', path: '/api/v1/assessments/:id/duplicate', isPublic: false },
+  { method: 'POST', path: '/api/v1/assessments/:id/publish', isPublic: false },
+  { method: 'POST', path: '/api/v1/assessments/:id/questions', isPublic: false },
+  { method: 'PUT', path: '/api/v1/assessments/:id/questions/reorder', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/assessments/:id/questions/:qid', isPublic: false },
+  { method: 'DELETE', path: '/api/v1/assessments/:id/questions/:qid', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -182,7 +201,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(54);
+    expect(actualRoutes).toHaveLength(72);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -402,14 +421,16 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     const studentPendingToken = await loginAs('student.pending@webedu.vn');
 
     // 1. All 21 protected endpoints MUST return 401 when unauthenticated
+    const nilId = '00000000-0000-0000-0000-000000000000';
     const protectedEndpoints: Array<{
-      method: 'get' | 'post' | 'put' | 'patch';
+      method: 'get' | 'post' | 'put' | 'patch' | 'delete';
       url: string;
     }> = [
       { method: 'get', url: '/api/v1/auth/me' },
       { method: 'post', url: '/api/v1/auth/logout' },
       { method: 'get', url: '/api/v1/profile/me' },
       { method: 'patch', url: '/api/v1/profile/me' },
+      { method: 'post', url: '/api/v1/profile/me/send-email-change-code' },
       { method: 'post', url: '/api/v1/profile/change-password' },
       { method: 'get', url: '/api/v1/teachers' },
       { method: 'post', url: '/api/v1/teachers' },
@@ -451,6 +472,23 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'put', url: '/api/v1/sessions/00000000-0000-0000-0000-000000000000/attendance' },
       { method: 'get', url: `/api/v1/classes/${activeClass.id}/attendance/matrix` },
       { method: 'get', url: '/api/v1/attendance/me' },
+      { method: 'get', url: '/api/v1/assessments' },
+      { method: 'post', url: '/api/v1/assessments' },
+      { method: 'post', url: '/api/v1/assessments/import' },
+      { method: 'get', url: `/api/v1/assessments/${nilId}` },
+      { method: 'patch', url: `/api/v1/assessments/${nilId}` },
+      { method: 'delete', url: `/api/v1/assessments/${nilId}` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/review` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/original` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/media` },
+      { method: 'post', url: `/api/v1/assessments/${nilId}/media` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/media/${nilId}` },
+      { method: 'post', url: `/api/v1/assessments/${nilId}/duplicate` },
+      { method: 'post', url: `/api/v1/assessments/${nilId}/publish` },
+      { method: 'post', url: `/api/v1/assessments/${nilId}/questions` },
+      { method: 'put', url: `/api/v1/assessments/${nilId}/questions/reorder` },
+      { method: 'patch', url: `/api/v1/assessments/${nilId}/questions/${nilId}` },
+      { method: 'delete', url: `/api/v1/assessments/${nilId}/questions/${nilId}` },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -486,11 +524,20 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       `/api/v1/classes/${activeClass.id}`,
       '/api/v1/system-settings/users',
       '/api/v1/system-settings/audit-logs',
+      '/api/v1/assessments',
     ]) {
       const res = await request(server)
         .get(forbiddenUrl)
         .set('Authorization', `Bearer ${studentAToken}`);
       expect(res.status, `STUDENT GET ${forbiddenUrl}`).toBe(403);
+      assertRfc7807ProblemDetails(res.body, 403);
+    }
+
+    for (const ep of protectedEndpoints.filter((item) => item.url.includes('/assessments'))) {
+      const res = await request(server)
+        [ep.method](ep.url)
+        .set('Authorization', `Bearer ${studentAToken}`);
+      expect(res.status, `STUDENT ${ep.method.toUpperCase()} ${ep.url}`).toBe(403);
       assertRfc7807ProblemDetails(res.body, 403);
     }
 

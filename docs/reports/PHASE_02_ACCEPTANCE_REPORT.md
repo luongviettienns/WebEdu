@@ -1,5 +1,8 @@
 # Báo Cáo Nghiệm Thu Cuối Phase 2 — Module 01: Tài Khoản, Xác Thực & Phân Quyền RBAC
 
+> [!NOTE]
+> **Snapshot Lịch Sử (07/11/2026 — `fix/phase-02-final-remediation` -> `develop`):** Báo cáo nghiệm thu tại thời điểm kết thúc Phase 2, giữ nguyên nội dung lịch sử. Trạng thái hiện hành toàn dự án xem [PROJECT_PROGRESS.md](../../PROJECT_PROGRESS.md).
+
 - **Dự án:** WebEdu — Hệ thống Quản lý Lớp học & Học tập Trung tâm TD Hán Ngữ
 - **Repository:** `https://github.com/luongviettienns/WebEdu`
 - **Phạm vi nghiệm thu:** `FUNC-001..013` và `FUNC-078` (Module 01 — Tài khoản, Xác thực & Phân quyền RBAC)

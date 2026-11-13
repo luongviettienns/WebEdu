@@ -12,6 +12,98 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+const SUPERADMIN_SETTINGS_ITEM: NavItem = {
+  href: '/superadmin/settings',
+  label: 'Vận hành hệ thống',
+  han: '系统',
+};
+
+const TEACHER_CLASS_ITEM: NavItem = {
+  href: '/teacher/classes',
+  label: 'Lớp học phụ trách',
+  han: '班级',
+};
+
+const TEACHER_SCHEDULE_ITEM: NavItem = {
+  href: '/teacher/schedules',
+  label: 'Lịch dạy',
+  han: '课表',
+};
+
+const TEACHER_ASSESSMENT_ITEM: NavItem = {
+  href: '/teacher/assessments',
+  label: 'Ngân hàng đề',
+  han: '题库',
+};
+
+interface AdminSectionOptions {
+  pendingCount: number;
+  includeSuperadmin: boolean;
+  includeAdminOnly: boolean;
+  includeAssessments: boolean;
+  includeTeacherPersonal: boolean;
+}
+
+/** Builds the shared admin/superadmin primary section without duplicating item definitions. */
+function buildAdminSectionItems({
+  pendingCount,
+  includeSuperadmin,
+  includeAdminOnly,
+  includeAssessments,
+  includeTeacherPersonal,
+}: AdminSectionOptions): NavItem[] {
+  return [
+    ...(includeSuperadmin ? [SUPERADMIN_SETTINGS_ITEM] : []),
+    { href: '/admin/students', label: 'Học viên', han: '学员' },
+    ...(includeAdminOnly
+      ? [
+          {
+            href: '/admin/students/pending',
+            label: 'Chờ xếp lớp',
+            han: '待分班',
+            badge: pendingCount,
+          },
+          { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
+          { href: '/admin/classes', label: 'Quản lý lớp học', han: '班级' },
+          { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
+        ]
+      : []),
+    { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
+    { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
+    ...(includeAssessments ? [TEACHER_ASSESSMENT_ITEM] : []),
+    ...(includeTeacherPersonal ? [TEACHER_CLASS_ITEM, TEACHER_SCHEDULE_ITEM] : []),
+  ];
+}
+
+function createStudentStudyGroup(): NavGroup {
+  return {
+    title: 'HỌC TẬP',
+    items: [
+      { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
+      { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
+    ],
+  };
+}
+
+function createAccountGroup(): NavGroup {
+  return {
+    title: 'TÀI KHOẢN',
+    items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
+  };
+}
+
+/** Appends the optional student study group and the universal account group. */
+function appendStudentAndAccountGroups(
+  primaryGroups: NavGroup[],
+  includeStudentGroup: boolean,
+): NavGroup[] {
+  return [
+    ...primaryGroups,
+    ...(includeStudentGroup ? [createStudentStudyGroup()] : []),
+    createAccountGroup(),
+  ];
+}
+
 export function getGroupedNavLinks(
   role: Role | undefined,
   assignedRoles: readonly Role[] | undefined,
@@ -23,127 +115,53 @@ export function getGroupedNavLinks(
 
   switch (role) {
     case 'SUPERADMIN':
-      return [
-        {
-          title: 'HỆ THỐNG',
-          items: [
-            { href: '/superadmin/settings', label: 'Vận hành hệ thống', han: '系统' },
-            { href: '/admin/students', label: 'Học viên', han: '学员' },
-            ...(hasAdminRole
-              ? [
-                  {
-                    href: '/admin/students/pending',
-                    label: 'Chờ xếp lớp',
-                    han: '待分班',
-                    badge: pendingCount,
-                  },
-                  { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
-                  { href: '/admin/classes', label: 'Quản lý lớp học', han: '班级' },
-                  { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
-                ]
-              : []),
-            { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
-            { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
-            ...(hasTeacherRole
-              ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]
-              : []),
-          ],
-        },
-        ...(hasStudentRole
-          ? [
-              {
-                title: 'HỌC TẬP',
-                items: [
-                  { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
-                ],
-              },
-            ]
-          : []),
-        {
-          title: 'TÀI KHOẢN',
-          items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
-        },
-      ];
+      return appendStudentAndAccountGroups(
+        [
+          {
+            title: 'HỆ THỐNG',
+            items: buildAdminSectionItems({
+              pendingCount,
+              includeSuperadmin: true,
+              includeAdminOnly: hasAdminRole,
+              includeAssessments: hasAdminRole || hasTeacherRole,
+              includeTeacherPersonal: hasTeacherRole,
+            }),
+          },
+        ],
+        hasStudentRole,
+      );
 
     case 'ADMIN':
-      return [
-        {
-          title: 'VẬN HÀNH & DANH MỤC',
-          items: [
-            { href: '/admin/students', label: 'Học viên', han: '学员' },
-            {
-              href: '/admin/students/pending',
-              label: 'Chờ xếp lớp',
-              han: '待分班',
-              badge: pendingCount,
-            },
-            { href: '/admin/courses', label: 'Khóa học HSK', han: '课程' },
-            { href: '/admin/classes', label: 'Quản lý lớp học', han: '班级' },
-            { href: '/admin/schedules', label: 'Lịch học', han: '课表' },
-            { href: '/admin/schedule-logs', label: 'Nhật ký đổi lịch', han: '日志' },
-            { href: '/admin/teachers', label: 'Giáo viên', han: '教师' },
-            ...(hasTeacherRole
-              ? [{ href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' }]
-              : []),
-          ],
-        },
-        ...(hasStudentRole
-          ? [
-              {
-                title: 'HỌC TẬP',
-                items: [
-                  { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
-                ],
-              },
-            ]
-          : []),
-        {
-          title: 'TÀI KHOẢN',
-          items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
-        },
-      ];
+      return appendStudentAndAccountGroups(
+        [
+          {
+            title: 'VẬN HÀNH & DANH MỤC',
+            items: buildAdminSectionItems({
+              pendingCount,
+              includeSuperadmin: false,
+              includeAdminOnly: true,
+              includeAssessments: true,
+              includeTeacherPersonal: hasTeacherRole,
+            }),
+          },
+        ],
+        hasStudentRole,
+      );
 
     case 'TEACHER':
-      return [
-        {
-          title: 'GIẢNG DẠY',
-          items: [
-            { href: '/teacher/classes', label: 'Lớp học phụ trách', han: '班级' },
-            { href: '/teacher/schedules', label: 'Lịch dạy', han: '课表' },
-          ],
-        },
-        ...(hasStudentRole
-          ? [
-              {
-                title: 'HỌC TẬP',
-                items: [
-                  { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
-                  { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
-                ],
-              },
-            ]
-          : []),
-        {
-          title: 'TÀI KHOẢN',
-          items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
-        },
-      ];
+      return appendStudentAndAccountGroups(
+        [
+          {
+            title: 'GIẢNG DẠY',
+            items: [TEACHER_CLASS_ITEM, TEACHER_SCHEDULE_ITEM, TEACHER_ASSESSMENT_ITEM],
+          },
+        ],
+        hasStudentRole,
+      );
 
     case 'STUDENT':
     default:
-      return [
-        {
-          title: 'HỌC TẬP',
-          items: [
-            { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
-            { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
-          ],
-        },
-        {
-          title: 'TÀI KHOẢN',
-          items: [{ href: '/profile', label: 'Hồ sơ cá nhân', han: '个人' }],
-        },
-      ];
+      return appendStudentAndAccountGroups([], true);
   }
 }
 

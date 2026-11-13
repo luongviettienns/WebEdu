@@ -8,9 +8,16 @@ interface PortalTopbarProps {
   onOpenMobileMenu: () => void;
 }
 
-const ROUTE_LABELS: Record<string, string> = {
+const STATIC_ROUTE_LABELS: Record<string, string> = {
   '/student/overview': 'Tổng quan học tập',
+  '/student/schedule': 'Lịch học của tôi',
   '/teacher/classes': 'Lớp học phụ trách',
+  '/teacher/schedules': 'Lịch dạy',
+  '/teacher/assessments': 'Ngân hàng đề',
+  '/admin/courses': 'Khóa học HSK',
+  '/admin/classes': 'Quản lý lớp học',
+  '/admin/schedules': 'Quản lý lịch học',
+  '/admin/schedule-logs': 'Nhật ký đổi lịch',
   '/admin/students': 'Quản lý học viên',
   '/admin/students/pending': 'Chờ xếp lớp',
   '/admin/teachers': 'Quản lý giáo viên',
@@ -18,10 +25,32 @@ const ROUTE_LABELS: Record<string, string> = {
   '/profile': 'Hồ sơ cá nhân & Bảo mật',
 };
 
+const DYNAMIC_ROUTE_LABELS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
+  { pattern: /^\/teacher\/classes\/[^/]+$/, label: 'Chi tiết lớp học' },
+  { pattern: /^\/admin\/classes\/[^/]+$/, label: 'Chi tiết lớp học' },
+];
+
+/** Resolves a portal pathname (static or dynamic) into its Vietnamese topbar breadcrumb label. */
+export function resolveRouteLabel(pathname: string): string {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const staticLabel = STATIC_ROUTE_LABELS[normalized];
+  if (staticLabel) {
+    return staticLabel;
+  }
+
+  for (const { pattern, label } of DYNAMIC_ROUTE_LABELS) {
+    if (pattern.test(normalized)) {
+      return label;
+    }
+  }
+
+  return 'Cổng thông tin';
+}
+
 export function PortalTopbar({ onOpenMobileMenu }: PortalTopbarProps) {
   const pathname = usePathname();
   const { centerName } = useBrandConfig();
-  const currentLabel = ROUTE_LABELS[pathname] || 'Cổng thông tin';
+  const currentLabel = resolveRouteLabel(pathname ?? '');
 
   return (
     <header className="sticky top-0 z-20 flex h-[57px] w-full items-center justify-between border-b border-[var(--line)] bg-[var(--surface)]/95 px-4 backdrop-blur sm:px-6">

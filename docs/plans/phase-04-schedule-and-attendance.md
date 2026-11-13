@@ -1,8 +1,13 @@
 # Phase 4 Implementation Sub-Plan: Module 04 & 05 — Lịch Học, Buổi Học & Điểm Danh (`FUNC-026..032`, `FUNC-034..037`)
 
 > [!NOTE]
-> **TRẠNG THÁI THỰC THI (UNBLOCKED — READY FOR EXECUTION):**
-> Cổng chờ `ATT-01a` (`FUNC-036`) đã được chốt hoàn tất theo **`DEC-033` (12/11/2026)**: `(absentCount + excusedCount) * 100 >= totalSessions * 30`, UI hiển thị tách biệt `Vắng` và `Có phép`, tỷ lệ chuyên cần (`%`) tính theo `Math.round((presentCount / markedSessionsSinceEnrolled) * 100)`. Toàn bộ Phase 4 sẵn sàng thực thi theo 5 Vertical Slices TDD.
+> **TRẠNG THÁI ĐỐI SOÁT (13/11/2026): HOÀN THÀNH — MERGED `develop`**
+> - Cổng chờ `ATT-01a` (`FUNC-036`) đã chốt theo **`DEC-033`** và toàn bộ Phase 4 đã triển khai, merge vào `develop` (đưa tổng quy mô trên `develop` lên **54 API endpoints / 10 controllers**, **20 `page.tsx`**, **18 Prisma models / 10 migrations**).
+> - **Đối soát khác biệt giữa kế hoạch ban đầu và code thực tế trên `develop` (`#6`):**
+>   - **Schema:** Quy tắc lịch định kỳ lưu trực tiếp trên model `Class` (không tạo bảng `ClassScheduleRule` riêng như dự kiến ban đầu).
+>   - **API Routes thực tế:** `GET /classes/:id/sessions`, `POST /classes/:id/sessions`, `GET /sessions/:id`, `GET /schedules/calendar`, `GET /schedules/change-logs`, `PATCH /sessions/:id/reschedule`, `POST /sessions/:id/cancel` (**`201 Created`**), `POST /sessions/:id/makeup`, `GET/PUT /sessions/:id/attendance`, `GET /classes/:id/attendance/matrix`, `GET /attendance/me` (`SchedulesController` & `AttendanceController`; không có `PUT /classes/:id/sessions`).
+>   - **Frontend & Test paths:** Portal dùng `/admin/schedules`, `/admin/schedule-logs`, `/teacher/schedules` (`ALLOWED_ROLES = ['TEACHER']`), `/student/schedule` (`['STUDENT']`), `/student/overview` (`['STUDENT', 'ADMIN']`) cùng các component `ScheduleCalendarView`, `ClassSessionsTab`, `ClassAttendanceMatrixTab`; test chạy bằng Vitest trong `backend/src/**` & `backend/test/phase04-schedules-attendance.e2e-spec.ts`.
+> - **Drift mở còn lại theo audit `#6` (`TD-08..TD-10`):** `/student/overview` hiện đang hardcode số liệu `0%` / `0 buổi` / `100%`; `ClassStudentsTable` chưa có cột `Số buổi nghỉ`; `ClassAttendanceMatrixTab` chưa có icon/tooltip `"đã sửa"`; `nav-links.ts` chưa dẫn `/teacher/schedules` & `/student/schedule` cho tài khoản đa role `ADMIN`/`SUPERADMIN`; `completeClass` giữ các buổi `SCHEDULED` thay vì hủy sang `CANCELLED`.
 
 > **Execution Mode:** Thực thi theo quy trình **Superpowers Subagent-Driven Development (SDD)** & **Vertical Slice TDD (`RED -> GREEN -> REFACTOR`)** (`akit-plan`, `akit-implement`) trên nhánh Git Flow `feature/phase-04-schedule-and-attendance` tách từ `develop`.
 > **Prior-Art & Architecture Grounding (`akit-prior-art`):** Đã đối chiếu 3 giải pháp mã nguồn mở (`frappe/education`, `calcom/cal.com`, `jkbrzt/rrule`) và quyết định áp dụng chiến lược **Adapt**:

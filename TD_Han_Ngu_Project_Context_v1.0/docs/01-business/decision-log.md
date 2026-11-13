@@ -13,7 +13,7 @@ Các mục dưới đây là **quyết định hoặc quy tắc đã ghi nhận*
 | DEC-007 | Q25 | Học viên chỉ đang học một lớp tại một thời điểm. | FUNC-020, 022 | CONFIRMED |
 | DEC-008 | Q12, Q50 | Chuyển/rút lớp không xóa lịch sử lớp cũ; dữ liệu mới thuộc lớp mới. | FUNC-022, 023, 077 | CONFIRMED |
 | DEC-009 | Q26–28 | Không tự 'Đã học' khi quên điểm danh; hủy không bù không tự tạo; buổi bù thay buổi hủy. | FUNC-027, 030, 031 | CONFIRMED |
-| DEC-010 | Q29–32 | Điểm danh 3 trạng thái; cảnh báo 30%; GV có cửa sổ sửa 2 ngày; Admin sửa bất kỳ lúc nào. | FUNC-034–037 | CONFIRMED ở mức nguyên tắc; công thức/cửa sổ TBD |
+| DEC-010 | Q29–32 | Điểm danh 3 trạng thái; cảnh báo 30%; GV có cửa sổ sửa 2 ngày; Admin sửa bất kỳ lúc nào. | FUNC-034–037 | CONFIRMED ở mức nguyên tắc *(mốc cửa sổ 2 ngày & công thức 30% đã chốt chi tiết tại `DEC-032` và `DEC-033` bên dưới)* |
 | DEC-011 | Q14, Q48 | Một lần nộp chính thức mặc định; GV có thể cho nộp lại trường hợp đặc biệt. | FUNC-053, 054 | CONFIRMED; chính sách mở lại TBD |
 | DEC-012 | Q16, Q40–41 | Chấm tự động theo đáp án rõ ràng; tự luận GV chấm; GV xác nhận điểm rồi **công bố** bằng thao tác riêng. | FUNC-056–060 | CONFIRMED |
 | DEC-013 | Q33–34, Q49 | Sau công bố HV thấy điểm/nhận xét/đáp án khách quan; Admin được sửa điểm và phải lưu log. | FUNC-060–064 | CONFIRMED |
@@ -57,3 +57,7 @@ Không tự đánh dấu `CONFIRMED` cho đề xuất của AI. Mỗi lần ch�
 - **TRD-002 (12/11/2026) — Mô hình `GuardianConsent.studentProfileId @unique` & tính bất biến lịch sử giám hộ (`FUNC-001`, `DEC-023`):**
   - *Thiết kế:* Mỗi học viên đăng ký dưới 16 tuổi có đúng 1 bản ghi `guardian_consents` gắn với lần đăng ký ban đầu (`student_profile_id @unique`), và trigger PostgreSQL `trg_guardian_consents_immutable` chặn mọi `UPDATE`/`DELETE` lên bảng này. Khi học viên đủ 16 tuổi và tự cập nhật email cá nhân (`ProfileService.updateMyProfile`), chỉ `users.email` thay đổi; `guardian_consents` và `student_profiles.guardian_email` giữ nguyên lịch sử gốc từ lúc phụ huynh đồng ý.
   - *Dữ liệu vật hóa (materialized read-model caches):* Ba cặp cột `student_profiles.current_class_id`/`assigned_class` (đồng bộ với `enrollments` `ACTIVE`), `classes.teacher_id` (đồng bộ với `class_teacher_assignments` mở `assigned_to IS NULL`), và `teacher_profiles.active_classes_count` (tính lại tự động bởi trigger PostgreSQL `trg_classes_sync_teacher_active_count`) được giữ để tối ưu truy vấn danh sách và bảo vệ bằng DB constraints/triggers + transaction nguyên tử.
+
+## Ghi chú truy vết mã quyết định (`DEC-027`, `DEC-028`)
+
+- Các mã `DEC-027` và `DEC-028` **không được cấp trong nhật ký quyết định này** (bộ đếm nhảy từ `DEC-026` sang `DEC-029`). Một số tài liệu kế hoạch/nghiệm thu lịch sử của Phase 3 từng gọi nhầm `DEC-027`/`DEC-028` khi trích dẫn quy tắc 1 giáo viên phụ trách lớp và 1 lớp active/học viên — mã quyết định chuẩn trong log này là **`DEC-006`** và **`DEC-007`**.

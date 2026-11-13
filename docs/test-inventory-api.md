@@ -1,60 +1,157 @@
-# Kiểm kê Toàn diện API Endpoints — Phase 2 & Phase 3 (`docs/test-inventory-api.md`)
+# Kho Lưu Trữ Bề Mặt API Backend (Backend API Surface Inventory)
 
-> **Phương pháp trích xuất:** Quét tự động từ toàn bộ 8 Controller trong `backend/src/modules/**` và kiểm chứng 1-1 bằng bài test tự động `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts` trên Express router của ứng dụng NestJS (`app.getHttpAdapter().getInstance()`). Bất kỳ endpoint mới nào được thêm vào controller mà chưa khai báo trong ma trận kiểm thử sẽ làm bài test tự kiểm **FAIL** ngay lập tức.
-
----
-
-## 1. Bảng Tổng hợp Toàn bộ 42 HTTP Endpoints (Phase 2 & Phase 3)
-
-| # | Module / Controller | HTTP Method | Đường dẫn đầy đủ (`/api/v1/...`) | FUNC / DEC / SEC | Vai trò được phép (Guard + Object Policy) | DTO Đầu vào | Cấu trúc JSON Đầu ra / Mã trạng thái |
-|---|---|---|---|---|---|---|---|
-| 1 | `HealthController` | `GET` | `/api/v1/health` | Hạ tầng / Readiness | `@Public()` (Mọi đối tượng) | — | `200 OK`: `{ status: 'ok', service: 'webedu-backend', database: 'ok', timezone: 'Asia/Ho_Chi_Minh', timestamp }` (`503` khi DB mất kết nối) |
-| 2 | `AuthController` | `POST` | `/api/v1/auth/register` | `FUNC-001`, `FUNC-002`, `AUTH-01`, `AUTH-03` | `@Public()` | `RegisterDto` (`fullName`, `dateOfBirth`, `phone`, `email`, `password`, `verificationCode`, `confirmPassword?`, `guardianConsent?`) | `201 Created`: `{ message, user: AuthUserDto }` |
-| 3 | `AuthController` | `POST` | `/api/v1/auth/register/student` | `FUNC-001`, `FUNC-002` (Alias đăng ký HV) | `@Public()` | `RegisterDto` | `201 Created`: `{ message, user: AuthUserDto }` |
-| 4 | `AuthController` | `POST` | `/api/v1/auth/send-verification-code` | `FUNC-001`, `FUNC-002`, `SEC-06` | `@Public()` | `SendVerificationCodeDto` (`email`) | `200 OK`: `{ message, cooldownSeconds: 60 }` (`429` vi phạm cooldown 60s) |
-| 5 | `AuthController` | `POST` | `/api/v1/auth/login` | `FUNC-003`, `DEC-023`, `SEC-04`, `SEC-05`, `FIX-03` | `@Public()` | `LoginDto` (`email`, `password`, `rememberMe?`) | `200 OK` + `Set-Cookie: webedu_access_token` (`HttpOnly; SameSite=Lax; Path=/`): `{ expiresIn, redirectTo, user: AuthUserDto }` (**cấm lộ `accessToken` trong JSON**) |
-| 6 | `AuthController` | `POST` | `/api/v1/auth/forgot-password` | `FUNC-005`, `SEC-06`, `FIX-04` | `@Public()` | `ForgotPasswordDto` (`email`) | `200 OK`: `{ message, cooldownSeconds: 60 }` (**cấm lộ `debugResetToken`**; `429` khi vi phạm cooldown 60s hoặc giới hạn IP) |
-| 7 | `AuthController` | `POST` | `/api/v1/auth/reset-password` | `FUNC-005`, `SEC-06` | `@Public()` | `ResetPasswordDto` (`token`, `newPassword`, `confirmPassword?`) | `200 OK`: `{ message }` |
-| 8 | `AuthController` | `GET` | `/api/v1/auth/me` | `FUNC-003`, `FUNC-004`, `FUNC-009` | Mọi vai trò đã xác thực (`STUDENT`, `TEACHER`, `ADMIN`, `SUPERADMIN`) | — | `200 OK`: `AuthUserDto` (`id`, `email`, `fullName`, `phone`, `roles`, `effectiveRole`, `status`, `dateOfBirth?`) |
-| 9 | `AuthController` | `POST` | `/api/v1/auth/logout` | `FUNC-004` | Mọi vai trò đã xác thực | — | `200 OK` + Clear Cookie + tăng `tokenVersion`: `{ message }` |
-| 10 | `ProfileController` | `GET` | `/api/v1/profile/me` | `FUNC-078` | Mọi vai trò đã xác thực | — | `200 OK`: `UserProfileDto` (gồm `activeClassesCount` cho `TEACHER`, `dateOfBirth` + `assignedClass` cho `STUDENT`) |
-| 11 | `ProfileController` | `PATCH` | `/api/v1/profile/me` | `FUNC-078`, `AUTH-02`, `P0-2` | Mọi vai trò đã xác thực | `UpdateProfileDto` (`fullName?`, `phone?`, `email?`, `currentPassword?`) | `200 OK` (+ xoay vòng `Set-Cookie` và `tokenVersion` nếu đổi `email`; chặn `400` nếu gửi `dateOfBirth`): `UserProfileDto` |
-| 12 | `ProfileController` | `POST` | `/api/v1/profile/change-password` | `FUNC-078`, `P0-2` | Mọi vai trò đã xác thực | `ChangePasswordDto` (`currentPassword`, `newPassword`, `confirmPassword?`) | `200 OK` + xoay vòng `Set-Cookie` và `tokenVersion`: `{ message, expiresIn }` |
-| 13 | `TeachersController` | `GET` | `/api/v1/teachers` | `FUNC-006` | `ADMIN`, `SUPERADMIN` | `ListTeachersQueryDto` (`search?`, `status?`, `page?`, `limit?`) | `200 OK`: `{ items: TeacherItemDto[], total, page, limit }` |
-| 14 | `TeachersController` | `POST` | `/api/v1/teachers` | `FUNC-006`, `SEC-09` | `ADMIN`, `SUPERADMIN` | `CreateTeacherDto` (`fullName`, `phone`, `email`, `initialPassword`, `notes?`) | `201 Created`: `TeacherItemDto` (`status = ACTIVE`) |
-| 15 | `TeachersController` | `PATCH` | `/api/v1/teachers/:id` | `FUNC-006`, `SEC-07`, `SEC-08`, `P0-2` | `ADMIN`, `SUPERADMIN` (`ADMIN` bị chặn `403` nếu sửa/khóa TK có role `ADMIN`/`SUPERADMIN`; chặn `409` nếu khóa GV có `activeClassesCount > 0`) | `UpdateTeacherDto` (`fullName?`, `phone?`, `email?`, `status?`, `notes?`) | `200 OK`: `TeacherItemDto` |
-| 16 | `StudentsController` | `GET` | `/api/v1/students` | `FUNC-007` | `ADMIN`, `SUPERADMIN` (`SUPERADMIN` thuần chỉ thấy định danh, ẩn `internalNotes`) | `ListStudentsQueryDto` (`search?`, `status?`, `assignedClass?`, `page?`, `limit?`) | `200 OK`: `{ items: StudentListItemDto[], total, page, limit }` |
-| 17 | `StudentsController` | `GET` | `/api/v1/students/pending-enrollment` | `FUNC-008`, `roles-permissions.md §2.1` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403` theo default-deny) | `ListPendingEnrollmentQueryDto` (`search?`, `page?`, `limit?`) | `200 OK`: `{ items: PendingStudentItemDto[], pendingCount, total, page, limit }` |
-| 18 | `StudentsController` | `GET` | `/api/v1/students/available-classes` | `FUNC-008` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | — | `200 OK`: `AvailableClassDto[]` (chỉ lớp `UPCOMING` / `ACTIVE`) |
-| 19 | `StudentsController` | `GET` | `/api/v1/students/:id` | `FUNC-007`, `FUNC-010`, `DEC-026` | `ADMIN` (toàn quyền), `SUPERADMIN` (chỉ định danh, ẩn `internalNotes` & `classHistory`), `STUDENT` (chỉ `:id === user.id`, khác nhận `403`) | `@Param('id')` | `200 OK`: `StudentDetailDto` |
-| 20 | `StudentsController` | `PATCH` | `/api/v1/students/:id` | `FUNC-007`, `AUTH-02`, `DEC-026`, `SEC-08` | `ADMIN`, `SUPERADMIN` (`SUPERADMIN` thuần gửi `internalNotes` bị chặn `403`; khóa sửa `dateOfBirth` sau `GuardianConsent`) | `UpdateStudentDto` (`fullName?`, `dateOfBirth?`, `phone?`, `email?`, `status?`, `internalNotes?`) | `200 OK`: `StudentDetailDto` |
-| 21 | `StudentsController` | `POST` | `/api/v1/students/:id/assign-initial-class` | `FUNC-008`, `roles-permissions.md §2.1` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `AssignInitialClassDto` (`classId?`, `classCode?`, `enrolledDate?`) | `200 OK`: `StudentDetailDto` (`status` chuyển `PENDING_CLASS -> ACTIVE`, tạo `Enrollment` `ACTIVE`) |
-| 22 | `StudentsController` | `GET` | `/api/v1/students/:id/learning-records` | `FUNC-007`, `FUNC-010`, `DEC-024`, `DEC-025` | `ADMIN` (`FULL`), `STUDENT` của chính mình (`OWN`), `TEACHER` phụ trách lớp đang học (`FULL`) hoặc lớp `COMPLETED` (`READ_ONLY` — `DEC-025` Case 1). `TEACHER` đã bị thay thế (`DEC-025` Case 2), `TEACHER` ngoài lớp, và `SUPERADMIN` thuần nhận `403`. | `@Param('id')` | `200 OK`: `StudentLearningRecordsDto` (`accessScope: 'FULL' \| 'READ_ONLY' \| 'OWN'`) |
-| 23 | `StudentsController` | `GET` | `/api/v1/students/:id/class-history` | `FUNC-007`, `DEC-024`, `DEC-025` | `ADMIN`, `STUDENT` (chỉ `:id === user.id`). `TEACHER` và `SUPERADMIN` thuần nhận `403` (`DEC-024` & `roles-permissions.md §2.1`). | `@Param('id')` | `200 OK`: `{ studentId, fullName, currentClass, classHistory }` |
-| 24 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/users` | `FUNC-011`, `FUNC-012` | Chỉ `SUPERADMIN` | `ListSystemUsersQueryDto` (`search?`, `role?`, `status?`, `page?`, `limit?`) | `200 OK`: `{ items: SystemUserItemDto[], total, page, limit }` |
-| 25 | `SystemSettingsController` | `POST` | `/api/v1/system-settings/users` | `FUNC-012`, `SEC-09` | Chỉ `SUPERADMIN` | `CreateSystemUserDto` (`fullName`, `phone`, `email`, `initialPassword`, `roles`) | `201 Created`: `SystemUserItemDto` (`status = ACTIVE`) |
-| 26 | `SystemSettingsController` | `PATCH` | `/api/v1/system-settings/users/:id/roles` | `FUNC-009`, `FUNC-012`, `SEC-07`, `P0-2` | Chỉ `SUPERADMIN` (bảo toàn `>= 1` Superadmin `ACTIVE`; tăng `tokenVersion` khi đổi `roles` hoặc khóa `INACTIVE`) | `UpdateUserRolesStatusDto` (`roles?`, `status?`) | `200 OK`: `SystemUserItemDto` |
-| 27 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/config` | `FUNC-013` | `@Public()` (hiển thị thương hiệu & logo trung tâm) | — | `200 OK`: `SystemConfigDto` (`centerName`, `logoDataUri`, `updatedAt`, `updatedBy`) |
-| 28 | `SystemSettingsController` | `PUT` | `/api/v1/system-settings/config` | `FUNC-013`, `SEC-10`, `FIX-06` | Chỉ `SUPERADMIN` | `UpdateSystemConfigDto` (`centerName`, `logoDataUri?`) | `200 OK`: `SystemConfigDto` (kiểm tra magic bytes PNG/JPG, kích thước `<= 2MB`, chống decompression bomb `<= 2048x2048`) |
-| 29 | `SystemSettingsController` | `GET` | `/api/v1/system-settings/audit-logs` | `FUNC-011`, `FUNC-012`, `FUNC-013`, `SEC-09` | Chỉ `SUPERADMIN` | `ListAuditLogsQueryDto` (`action?`, `page?`, `limit?`) | `200 OK`: `{ items: SystemAuditLogItemDto[], total, page, limit }` |
-| 30 | `CoursesController` | `GET` | `/api/v1/courses` | `FUNC-014`, `COURSE-01` | `ADMIN`, `TEACHER` (`SUPERADMIN` thuần và `STUDENT` nhận `403`) | `ListCoursesQueryDto` (`activeOnly?`, `search?`, `level?`) | `200 OK`: `{ items: CourseItemDto[], total }` |
-| 31 | `CoursesController` | `POST` | `/api/v1/courses` | `FUNC-014`, `COURSE-01`, `COURSE-02` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `CreateCourseDto` (`code`, `name`, `level`, `defaultSessions?`, `description?`, `isActive?`) | `201 Created`: `CourseItemDto` |
-| 32 | `CoursesController` | `PATCH` | `/api/v1/courses/:id` | `FUNC-014`, `COURSE-01`, `COURSE-03` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `UpdateCourseDto` (`code?`, `name?`, `level?`, `defaultSessions?`, `description?`, `isActive?`) | `200 OK`: `CourseItemDto` |
-| 33 | `ClassesController` | `GET` | `/api/v1/classes` | `FUNC-016`, `FUNC-020`, `CLASS-05` | `ADMIN` (toàn bộ lớp), `TEACHER` (chỉ lớp mình đang phụ trách `teacherId = user.id`). `SUPERADMIN` thuần và `STUDENT` nhận `403`. | `ListClassesQueryDto` (`search?`, `courseId?`, `teacherId?`, `status?`, `includeEnded?`, `page?`, `limit?`) | `200 OK`: `{ items: ClassItemDto[], total, page, limit }` |
-| 34 | `ClassesController` | `GET` | `/api/v1/classes/:id` | `FUNC-016`, `FUNC-020`, `DEC-025`, `CLASS-05` | `ADMIN`, `TEACHER` đang phụ trách (`FULL` khi `UPCOMING`/`ACTIVE`, `READ_ONLY` khi `COMPLETED`/`ARCHIVED`). `TEACHER` đã bị thay thế nhận `403`. | `GetClassDetailQueryDto` (`includeInactiveEnrollments?`) | `200 OK`: `ClassDetailDto` |
-| 35 | `ClassesController` | `POST` | `/api/v1/classes` | `FUNC-015`, `CLASS-01`, `CLASS-02` | Chỉ `ADMIN` (`SUPERADMIN` thuần nhận `403`) | `CreateClassDto` (`code`, `courseId`, `teacherId`, `scheduleDays`, `scheduleStartTime`, `scheduleEndTime`, `startDate`, `totalSessions?`, `status?`, `notes?`) | `201 Created`: `ClassItemDto` |
-| 36 | `ClassesController` | `PATCH` | `/api/v1/classes/:id` | `FUNC-016`, `FUNC-019`, `CLASS-03`, `CLASS-04` | Chỉ `ADMIN` (chặn `400` khi lớp `COMPLETED`/`ARCHIVED` hoặc đổi `courseId` khi đã có HV; tự động ghi `ClassTeacherAssignment` khi đổi GV) | `UpdateClassDto` | `200 OK`: `ClassItemDto` |
-| 37 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments` | `FUNC-017`, `CLASS-06` | Chỉ `ADMIN` (khóa `FOR UPDATE` theo thứ tự `studentId ASC`; chặn `409` nếu HV đã có lớp `ACTIVE`) | `EnrollStudentsDto` (`studentIds`, `enrolledDate?`) | `200 OK`: `{ enrolledCount, classId, classCode, studentIds }` |
-| 38 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments/:studentId/transfer` | `FUNC-017`, `CLASS-07` | Chỉ `ADMIN` (chuyển nguyên tử từ lớp nguồn `TRANSFERRED` sang lớp đích `ACTIVE`) | `TransferStudentClassDto` (`targetClassId`, `transferDate?`, `reason?`) | `200 OK`: `{ status: 'TRANSFERRED', sourceClassId, targetClassId, targetClassCode, studentId }` |
-| 39 | `ClassesController` | `POST` | `/api/v1/classes/:id/enrollments/:studentId/drop` | `FUNC-017`, `CLASS-07` | Chỉ `ADMIN` (đánh dấu `DROPPED`, giải phóng `currentClassId`, đưa HV về `PENDING_CLASS`) | `DropStudentClassDto` (`leftDate?`, `reason?`) | `200 OK`: `{ status: 'DROPPED', classId, studentId }` |
-| 40 | `ClassesController` | `POST` | `/api/v1/classes/:id/complete` | `FUNC-018`, `CLASS-08` | Chỉ `ADMIN` (chuyển lớp sang `COMPLETED`, chỉ chuyển `Enrollment` `ACTIVE` -> `COMPLETED`, giải phóng HV về `PENDING_CLASS`, đồng bộ `activeClassesCount`) | `CompleteClassDto` (`actualEndDate?`, `reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'READ_ONLY'`) |
-| 41 | `ClassesController` | `POST` | `/api/v1/classes/:id/reopen` | `FUNC-018`, `CLASS-08`, `DEC-002` | Chỉ `ADMIN` (chỉ trong thời hạn 7 ngày kể từ `closedAt`, kiểm tra GV còn `ACTIVE`, khôi phục an toàn các `Enrollment` `COMPLETED` chưa vào lớp mới) | `ReopenClassDto` (`reason?`) | `200 OK`: `ClassDetailDto` (`accessMode = 'FULL'`) |
-| 42 | `ClassesController` | `POST` | `/api/v1/classes/preview-schedule` | `TD-06`, `FUNC-015`, `FUNC-016` | Chỉ `ADMIN` (`SUPERADMIN` thuần, `TEACHER`, `STUDENT` nhận `403`) | `PreviewClassScheduleDto` (`scheduleDays`, `scheduleStartTime`, `scheduleEndTime`, `startDate`, `totalSessions`, `teacherId?`, `excludeClassId?`) | `200 OK`: `{ normalizedScheduleDays, scheduleText, expectedEndDate, totalSessions, scheduleConflictWarning }` |
+> **Đồng bộ gần nhất:** 2026-11-13 (sau hoàn tất 3 Wave SDD `TD-07..10`, `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01` trên nhánh `feature/phase-05-question-bank-and-import`)
+> **Phạm vi kiểm chứng hiện tại:** **72 HTTP Endpoints** trên **11 Controllers** (gồm **55 endpoints / 10 controllers** cho Modules 01–05 kể cả endpoint OTP đổi email `POST /profile/me/send-email-change-code` + **17 endpoints / 1 controller** `AssessmentsController` cho Phase 5), đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
 
 ---
 
-## 2. Quy chuẩn Kiểm thử Bắt buộc trên Từng Endpoint
-1. **Hợp đồng lỗi RFC 7807 (`AllExceptionsFilter`):** Mọi phản hồi lỗi (`400`, `401`, `403`, `404`, `409`, `413`, `429`, `500`) đều có `type`, `title`, `status`, `detail`, `instance`, `timestamp`, `requestId` và **tuyệt đối không lộ** stack trace, câu lệnh SQL hay thông tin nội bộ.
-2. **Bảo mật Cookie & CSRF Origin (`JwtAuthGuard`):** Các thao tác ghi (`POST`, `PUT`, `PATCH`, `DELETE`) xác thực bằng Cookie bắt buộc kiểm tra `Origin`/`Referer` thuộc `CORS_ORIGIN` (`403` nếu sai Origin).
-3. **Biên Phân trang (`resolvePagination`):** Mọi endpoint danh sách (`#13`, `#16`, `#17`, `#24`, `#29`) chuẩn hóa an toàn khi `page <= 0`, `page` âm, `page` cực lớn (`999999`), `limit <= 0` hoặc `limit > 100`.
-4. **Idempotency:** Gọi lặp 2 lần liên tiếp cùng thao tác ghi (`PUT /system-settings/config`, `PATCH /profile/me`, `PATCH /system-settings/users/:id/roles`, `POST /auth/logout`) trả kết quả nhất quán, không phát sinh bản ghi rác hay lỗi `500`.
+## 1. Quy Ước Nền Tảng (API Contract & Security Invariants)
+
+- **Prefix & Tài liệu:** Toàn bộ API nghiệp vụ dùng prefix `/api/v1` (Swagger UI tại `/api/docs`). Múi giờ chuẩn hệ thống: `Asia/Ho_Chi_Minh`.
+- **Rule 1 — RFC 7807 Problem Details:** `AllExceptionsFilter` ([`all-exceptions.filter.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/src/common/filters/all-exceptions.filter.ts)) chuẩn hóa mọi lỗi HTTP / Prisma `P2002` / body parser (`413`, `400`) với `Content-Type: application/problem+json` gồm: `type`, `title`, `status`, `detail`, `instance`, `timestamp`, **`requestId`** (`x-request-id` hoặc UUID sinh mới, đồng thời trả qua response header `x-request-id`), và `invalidParams` (tùy chọn khi lỗi `ValidationPipe`).
+- **Rule 2 — Global Strict Validation:** `ValidationPipe` toàn cục cấu hình `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true` — từ chối thuộc tính lạ với `400 Bad Request` + `invalidParams`. Giới hạn JSON mặc định toàn cục là `100kb`; riêng `PUT /api/v1/system-settings/config` dùng route-scoped JSON parser `4mb` (`413 Payload Too Large` nếu vượt ngưỡng).
+- **Rule 3 — Default-Deny RBAC & Auth:** Toàn bộ endpoint chạy qua Global `JwtAuthGuard` và `RolesGuard` (cookie HttpOnly `webedu_access_token` hoặc Bearer JWT, kiểm tra Origin CSRF cho mutating requests dùng cookie). Mọi endpoint không gắn `@Public()` yêu cầu JWT hợp lệ (`401`). `@AuthenticatedOnly()` cho phép mọi vai trò đã đăng nhập; `@Roles(...)` kiểm tra vai trò được phép (pure `SUPERADMIN` bị chặn khỏi dữ liệu học vụ nếu endpoint không khai báo `Role.SUPERADMIN`).
+- **Rule 4 — Chống BOLA / IDOR & Concurrency:** Mọi endpoint thao tác theo `:id` / `:studentId` / `:qid` đều kiểm tra quyền sở hữu/phạm vi lớp theo vai trò (`ClassAccessService`, `ScheduleAccessPolicy`, `AttendancePolicy`, `AssessmentAccessPolicy`); các thao tác ghi danh/xếp lớp/sửa buổi học dùng PostgreSQL transaction (`FOR UPDATE` / partial unique index) để tránh deadlock/race condition.
+
+---
+
+## 2. Danh Sách 72 API Endpoints Theo Controller
+
+### A. Hạ Tầng & Xác Thực (Phases 1–2 — `develop`)
+
+#### 2.1 `HealthController` (`/api/v1/health` — 1 endpoint)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / Params | Output & Mã trạng thái chính |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 1 | `GET` | `/health` | `@Public()` | Không | `200 OK` `{ status: 'ok', service: 'webedu-backend', database: 'ok', timezone: 'Asia/Ho_Chi_Minh', timestamp }` hoặc `503` khi DB lỗi |
+
+#### 2.2 `AuthController` (`/api/v1/auth` — 8 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / DTO (`forbidNonWhitelisted`) | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 2 | `POST` | `/auth/send-verification-code` | `@Public()` | `SendVerificationCodeDto`: `{ email }` | `200 OK` — Gửi mã OTP 6 số qua SMTP; áp rate-limit / cooldown (`429`) |
+| 3 | `POST` | `/auth/register` | `@Public()` | `RegisterDto`: `{ fullName, dateOfBirth, phone, email, password, confirmPassword?, verificationCode?, guardianEmail?, guardianConsent? }` | `201 Created` — HV tự đăng ký ($\ge 12$ tuổi, $< 16$ bắt buộc `guardianConsent = true`, `DEC-001`), trạng thái `PENDING_CLASS`; trùng SĐT/email $\rightarrow$ `409` |
+| 4 | `POST` | `/auth/register/student` | `@Public()` | Alias của `/auth/register` (`RegisterDto`) | `201 Created` — Tương đương `#3` (Express đăng ký 2 route riêng) |
+| 5 | `POST` | `/auth/login` | `@Public()` | `LoginDto`: `{ email, password, rememberMe? }` | `200 OK` — Set cookie `webedu_access_token` luôn có `maxAge` (**7 ngày** khi `rememberMe=true`, **`3600s` (1 giờ)** khi `rememberMe=false`); sai 5 lần khóa tài khoản 15 phút trên `users` trả **`403 Forbidden`** (`AuthRateLimit` theo IP 15 lần/60s trả **`429`**) |
+| 6 | `GET` | `/auth/me` | `@AuthenticatedOnly()` | Cookie / Bearer JWT | `200 OK` — Hồ sơ xác thực, `roles`, trạng thái tài khoản |
+| 7 | `POST` | `/auth/logout` | `@AuthenticatedOnly()` | Cookie / Bearer JWT | `200 OK` — Thu hồi `tokenVersion` phiên hiện tại & xóa cookie |
+| 8 | `POST` | `/auth/forgot-password` | `@Public()` | `ForgotPasswordDto`: `{ email }` | `200 OK` (generic không lộ tồn tại email); gửi link khôi phục; cooldown 60s (`429`) |
+| 9 | `POST` | `/auth/reset-password` | `@Public()` | `ResetPasswordDto`: `{ token, newPassword, confirmPassword? }` | `200 OK` — Đặt lại mật khẩu và thu hồi các phiên cũ |
+
+#### 2.3 `ProfileController` (`/api/v1/profile` — 4 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / DTO (`forbidNonWhitelisted`) | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 10 | `GET` | `/profile/me` | `@AuthenticatedOnly()` | JWT | `200 OK` — Thông tin hồ sơ cá nhân theo vai trò + cờ `canSelfChangeEmail` (`false` đối với HV `<16` tuổi GMT+7) |
+| 11 | `PATCH` | `/profile/me` | `@AuthenticatedOnly()` | `UpdateProfileDto`: `{ fullName?, phone?, email?, currentPassword?, verificationCode?, dateOfBirth? }` | `200 OK` — Cập nhật hồ sơ; khóa tự sửa `dateOfBirth` đối với HV; khóa tự đổi email đối với HV `<16` (`403`, `FUNC-078`); đổi email yêu cầu `currentPassword` + OTP `verificationCode` 6 số; tăng `tokenVersion` & xoay cookie khi đổi email |
+| 12 | `POST` | `/profile/me/send-email-change-code` | `@AuthenticatedOnly()` | `SendEmailChangeCodeDto`: `{ newEmail }` | `200 OK` — Gửi mã OTP 6 số qua SMTP (`purpose: 'email_change'`, dùng chung `email_verifications`); khóa HV `<16` (`403`); cooldown 60s (`429`); từ chối email trùng (`409`) |
+| 13 | `POST` | `/profile/change-password` | `@AuthenticatedOnly()` | `ChangePasswordDto`: `{ currentPassword, newPassword, confirmPassword? }` | `200 OK` — Đổi mật khẩu, tăng `tokenVersion` & cấp cookie phiên mới |
+
+### B. Quản Lý Nhân Sự, Học Viên & Hệ Thống (Phase 2 — `develop`)
+
+#### 2.4 `TeachersController` (`/api/v1/teachers` — 3 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 14 | `GET` | `/teachers` | `ADMIN`, `SUPERADMIN` | `ListTeachersQueryDto`: `{ search?, status?, page?, limit? }` | `200 OK` — Danh sách giáo viên phân trang (kèm tag vai trò `ADMIN` nếu kiêm nhiệm) |
+| 15 | `POST` | `/teachers` | `ADMIN`, `SUPERADMIN` | `CreateTeacherDto`: `{ fullName, phone, email, initialPassword, notes? }` | `201 Created` — Tạo tài khoản `TEACHER` + `TeacherProfile` |
+| 16 | `PATCH` | `/teachers/:id` | `ADMIN`, `SUPERADMIN` | `UpdateTeacherDto`: `{ fullName?, phone?, email?, notes?, status? }` (`ACTIVE` \| `INACTIVE`) | `200 OK` — Chặn vô hiệu hóa (`INACTIVE`) nếu GV đang phụ trách lớp chưa kết thúc (`409` kèm danh sách lớp ràng buộc) |
+
+#### 2.5 `StudentsController` (`/api/v1/students` — 8 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 17 | `GET` | `/students` | `ADMIN`, `SUPERADMIN` | `ListStudentsQueryDto`: `{ search?, status?, className?, page?, limit? }` | `200 OK` — `SUPERADMIN` không nhận dữ liệu học vụ `currentClassId`/`assignedClass` (khắc phục `F6`) |
+| 18 | `GET` | `/students/pending-enrollment` | `ADMIN` | `ListPendingEnrollmentQueryDto`: `{ search?, page?, limit? }` | `200 OK` — Danh sách HV trạng thái `PENDING_CLASS` chờ xếp lớp |
+| 19 | `GET` | `/students/available-classes` | `ADMIN` | Không | `200 OK` — Danh sách lớp `UPCOMING` / `ACTIVE` phục vụ xếp lớp ban đầu |
+| 20 | `GET` | `/students/:id` | `STUDENT`, `ADMIN`, `SUPERADMIN` | `:id` (Student User ID) | `200 OK` — `STUDENT` chỉ xem chính mình (`403` nếu ID khác); `SUPERADMIN` bị ẩn `currentClassId`/`assignedClass` |
+| 21 | `PATCH` | `/students/:id` | `ADMIN`, `SUPERADMIN` | `UpdateStudentDto`: `{ fullName?, phone?, email?, dateOfBirth?, status?, internalNotes? }` | `200 OK` — Cập nhật thông tin/trạng thái HV (`INACTIVE` thu hồi phiên) |
+| 22 | `POST` | `/students/:id/assign-initial-class` | `ADMIN` | `AssignInitialClassDto`: `{ classNameOrId, enrolledAt? }` | `200 OK` — Xếp lớp ban đầu trong DB transaction & kích hoạt `ACTIVE`; chặn race-condition nhờ Partial Unique Index (`400`/`409`) |
+| 23 | `GET` | `/students/:id/learning-records` | `STUDENT`, `TEACHER`, `ADMIN` | `:id` | `200 OK` — Dữ liệu học tập theo phạm vi lớp được phép (pure `SUPERADMIN` $\rightarrow$ `403`) |
+| 24 | `GET` | `/students/:id/class-history` | `STUDENT`, `TEACHER`, `ADMIN` (Guard) — **`ADMIN` & chính `STUDENT` (`200`), `TEACHER` $\rightarrow$ `403`** | `:id` | `200 OK` — Lịch sử các lớp đã học; `StudentAccessService.assertCanViewClassHistory` chặn `TEACHER` bằng `403 Forbidden` (chỉ `ADMIN` hoặc chính `STUDENT` được xem) |
+
+#### 2.6 `SystemSettingsController` (`/api/v1/system-settings` — 6 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 25 | `GET` | `/system-settings/users` | `SUPERADMIN` | `ListSystemUsersQueryDto`: `{ search?, role?, status?, page?, limit? }` | `200 OK` — Danh sách tài khoản hệ thống phân trang, hỗ trợ lọc chính xác `role` (`roles: { has }`) & `status` |
+| 26 | `POST` | `/system-settings/users` | `SUPERADMIN` | `CreateSystemUserDto`: `{ fullName, phone, email, initialPassword, roles, status? }` | `201 Created` — Tạo tài khoản nhân sự/quản trị đa vai trò |
+| 27 | `PATCH` | `/system-settings/users/:id/roles` | `SUPERADMIN` | `UpdateUserRolesStatusDto`: `{ roles?, status? }` | `200 OK` — Cập nhật vai trò/trạng thái; bảo vệ chống tự hạ cấp hoặc mất `SUPERADMIN` hoạt động cuối cùng |
+| 28 | `GET` | `/system-settings/config` | `@Public()` | Không | `200 OK` — Trả cấu hình tên trung tâm & logo (`Cache-Control: public, max-age=300, stale-while-revalidate=600`) |
+| 29 | `PUT` | `/system-settings/config` | `SUPERADMIN` | `UpdateSystemConfigDto`: `{ centerName, centerLogoUrl?, centerLogoBase64?, updatedAt?, timezone? }` | `200 OK` — Parser riêng `4mb`; kiểm tra magic-bytes PNG/JPG tối đa 2MB *(trường `timezone` không còn tác dụng)* |
+| 30 | `GET` | `/system-settings/audit-logs` | `SUPERADMIN` | `ListAuditLogsQueryDto`: `{ action?, page?, limit? }` | `200 OK` — Nhật ký vận hành hệ thống phân trang, hỗ trợ lọc chính xác theo mã `action` |
+
+### C. Khóa HSK & Quản Lý Lớp Học (Phase 3 — `develop`)
+
+#### 2.7 `CoursesController` (`/api/v1/courses` — 3 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 31 | `GET` | `/courses` | `ADMIN`, `TEACHER` | `ListCoursesQueryDto`: `{ activeOnly?, search?, level? }` | `200 OK` — Danh mục khóa học HSK (`HSK1..HSK4`, `BASIC_COMM`, HSK 3.0) |
+| 32 | `POST` | `/courses` | `ADMIN` | `CreateCourseDto`: `{ code, name, level, defaultSessions?, description?, isActive? }` | `201 Created` — Tạo khóa học (`code` duy nhất `^[A-Z0-9_-]+$`, 2–30 ký tự) |
+| 33 | `PATCH` | `/courses/:id` | `ADMIN` | `UpdateCourseDto`: `{ code?, name?, level?, defaultSessions?, description?, isActive? }` | `200 OK` — Cập nhật thông tin hoặc kích hoạt/tạm ngưng khóa học |
+
+#### 2.8 `ClassesController` (`/api/v1/classes` — 10 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 34 | `GET` | `/classes` | `ADMIN`, `TEACHER` | `ListClassesQueryDto`: `{ search?, courseId?, teacherId?, excludeClassId?, status?, includeEnded?, page?, limit? }` | `200 OK` — `TEACHER` chỉ thấy lớp đang phụ trách hoặc lớp đã kết thúc/lưu trữ của chính mình (`DEC-025`); trả kèm `completedSessionsCount` (batched) |
+| 35 | `POST` | `/classes/preview-schedule` | `ADMIN` | `PreviewClassScheduleDto`: `{ scheduleDays, scheduleStartTime, scheduleEndTime, startDate, totalSessions, teacherId?, excludeClassId? }` | `200 OK` — Tính trước ngày dự kiến kết thúc & cảnh báo trùng lịch GV |
+| 36 | `GET` | `/classes/:id` | `ADMIN`, `TEACHER` | `GetClassDetailQueryDto`: `{ includeInactiveEnrollments? }` | `200 OK` — Chi tiết lớp (`completedSessionsCount`, `scheduledSessionsCount`, `isStartDateLocked`), danh sách HV kèm `absencesCount`, lịch sử thay đổi GV |
+| 37 | `POST` | `/classes` | `ADMIN` | `CreateClassDto`: `{ code, courseId, teacherId, scheduleDays, scheduleStartTime, scheduleEndTime, startDate, totalSessions?, status?, notes? }` | `201 Created` — Tạo lớp mới (1 GV phụ trách, không giới hạn cứng 5 HV theo `DEC-005`/`DEC-006`) + tự động sinh các `LessonSession` ban đầu |
+| 38 | `PATCH` | `/classes/:id` | `ADMIN` | `UpdateClassDto`: `{ code?, courseId?, teacherId?, teacherChangeReason?, teacherAssignedFrom?, scheduleDays?, scheduleStartTime?, scheduleEndTime?, startDate?, totalSessions?, status?, notes? }` | `200 OK` — Cập nhật lớp, thay đổi GV (`ClassTeacherAssignment`) hoặc điều chỉnh lịch; chặn đổi `startDate` (`400`) khi lớp đã có buổi `COMPLETED` hoặc `AttendanceRecord` |
+| 39 | `POST` | `/classes/:id/enrollments` | `ADMIN` | `EnrollStudentsDto`: `{ studentIds, enrolledDate? }` | `200 OK` — Thêm nhiều HV vào lớp (tối đa 100 HV/lần); thực thi 1 HV tối đa 1 lớp `ACTIVE` (`DEC-007`) |
+| 40 | `POST` | `/classes/:id/enrollments/:studentId/transfer` | `ADMIN` | `TransferStudentClassDto`: `{ targetClassId, transferDate?, reason? }` | `200 OK` — Chuyển lớp trong DB transaction, đánh dấu `TRANSFERRED` ở lớp cũ & tạo `ACTIVE` ở lớp mới (`DEC-008`) |
+| 41 | `POST` | `/classes/:id/enrollments/:studentId/drop` | `ADMIN` | `DropStudentClassDto`: `{ leftDate?, reason? }` | `200 OK` — Rút/bảo lưu HV khỏi lớp (`DROPPED`), giữ nguyên lịch sử |
+| 42 | `POST` | `/classes/:id/complete` | `ADMIN` | `CompleteClassDto`: `{ actualEndDate?, reason? }` | `200 OK` — Kết thúc lớp (`COMPLETED`, `DEC-019`) & tự động hủy các buổi `SCHEDULED` còn lại (`cancelReason: 'Tự động hủy khi kết thúc lớp'`) |
+| 43 | `POST` | `/classes/:id/reopen` | `ADMIN` | `ReopenClassDto`: `{ reason? }` | `200 OK` — Mở lại lớp trong 7 ngày, khôi phục HV hợp lệ & khôi phục các buổi bị tự hủy về `SCHEDULED` (`SessionGeneratorService` đánh số lại + đồng bộ `expectedEndDate`) |
+
+### D. Lịch Học, Buổi Học & Điểm Danh (Phase 4 — `develop`)
+
+#### 2.9 `SchedulesController` (8 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 44 | `GET` | `/classes/:id/sessions` | `ADMIN`, assigned `TEACHER`, enrolled `STUDENT` | `ListClassSessionsQueryDto`: `{ status?, from?, to? }` | `200 OK` — Danh sách buổi học + `summary`; thuần `SUPERADMIN` $\rightarrow$ `403`; HV `DROPPED` không được xem |
+| 45 | `POST` | `/classes/:id/sessions` | `ADMIN` | `AddManualSessionDto`: `{ sessionDate, startTime, endTime, topic?, reason? }` | `201 Created` — Thêm buổi thủ công (`MANUAL`), tự đồng bộ đánh số buổi active & `expectedEndDate`, kiểm tra cảnh báo trùng lịch GV |
+| 46 | `GET` | `/schedules/calendar` | `ADMIN`, `TEACHER`, `STUDENT` | `ListCalendarSessionsQueryDto`: `{ from?, to?, classId?, teacherId?, status? }` | `200 OK` — Khung lịch toàn hệ thống theo phạm vi role (`from..to` tối đa 93 ngày; pure `SUPERADMIN` $\rightarrow$ `403`) |
+| 47 | `GET` | `/schedules/change-logs` | `ADMIN`, `SUPERADMIN` | `ListSessionChangeLogsQueryDto`: `{ classId?, action?, from?, to?, page?, limit? }` | `200 OK` — Nhật ký thay đổi lịch (`GENERATE`, `UPDATE_RECURRING_RULE`, `ADD_MANUAL`, `RESCHEDULE`, `CANCEL`, `ADD_MAKEUP`) |
+| 48 | `GET` | `/sessions/:id` | `ADMIN`, assigned `TEACHER`, enrolled `STUDENT` | `:id` (Session ID) | `200 OK` — Chi tiết buổi học (`attendanceSummary` bị mask thành `null` đối với `STUDENT`) |
+| 49 | `PATCH` | `/sessions/:id/reschedule` | `ADMIN` | `RescheduleSessionDto`: `{ sessionDate, startTime, endTime, reason, topic? }` | `200 OK` — Đổi lịch 1 buổi (`reason` bắt buộc, từ chối khoảng trắng), lưu `previousScheduleText` & `SessionChangeLog` |
+| 50 | `POST` | `/sessions/:id/cancel` | `ADMIN` | `CancelSessionDto`: `{ reason, makeup?: { sessionDate, startTime, endTime, topic? } }` | `201 Created` — Hủy buổi (`sessionNumber = null`); không tự sinh buổi bù nếu không truyền `makeup` (`DEC-009`) |
+| 51 | `POST` | `/sessions/:id/makeup` | `ADMIN` | `CreateMakeupSessionDto`: `{ sessionDate, startTime, endTime, topic?, reason? }` | `201 Created` — Tạo buổi học bù gắn `makeupForSessionId` mà không cộng trùng tổng buổi (`DEC-009`) |
+
+#### 2.10 `AttendanceController` (4 endpoints)
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| 52 | `GET` | `/sessions/:id/attendance` | `ADMIN`, assigned `TEACHER` | `:id` (Session ID) | `200 OK` — Danh sách HV đủ điều kiện điểm danh của buổi (`roster`), tổng hợp & `auditLogs` |
+| 53 | `PUT` | `/sessions/:id/attendance` | `ADMIN`, assigned `TEACHER` | `SaveSessionAttendanceDto`: `{ records: [{ studentId, status, note? }], reason? }` | `200 OK` — Lưu điểm danh chuyển buổi thành `COMPLETED` (`DEC-009`); GV bị chặn sau cửa sổ T+2 ngày GMT+7 (`403`, `DEC-032`); `ADMIN` sửa sau T+2 bắt buộc `reason` & ghi `AttendanceAuditLog` (`isAdminOverride=true`) |
+| 54 | `GET` | `/classes/:id/attendance/matrix` | `ADMIN`, assigned `TEACHER` | `:id` (Class ID) | `200 OK` — Ma trận điểm danh HV × buổi học kèm chỉ số chuyên cần, cờ cảnh báo vắng $\ge 30\%$ (`DEC-033`) & `editedRecordKeys` (`${studentId}:${sessionId}`) |
+| 55 | `GET` | `/attendance/me` | `STUDENT` | `GetMyAttendanceQueryDto`: `{ classId? }` | `200 OK` — Chuyên cần cá nhân & danh sách buổi học của HV đang theo học (`warningThresholdPercent: 30`) |
+
+### E. Ngân Hàng Câu Hỏi & Import Đề Word/PDF (Phase 5 + Wave 1 Remediation)
+
+#### 2.11 `AssessmentsController` (`/api/v1/assessments` — 17 endpoints)
+
+Toàn bộ endpoints dưới đây áp dụng `@Roles(Role.ADMIN, Role.TEACHER)` và `ParseUUIDPipe` cho `:id`, `:qid`, `:mediaId`. Tài liệu Zero-Leak: chưa mở route `STUDENT` ở Phase 5; mọi ngoại lệ sở hữu bởi `TEACHER` khác trả `403 Forbidden`, khóa chỉnh sửa khi `isLocked || status === 'PUBLISHED'` trả `409 Conflict`.
+
+| STT | Method | Đường dẫn (`/api/v1/...`) | Input / Params / Multipart | Output & Ghi chú nghiệp vụ |
+| :---: | :---: | :--- | :--- | :--- |
+| 56 | `POST` | `/assessments/import` | `multipart/form-data`: `file` (`.docx`/`.pdf` $\le 20\text{MB}$, chặn `.doc`) + `ImportAssessmentDto { courseId, type, title? }` | `201 Created` — Kiểm tra `course.isActive = true` (`FOR SHARE`), kiểm tra magic bytes ảnh nhúng `.docx` (`PNG`/`JPEG` $\le 5\text{MB}$, bỏ qua EMF/WMF nội bộ Word, từ chối giả mạo `400`), parse thành đề `DRAFT` + `needsReview` |
+| 57 | `GET` | `/assessments/:id/review` | `:id` (UUID) | `200 OK` — Trả dữ liệu đề + câu hỏi + `recognizedCount` + `needsReviewCount` + `summary` phục vụ duyệt 2 cột |
+| 58 | `GET` | `/assessments/:id/original` | `:id` (UUID) | `200 OK` — Tải/stream file gốc `.docx`/`.pdf` lưu trên đĩa (`404` nếu đề tạo thủ công) |
+| 59 | `GET` | `/assessments/:id/media` | `:id` (UUID) | `200 OK` — Liệt kê `MediaAsset` thuộc đề thi |
+| 60 | `POST` | `/assessments/:id/media` | `:id` (UUID) + `multipart/form-data` `file` ($\le 20\text{MB}$; PNG/JPG $\le 5\text{MB}$; MP3/WAV/M4A $\le 20\text{MB}$) | `201 Created` — Kiểm tra magic bytes theo MIME cho media tải lên (khác `QuestionMedia` chưa được ghi từ nhánh CRUD) |
+| 61 | `GET` | `/assessments/:id/media/:mediaId` | `:id` (UUID), `:mediaId` (UUID) | `200 OK` — Stream an toàn file audio/image gắn với đề |
+| 62 | `POST` | `/assessments` | `CreateAssessmentDto { title, type, courseId, description?, durationMinutes? }` | `201 Created` — Tạo đề thủ công trạng thái `DRAFT` (chặn khóa học `isActive = false` trong transaction `FOR SHARE`) |
+| 63 | `GET` | `/assessments` | `ListAssessmentsQueryDto { type?, courseId?, status?, search?, page?, limit? }` | `200 OK` — Danh sách ngân hàng đề phân trang (`assignedClassCount` cố định `0` ở Phase 5) |
+| 64 | `GET` | `/assessments/:id` | `:id` (UUID) | `200 OK` — Chi tiết đề và mảng `questions` |
+| 65 | `PATCH` | `/assessments/:id` | `:id` (UUID) + `UpdateAssessmentDto { title?, description?, durationMinutes? }` | `200 OK` — `409 Conflict` nếu `isLocked \|\| status === 'PUBLISHED'`; `403` nếu GV không phải chủ sở hữu |
+| 66 | `DELETE` | `/assessments/:id` | `:id` (UUID) | `200 OK` — Chỉ xóa được khi `DRAFT` và `!isLocked` (`409` nếu đã phát hành/khóa) |
+| 67 | `POST` | `/assessments/:id/duplicate` | `:id` (UUID) | `201 Created` — Nhân bản sâu (`DRAFT`) gồm câu hỏi, file gốc và media |
+| 68 | `POST` | `/assessments/:id/publish` | `:id` (UUID) | **`201 Created`** — Chuyển sang `PUBLISHED` nếu có $\ge 1$ câu hỏi và không còn `needsReview = true` (`400`/`409`) |
+| 69 | `POST` | `/assessments/:id/questions` | `:id` (UUID) + `CreateQuestionDto { type, prompt, payload, points (\le 1000) }` *(bắt buộc `points`, không có `position`)* | `201 Created` — Tạo câu hỏi theo `QuestionSchemaPolicy` (7 dạng `FUNC-044..050`, siết chặt boolean `pinyinSensitive`) |
+| 70 | `PUT` | `/assessments/:id/questions/reorder` | `:id` (UUID) + `ReorderQuestionsDto { questionIds }` | `200 OK` — Sắp xếp lại `position` câu hỏi trong transaction |
+| 71 | `PATCH` | `/assessments/:id/questions/:qid` | `:id` (UUID), `:qid` (UUID) + `UpdateQuestionDto { prompt?, payload?, points?, needsReview? }` | `200 OK` — Cập nhật câu hỏi; giữ nguyên `needsReview` nếu chỉ sửa `prompt`/`points`, chỉ xóa khi `needsReview: false` hoặc cập nhật `payload` |
+| 72 | `DELETE` | `/assessments/:id/questions/:qid` | `:id` (UUID), `:qid` (UUID) | `200 OK` — Xóa câu hỏi trong đề `DRAFT` & `!isLocked` |

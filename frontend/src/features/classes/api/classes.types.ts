@@ -57,6 +57,7 @@ export interface ClassEnrollmentItem {
   enrolledDate: string;
   leftDate: string | null;
   reason: string | null;
+  absencesCount?: number;
 }
 export type ClassEnrollmentItemDto = ClassEnrollmentItem;
 
@@ -74,6 +75,8 @@ export interface ClassItem {
   scheduleText: string;
   startDate: string;
   totalSessions: number;
+  completedSessionsCount?: number;
+  isStartDateLocked?: boolean;
   expectedEndDate: string | null;
   actualEndDate: string | null;
   closedReason: string | null;
@@ -100,12 +103,14 @@ export interface ClassCapabilities {
 export interface ClassReopenSummary {
   restoredStudentsCount: number;
   skippedStudentsCount: number;
+  restoredSessionsCount?: number;
 }
 
 export interface ClassDetail extends ClassItem {
   accessMode: ClassAccessMode;
   effectiveRole: ClassEffectiveRole;
   capabilities: ClassCapabilities;
+  scheduledSessionsCount?: number;
   reopenSummary?: ClassReopenSummary;
   enrollments: ClassEnrollmentItem[];
   teacherHistory: ClassTeacherHistoryItem[];

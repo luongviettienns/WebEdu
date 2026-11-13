@@ -20,6 +20,10 @@ async function main() {
 
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "question_media",
+      "questions",
+      "media_assets",
+      "assessments",
       "system_audit_logs",
       "class_teacher_assignments",
       "enrollments",

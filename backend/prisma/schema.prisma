@@ -80,26 +80,53 @@ enum AttendanceStatus {
   EXCUSED
 }
 
-model User {
-  id                  String      @id @default(uuid())
-  email               String      @unique @db.VarChar(255)
-  phone               String      @unique @db.VarChar(15)
-  fullName            String      @map("full_name") @db.VarChar(100)
-  passwordHash        String      @map("password_hash") @db.VarChar(255)
-  roles               Role[]      @default([STUDENT])
-  status              UserStatus  @default(PENDING_CLASS)
-  failedLoginAttempts Int         @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?   @map("locked_until") @db.Timestamptz(3)
-  tokenVersion        Int         @default(0) @map("token_version")
-  lastLoginAt         DateTime?   @map("last_login_at") @db.Timestamptz(3)
-  lastActivityAt      DateTime?   @map("last_activity_at") @db.Timestamptz(3)
-  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+enum AssessmentType {
+  HOMEWORK
+  MINI_TEST
+  MIDTERM
+  FINAL
+}
 
-  studentProfile      StudentProfile?
-  teacherProfile      TeacherProfile?
-  passwordResetTokens PasswordResetToken[]
-  auditLogsAsActor    SystemAuditLog[]     @relation("AuditActor")
+enum AssessmentStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  FILL_BLANK
+  ORDERING
+  ESSAY
+  LISTENING
+  IMAGE_BASED
+}
+
+enum MediaKind {
+  AUDIO
+  IMAGE
+}
+
+model User {
+  id                  String     @id @default(uuid())
+  email               String     @unique @db.VarChar(255)
+  phone               String     @unique @db.VarChar(15)
+  fullName            String     @map("full_name") @db.VarChar(100)
+  passwordHash        String     @map("password_hash") @db.VarChar(255)
+  roles               Role[]     @default([STUDENT])
+  status              UserStatus @default(PENDING_CLASS)
+  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(3)
+  tokenVersion        Int        @default(0) @map("token_version")
+  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  lastActivityAt      DateTime?  @map("last_activity_at") @db.Timestamptz(3)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  studentProfile            StudentProfile?
+  teacherProfile            TeacherProfile?
+  passwordResetTokens       PasswordResetToken[]
+  auditLogsAsActor          SystemAuditLog[]         @relation("AuditActor")
   taughtClasses             Class[]                  @relation("ClassTeacher")
   enrollments               Enrollment[]             @relation("StudentEnrollments")
   teacherAssignments        ClassTeacherAssignment[] @relation("TeacherAssignmentHistory")
@@ -112,6 +139,7 @@ model User {
   updatedAttendances        AttendanceRecord[]       @relation("AttendanceUpdatedBy")
   studentAttendanceAudits   AttendanceAuditLog[]     @relation("AttendanceAuditStudent")
   actedAttendanceAudits     AttendanceAuditLog[]     @relation("AttendanceAuditActor")
+  authoredAssessments       Assessment[]             @relation("AssessmentAuthor")
 
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -120,22 +148,22 @@ model User {
 }
 
 model StudentProfile {
-  id             String           @id @default(uuid())
-  userId         String           @unique @map("user_id")
-  dateOfBirth    DateTime         @map("date_of_birth") @db.Date
-  guardianEmail  String?          @map("guardian_email") @db.VarChar(255)
+  id             String    @id @default(uuid())
+  userId         String    @unique @map("user_id")
+  dateOfBirth    DateTime  @map("date_of_birth") @db.Date
+  guardianEmail  String?   @map("guardian_email") @db.VarChar(255)
   // Materialized read-model cache synced atomically inside Enrollment transactions from the student's ACTIVE Enrollment (or initial placement).
-  assignedClass  String?          @map("assigned_class") @db.VarChar(100)
+  assignedClass  String?   @map("assigned_class") @db.VarChar(100)
   // Materialized FK synced atomically inside Enrollment transactions with the student's ACTIVE Enrollment.classId.
-  currentClassId String?          @map("current_class_id")
-  internalNotes  String?          @map("internal_notes") @db.Text
-  enrolledAt     DateTime?        @map("enrolled_at") @db.Timestamptz(3)
-  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  currentClassId String?   @map("current_class_id")
+  internalNotes  String?   @map("internal_notes") @db.Text
+  enrolledAt     DateTime? @map("enrolled_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user           User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  consent        GuardianConsent?
-  currentClass   Class?           @relation("CurrentStudentClass", fields: [currentClassId], references: [id], onDelete: Restrict)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  consent      GuardianConsent?
+  currentClass Class?           @relation("CurrentStudentClass", fields: [currentClassId], references: [id], onDelete: Restrict)
 
   @@index([guardianEmail])
   @@index([assignedClass])
@@ -146,17 +174,17 @@ model StudentProfile {
 // Immutable point-in-time consent record for an under-16 registration (1 student_profile -> max 1 initial guardian consent;
 // enforced append-only in PostgreSQL via trg_guardian_consents_immutable so >= 16 User.email edits never overwrite consent history).
 model GuardianConsent {
-  id                  String         @id @default(uuid())
-  studentProfileId    String         @unique @map("student_profile_id")
-  guardianEmail       String         @map("guardian_email") @db.VarChar(255)
-  consented           Boolean        @default(true)
-  consentVersion      String         @map("consent_version") @db.VarChar(20)
-  consentTextSnapshot String         @map("consent_text_snapshot") @db.Text
-  ipAddress           String?        @map("ip_address") @db.VarChar(64)
-  userAgent           String?        @map("user_agent") @db.VarChar(500)
-  consentedAt         DateTime       @default(now()) @map("consented_at") @db.Timestamptz(3)
+  id                  String   @id @default(uuid())
+  studentProfileId    String   @unique @map("student_profile_id")
+  guardianEmail       String   @map("guardian_email") @db.VarChar(255)
+  consented           Boolean  @default(true)
+  consentVersion      String   @map("consent_version") @db.VarChar(20)
+  consentTextSnapshot String   @map("consent_text_snapshot") @db.Text
+  ipAddress           String?  @map("ip_address") @db.VarChar(64)
+  userAgent           String?  @map("user_agent") @db.VarChar(500)
+  consentedAt         DateTime @default(now()) @map("consented_at") @db.Timestamptz(3)
 
-  studentProfile      StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
+  studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Restrict)
 
   @@map("guardian_consents")
 }
@@ -170,7 +198,7 @@ model TeacherProfile {
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user               User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@map("teacher_profiles")
 }
@@ -183,7 +211,7 @@ model PasswordResetToken {
   usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([expiresAt])
@@ -233,31 +261,32 @@ model Course {
   createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  classes         Class[]
+  classes     Class[]
+  assessments Assessment[]
 
   @@index([isActive, level])
   @@map("courses")
 }
 
 model Class {
-  id                String                   @id @default(uuid())
-  code              String                   @unique @db.VarChar(20)
-  courseId          String                   @map("course_id")
+  id                String      @id @default(uuid())
+  code              String      @unique @db.VarChar(20)
+  courseId          String      @map("course_id")
   // Denormalized current lead teacher pointer synced atomically inside assignment transactions with the open ClassTeacherAssignment (assignedTo IS NULL).
-  teacherId         String                   @map("teacher_id")
-  status            ClassStatus              @default(UPCOMING)
-  startDate         DateTime                 @map("start_date") @db.Date
-  totalSessions     Int                      @default(24) @map("total_sessions")
-  scheduleDays      Int[]                    @default([1, 3, 5]) @map("schedule_days")
-  scheduleStartTime String                   @default("18:00") @map("schedule_start_time") @db.VarChar(5)
-  scheduleEndTime   String                   @default("19:30") @map("schedule_end_time") @db.VarChar(5)
-  expectedEndDate   DateTime?                @map("expected_end_date") @db.Date
-  actualEndDate     DateTime?                @map("actual_end_date") @db.Date
-  closedReason      String?                  @map("closed_reason") @db.VarChar(255)
-  closedAt          DateTime?                @map("closed_at") @db.Timestamptz(3)
-  notes             String?                  @db.Text
-  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+  teacherId         String      @map("teacher_id")
+  status            ClassStatus @default(UPCOMING)
+  startDate         DateTime    @map("start_date") @db.Date
+  totalSessions     Int         @default(24) @map("total_sessions")
+  scheduleDays      Int[]       @default([1, 3, 5]) @map("schedule_days")
+  scheduleStartTime String      @default("18:00") @map("schedule_start_time") @db.VarChar(5)
+  scheduleEndTime   String      @default("19:30") @map("schedule_end_time") @db.VarChar(5)
+  expectedEndDate   DateTime?   @map("expected_end_date") @db.Date
+  actualEndDate     DateTime?   @map("actual_end_date") @db.Date
+  closedReason      String?     @map("closed_reason") @db.VarChar(255)
+  closedAt          DateTime?   @map("closed_at") @db.Timestamptz(3)
+  notes             String?     @db.Text
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   course            Course                   @relation(fields: [courseId], references: [id], onDelete: Restrict)
   teacher           User                     @relation("ClassTeacher", fields: [teacherId], references: [id], onDelete: Restrict)
@@ -284,9 +313,9 @@ model ClassTeacherAssignment {
   reason       String?   @db.Text
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  class        Class     @relation(fields: [classId], references: [id], onDelete: Restrict)
-  teacher      User      @relation("TeacherAssignmentHistory", fields: [teacherId], references: [id], onDelete: Restrict)
-  changedBy    User?     @relation("TeacherAssignmentActor", fields: [changedById], references: [id], onDelete: SetNull)
+  class     Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+  teacher   User  @relation("TeacherAssignmentHistory", fields: [teacherId], references: [id], onDelete: Restrict)
+  changedBy User? @relation("TeacherAssignmentActor", fields: [changedById], references: [id], onDelete: SetNull)
 
   @@index([classId, assignedFrom(sort: Desc)])
   @@index([teacherId])
@@ -304,8 +333,8 @@ model Enrollment {
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  class        Class            @relation(fields: [classId], references: [id], onDelete: Restrict)
-  student      User             @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Restrict)
+  class   Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+  student User  @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Restrict)
 
   @@index([classId, status])
   @@index([studentId, status])
@@ -322,7 +351,7 @@ model SystemAuditLog {
   metadata   Json?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  actor      User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([createdAt(sort: Desc)])
   @@index([actorId])
@@ -441,4 +470,77 @@ model AttendanceAuditLog {
   @@index([studentId, createdAt(sort: Desc)])
   @@index([attendanceRecordId])
   @@map("attendance_audit_logs")
+}
+
+model Assessment {
+  id                 String           @id @default(uuid())
+  title              String           @db.VarChar(200)
+  description        String?          @db.VarChar(2000)
+  type               AssessmentType
+  courseId           String           @map("course_id")
+  durationMinutes    Int?             @map("duration_minutes")
+  status             AssessmentStatus @default(DRAFT)
+  isLocked           Boolean          @default(false) @map("is_locked")
+  originalFileName   String?          @map("original_file_name") @db.VarChar(255)
+  originalStorageKey String?          @map("original_storage_key") @db.VarChar(255)
+  createdById        String           @map("created_by_id")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  createdBy   User         @relation("AssessmentAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  questions   Question[]
+  mediaAssets MediaAsset[]
+
+  @@index([courseId, status])
+  @@index([createdById])
+  @@map("assessments")
+}
+
+model Question {
+  id           String       @id @default(uuid())
+  assessmentId String       @map("assessment_id")
+  type         QuestionType
+  position     Int
+  prompt       String       @db.Text
+  payload      Json
+  points       Float
+  needsReview  Boolean      @default(false) @map("needs_review")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  assessment Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  media      QuestionMedia[]
+
+  @@unique([assessmentId, position])
+  @@index([assessmentId])
+  @@map("questions")
+}
+
+model MediaAsset {
+  id           String    @id @default(uuid())
+  kind         MediaKind
+  mime         String    @db.VarChar(100)
+  sizeBytes    Int       @map("size_bytes")
+  storageKey   String    @unique @map("storage_key") @db.VarChar(255)
+  assessmentId String?   @map("assessment_id")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  assessment Assessment?    @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  questions  QuestionMedia[]
+
+  @@index([assessmentId])
+  @@map("media_assets")
+}
+
+model QuestionMedia {
+  questionId   String @map("question_id")
+  mediaAssetId String @map("media_asset_id")
+  role         String @db.VarChar(30)
+
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@id([questionId, mediaAssetId])
+  @@map("question_media")
 }

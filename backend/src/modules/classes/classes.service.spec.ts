@@ -9,6 +9,7 @@ import {
   CourseLevel,
   EnrollmentStatus,
   Role,
+  SessionStatus,
   UserStatus,
 } from '@prisma/client';
 import {
@@ -87,6 +88,8 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
   let classesStore: Map<string, MockClassRecord>;
   let assignmentsStore: MockAssignmentRecord[];
   let enrollmentsStore: MockEnrollmentRecord[];
+  let sessionsStore: Array<{ id: string; classId: string; status: SessionStatus }>;
+  let attendanceRecordsStore: Array<{ id: string; classId: string }>;
   let auditLogs: Array<Record<string, unknown>>;
   let mockPrisma: Record<string, unknown>;
 
@@ -199,6 +202,8 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
     classesStore = new Map();
     assignmentsStore = [];
     enrollmentsStore = [];
+    sessionsStore = [];
+    attendanceRecordsStore = [];
     auditLogs = [];
 
     const enrichClass = (cls: MockClassRecord) => {
@@ -469,6 +474,28 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
+        count: vi.fn(
+          async ({
+            where,
+          }: {
+            where?: { classId?: string; status?: SessionStatus };
+          } = {}) => {
+            return sessionsStore.filter(
+              (s) =>
+                (!where?.classId || s.classId === where.classId) &&
+                (!where?.status || s.status === where.status),
+            ).length;
+          },
+        ),
+      },
+      attendanceRecord: {
+        count: vi.fn(
+          async ({ where }: { where?: { classId?: string } } = {}) => {
+            return attendanceRecordsStore.filter(
+              (r) => !where?.classId || r.classId === where.classId,
+            ).length;
+          },
+        ),
       },
       sessionChangeLog: {
         create: vi.fn().mockResolvedValue({}),
@@ -905,6 +932,56 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       expect(classesStore.get(created.id)?.expectedEndDate?.toISOString().slice(0, 10)).toBe(
         '2026-12-28',
       );
+    });
+
+    it('blocks startDate modification once COMPLETED session or AttendanceRecord exists, allows non-startDate updates, and returns real completedSessionsCount (FUNC-017)', async () => {
+      const created = await service.createClass(adminActor, {
+        code: 'HSK1-STARTDATE-LOCK',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6,
+      });
+
+      // Before any COMPLETED session or AttendanceRecord -> startDate can change
+      const movedStart = await service.updateClass(adminActor, created.id, {
+        startDate: '2026-11-04',
+      });
+      expect(movedStart.startDate).toBe('2026-11-04');
+      expect(movedStart.completedSessionsCount).toBe(0);
+      expect(movedStart.isStartDateLocked).toBe(false);
+
+      // Add an AttendanceRecord (even with 0 COMPLETED sessions) -> startDate change rejected
+      attendanceRecordsStore.push({ id: 'ar-lock-1', classId: created.id });
+      await expect(
+        service.updateClass(adminActor, created.id, { startDate: '2026-11-09' }),
+      ).rejects.toThrowError(
+        new BadRequestException(
+          'Không thể thay đổi ngày khai giảng khi lớp đã có buổi học hoàn thành hoặc đã có dữ liệu điểm danh',
+        ),
+      );
+
+      // Clear AttendanceRecord and add 2 COMPLETED sessions -> still blocked!
+      attendanceRecordsStore = [];
+      sessionsStore.push(
+        { id: 's-comp-a', classId: created.id, status: SessionStatus.COMPLETED },
+        { id: 's-comp-b', classId: created.id, status: SessionStatus.COMPLETED },
+      );
+      await expect(
+        service.updateClass(adminActor, created.id, { startDate: '2026-11-11' }),
+      ).rejects.toThrow(BadRequestException);
+
+      // Echoing unchanged startDate + editing notes still succeeds and returns real completedSessionsCount = 2
+      const updatedNotes = await service.updateClass(adminActor, created.id, {
+        startDate: '2026-11-04',
+        notes: 'Giữ nguyên ngày khai giảng',
+      });
+      expect(updatedNotes.notes).toBe('Giữ nguyên ngày khai giảng');
+      expect(updatedNotes.completedSessionsCount).toBe(2);
+      expect(updatedNotes.isStartDateLocked).toBe(true);
     });
   });
 

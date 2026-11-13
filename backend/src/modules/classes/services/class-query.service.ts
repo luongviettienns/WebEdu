@@ -1,5 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { ClassStatus, EnrollmentStatus, type Prisma } from '@prisma/client';
+import {
+  AttendanceStatus,
+  ClassStatus,
+  EnrollmentStatus,
+  SessionStatus,
+  type Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
 import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
@@ -24,11 +30,14 @@ import {
 import {
   assertValidTimeRange,
   calculateExpectedEndDate,
-  findTeacherScheduleConflictWarning,
   formatScheduleText,
   normalizeScheduleDays,
   parseRequiredCalendarDate,
 } from '../policies/class-schedule.util.js';
+import {
+  computeStudentAbsencesMap,
+  findTeacherScheduleConflictWarning,
+} from '../policies/class-session-lifecycle.util.js';
 import { ClassAccessService } from './class-access.service.js';
 
 const CLASS_DETAIL_INCLUDE = {
@@ -143,9 +152,22 @@ export class ClassQueryService {
       this.prisma.class.count({ where }),
     ]);
 
-    const items = (rows as unknown as ClassItemEntity[]).map((row) =>
-      toClassItemDto(row),
-    );
+    const classEntities = rows as unknown as ClassItemEntity[];
+    const classIds = classEntities.map((row) => row.id);
+    const [completedCountMap, attendanceCountMap] = await Promise.all([
+      this.getCompletedSessionsCountMap(classIds),
+      this.getAttendanceRecordsCountMap(classIds),
+    ]);
+    const items = classEntities.map((row) => {
+      const completedCount = completedCountMap.get(row.id) ?? 0;
+      const attendanceCount = attendanceCountMap.get(row.id) ?? 0;
+      return toClassItemDto(
+        row,
+        null,
+        completedCount,
+        completedCount > 0 || attendanceCount > 0,
+      );
+    });
 
     return { items, total, page, limit };
   }
@@ -173,20 +195,52 @@ export class ClassQueryService {
       cls.status === ClassStatus.COMPLETED ||
       cls.status === ClassStatus.ARCHIVED;
 
-    const scheduleConflictWarning = isEndedClass
-      ? null
-      : await findTeacherScheduleConflictWarning(
-          this.prisma,
-          cls.teacherId,
-          {
-            scheduleDays: cls.scheduleDays,
-            scheduleStartTime: cls.scheduleStartTime,
-            scheduleEndTime: cls.scheduleEndTime,
-            startDate: cls.startDate,
-            endDate: cls.actualEndDate ?? cls.expectedEndDate,
-          },
-          cls.id,
-        );
+    const [
+      scheduleConflictWarning,
+      completedCountMap,
+      scheduledSessionsCount,
+      attendanceRecordsCount,
+      absenceRecords,
+    ] = await Promise.all([
+      isEndedClass
+        ? Promise.resolve(null)
+        : findTeacherScheduleConflictWarning(
+            this.prisma,
+            cls.teacherId,
+            {
+              scheduleDays: cls.scheduleDays,
+              scheduleStartTime: cls.scheduleStartTime,
+              scheduleEndTime: cls.scheduleEndTime,
+              startDate: cls.startDate,
+              endDate: cls.actualEndDate ?? cls.expectedEndDate,
+            },
+            cls.id,
+          ),
+      this.getCompletedSessionsCountMap([cls.id]),
+      this.prisma.lessonSession.count({
+        where: { classId: cls.id, status: SessionStatus.SCHEDULED },
+      }),
+      this.prisma.attendanceRecord.count({ where: { classId: cls.id } }),
+      this.prisma.attendanceRecord.findMany({
+        where: {
+          classId: cls.id,
+          status: { in: [AttendanceStatus.ABSENT, AttendanceStatus.EXCUSED] },
+          session: { status: SessionStatus.COMPLETED },
+        },
+        select: {
+          studentId: true,
+          session: { select: { sessionDate: true } },
+        },
+      }),
+    ]);
+
+    const completedSessionsCount = completedCountMap.get(cls.id) ?? 0;
+    const isStartDateLocked =
+      completedSessionsCount > 0 || attendanceRecordsCount > 0;
+    const absencesByStudentId = computeStudentAbsencesMap(
+      cls.enrollments,
+      absenceRecords,
+    );
 
     const filteredEnrollments = includeInactive
       ? cls.enrollments
@@ -208,7 +262,43 @@ export class ClassQueryService {
         effectiveRole: this.access.resolveEffectiveRole(actor),
         capabilities: this.access.resolveCapabilities(actor, cls),
       },
+      completedSessionsCount,
+      {
+        scheduledSessionsCount,
+        isStartDateLocked,
+        absencesByStudentId,
+      },
     );
+  }
+
+  private toClassCountMap(
+    rows: ReadonlyArray<{ classId: string; _count: { _all: number } }>,
+  ): Map<string, number> {
+    return new Map(rows.map((row) => [row.classId, row._count._all]));
+  }
+
+  private async getCompletedSessionsCountMap(
+    classIds: string[],
+  ): Promise<Map<string, number>> {
+    if (classIds.length === 0) return new Map();
+    const rows = await this.prisma.lessonSession.groupBy({
+      by: ['classId'],
+      where: { classId: { in: classIds }, status: SessionStatus.COMPLETED },
+      _count: { _all: true },
+    });
+    return this.toClassCountMap(rows);
+  }
+
+  private async getAttendanceRecordsCountMap(
+    classIds: string[],
+  ): Promise<Map<string, number>> {
+    if (classIds.length === 0) return new Map();
+    const rows = await this.prisma.attendanceRecord.groupBy({
+      by: ['classId'],
+      where: { classId: { in: classIds } },
+      _count: { _all: true },
+    });
+    return this.toClassCountMap(rows);
   }
 
   async previewSchedule(dto: PreviewClassScheduleDto): Promise<{

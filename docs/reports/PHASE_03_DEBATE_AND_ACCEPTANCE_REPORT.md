@@ -1,5 +1,8 @@
 # Báo Cáo Tranh Biện Đa Agent & Nghiệm Thu Phase 3 — Khóa Học HSK & Quản Lý Lớp Học (`PHASE_03_DEBATE_AND_ACCEPTANCE_REPORT`)
 
+> [!NOTE]
+> **Snapshot Lịch Sử (`feature/phase-03-courses-and-classes`, `5c83b0e..4257a54`, đã merge `develop`):** Lưu nguyên trạng biên bản nghiệm thu Phase 3. Lưu ý đính chính ID tài liệu: `DEC-027` và `DEC-028` được viết gọn trong dải `DEC-024..030` bên dưới thực chất là `DEC-006` và `DEC-007` trong [decision-log.md](../../TD_Han_Ngu_Project_Context_v1.0/docs/01-business/decision-log.md) (`DEC-027`/`028` không tồn tại). Trạng thái hiện hành toàn repo xem [PROJECT_PROGRESS.md](../../PROJECT_PROGRESS.md).
+
 - **Nhánh phát triển**: `feature/phase-03-courses-and-classes` (`MERGE_BASE = 5c83b0e`, `HEAD = 4257a54`)
 - **Phạm vi nghiệp vụ**: Module 02 (Khóa học HSK1–HSK4 & Giao tiếp cơ bản — `FUNC-014`) & Module 03 (Quản lý Lớp học, Phân công Giáo viên, Vòng đời Ghi danh Học viên, Đóng/Mở lại Lớp 7 ngày — `FUNC-016..024`, `FUNC-077`, `FUNC-079`)
 - **Quyết định Kiến trúc & Nghiệp vụ áp dụng**: `DEC-005..008`, `DEC-017`, `DEC-019`, `DEC-024..030` (`COURSE-01` & `CLASS-02` đã đóng `RESOLVED`)

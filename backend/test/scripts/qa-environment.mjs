@@ -240,6 +240,10 @@ async function seedQaFixtures(databaseUrl) {
   try {
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
+        "question_media",
+        "questions",
+        "media_assets",
+        "assessments",
         "system_audit_logs",
         "enrollments",
         "classes",

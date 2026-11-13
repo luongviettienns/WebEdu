@@ -218,6 +218,7 @@ export function ClassDetailView({
           classCode={detail.code}
           startDate={detail.startDate}
           activeStudentsCount={detail.activeStudentsCount}
+          scheduledSessionsCount={detail.scheduledSessionsCount}
           onClose={() => setCompleteOpen(false)}
           onSuccess={() => {
             setCompleteOpen(false);

@@ -1,5 +1,8 @@
 # Báo Cáo Khắc Phục Sau Kiểm Toán Phase 2 (POST_PHASE_02_AUDIT_REMEDIATION_REPORT)
 
+> [!NOTE]
+> **Snapshot Lịch Sử (07/11/2026 — `fix/post-phase-02-audit-remediation` -> `develop`):** Lưu nguyên trạng báo cáo khắc phục sau kiểm toán Phase 2. Số liệu hiện hành toàn repo xem [PROJECT_PROGRESS.md](../../PROJECT_PROGRESS.md).
+
 **Dự án:** WebEdu — Trung Tâm TD Hán Ngữ  
 **Nhánh thực hiện:** `fix/post-phase-02-audit-remediation`  
 **Nhánh tích hợp:** `develop`  

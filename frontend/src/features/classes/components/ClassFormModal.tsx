@@ -2,13 +2,10 @@
 
 import React from 'react';
 import type { ClassItem, ClassStatus } from '@/features/classes/api/classes.api';
+import { ClassScheduleFields } from '@/features/classes/components/ClassScheduleFields';
 import { TeacherPicker } from '@/features/classes/components/TeacherPicker';
 import { useClassForm } from '@/features/classes/hooks/useClassForm';
 import { useCourseOptions } from '@/features/classes/hooks/useCourseOptions';
-import {
-  QUICK_SCHEDULE_PRESETS,
-  WEEKDAY_OPTIONS,
-} from '@/features/classes/utils/schedule.util';
 import {
   BaseDialog,
   DIALOG_INPUT_CLS as INPUT_CLS,
@@ -109,71 +106,16 @@ function ClassFormModalContent({ mode, initialData, onClose, onSuccess }: ClassF
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl border border-[var(--line)] bg-white p-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
-              Lịch học định kỳ ({derived.scheduleTextPreview})
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {QUICK_SCHEDULE_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => set.scheduleDays([...preset.days])}
-                  className="rounded-md border border-[var(--line-2)] bg-[var(--paper)] px-2 py-0.5 text-xs font-medium text-[var(--ink-2)] hover:border-[var(--red)] hover:text-[var(--red)]"
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="Chọn các thứ học trong tuần">
-            {WEEKDAY_OPTIONS.map((day) => {
-              const active = values.scheduleDays.includes(day.value);
-              return (
-                <button
-                  key={day.value}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => form.toggleDay(day.value)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                    active
-                      ? 'border-[var(--red)] bg-[var(--red)] text-white'
-                      : 'border-[var(--line-2)] bg-[var(--paper)] text-[var(--ink-2)] hover:bg-[var(--hover)]'
-                  }`}
-                >
-                  {day.shortLabel} ({day.label})
-                </button>
-              );
-            })}
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="class-start-time" className={LABEL_CLS}>
-                Giờ bắt đầu
-              </label>
-              <input
-                id="class-start-time"
-                type="time"
-                value={values.scheduleStartTime}
-                onChange={(e) => set.scheduleStartTime(e.target.value)}
-                className={`${INPUT_CLS} num`}
-              />
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="class-end-time" className={LABEL_CLS}>
-                Giờ kết thúc
-              </label>
-              <input
-                id="class-end-time"
-                type="time"
-                value={values.scheduleEndTime}
-                onChange={(e) => set.scheduleEndTime(e.target.value)}
-                className={`${INPUT_CLS} num`}
-              />
-            </div>
-          </div>
-        </div>
+        <ClassScheduleFields
+          scheduleDays={values.scheduleDays}
+          scheduleStartTime={values.scheduleStartTime}
+          scheduleEndTime={values.scheduleEndTime}
+          scheduleTextPreview={derived.scheduleTextPreview}
+          onSetScheduleDays={set.scheduleDays}
+          onToggleDay={form.toggleDay}
+          onChangeStartTime={set.scheduleStartTime}
+          onChangeEndTime={set.scheduleEndTime}
+        />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="space-y-1.5">
@@ -183,10 +125,17 @@ function ClassFormModalContent({ mode, initialData, onClose, onSuccess }: ClassF
             <input
               id="class-start-date"
               type="date"
+              disabled={derived.isStartDateLocked}
+              aria-describedby={derived.isStartDateLocked ? 'class-start-date-lock-hint' : undefined}
               value={values.startDate}
               onChange={(e) => set.startDate(e.target.value)}
               className={`${INPUT_CLS} num`}
             />
+            {derived.isStartDateLocked ? (
+              <p id="class-start-date-lock-hint" className="text-xs font-medium text-[var(--amber)]">
+                Không thể đổi ngày khai giảng khi lớp đã có buổi hoàn thành hoặc dữ liệu điểm danh.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <label htmlFor="class-total-sessions" className={LABEL_CLS}>

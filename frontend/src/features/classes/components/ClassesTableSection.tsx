@@ -119,6 +119,11 @@ export function ClassesTableSection({
                 const isEnded = cls.status === 'COMPLETED' || cls.status === 'ARCHIVED';
                 const endDisplay = cls.actualEndDate ?? cls.expectedEndDate;
                 const started = hasClassStarted(cls);
+                const completed = Math.max(0, cls.completedSessionsCount ?? 0);
+                const pct =
+                  cls.totalSessions > 0
+                    ? Math.min(100, Math.round((completed / cls.totalSessions) * 100))
+                    : 0;
                 return (
                   <tr key={cls.id} className="hover:bg-[var(--hover)]/60">
                     <td className="px-4 py-3.5">
@@ -140,6 +145,27 @@ export function ClassesTableSection({
                       <div className="num mt-0.5 text-xs text-[var(--ink-2)]">
                         Khai giảng: {formatDateDdMmYyyy(cls.startDate)}
                         {endDisplay ? ` → ${formatDateDdMmYyyy(endDisplay)}` : ''}
+                      </div>
+                      <div className="mt-1.5 space-y-1">
+                        <div className="num flex items-center justify-between gap-2 text-[11px] font-medium text-[var(--ink-2)]">
+                          <span>Tiến độ</span>
+                          <span>
+                            {completed}/{cls.totalSessions} buổi ({pct}%)
+                          </span>
+                        </div>
+                        <div
+                          className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-2)]"
+                          role="progressbar"
+                          aria-label={`Tiến độ lớp ${cls.code}`}
+                          aria-valuenow={pct}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                        >
+                          <div
+                            className="h-full rounded-full bg-[var(--jade)] transition-all duration-300"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
                       </div>
                     </td>
                     {showTeacherColumn ? (

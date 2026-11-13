@@ -1,6 +1,5 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
-import type { PrismaService } from '../../../common/prisma/prisma.service.js';
+import { BadRequestException } from '@nestjs/common';
+import { ClassStatus } from '@prisma/client';
 import {
   assertVnDateNotInFuture,
   resolveVnCalendarDateForDb,
@@ -224,120 +223,10 @@ export function assertEffectiveDateNotInFuture(
   assertVnDateNotInFuture(date, actionLabel);
 }
 
-export async function findTeacherScheduleConflictWarning(
-  db: Prisma.TransactionClient | PrismaService,
-  teacherId: string,
-  candidate: ClassScheduleSlice,
-  excludeClassId?: string,
-): Promise<string | null> {
-  const others = await db.class.findMany({
-    where: {
-      teacherId,
-      ...(excludeClassId ? { id: { not: excludeClassId } } : {}),
-      status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
-    },
-    select: {
-      code: true,
-      scheduleDays: true,
-      scheduleStartTime: true,
-      scheduleEndTime: true,
-      startDate: true,
-      expectedEndDate: true,
-      actualEndDate: true,
-    },
-  });
-  return buildScheduleConflictWarning(
-    candidate,
-    others.map(({ actualEndDate, expectedEndDate, ...rest }) => ({
-      ...rest,
-      endDate: actualEndDate ?? expectedEndDate,
-    })),
-  );
-}
-
 export function assertOpenClassStatus(status: ClassStatus): void {
   if (status !== ClassStatus.UPCOMING && status !== ClassStatus.ACTIVE) {
     throw new BadRequestException(
       'Không thể đóng lớp trực tiếp qua cập nhật thông tin; vui lòng dùng chức năng Kết thúc lớp',
     );
-  }
-}
-
-export function resolveUpdatedClassSchedule(
-  existing: {
-    scheduleDays: number[];
-    scheduleStartTime: string;
-    scheduleEndTime: string;
-    startDate: Date;
-    totalSessions: number;
-    status: ClassStatus;
-    notes: string | null;
-  },
-  dto: {
-    scheduleDays?: number[];
-    scheduleStartTime?: string;
-    scheduleEndTime?: string;
-    startDate?: string;
-    totalSessions?: number;
-    status?: ClassStatus;
-    notes?: string | null;
-  },
-  validateSessions: (value: number) => number,
-) {
-  const nextScheduleDays =
-    dto.scheduleDays !== undefined
-      ? normalizeScheduleDays(dto.scheduleDays)
-      : existing.scheduleDays;
-  const { startTime: nextStartTime, endTime: nextEndTime } = assertValidTimeRange(
-    dto.scheduleStartTime ?? existing.scheduleStartTime,
-    dto.scheduleEndTime ?? existing.scheduleEndTime,
-  );
-  const nextStartDate =
-    dto.startDate !== undefined
-      ? parseRequiredCalendarDate(dto.startDate, 'Ngày khai giảng không hợp lệ')
-      : existing.startDate;
-  const nextTotalSessions =
-    dto.totalSessions !== undefined
-      ? validateSessions(dto.totalSessions)
-      : existing.totalSessions;
-  const nextExpectedEndDate = calculateExpectedEndDate(
-    nextStartDate,
-    nextScheduleDays,
-    nextTotalSessions,
-  );
-  return {
-    nextScheduleDays,
-    nextStartTime,
-    nextEndTime,
-    nextStartDate,
-    nextTotalSessions,
-    nextExpectedEndDate,
-    nextStatus: dto.status ?? existing.status,
-    nextNotes: dto.notes !== undefined ? dto.notes?.trim() || null : existing.notes,
-  };
-}
-
-export async function assertValidActiveCourseInDb(
-  db: Prisma.TransactionClient | PrismaService,
-  courseId: string,
-): Promise<{ id: string; defaultSessions: number | null }> {
-  const course = await db.course.findUnique({ where: { id: courseId } });
-  if (!course) throw new NotFoundException('Không tìm thấy khóa học');
-  if (!course.isActive) {
-    throw new BadRequestException('Khóa học đã ngừng sử dụng, không thể mở lớp mới');
-  }
-  return course;
-}
-
-export async function assertValidActiveTeacherInDb(
-  db: Prisma.TransactionClient | PrismaService,
-  teacherId: string,
-): Promise<void> {
-  const teacher = await db.user.findUnique({
-    where: { id: teacherId },
-    select: { id: true, roles: true, status: true },
-  });
-  if (!teacher || !teacher.roles.includes(Role.TEACHER) || teacher.status !== UserStatus.ACTIVE) {
-    throw new BadRequestException('Giáo viên phụ trách không hợp lệ hoặc đã ngừng hoạt động');
   }
 }

@@ -5,12 +5,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AttendanceStatus,
   ClassStatus,
   CourseLevel,
   EnrollmentStatus,
   Role,
+  SessionChangeAction,
+  SessionStatus,
   UserStatus,
 } from '@prisma/client';
+import { SessionGeneratorService } from '../schedules/services/session-generator.service.js';
 import { ClassAccessService } from './services/class-access.service.js';
 import { ClassQueryService } from './services/class-query.service.js';
 import { ClassLifecycleService } from './services/class-lifecycle.service.js';
@@ -86,6 +90,29 @@ interface MockTeacherAssignmentRecord {
   createdAt: Date;
 }
 
+interface MockLessonSessionRecord {
+  id: string;
+  classId: string;
+  status: SessionStatus;
+  sessionNumber?: number | null;
+  sessionDate?: Date;
+  startTime?: string;
+  endTime?: string;
+  cancelReason?: string | null;
+  cancelledById?: string | null;
+  cancelledAt?: Date | null;
+  makeupForSessionId?: string | null;
+  createdAt?: Date;
+}
+
+interface MockAttendanceRecord {
+  id: string;
+  classId: string;
+  sessionId: string;
+  studentId: string;
+  status: AttendanceStatus;
+}
+
 describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => {
   let accessService: ClassAccessService;
   let queryService: ClassQueryService;
@@ -96,6 +123,9 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
   let classesStore: Map<string, MockClassRecord>;
   let enrollmentsStore: MockEnrollmentRecord[];
   let assignmentsStore: MockTeacherAssignmentRecord[];
+  let sessionsStore: MockLessonSessionRecord[];
+  let attendanceRecordsStore: MockAttendanceRecord[];
+  let sessionChangeLogs: Array<Record<string, unknown>>;
   let teacherActiveCounts: Map<string, number>;
   let auditLogs: Array<Record<string, unknown>>;
   let lockedUserIdsOrder: string[];
@@ -434,6 +464,9 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       ['teacher-01', 1],
       ['teacher-02', 1],
     ]);
+    sessionsStore = [];
+    attendanceRecordsStore = [];
+    sessionChangeLogs = [];
     auditLogs = [];
     lockedUserIdsOrder = [];
 
@@ -623,6 +656,9 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
             }
             if ('actualEndDate' in data) {
               cls.actualEndDate = (data.actualEndDate as Date | null) ?? null;
+            }
+            if ('expectedEndDate' in data) {
+              cls.expectedEndDate = (data.expectedEndDate as Date | null) ?? null;
             }
             if ('closedReason' in data) {
               cls.closedReason = (data.closedReason as string | null) ?? null;
@@ -921,6 +957,238 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
           return data;
         }),
       },
+      lessonSession: {
+        groupBy: vi.fn(
+          async ({
+            where,
+          }: {
+            by: ['classId'];
+            where?: { classId?: { in?: string[] }; status?: SessionStatus };
+            _count?: { _all?: boolean };
+          }) => {
+            const allowedIds = new Set(where?.classId?.in ?? []);
+            const counts = new Map<string, number>();
+            for (const s of sessionsStore) {
+              if (where?.classId?.in && !allowedIds.has(s.classId)) continue;
+              if (where?.status && s.status !== where.status) continue;
+              counts.set(s.classId, (counts.get(s.classId) ?? 0) + 1);
+            }
+            return Array.from(counts.entries()).map(([classId, count]) => ({
+              classId,
+              _count: { _all: count },
+            }));
+          },
+        ),
+        count: vi.fn(
+          async ({
+            where,
+          }: {
+            where?: { classId?: string; status?: SessionStatus };
+          } = {}) => {
+            return sessionsStore.filter(
+              (s) =>
+                (!where?.classId || s.classId === where.classId) &&
+                (!where?.status || s.status === where.status),
+            ).length;
+          },
+        ),
+        findMany: vi.fn(
+          async ({
+            where,
+          }: {
+            where?: {
+              classId?: string;
+              status?: SessionStatus;
+              cancelReason?: string;
+              makeupReplacement?: { is: null } | null;
+            };
+          } = {}) => {
+            const replacedIds = new Set(
+              sessionsStore
+                .map((s) => s.makeupForSessionId)
+                .filter((id): id is string => typeof id === 'string'),
+            );
+            return sessionsStore
+              .filter((s) => {
+                if (where?.classId && s.classId !== where.classId) return false;
+                if (where?.status && s.status !== where.status) return false;
+                if (
+                  where?.cancelReason !== undefined &&
+                  s.cancelReason !== where.cancelReason
+                ) {
+                  return false;
+                }
+                if (where?.makeupReplacement !== undefined && replacedIds.has(s.id)) {
+                  return false;
+                }
+                return true;
+              })
+              .sort(
+                (a, b) =>
+                  (a.sessionDate?.getTime() ?? 0) -
+                    (b.sessionDate?.getTime() ?? 0) ||
+                  (a.startTime ?? '').localeCompare(b.startTime ?? '') ||
+                  (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0),
+              );
+          },
+        ),
+        findFirst: vi.fn(
+          async ({
+            where,
+            orderBy,
+          }: {
+            where?: { classId?: string; status?: { not?: SessionStatus } };
+            orderBy?: Array<Record<string, 'asc' | 'desc'>>;
+          } = {}) => {
+            const list = sessionsStore.filter(
+              (s) =>
+                (!where?.classId || s.classId === where.classId) &&
+                (!where?.status?.not || s.status !== where.status.not),
+            );
+            if (orderBy?.some((o) => o.sessionDate === 'desc')) {
+              list.sort(
+                (a, b) =>
+                  (b.sessionDate?.getTime() ?? 0) -
+                    (a.sessionDate?.getTime() ?? 0) ||
+                  (b.startTime ?? '').localeCompare(a.startTime ?? ''),
+              );
+            }
+            return list[0] ?? null;
+          },
+        ),
+        updateMany: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { id?: { in?: string[] }; classId?: string; status?: SessionStatus };
+            data: Partial<MockLessonSessionRecord>;
+          }) => {
+            const idSet = where.id?.in ? new Set(where.id.in) : null;
+            let count = 0;
+            for (const s of sessionsStore) {
+              if (idSet && !idSet.has(s.id)) continue;
+              if (where.classId && s.classId !== where.classId) continue;
+              if (where.status && s.status !== where.status) continue;
+              Object.assign(s, data);
+              count += 1;
+            }
+            return { count };
+          },
+        ),
+        update: vi.fn(
+          async ({
+            where,
+            data,
+          }: {
+            where: { id: string };
+            data: Partial<MockLessonSessionRecord>;
+          }) => {
+            const found = sessionsStore.find((s) => s.id === where.id);
+            if (!found) throw new Error('Session not found');
+            Object.assign(found, data);
+            return found;
+          },
+        ),
+      },
+      attendanceRecord: {
+        groupBy: vi.fn(
+          async ({
+            where,
+          }: {
+            by: ['classId'];
+            where?: { classId?: { in?: string[] } };
+            _count?: { _all?: boolean };
+          }) => {
+            const allowedIds = new Set(where?.classId?.in ?? []);
+            const counts = new Map<string, number>();
+            for (const r of attendanceRecordsStore) {
+              if (where?.classId?.in && !allowedIds.has(r.classId)) continue;
+              counts.set(r.classId, (counts.get(r.classId) ?? 0) + 1);
+            }
+            return Array.from(counts.entries()).map(([classId, count]) => ({
+              classId,
+              _count: { _all: count },
+            }));
+          },
+        ),
+        count: vi.fn(
+          async ({ where }: { where?: { classId?: string } } = {}) => {
+            return attendanceRecordsStore.filter(
+              (r) => !where?.classId || r.classId === where.classId,
+            ).length;
+          },
+        ),
+        findMany: vi.fn(
+          async ({
+            where,
+          }: {
+            where?: {
+              classId?: string;
+              status?: { in?: AttendanceStatus[] };
+              session?: { status?: SessionStatus };
+            };
+          } = {}) => {
+            return attendanceRecordsStore
+              .filter((r) => {
+                if (where?.classId && r.classId !== where.classId) return false;
+                if (where?.status?.in && !where.status.in.includes(r.status)) {
+                  return false;
+                }
+                const sess = sessionsStore.find((s) => s.id === r.sessionId);
+                if (
+                  where?.session?.status &&
+                  sess?.status !== where.session.status
+                ) {
+                  return false;
+                }
+                return true;
+              })
+              .map((r) => {
+                const sess = sessionsStore.find((s) => s.id === r.sessionId);
+                return {
+                  studentId: r.studentId,
+                  session: {
+                    sessionDate: sess?.sessionDate ?? new Date('2026-10-05T00:00:00.000Z'),
+                  },
+                };
+              });
+          },
+        ),
+      },
+      sessionChangeLog: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          sessionChangeLogs.push(data);
+          return data;
+        }),
+        createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+          sessionChangeLogs.push(...data);
+          return { count: data.length };
+        }),
+      },
+      $executeRaw: vi.fn(
+        async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join(' ');
+          if (sql.includes('WITH ranked') && typeof values[0] === 'string') {
+            const classId = values[0];
+            const active = sessionsStore
+              .filter(
+                (s) => s.classId === classId && s.status !== SessionStatus.CANCELLED,
+              )
+              .sort(
+                (a, b) =>
+                  (a.sessionDate?.getTime() ?? 0) -
+                    (b.sessionDate?.getTime() ?? 0) ||
+                  (a.startTime ?? '').localeCompare(b.startTime ?? '') ||
+                  (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0),
+              );
+            active.forEach((s, i) => {
+              s.sessionNumber = i + 1;
+            });
+          }
+          return 0;
+        },
+      ),
       $transaction: vi.fn(
         async (cb: (tx: Record<string, unknown>) => Promise<unknown>) =>
           cb(mockPrisma),
@@ -932,9 +1200,14 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       mockPrisma as unknown as PrismaService,
       accessService,
     );
-    lifecycleService = new ClassLifecycleService(
+    lifecycleService = new (ClassLifecycleService as unknown as new (
+      prisma: PrismaService,
+      queryService: ClassQueryService,
+      sessionGenerator?: SessionGeneratorService,
+    ) => ClassLifecycleService)(
       mockPrisma as unknown as PrismaService,
       queryService,
+      new SessionGeneratorService(),
     );
   });
 
@@ -1038,6 +1311,167 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
 
       const endedDetail = await queryService.getClassById(adminActor, 'class-completed-1');
       expect(endedDetail.scheduleConflictWarning).toBeNull();
+    });
+
+    it('TD-08: batches completedSessionsCount via single lessonSession.groupBy in listClasses (no N+1) and includes it in getClassById', async () => {
+      sessionsStore.push(
+        { id: 's-1', classId: 'class-active-1', status: SessionStatus.COMPLETED },
+        { id: 's-2', classId: 'class-active-1', status: SessionStatus.COMPLETED },
+        { id: 's-3', classId: 'class-active-1', status: SessionStatus.COMPLETED },
+        { id: 's-4', classId: 'class-active-1', status: SessionStatus.SCHEDULED },
+        { id: 's-5', classId: 'class-active-1', status: SessionStatus.CANCELLED },
+        { id: 's-6', classId: 'class-other', status: SessionStatus.SCHEDULED },
+        { id: 's-7', classId: 'class-completed-1', status: SessionStatus.COMPLETED },
+        { id: 's-8', classId: 'class-completed-1', status: SessionStatus.COMPLETED },
+      );
+
+      attendanceRecordsStore.push({
+        id: 'ar-list-other',
+        classId: 'class-other',
+        sessionId: 's-6',
+        studentId: 'student-01',
+        status: AttendanceStatus.PRESENT,
+      });
+
+      const groupBySpy = (
+        mockPrisma.lessonSession as { groupBy: ReturnType<typeof vi.fn> }
+      ).groupBy;
+      const attGroupBySpy = (
+        mockPrisma.attendanceRecord as { groupBy: ReturnType<typeof vi.fn> }
+      ).groupBy;
+      groupBySpy.mockClear();
+      attGroupBySpy.mockClear();
+
+      const listRes = await queryService.listClasses(adminActor, {});
+      expect(groupBySpy).toHaveBeenCalledTimes(1);
+      expect(groupBySpy).toHaveBeenCalledWith({
+        by: ['classId'],
+        where: {
+          classId: { in: ['class-active-1', 'class-other'] },
+          status: SessionStatus.COMPLETED,
+        },
+        _count: { _all: true },
+      });
+      expect(attGroupBySpy).toHaveBeenCalledTimes(1);
+      expect(attGroupBySpy).toHaveBeenCalledWith({
+        by: ['classId'],
+        where: {
+          classId: { in: ['class-active-1', 'class-other'] },
+        },
+        _count: { _all: true },
+      });
+
+      const activeItem = listRes.items.find((c) => c.id === 'class-active-1');
+      const otherItem = listRes.items.find((c) => c.id === 'class-other');
+      expect(activeItem?.completedSessionsCount).toBe(3);
+      expect(activeItem?.isStartDateLocked).toBe(true);
+      expect(otherItem?.completedSessionsCount).toBe(0);
+      expect(otherItem?.isStartDateLocked).toBe(true);
+
+      // Empty page skips lessonSession.groupBy and attendanceRecord.groupBy completely
+      groupBySpy.mockClear();
+      attGroupBySpy.mockClear();
+      const emptyRes = await queryService.listClasses(adminActor, {
+        search: 'NO_MATCH_999',
+      });
+      expect(emptyRes.items).toEqual([]);
+      expect(groupBySpy).not.toHaveBeenCalled();
+      expect(attGroupBySpy).not.toHaveBeenCalled();
+
+      // getClassById populates accurate completedSessionsCount for each class
+      groupBySpy.mockClear();
+      const activeDetail = await queryService.getClassById(adminActor, 'class-active-1');
+      expect(activeDetail.completedSessionsCount).toBe(3);
+      expect(groupBySpy).toHaveBeenCalledTimes(1);
+
+      const otherDetail = await queryService.getClassById(adminActor, 'class-other');
+      expect(otherDetail.completedSessionsCount).toBe(0);
+
+      const completedDetail = await queryService.getClassById(adminActor, 'class-completed-1');
+      expect(completedDetail.completedSessionsCount).toBe(2);
+    });
+
+    it('computes scheduledSessionsCount, isStartDateLocked, and enrollment absencesCount in getClassById (FUNC-040..042, FUNC-017)', async () => {
+      // Initially no completed sessions & no attendance -> unlocked, 0 absences
+      sessionsStore.push({
+        id: 'sess-sched-1',
+        classId: 'class-active-1',
+        status: SessionStatus.SCHEDULED,
+        sessionNumber: 1,
+        sessionDate: new Date('2026-10-02T00:00:00.000Z'),
+        startTime: '18:00',
+        endTime: '19:30',
+      });
+      const initialDetail = await queryService.getClassById(adminActor, 'class-active-1');
+      expect(initialDetail.scheduledSessionsCount).toBe(1);
+      expect(initialDetail.isStartDateLocked).toBe(false);
+      expect(initialDetail.enrollments.every((e) => e.absencesCount === 0)).toBe(true);
+
+      // Add a COMPLETED session (Oct 5) + another COMPLETED session (Oct 25) + CANCELLED session (Oct 7)
+      // plus attendance: student-01 ABSENT on Oct 5, EXCUSED on Oct 25, PRESENT on Oct 10;
+      // student-02 (TRANSFERRED leftDate 2026-10-15) ABSENT on Oct 5 (within) & Oct 25 (after leftDate -> ignored!)
+      sessionsStore.push(
+        {
+          id: 'sess-comp-1',
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: 2,
+          sessionDate: new Date('2026-10-05T00:00:00.000Z'),
+        },
+        {
+          id: 'sess-comp-2',
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: 3,
+          sessionDate: new Date('2026-10-10T00:00:00.000Z'),
+        },
+        {
+          id: 'sess-comp-3',
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: 4,
+          sessionDate: new Date('2026-10-25T00:00:00.000Z'),
+        },
+        {
+          id: 'sess-canc-1',
+          classId: 'class-active-1',
+          status: SessionStatus.CANCELLED,
+          sessionNumber: null,
+          sessionDate: new Date('2026-10-07T00:00:00.000Z'),
+        },
+      );
+      attendanceRecordsStore.push(
+        { id: 'ar-1', classId: 'class-active-1', sessionId: 'sess-comp-1', studentId: 'student-01', status: AttendanceStatus.ABSENT },
+        { id: 'ar-2', classId: 'class-active-1', sessionId: 'sess-comp-2', studentId: 'student-01', status: AttendanceStatus.PRESENT },
+        { id: 'ar-3', classId: 'class-active-1', sessionId: 'sess-comp-3', studentId: 'student-01', status: AttendanceStatus.EXCUSED },
+        { id: 'ar-4', classId: 'class-active-1', sessionId: 'sess-canc-1', studentId: 'student-01', status: AttendanceStatus.ABSENT },
+        { id: 'ar-5', classId: 'class-active-1', sessionId: 'sess-comp-1', studentId: 'student-02', status: AttendanceStatus.ABSENT },
+        { id: 'ar-6', classId: 'class-active-1', sessionId: 'sess-comp-3', studentId: 'student-02', status: AttendanceStatus.ABSENT },
+      );
+
+      const populated = await queryService.getClassById(adminActor, 'class-active-1', {
+        includeInactiveEnrollments: 'true',
+      });
+      expect(populated.scheduledSessionsCount).toBe(1);
+      expect(populated.isStartDateLocked).toBe(true);
+      const s1Row = populated.enrollments.find((e) => e.studentId === 'student-01');
+      const s2Row = populated.enrollments.find((e) => e.studentId === 'student-02');
+      const s4Row = populated.enrollments.find((e) => e.studentId === 'student-04');
+      expect(s1Row?.absencesCount).toBe(2); // ABSENT (Oct 5) + EXCUSED (Oct 25), ignoring CANCELLED & PRESENT
+      expect(s2Row?.absencesCount).toBe(1); // Oct 5 within [Oct 1..Oct 15]; Oct 25 > leftDate excluded
+      expect(s4Row?.absencesCount).toBe(0);
+
+      // Attendance record alone (even with 0 COMPLETED sessions) locks startDate
+      attendanceRecordsStore.push({
+        id: 'ar-other',
+        classId: 'class-other',
+        sessionId: 's-other',
+        studentId: 'student-01',
+        status: AttendanceStatus.PRESENT,
+      });
+      const lockedByAttOnly = await queryService.getClassById(adminActor, 'class-other');
+      expect(lockedByAttOnly.completedSessionsCount).toBe(0);
+      expect(lockedByAttOnly.isStartDateLocked).toBe(true);
     });
   });
 
@@ -1324,6 +1758,127 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       expect(enrollmentsStore.find((e) => e.id === 'enr-active-4')?.status).toBe(
         EnrollmentStatus.COMPLETED,
       );
+    });
+
+    it('auto-cancels SCHEDULED sessions on completeClass and selectively restores only auto-cancelled ones on reopenClass (FUNC-079, Ruling 4 & Ruling 6)', async () => {
+      sessionsStore.push(
+        {
+          id: 'sess-done-1',
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: 1,
+          sessionDate: new Date('2026-10-02T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 'sess-manual-cancelled',
+          classId: 'class-active-1',
+          status: SessionStatus.CANCELLED,
+          sessionNumber: null,
+          sessionDate: new Date('2026-10-05T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+          cancelReason: 'Nghỉ lễ Quốc Khánh',
+          cancelledById: 'admin-01',
+          cancelledAt: new Date('2026-10-04T00:00:00.000Z'),
+        },
+        {
+          id: 'sess-sched-future-1',
+          classId: 'class-active-1',
+          status: SessionStatus.SCHEDULED,
+          sessionNumber: 2,
+          sessionDate: new Date('2026-11-30T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 'sess-sched-future-2',
+          classId: 'class-active-1',
+          status: SessionStatus.SCHEDULED,
+          sessionNumber: 3,
+          sessionDate: new Date('2026-12-02T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+      );
+
+      const completed = await lifecycleService.completeClass(adminActor, 'class-active-1', {
+        actualEndDate: '2026-11-28',
+        reason: 'Kết thúc sớm',
+      });
+
+      expect(completed.scheduledSessionsCount).toBe(0);
+      expect(completed.completedSessionsCount).toBe(1);
+      expect(sessionsStore.find((s) => s.id === 'sess-done-1')?.status).toBe(
+        SessionStatus.COMPLETED,
+      );
+      expect(sessionsStore.find((s) => s.id === 'sess-manual-cancelled')?.cancelReason).toBe(
+        'Nghỉ lễ Quốc Khánh',
+      );
+
+      const s1 = sessionsStore.find((s) => s.id === 'sess-sched-future-1')!;
+      const s2 = sessionsStore.find((s) => s.id === 'sess-sched-future-2')!;
+      expect(s1.status).toBe(SessionStatus.CANCELLED);
+      expect(s1.sessionNumber).toBeNull();
+      expect(s1.cancelReason).toBe('Tự động hủy khi kết thúc lớp');
+      expect(s1.cancelledById).toBe(adminActor.id);
+      expect(s2.status).toBe(SessionStatus.CANCELLED);
+
+      const cancelLogs = sessionChangeLogs.filter(
+        (l) => l.action === SessionChangeAction.CANCEL,
+      );
+      expect(cancelLogs).toHaveLength(2);
+      const changeLogApi = mockPrisma.sessionChangeLog as {
+        create: ReturnType<typeof vi.fn>;
+        createMany: ReturnType<typeof vi.fn>;
+      };
+      expect(changeLogApi.createMany).toHaveBeenCalledTimes(1);
+      expect(changeLogApi.create).not.toHaveBeenCalled();
+      const completedAudit = auditLogs.find((a) => a.action === 'CLASS_COMPLETED');
+      expect(
+        (completedAudit?.metadata as { autoCancelledSessionsCount?: number })
+          ?.autoCancelledSessionsCount,
+      ).toBe(2);
+
+      // Reopen within 2 days -> restores 2 auto-cancelled sessions, keeps manual-cancelled CANCELLED!
+      changeLogApi.createMany.mockClear();
+      changeLogApi.create.mockClear();
+      const closedAt = classesStore.get('class-active-1')!.closedAt!;
+      const reopened = await lifecycleService.reopenClass(
+        adminActor,
+        'class-active-1',
+        { reason: 'Mở lại lớp' },
+        new Date(closedAt.getTime() + 2 * 24 * 60 * 60 * 1000),
+      );
+
+      expect(reopened.reopenSummary).toEqual({
+        restoredStudentsCount: 2,
+        skippedStudentsCount: 0,
+      });
+      expect(reopened.scheduledSessionsCount).toBe(2);
+      expect(s1.status).toBe(SessionStatus.SCHEDULED);
+      expect(s1.cancelReason).toBeNull();
+      expect(s1.sessionNumber).toBe(2);
+      expect(s2.status).toBe(SessionStatus.SCHEDULED);
+      expect(s2.sessionNumber).toBe(3);
+      expect(sessionsStore.find((s) => s.id === 'sess-manual-cancelled')?.status).toBe(
+        SessionStatus.CANCELLED,
+      );
+      expect(classesStore.get('class-active-1')?.expectedEndDate?.toISOString().slice(0, 10)).toBe(
+        '2026-12-02',
+      );
+      const restoreLogs = sessionChangeLogs.filter(
+        (l) => l.action === SessionChangeAction.GENERATE,
+      );
+      expect(restoreLogs).toHaveLength(2);
+      expect(changeLogApi.createMany).toHaveBeenCalledTimes(1);
+      expect(changeLogApi.create).not.toHaveBeenCalled();
+      const reopenedAudit = auditLogs.find((a) => a.action === 'CLASS_REOPENED');
+      expect(
+        (reopenedAudit?.metadata as { restoredSessionsCount?: number })
+          ?.restoredSessionsCount,
+      ).toBe(2);
     });
   });
 });

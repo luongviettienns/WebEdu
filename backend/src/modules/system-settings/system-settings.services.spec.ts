@@ -87,6 +87,51 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
       updatedAt: new Date(),
     });
 
+    const matchesUserWhere = (
+      u: MockSysUser,
+      w?: Record<string, unknown>,
+    ): boolean => {
+      if (!w) return true;
+      if (Array.isArray(w.AND)) {
+        return (w.AND as Array<Record<string, unknown>>).every((c) =>
+          matchesUserWhere(u, c),
+        );
+      }
+      if (Array.isArray(w.OR)) {
+        return (w.OR as Array<Record<string, unknown>>).some((c) =>
+          matchesUserWhere(u, c),
+        );
+      }
+      if (
+        w.id &&
+        typeof w.id === 'object' &&
+        'not' in w.id &&
+        u.id === (w.id as { not: string }).not
+      ) {
+        return false;
+      }
+      if (
+        w.roles &&
+        typeof w.roles === 'object' &&
+        'has' in w.roles &&
+        !u.roles.includes((w.roles as { has: Role }).has)
+      ) {
+        return false;
+      }
+      if (w.status && u.status !== w.status) return false;
+      const matchText = (fieldVal: string, cond: unknown): boolean => {
+        if (!cond || typeof cond !== 'object' || !('contains' in cond)) {
+          return true;
+        }
+        const term = String((cond as { contains: string }).contains);
+        return fieldVal.toLowerCase().includes(term.toLowerCase());
+      };
+      if (w.fullName && !matchText(u.fullName, w.fullName)) return false;
+      if (w.email && !matchText(u.email, w.email)) return false;
+      if (w.phone && !matchText(u.phone, w.phone)) return false;
+      return true;
+    };
+
     mockPrisma = {
       $queryRaw: vi.fn().mockResolvedValue([]),
       user: {
@@ -94,27 +139,27 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
           return usersStore.get(where.id) ?? null;
         }),
         findFirst: vi.fn(async () => null),
-        findMany: vi.fn(async () => Array.from(usersStore.values())),
-        count: vi.fn(
-          async ({
-            where,
-          }: {
-            where?: {
-              id?: { not: string };
-              roles?: { has: Role };
-              status?: UserStatus;
-            };
+        findMany: vi.fn(
+          async (args?: {
+            where?: Record<string, unknown>;
+            skip?: number;
+            take?: number;
           }) => {
-            let count = 0;
-            for (const u of usersStore.values()) {
-              if (where?.id?.not && u.id === where.id.not) continue;
-              if (where?.roles?.has && !u.roles.includes(where.roles.has)) continue;
-              if (where?.status && u.status !== where.status) continue;
-              count += 1;
-            }
-            return count;
+            const filtered = Array.from(usersStore.values()).filter((u) =>
+              matchesUserWhere(u, args?.where),
+            );
+            const skip = args?.skip ?? 0;
+            const take = args?.take ?? filtered.length;
+            return filtered.slice(skip, skip + take);
           },
         ),
+        count: vi.fn(async (args?: { where?: Record<string, unknown> }) => {
+          let count = 0;
+          for (const u of usersStore.values()) {
+            if (matchesUserWhere(u, args?.where)) count += 1;
+          }
+          return count;
+        }),
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           const id = `sys-${usersStore.size + 1}`;
           const now = new Date();
@@ -189,8 +234,27 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
           auditLogsStore.unshift(entry);
           return entry;
         }),
-        findMany: vi.fn(async () => auditLogsStore),
-        count: vi.fn(async () => auditLogsStore.length),
+        findMany: vi.fn(
+          async (args?: {
+            where?: { action?: string };
+            skip?: number;
+            take?: number;
+          }) => {
+            const actionFilter = args?.where?.action;
+            const filtered = actionFilter
+              ? auditLogsStore.filter((entry) => entry.action === actionFilter)
+              : auditLogsStore;
+            const skip = args?.skip ?? 0;
+            const take = args?.take ?? filtered.length;
+            return filtered.slice(skip, skip + take);
+          },
+        ),
+        count: vi.fn(async (args?: { where?: { action?: string } }) => {
+          const actionFilter = args?.where?.action;
+          return actionFilter
+            ? auditLogsStore.filter((entry) => entry.action === actionFilter).length
+            : auditLogsStore.length;
+        }),
       },
       class: {
         count: vi.fn(async () => 0),
@@ -312,8 +376,10 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
   });
 
   it('lists and creates system users while blocking empty roles, pure STUDENT creation, and duplicate contacts (FUNC-013)', async () => {
+    const allInitial = await service.listSystemUsers({ page: 1, limit: 10 });
+    expect(allInitial.total).toBe(2);
     const initialList = await service.listSystemUsers({ search: 'sa1', page: 1, limit: 10 });
-    expect(initialList.total).toBe(2);
+    expect(initialList.total).toBe(1);
 
     await expect(
       service.createSystemUser(superadminA, {
@@ -427,5 +493,98 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
     });
     const logs = await service.listAuditLogs({ page: 1, limit: 10 });
     expect(logs.total).toBeGreaterThanOrEqual(1);
+  });
+
+  it('filters listSystemUsers by role, status, and search (FUNC-013)', async () => {
+    usersStore.set('teacher-active', {
+      id: 'teacher-active',
+      email: 'teacher.active@webedu.vn',
+      phone: '0911000001',
+      fullName: 'Giáo Viên Hoạt Động',
+      roles: [Role.TEACHER],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    usersStore.set('teacher-inactive', {
+      id: 'teacher-inactive',
+      email: 'teacher.inactive@webedu.vn',
+      phone: '0911000002',
+      fullName: 'Giáo Viên Bị Khóa',
+      roles: [Role.ADMIN, Role.TEACHER],
+      status: UserStatus.INACTIVE,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    usersStore.set('student-pending', {
+      id: 'student-pending',
+      email: 'student.pending@webedu.vn',
+      phone: '0911000003',
+      fullName: 'Học Viên Chờ Lớp',
+      roles: [Role.STUDENT],
+      status: UserStatus.PENDING_CLASS,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const teachersOnly = await service.listSystemUsers({ role: Role.TEACHER });
+    expect(teachersOnly.total).toBe(2);
+    expect(teachersOnly.items.map((u) => u.id).sort()).toEqual([
+      'teacher-active',
+      'teacher-inactive',
+    ]);
+
+    const inactiveOnly = await service.listSystemUsers({ status: UserStatus.INACTIVE });
+    expect(inactiveOnly.total).toBe(1);
+    expect(inactiveOnly.items[0]?.id).toBe('teacher-inactive');
+
+    const combined = await service.listSystemUsers({
+      role: Role.TEACHER,
+      status: UserStatus.ACTIVE,
+      search: 'hoạt động',
+    });
+    expect(combined.total).toBe(1);
+    expect(combined.items[0]?.id).toBe('teacher-active');
+
+    const emptyCombined = await service.listSystemUsers({
+      role: Role.STUDENT,
+      status: UserStatus.INACTIVE,
+    });
+    expect(emptyCombined.total).toBe(0);
+    expect(emptyCombined.items).toEqual([]);
+  });
+
+  it('filters listAuditLogs by exact trimmed action (FUNC-007)', async () => {
+    await service.updateSystemConfig(superadminA, {
+      centerName: 'Trung Tâm TD Hán Ngữ',
+    });
+    await service.createSystemUser(superadminA, {
+      fullName: 'Nhân Viên Mới',
+      phone: '0988555444',
+      email: 'staff.audit@webedu.vn',
+      initialPassword: 'Password@123',
+      roles: [Role.ADMIN],
+    });
+
+    const configOnly = await service.listAuditLogs({
+      action: '  UPDATE_SYSTEM_CONFIG  ',
+      page: 1,
+      limit: 10,
+    });
+    expect(configOnly.total).toBe(1);
+    expect(configOnly.items).toHaveLength(1);
+    expect((configOnly.items[0] as { action: string }).action).toBe(
+      'UPDATE_SYSTEM_CONFIG',
+    );
+
+    const allWithBlankAction = await service.listAuditLogs({
+      action: '   ',
+      page: 1,
+      limit: 10,
+    });
+    expect(allWithBlankAction.total).toBe(2);
   });
 });

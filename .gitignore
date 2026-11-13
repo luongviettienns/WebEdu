@@ -11,6 +11,9 @@ node_modules/
 .env.production.local
 *.env
 
+# Local media uploads (Phase 5)
+uploads/
+
 # Production build outputs
 dist/
 build/

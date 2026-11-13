@@ -420,7 +420,52 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       .set('Cookie', session2.cookiePair)
       .expect(200);
 
-    // 2. Change email -> rotates cookie again, revokes session2
+    const meAdultRes = await request(harness.app.getHttpServer())
+      .get('/api/v1/profile/me')
+      .set('Cookie', session2.cookiePair)
+      .expect(200);
+    expect(
+      (meAdultRes.body as { canSelfChangeEmail: boolean }).canSelfChangeEmail,
+    ).toBe(true);
+
+    // 2. Email change requires SMTP OTP verificationCode (+ currentPassword)
+    await request(harness.app.getHttpServer())
+      .patch('/api/v1/profile/me')
+      .set('Cookie', session2.cookiePair)
+      .set('Origin', 'http://localhost:3000')
+      .send({
+        email: 'profile.newemail@example.com',
+        currentPassword: 'UpdatedPassword@456',
+      })
+      .expect(400);
+
+    await request(harness.app.getHttpServer())
+      .patch('/api/v1/profile/me')
+      .set('Cookie', session2.cookiePair)
+      .set('Origin', 'http://localhost:3000')
+      .send({
+        email: 'profile.newemail@example.com',
+        currentPassword: 'UpdatedPassword@456',
+        verificationCode: '000000',
+      })
+      .expect(400);
+
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/profile/me/send-email-change-code')
+      .set('Cookie', session2.cookiePair)
+      .set('Origin', 'http://localhost:3000')
+      .send({ newEmail: 'profile.newemail@example.com' })
+      .expect(200);
+
+    const otpMsg = harness.smtpServer.getLatestMessageFor(
+      'profile.newemail@example.com',
+    );
+    expect(otpMsg).toBeDefined();
+    const verificationCode =
+      harness.smtpServer.extractVerificationCodeFromMessage(otpMsg!);
+    expect(verificationCode).toMatch(/^\d{6}$/);
+
+    // 3. Change email with valid OTP -> rotates cookie again, revokes session2
     const updateEmailRes = await request(harness.app.getHttpServer())
       .patch('/api/v1/profile/me')
       .set('Cookie', session2.cookiePair)
@@ -428,6 +473,7 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       .send({
         email: 'profile.newemail@example.com',
         currentPassword: 'UpdatedPassword@456',
+        verificationCode,
       })
       .expect(200);
 
@@ -445,6 +491,75 @@ describe('Authentication Flows (e2e — Real PostgreSQL & SMTP FUNC-001..005, FU
       .get('/api/v1/profile/me')
       .set('Cookie', session3.cookiePair)
       .expect(200);
+  });
+
+  it('DEC-023 E2E: locks self-email change and OTP sending with 403 for students under 16 while preserving name/phone edits', async () => {
+    await registerStudentViaHttpWithOtp(harness.app, harness.smtpServer, {
+      fullName: 'Học Viên Dưới 16',
+      dateOfBirth: DOB_TEEN_14,
+      phone: '0905550002',
+      email: 'teen14.lock@example.com',
+      password: 'InitPassword@123',
+      guardianConsent: true,
+    }).then((res) => expect(res.status).toBe(201));
+
+    const loginRes = await request(harness.app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        email: 'teen14.lock@example.com',
+        password: 'InitPassword@123',
+        rememberMe: false,
+      })
+      .expect(200);
+
+    const session = extractAuthCookie(loginRes);
+
+    const profileRes = await request(harness.app.getHttpServer())
+      .get('/api/v1/profile/me')
+      .set('Cookie', session.cookiePair)
+      .expect(200);
+    expect(
+      (profileRes.body as { canSelfChangeEmail: boolean }).canSelfChangeEmail,
+    ).toBe(false);
+
+    await request(harness.app.getHttpServer())
+      .post('/api/v1/profile/me/send-email-change-code')
+      .set('Cookie', session.cookiePair)
+      .set('Origin', 'http://localhost:3000')
+      .send({ newEmail: 'teen14.new@example.com' })
+      .expect(403);
+
+    await request(harness.app.getHttpServer())
+      .patch('/api/v1/profile/me')
+      .set('Cookie', session.cookiePair)
+      .set('Origin', 'http://localhost:3000')
+      .send({
+        email: 'teen14.new@example.com',
+        currentPassword: 'InitPassword@123',
+        verificationCode: '123456',
+      })
+      .expect(403);
+
+    const updateSafeFieldsRes = await request(harness.app.getHttpServer())
+      .patch('/api/v1/profile/me')
+      .set('Cookie', session.cookiePair)
+      .set('Origin', 'http://localhost:3000')
+      .send({
+        fullName: 'Học Viên Dưới 16 Đã Sửa',
+        phone: '0905550099',
+      })
+      .expect(200);
+
+    const updatedBody = updateSafeFieldsRes.body as {
+      fullName: string;
+      phone: string;
+      email: string;
+      canSelfChangeEmail: boolean;
+    };
+    expect(updatedBody.fullName).toBe('Học Viên Dưới 16 Đã Sửa');
+    expect(updatedBody.phone).toBe('0905550099');
+    expect(updatedBody.email).toBe('teen14.lock@example.com');
+    expect(updatedBody.canSelfChangeEmail).toBe(false);
   });
 
   it('FUNC-004 E2E: enforces 60-minute Idle Timeout in PostgreSQL even when rememberMe=true 7-day cookie is used', async () => {
