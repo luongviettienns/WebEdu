@@ -5,6 +5,13 @@ import {
   type ProblemDetails,
   type RequestOptions,
 } from '@/lib/api-client';
+import {
+  assertValidQuestionDrafts,
+  buildDirtyQuestionPatch,
+  withQuestionList,
+  type QuestionDraft,
+  type QuestionUpdatePatch,
+} from '@/features/assessments/utils/question-payload';
 
 export type AssessmentType = 'HOMEWORK' | 'MINI_TEST' | 'MIDTERM' | 'FINAL';
 export type AssessmentStatus = 'DRAFT' | 'PUBLISHED';
@@ -98,7 +105,7 @@ export function emptyPayload(type: QuestionType): Record<string, unknown> {
         { id: 'a', text: '' },
         { id: 'b', text: '' },
       ],
-      correctOptionIds: type === 'SINGLE_CHOICE' ? [] : [],
+      correctOptionIds: [],
     };
   }
   if (type === 'FILL_BLANK') return { acceptedAnswers: [''] };
@@ -164,7 +171,7 @@ export async function createAssessment(payload: {
 
 export async function updateAssessment(
   id: string,
-  payload: { title?: string; description?: string; durationMinutes?: number },
+  payload: { title?: string; description?: string; durationMinutes?: number | null },
 ): Promise<TeacherAssessmentDto> {
   return requestJson<TeacherAssessmentDto>(`/assessments/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -201,12 +208,57 @@ export async function addQuestion(
 export async function updateQuestion(
   assessmentId: string,
   questionId: string,
-  payload: { prompt?: string; payload?: Record<string, unknown>; points?: number },
+  payload: QuestionUpdatePatch,
 ): Promise<TeacherQuestionDto> {
   return requestJson<TeacherQuestionDto>(
     `/assessments/${encodeURIComponent(assessmentId)}/questions/${encodeURIComponent(questionId)}`,
     { method: 'PATCH', body: JSON.stringify(payload) },
   );
+}
+
+export async function flushDirtyQuestions(
+  assessmentId: string,
+  questions: TeacherQuestionDto[],
+  drafts: Record<string, QuestionDraft>,
+  onUpdated?: (updated: TeacherQuestionDto) => void,
+): Promise<TeacherQuestionDto[]> {
+  const pending: Array<{ q: TeacherQuestionDto; patch: QuestionUpdatePatch }> = [];
+  for (const q of questions) {
+    const draft = drafts[q.id];
+    if (!draft) continue;
+    const patch = buildDirtyQuestionPatch(q, draft, true);
+    if (patch) pending.push({ q, patch });
+  }
+  const updatedMap = new Map<string, TeacherQuestionDto>();
+  for (const { q, patch } of pending) {
+    const updated = await updateQuestion(assessmentId, q.id, patch);
+    updatedMap.set(q.id, updated);
+    onUpdated?.(updated);
+  }
+  return questions.map((q) => updatedMap.get(q.id) ?? q);
+}
+
+export async function saveAssessmentAndDrafts(
+  detail: TeacherAssessmentDto,
+  meta: { title: string; description: string; durationMinutes: number | null },
+  drafts: Record<string, QuestionDraft>,
+  onUpdated?: (updated: TeacherQuestionDto) => void,
+): Promise<TeacherAssessmentDto> {
+  const questions = detail.questions ?? [];
+  assertValidQuestionDrafts(questions, drafts);
+  const updated = await updateAssessment(detail.id, meta);
+  const flushedQs = await flushDirtyQuestions(detail.id, questions, drafts, onUpdated);
+  return withQuestionList({ ...detail, ...updated }, flushedQs);
+}
+
+export async function publishAssessmentWithDrafts(
+  detail: TeacherAssessmentDto,
+  meta: { title: string; description: string; durationMinutes: number | null },
+  drafts: Record<string, QuestionDraft>,
+  onUpdated?: (updated: TeacherQuestionDto) => void,
+): Promise<TeacherAssessmentDto> {
+  await saveAssessmentAndDrafts(detail, meta, drafts, onUpdated);
+  return publishAssessment(detail.id);
 }
 
 export async function deleteQuestion(assessmentId: string, questionId: string): Promise<void> {

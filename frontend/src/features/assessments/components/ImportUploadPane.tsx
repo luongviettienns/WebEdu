@@ -30,7 +30,7 @@ export function ImportUploadPane({
   const imageRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
   const [type, setType] = useState<AssessmentType>('HOMEWORK');
-  const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
+  const [courseId, setCourseId] = useState('');
   const [duration, setDuration] = useState('');
   const [extras, setExtras] = useState<File[]>([]);
   const [step, setStep] = useState<Step>('idle');
@@ -39,6 +39,7 @@ export function ImportUploadPane({
   const [assessmentId, setAssessmentId] = useState('');
   const [fileName, setFileName] = useState('');
 
+  const selectedCourseId = courseId || courses[0]?.id || '';
   const stepIdx = step === 'up' ? 0 : step === 'parse' ? 1 : step === 'done' ? 2 : -1;
 
   const runImport = async (file: File) => {
@@ -50,7 +51,7 @@ export function ImportUploadPane({
       setFileName(file.name);
       return;
     }
-    if (!courseId) {
+    if (!selectedCourseId) {
       setError('Khóa HSK là bắt buộc');
       return;
     }
@@ -59,7 +60,7 @@ export function ImportUploadPane({
     try {
       setStep('parse');
       const result = await importAssessment(file, {
-        courseId,
+        courseId: selectedCourseId,
         type,
         title: title.trim() || undefined,
       });
@@ -96,7 +97,8 @@ export function ImportUploadPane({
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
-        <select className={FIELD} value={courseId} onChange={(e) => setCourseId(e.target.value)} aria-label="Khóa HSK">
+        <select className={FIELD} value={selectedCourseId} onChange={(e) => setCourseId(e.target.value)} aria-label="Khóa HSK">
+          {courses.length === 0 ? <option value="">Chưa có khóa HSK hoạt động</option> : null}
           {courses.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}

@@ -78,4 +78,102 @@ test.describe('Phase 5 — Question bank & import review', () => {
     await expect(page.getByRole('button', { name: 'Lưu nháp' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Xem trước như HV' })).toBeVisible();
   });
+
+  test('regenerates unused option ID after middle delete, edits points, and reorders with Xuống', async ({
+    page,
+  }) => {
+    await loginThroughUi(page, 'teacher.lan@webedu.vn');
+    await page.goto('/teacher/assessments');
+    await page.getByRole('button', { name: '+ Tạo đề' }).click();
+    await page.getByLabel('Tên đề').fill('Đề test thứ tự và phương án');
+    await page.getByLabel('Loại đề').selectOption('HOMEWORK');
+    const courseSelect = page.getByLabel('Khóa HSK');
+    const courseValue = await courseSelect.locator('option').nth(1).getAttribute('value');
+    if (courseValue) await courseSelect.selectOption(courseValue);
+    await page.getByRole('button', { name: 'Lưu nháp' }).click();
+    await expect(page.getByText('Đã lưu nháp')).toBeVisible();
+
+    const composer = page.getByRole('region', { name: 'Thêm câu hỏi mới' });
+    await composer.getByLabel('Nội dung câu hỏi').fill('Câu 1 đầu tiên');
+    await composer.getByRole('button', { name: '+ Thêm phương án' }).click();
+    await composer.getByPlaceholder('Phương án A').fill('Đáp án đúng');
+    await composer.getByPlaceholder('Phương án B').fill('Phương án giữa sẽ xóa');
+    await composer.getByPlaceholder('Phương án C').fill('Phương án C giữ lại');
+
+    await composer.getByRole('button', { name: 'Xóa', exact: true }).nth(1).click();
+    await expect(composer.getByPlaceholder('Phương án B')).toHaveCount(0);
+    await expect(composer.getByPlaceholder('Phương án C')).toHaveValue('Phương án C giữ lại');
+
+    await composer.getByRole('button', { name: '+ Thêm phương án' }).click();
+    await expect(composer.getByPlaceholder('Phương án B')).toHaveCount(1);
+    await expect(composer.getByPlaceholder('Phương án C')).toHaveValue('Phương án C giữ lại');
+    await composer.getByPlaceholder('Phương án B').fill('Phương án B mới');
+    await composer.getByLabel('Đáp án A').check();
+    await composer.getByLabel('Điểm', { exact: true }).fill('2');
+    await composer.getByRole('button', { name: 'Thêm câu' }).click();
+    await expect(page.getByText('1. Câu 1 đầu tiên')).toBeVisible();
+
+    await composer.getByLabel('Nội dung câu hỏi').fill('Câu 2 thứ hai');
+    await composer.getByPlaceholder('Phương án A').fill('Lựa chọn 1');
+    await composer.getByPlaceholder('Phương án B').fill('Lựa chọn 2');
+    await composer.getByLabel('Đáp án A').check();
+    await composer.getByRole('button', { name: 'Thêm câu' }).click();
+    await expect(page.getByText('2. Câu 2 thứ hai')).toBeVisible();
+
+    const card1 = page.getByRole('article', { name: 'Câu 1' });
+    await card1.getByLabel('Điểm câu 1').fill('3.5');
+    await page.getByRole('button', { name: 'Lưu nháp' }).click();
+    await expect(page.getByText('Đã lưu nháp')).toBeVisible();
+
+    await card1.getByRole('button', { name: 'Xuống' }).click();
+    await expect(page.getByText('1. Câu 2 thứ hai')).toBeVisible();
+    await expect(page.getByText('2. Câu 1 đầu tiên')).toBeVisible();
+    await expect(page.getByLabel('Điểm câu 2')).toHaveValue('3.5');
+
+    await page.reload();
+    await page
+      .locator('tr', { hasText: 'Đề test thứ tự và phương án' })
+      .getByRole('button', { name: 'Sửa' })
+      .click();
+    await expect(page.getByText('1. Câu 2 thứ hai')).toBeVisible();
+    await expect(page.getByText('2. Câu 1 đầu tiên')).toBeVisible();
+    await expect(page.getByLabel('Điểm câu 2')).toHaveValue('3.5');
+  });
+
+  test('ImportReviewPane persists edited title and question points across reload and confirms needsReview', async ({
+    page,
+  }) => {
+    await loginThroughUi(page, 'teacher.lan@webedu.vn');
+    await openUpload(page);
+    await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
+    await expect(page.getByText('3 · Hoàn tất')).toBeVisible();
+    await page.getByRole('button', { name: 'Kiểm tra đề' }).click();
+    await expect(page.getByRole('button', { name: 'Phát hành' })).toBeDisabled();
+
+    await page.getByLabel('Tên đề').fill('Đề nhập đã sửa tên');
+    await page.getByLabel('Điểm câu 1').fill('2.5');
+    await page.getByRole('button', { name: 'Lưu nháp' }).click();
+    await expect(page.getByText('Đã lưu nháp')).toBeVisible();
+
+    await page.reload();
+    await page
+      .locator('tr', { hasText: 'Đề nhập đã sửa tên' })
+      .getByRole('button', { name: 'Duyệt' })
+      .click();
+    await expect(page.getByLabel('Tên đề')).toHaveValue('Đề nhập đã sửa tên');
+    await expect(page.getByLabel('Điểm câu 1')).toHaveValue('2.5');
+    await expect(page.getByRole('button', { name: 'Phát hành' })).toBeDisabled();
+
+    const card3 = page.getByRole('article', { name: 'Câu 3' });
+    await expect(card3.getByText('Cần kiểm tra')).toBeVisible();
+    await card3.getByLabel('Đáp án A').check();
+    await card3.getByRole('button', { name: 'Lưu & xác nhận' }).click();
+    await expect(card3.getByText('Cần kiểm tra')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Phát hành' })).toBeEnabled();
+
+    await page.getByRole('button', { name: 'Phát hành' }).click();
+    await expect(
+      page.locator('tr', { hasText: 'Đề nhập đã sửa tên' }).getByText('Đã phát hành'),
+    ).toBeVisible();
+  });
 });

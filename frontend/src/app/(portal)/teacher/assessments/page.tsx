@@ -38,7 +38,7 @@ function AssessmentsContent() {
   if (view.mode === 'upload') {
     return (
       <ImportUploadPane
-        courses={bank.courses}
+        courses={bank.activeCourses}
         onBack={() => setView({ mode: 'list' })}
         onImported={(id) => setView({ mode: 'review', id })}
       />

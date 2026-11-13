@@ -3,9 +3,13 @@
 import React from 'react';
 import type { QuestionType } from '@/features/assessments/api/assessments.api';
 import { MediaAttach, type MediaItem } from '@/features/assessments/components/MediaAttach';
+import { QuestionImageBasedFields } from '@/features/assessments/components/QuestionImageBasedFields';
 import {
+  addBlankOption,
   asOptions,
   asStrings,
+  removeOptionAt,
+  toggleCorrectOption,
   updateOptionField,
   withOptionalPositiveInt,
 } from '@/features/assessments/utils/question-payload';
@@ -18,6 +22,7 @@ export function QuestionTypeFields({
   payload,
   onChange,
   hideAnswer = false,
+  disabled = false,
   groupId = 'new',
   onUploadMedia,
   assessmentId,
@@ -27,16 +32,19 @@ export function QuestionTypeFields({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
   hideAnswer?: boolean;
+  disabled?: boolean;
   groupId?: string;
   onUploadMedia?: (file: File) => Promise<string>;
   assessmentId?: string;
   mediaLibrary?: MediaItem[];
 }) {
+  const locked = hideAnswer || disabled;
   const explanation = hideAnswer ? null : (
     <textarea
       className={FIELD}
       rows={2}
       value={String(payload.explanation ?? '')}
+      readOnly={disabled}
       onChange={(e) => onChange({ ...payload, explanation: e.target.value })}
       placeholder="Giải thích (tuỳ chọn)"
       aria-label="Giải thích"
@@ -46,24 +54,17 @@ export function QuestionTypeFields({
   if (type === 'SINGLE_CHOICE' || type === 'MULTIPLE_CHOICE') {
     const options = asOptions(payload);
     const correct = asStrings(payload, 'correctOptionIds');
-    const toggle = (id: string) => {
-      if (type === 'SINGLE_CHOICE') {
-        onChange({ ...payload, correctOptionIds: [id] });
-        return;
-      }
-      const next = correct.includes(id) ? correct.filter((c) => c !== id) : [...correct, id];
-      onChange({ ...payload, correctOptionIds: next });
-    };
+    const multiple = type === 'MULTIPLE_CHOICE';
     return (
       <div className="space-y-2">
         {options.map((opt, idx) => (
           <label key={opt.id} className="flex items-center gap-2">
             <input
-              type={type === 'SINGLE_CHOICE' ? 'radio' : 'checkbox'}
+              type={multiple ? 'checkbox' : 'radio'}
               name={`correct-${groupId}`}
-              checked={correct.includes(opt.id)}
-              onChange={() => toggle(opt.id)}
-              disabled={hideAnswer}
+              checked={hideAnswer ? false : correct.includes(opt.id)}
+              onChange={() => onChange(toggleCorrectOption(payload, opt.id, multiple))}
+              disabled={locked}
               aria-label={`Đáp án ${opt.id.toUpperCase()}`}
             />
             <span className="w-5 text-xs font-semibold text-[var(--ink-2)]">{opt.id.toUpperCase()}</span>
@@ -72,34 +73,24 @@ export function QuestionTypeFields({
               value={opt.text}
               onChange={(e) => onChange({ ...payload, options: updateOptionField(options, idx, 'text', e.target.value) })}
               placeholder={`Phương án ${opt.id.toUpperCase()}`}
-              readOnly={hideAnswer}
+              readOnly={locked}
             />
-            {!hideAnswer && options.length > 2 ? (
+            {!locked && options.length > 2 ? (
               <button
                 type="button"
                 className="text-xs font-semibold text-[var(--red)]"
-                onClick={() => {
-                  const next = options.filter((_, i) => i !== idx);
-                  onChange({
-                    ...payload,
-                    options: next,
-                    correctOptionIds: correct.filter((id) => next.some((o) => o.id === id)),
-                  });
-                }}
+                onClick={() => onChange(removeOptionAt(payload, idx))}
               >
                 Xóa
               </button>
             ) : null}
           </label>
         ))}
-        {!hideAnswer && options.length < 4 ? (
+        {!locked && options.length < 4 ? (
           <button
             type="button"
             className="text-xs font-semibold text-[var(--blue)]"
-            onClick={() => {
-              const id = String.fromCharCode(97 + options.length);
-              onChange({ ...payload, options: [...options, { id, text: '' }] });
-            }}
+            onClick={() => onChange(addBlankOption(payload))}
           >
             + Thêm phương án
           </button>
@@ -117,6 +108,7 @@ export function QuestionTypeFields({
           className={FIELD}
           rows={3}
           value={answers.join('\n')}
+          readOnly={disabled}
           onChange={(e) => onChange({ ...payload, acceptedAnswers: e.target.value.split('\n') })}
           placeholder="Mỗi dòng một đáp án chấp nhận"
           aria-label="Đáp án chấp nhận"
@@ -125,6 +117,7 @@ export function QuestionTypeFields({
           <input
             type="checkbox"
             checked={Boolean(payload.pinyinSensitive)}
+            disabled={disabled}
             onChange={(e) => onChange({ ...payload, pinyinSensitive: e.target.checked })}
           />
           Phân biệt pinyin
@@ -145,12 +138,13 @@ export function QuestionTypeFields({
           onChange={(e) => onChange({ ...payload, tokens: e.target.value.split('\n') })}
           placeholder="Mỗi dòng một mảnh từ"
           aria-label="Mảnh từ"
-          readOnly={hideAnswer}
+          readOnly={locked}
         />
         {hideAnswer ? null : (
           <input
             className={FIELD}
             value={String(payload.correctSentence ?? '')}
+            readOnly={disabled}
             onChange={(e) => onChange({ ...payload, correctSentence: e.target.value })}
             placeholder="Câu đúng"
             aria-label="Câu đúng"
@@ -168,6 +162,7 @@ export function QuestionTypeFields({
           className={FIELD}
           rows={2}
           value={String(payload.sampleAnswer ?? '')}
+          readOnly={disabled}
           onChange={(e) => onChange({ ...payload, sampleAnswer: e.target.value })}
           placeholder="Đáp án mẫu"
           aria-label="Đáp án mẫu"
@@ -176,6 +171,7 @@ export function QuestionTypeFields({
           className={FIELD}
           rows={2}
           value={String(payload.rubric ?? '')}
+          readOnly={disabled}
           onChange={(e) => onChange({ ...payload, rubric: e.target.value })}
           placeholder="Rubric / tiêu chí chấm"
           aria-label="Rubric"
@@ -186,6 +182,7 @@ export function QuestionTypeFields({
           max={50000}
           className={FIELD}
           value={String(payload.maxLength ?? '')}
+          readOnly={disabled}
           onChange={(e) => onChange(withOptionalPositiveInt(payload, 'maxLength', e.target.value))}
           placeholder="Số ký tự tối đa"
           aria-label="Số ký tự tối đa"
@@ -198,8 +195,16 @@ export function QuestionTypeFields({
   if (type === 'LISTENING') {
     return (
       <div className="space-y-2">
-        <MediaAttach kind="AUDIO" value={String(payload.mediaId ?? '')} library={mediaLibrary} assessmentId={assessmentId}
-          onChange={(id) => onChange({ ...payload, mediaId: id })} onUpload={hideAnswer ? undefined : onUploadMedia} />
+        <MediaAttach
+          kind="AUDIO"
+          value={String(payload.mediaId ?? '')}
+          library={mediaLibrary}
+          assessmentId={assessmentId}
+          onChange={(id) => {
+            if (!locked) onChange({ ...payload, mediaId: id });
+          }}
+          onUpload={locked ? undefined : onUploadMedia}
+        />
         {hideAnswer ? null : (
           <input
             type="number"
@@ -207,6 +212,7 @@ export function QuestionTypeFields({
             max={20}
             className={FIELD}
             value={String(payload.maxListens ?? '')}
+            readOnly={disabled}
             onChange={(e) => onChange(withOptionalPositiveInt(payload, 'maxListens', e.target.value))}
             placeholder="Số lần nghe tối đa"
             aria-label="Số lần nghe tối đa"
@@ -217,64 +223,16 @@ export function QuestionTypeFields({
     );
   }
 
-  const options = asOptions(payload);
-  const correct = asStrings(payload, 'correctOptionIds');
   return (
-    <div className="space-y-2">
-      <MediaAttach kind="IMAGE" value={String(payload.mediaId ?? '')} library={mediaLibrary} assessmentId={assessmentId}
-        onChange={(id) => onChange({ ...payload, mediaId: id })} onUpload={hideAnswer ? undefined : onUploadMedia} />
-      {hideAnswer ? null : (
-        <input
-          className={FIELD}
-          value={String(payload.caption ?? '')}
-          onChange={(e) => onChange({ ...payload, caption: e.target.value })}
-          placeholder="Chú thích ảnh"
-          aria-label="Chú thích ảnh"
-        />
-      )}
-      {options.length > 0 ? (
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          {options.map((opt, idx) => (
-            <div key={opt.id} className="space-y-1 rounded-lg border border-[var(--line)] p-2">
-              <label className="flex items-center gap-1 text-xs font-semibold">
-                <input
-                  type="radio"
-                  name={`img-correct-${groupId}`}
-                  checked={correct.includes(opt.id)}
-                  disabled={hideAnswer}
-                  onChange={() => onChange({ ...payload, correctOptionIds: [opt.id] })}
-                  aria-label={`Đáp án ${opt.id.toUpperCase()}`}
-                />
-                {opt.id.toUpperCase()}
-              </label>
-              <MediaAttach kind="IMAGE" value={opt.imageMediaId ?? ''} library={mediaLibrary} assessmentId={assessmentId}
-                onChange={(id) => onChange({ ...payload, options: updateOptionField(options, idx, 'imageMediaId', id) })}
-                onUpload={hideAnswer ? undefined : onUploadMedia} />
-              <input
-                className={FIELD}
-                value={opt.text}
-                readOnly={hideAnswer}
-                onChange={(e) => onChange({ ...payload, options: updateOptionField(options, idx, 'text', e.target.value) })}
-                placeholder="Nhãn"
-                aria-label={`Nhãn phương án ${opt.id.toUpperCase()}`}
-              />
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {!hideAnswer && options.length < 4 ? (
-        <button
-          type="button"
-          className="text-xs font-semibold text-[var(--blue)]"
-          onClick={() => {
-            const id = String.fromCharCode(97 + options.length);
-            onChange({ ...payload, options: [...options, { id, text: '' }] });
-          }}
-        >
-          + Thêm phương án ảnh
-        </button>
-      ) : null}
-      {explanation}
-    </div>
+    <QuestionImageBasedFields
+      payload={payload}
+      onChange={onChange}
+      hideAnswer={hideAnswer}
+      disabled={disabled}
+      groupId={groupId}
+      onUploadMedia={onUploadMedia}
+      assessmentId={assessmentId}
+      mediaLibrary={mediaLibrary}
+    />
   );
 }

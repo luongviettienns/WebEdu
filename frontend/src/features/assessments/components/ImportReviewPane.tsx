@@ -1,28 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import {
-  QUESTION_TYPE_LABELS,
-  addQuestion,
-  deleteQuestion,
-  downloadOriginal,
-  emptyPayload,
-  getAssessmentReview,
-  listMedia,
-  publishAssessment,
-  reorderQuestions,
-  updateQuestion,
-  uploadMedia,
-  type QuestionType,
-  type TeacherAssessmentDto,
-  type TeacherQuestionDto,
-} from '@/features/assessments/api/assessments.api';
-import type { MediaItem } from '@/features/assessments/components/MediaAttach';
-import { QuestionTypeFields } from '@/features/assessments/components/QuestionTypeFields';
-import { extractErrorMessage } from '@/lib/api-client';
+import { downloadOriginal } from '@/features/assessments/api/assessments.api';
+import { AssessmentQuestionCard } from '@/features/assessments/components/AssessmentQuestionCard';
+import { NewQuestionComposer } from '@/features/assessments/components/NewQuestionComposer';
+import { useAssessmentWorkspace } from '@/features/assessments/hooks/useAssessments';
+import { draftFromQuestion } from '@/features/assessments/utils/question-payload';
 
 const FIELD =
-  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
+  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
 
 export function ImportReviewPane({
   assessmentId,
@@ -33,38 +19,13 @@ export function ImportReviewPane({
   onBack: () => void;
   onPublished: () => void;
 }) {
-  const [detail, setDetail] = useState<TeacherAssessmentDto | null>(null);
+  const ws = useAssessmentWorkspace(assessmentId, 'review');
   const [onlyReview, setOnlyReview] = useState(false);
-  const [preview, setPreview] = useState(false);
-  const [error, setError] = useState('');
-  const [saved, setSaved] = useState('');
-  const [library, setLibrary] = useState<MediaItem[]>([]);
   const [original, setOriginal] = useState<{ url: string; name: string; isPdf: boolean } | null>(null);
-  const [qType, setQType] = useState<QuestionType>('SINGLE_CHOICE');
-  const [prompt, setPrompt] = useState('');
-  const [payload, setPayload] = useState<Record<string, unknown>>(emptyPayload('SINGLE_CHOICE'));
+  const originalFileName = ws.detail?.originalFileName;
 
   useEffect(() => {
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const row = await getAssessmentReview(assessmentId, { signal: controller.signal });
-        if (!controller.signal.aborted) setDetail(row);
-      } catch (err) {
-        if (!controller.signal.aborted) setError(extractErrorMessage(err, 'Không thể tải bản duyệt'));
-      }
-    })();
-    return () => controller.abort();
-  }, [assessmentId]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void listMedia(assessmentId, controller.signal).then(setLibrary).catch(() => undefined);
-    return () => controller.abort();
-  }, [assessmentId]);
-
-  useEffect(() => {
-    if (!detail?.originalFileName) return;
+    if (!originalFileName) return;
     let objectUrl = '';
     const controller = new AbortController();
     void downloadOriginal(assessmentId, controller.signal)
@@ -81,73 +42,84 @@ export function ImportReviewPane({
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [assessmentId, detail?.originalFileName]);
+  }, [assessmentId, originalFileName]);
 
-  const questions = (detail?.questions ?? []).filter((q) => !onlyReview || q.needsReview);
-  const blocked = (detail?.questions ?? []).some((q) => q.needsReview);
-
-  const persistQuestion = async (q: TeacherQuestionDto, patch: { prompt?: string; payload?: Record<string, unknown> }) => {
-    if (!detail) return;
-    setError('');
-    try {
-      const updated = await updateQuestion(detail.id, q.id, patch);
-      setDetail({
-        ...detail,
-        questions: (detail.questions ?? []).map((item) => (item.id === q.id ? updated : item)),
-      });
-    } catch (err) {
-      setError(extractErrorMessage(err, 'Không thể sửa câu hỏi'));
-    }
-  };
-
-  const handleUpload = async (file: File) => {
-    const row = await uploadMedia(assessmentId, file);
-    setLibrary((curr) => [...curr, row]);
-    return row.id;
-  };
-
-  const fields = {
-    assessmentId,
-    mediaLibrary: library,
-    onUploadMedia: handleUpload,
-  };
+  const visibleQuestions = ws.questions.filter((q) => !onlyReview || q.needsReview);
 
   return (
     <div className="space-y-4">
       <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
         ← Danh sách đề
       </button>
-      {detail?.summary ? <p className="text-sm text-[var(--ink-2)]">{detail.summary}</p> : null}
-      {error ? (
+      {ws.detail?.summary ? <p className="text-sm text-[var(--ink-2)]">{ws.detail.summary}</p> : null}
+      {ws.error ? (
         <div role="alert" className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] px-4 py-3 text-sm text-[var(--red-ink)]">
-          {error}
+          {ws.error}
         </div>
       ) : null}
-      {saved ? <p className="text-sm text-[var(--jade)]">{saved}</p> : null}
+      {ws.saved ? (
+        <p role="status" className="text-sm font-medium text-[var(--jade)]">
+          {ws.saved}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} />
           Chỉ hiện câu cần kiểm tra
         </label>
-        <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={() => { setSaved('Đã lưu nháp'); }}>
+        <button
+          type="button"
+          disabled={!ws.detail || ws.isLocked || ws.saving}
+          className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => void ws.saveDraft()}
+        >
           Lưu nháp
-        </button>
-        <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm font-semibold" onClick={() => setPreview((v) => !v)}>
-          {preview ? 'Đóng xem trước' : 'Xem trước như HV'}
         </button>
         <button
           type="button"
-          disabled={blocked}
-          onClick={() => {
-            void publishAssessment(assessmentId).then(onPublished).catch((err) => {
-              setError(extractErrorMessage(err, 'Không thể phát hành'));
-            });
-          }}
+          className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm font-semibold"
+          onClick={() => ws.setPreview((v) => !v)}
+        >
+          {ws.preview ? 'Đóng xem trước' : 'Xem trước như HV'}
+        </button>
+        <button
+          type="button"
+          disabled={!ws.detail || ws.isLocked || ws.questions.length === 0 || ws.hasNeedsReview || ws.saving}
+          onClick={() => void ws.publish(onPublished)}
           className="rounded-lg bg-[var(--red)] px-4 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           Phát hành
         </button>
       </div>
+      {ws.detail ? (
+        <div className="grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
+          <input
+            className={FIELD}
+            value={ws.title}
+            disabled={ws.isLocked || ws.saving}
+            onChange={(e) => ws.setTitle(e.target.value)}
+            placeholder="Tên đề"
+            aria-label="Tên đề"
+          />
+          <input
+            className={FIELD}
+            value={ws.durationMinutes}
+            disabled={ws.isLocked || ws.saving}
+            onChange={(e) => ws.setDurationMinutes(e.target.value)}
+            placeholder="Thời gian (phút)"
+            aria-label="Thời gian làm bài"
+          />
+          <textarea
+            className={`${FIELD} md:col-span-2`}
+            rows={2}
+            value={ws.description}
+            disabled={ws.isLocked || ws.saving}
+            onChange={(e) => ws.setDescription(e.target.value)}
+            placeholder="Mô tả đề (tuỳ chọn)"
+            aria-label="Mô tả đề"
+          />
+        </div>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4 text-sm text-[var(--ink-2)]">
           {original ? (
@@ -166,106 +138,40 @@ export function ImportReviewPane({
           )}
         </div>
         <div className="space-y-3">
-          {questions.map((q) => {
-            const index = (detail?.questions ?? []).findIndex((item) => item.id === q.id);
+          {visibleQuestions.map((q) => {
+            const index = ws.questions.findIndex((item) => item.id === q.id);
             return (
-              <div
+              <AssessmentQuestionCard
                 key={q.id}
-                className={`rounded-xl border p-3 ${q.needsReview ? 'border-[var(--amber)] bg-[var(--amber-soft)]' : 'border-[var(--line)] bg-[var(--surface)]'}`}
-              >
-                {q.needsReview ? <div className="mb-1 text-xs font-semibold text-[var(--amber)]">Cần kiểm tra</div> : null}
-                <input
-                  className="mb-2 w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm"
-                  value={q.prompt}
-                  aria-label={`Nội dung câu ${q.position}`}
-                  readOnly={preview}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setDetail((curr) =>
-                      curr
-                        ? { ...curr, questions: (curr.questions ?? []).map((item) => (item.id === q.id ? { ...item, prompt: next } : item)) }
-                        : curr,
-                    );
-                  }}
-                  onBlur={(e) => { if (!preview) void persistQuestion(q, { prompt: e.target.value }); }}
-                />
-                <QuestionTypeFields
-                  type={q.type}
-                  payload={q.payload}
-                  groupId={q.id}
-                  hideAnswer={preview}
-                  onChange={(next) => void persistQuestion(q, { payload: next })}
-                  {...fields}
-                />
-                {preview ? null : (
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
-                    {q.needsReview ? (
-                      <button type="button" className="text-[var(--blue)]" onClick={() => void persistQuestion(q, { prompt: q.prompt, payload: q.payload })}>
-                        Lưu &amp; xác nhận
-                      </button>
-                    ) : null}
-                    <button type="button" className="text-[var(--blue)]" onClick={() => {
-                      if (!detail?.questions) return;
-                      const next = [...detail.questions];
-                      const j = index - 1;
-                      if (j < 0) return;
-                      const swap = next[index]!;
-                      next[index] = next[j]!;
-                      next[j] = swap;
-                      void reorderQuestions(detail.id, next.map((item) => item.id))
-                        .then((rows) => setDetail({ ...detail, questions: rows }))
-                        .catch((err) => setError(extractErrorMessage(err, 'Không thể đổi thứ tự')));
-                    }}>Lên</button>
-                    <button type="button" className="text-[var(--red)]" onClick={() => {
-                      if (!detail) return;
-                      void deleteQuestion(detail.id, q.id)
-                        .then(() => {
-                          const rest = (detail.questions ?? []).filter((item) => item.id !== q.id);
-                          setDetail({ ...detail, questions: rest, questionCount: rest.length });
-                        })
-                        .catch((err) => setError(extractErrorMessage(err, 'Không thể xóa câu hỏi')));
-                    }}>Xóa câu</button>
-                  </div>
-                )}
-              </div>
+                question={q}
+                draft={ws.drafts[q.id] ?? draftFromQuestion(q)}
+                index={index}
+                total={ws.questions.length}
+                preview={ws.preview}
+                disabled={ws.isLocked || ws.preview}
+                saving={ws.saving}
+                assessmentId={assessmentId}
+                mediaLibrary={ws.library}
+                onUploadMedia={ws.handleUpload}
+                onDraftChange={ws.setQuestionDraft}
+                onSave={(row, patch) => void ws.handlePatchQuestion(row, patch, 'Đã lưu câu hỏi')}
+                onConfirm={(row, patch) => void ws.handlePatchQuestion(row, patch)}
+                onMove={(idx, delta) => void ws.handleMove(idx, delta)}
+                onDelete={(row) => void ws.handleDelete(row)}
+                onValidationError={ws.setError}
+              />
             );
           })}
-          {preview ? null : (
-            <div className="space-y-2 rounded-xl border border-[var(--line)] p-3">
-              <select
-                className={FIELD}
-                value={qType}
-                aria-label="Dạng câu"
-                onChange={(e) => {
-                  const next = e.target.value as QuestionType;
-                  setQType(next);
-                  setPayload(emptyPayload(next));
-                }}
-              >
-                {Object.entries(QUESTION_TYPE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
-                ))}
-              </select>
-              <textarea className={FIELD} rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Nội dung câu hỏi" aria-label="Nội dung câu hỏi mới" />
-              <QuestionTypeFields type={qType} payload={payload} onChange={setPayload} {...fields} />
-              <button
-                type="button"
-                className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm font-semibold"
-                onClick={() => {
-                  if (!detail) return;
-                  void addQuestion(detail.id, { type: qType, prompt: prompt.trim() || 'Câu mới', payload, points: 1 })
-                    .then((q) => {
-                      setDetail({ ...detail, questions: [...(detail.questions ?? []), q], questionCount: (detail.questions?.length ?? 0) + 1 });
-                      setPrompt('');
-                      setPayload(emptyPayload(qType));
-                    })
-                    .catch((err) => setError(extractErrorMessage(err, 'Không thể thêm câu hỏi')));
-                }}
-              >
-                Thêm câu
-              </button>
-            </div>
-          )}
+          {!ws.preview && ws.detail ? (
+            <NewQuestionComposer
+              assessmentId={assessmentId}
+              mediaLibrary={ws.library}
+              onUploadMedia={ws.handleUpload}
+              onAdd={ws.handleAddQuestion}
+              disabled={ws.isLocked}
+              saving={ws.saving}
+            />
+          ) : null}
         </div>
       </div>
     </div>
