@@ -47,14 +47,18 @@ export interface TeacherQuestionDto {
 export interface TeacherAssessmentDto {
   id: string;
   title: string;
+  description?: string;
   type: AssessmentType;
   courseId: string;
   durationMinutes: number | null;
   status: AssessmentStatus;
   isLocked: boolean;
+  originalFileName?: string | null;
+  assignedClassCount?: number;
   totalPoints: number;
   questionCount: number;
   createdById: string;
+  createdByName?: string;
   updatedAt: string;
   questions?: TeacherQuestionDto[];
   recognizedCount?: number;
@@ -74,6 +78,15 @@ export interface ListAssessmentsParams {
   courseId?: string;
   status?: AssessmentStatus;
   search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AssessmentListResult {
+  items: TeacherAssessmentDto[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
@@ -89,22 +102,34 @@ export function emptyPayload(type: QuestionType): Record<string, unknown> {
     };
   }
   if (type === 'FILL_BLANK') return { acceptedAnswers: [''] };
-  if (type === 'ORDERING') return { tokens: ['', ''] };
+  if (type === 'ORDERING') return { tokens: ['', ''], correctSentence: '' };
   if (type === 'ESSAY') return { sampleAnswer: '', rubric: '' };
+  if (type === 'IMAGE_BASED') {
+    return {
+      mediaId: '',
+      options: [
+        { id: 'a', text: '' },
+        { id: 'b', text: '' },
+      ],
+      correctOptionIds: [],
+    };
+  }
   return { mediaId: '' };
 }
 
 export async function listAssessments(
   params: ListAssessmentsParams = {},
   options?: RequestOptions,
-): Promise<TeacherAssessmentDto[]> {
+): Promise<AssessmentListResult> {
   const qs = buildQueryString({
     type: params.type,
     courseId: params.courseId,
     status: params.status,
     search: params.search?.trim() || undefined,
+    page: params.page,
+    limit: params.limit,
   });
-  return requestJson<TeacherAssessmentDto[]>(`/assessments${qs}`, {
+  return requestJson<AssessmentListResult>(`/assessments${qs}`, {
     method: 'GET',
     signal: options?.signal,
   });
@@ -128,6 +153,7 @@ export async function createAssessment(payload: {
   title: string;
   type: AssessmentType;
   courseId: string;
+  description?: string;
   durationMinutes?: number;
 }): Promise<TeacherAssessmentDto> {
   return requestJson<TeacherAssessmentDto>('/assessments', {
@@ -138,7 +164,7 @@ export async function createAssessment(payload: {
 
 export async function updateAssessment(
   id: string,
-  payload: { title?: string; durationMinutes?: number },
+  payload: { title?: string; description?: string; durationMinutes?: number },
 ): Promise<TeacherAssessmentDto> {
   return requestJson<TeacherAssessmentDto>(`/assessments/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -190,6 +216,94 @@ export async function deleteQuestion(assessmentId: string, questionId: string): 
   );
 }
 
+export async function reorderQuestions(
+  assessmentId: string,
+  questionIds: string[],
+): Promise<TeacherQuestionDto[]> {
+  return requestJson<TeacherQuestionDto[]>(
+    `/assessments/${encodeURIComponent(assessmentId)}/questions/reorder`,
+    { method: 'PUT', body: JSON.stringify({ questionIds }) },
+  );
+}
+
+async function throwIfNotOk(response: Response, instance: string, fallback: string): Promise<void> {
+  if (response.ok) return;
+  let problem: ProblemDetails;
+  try {
+    problem = (await response.json()) as ProblemDetails;
+  } catch {
+    problem = {
+      type: 'about:blank',
+      title: response.statusText || 'HTTP Error',
+      status: response.status,
+      detail: fallback,
+      instance,
+    };
+  }
+  throw new ApiClientError(response.status, problem);
+}
+
+export async function listMedia(
+  assessmentId: string,
+  signal?: AbortSignal,
+): Promise<Array<{ id: string; kind: string; mime: string }>> {
+  return requestJson(`/assessments/${encodeURIComponent(assessmentId)}/media`, {
+    method: 'GET',
+    signal,
+  });
+}
+
+export async function fetchMedia(
+  assessmentId: string,
+  mediaId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const instance = `/assessments/${assessmentId}/media/${mediaId}`;
+  const response = await fetch(`${API_BASE_URL}${instance}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    signal,
+  });
+  await throwIfNotOk(response, instance, 'Không tải được media');
+  return response.blob();
+}
+
+export async function uploadMedia(
+  assessmentId: string,
+  file: File,
+): Promise<{ id: string; kind: string; mime: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const instance = `/assessments/${assessmentId}/media`;
+  const response = await fetch(`${API_BASE_URL}${instance}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    body: form,
+  });
+  await throwIfNotOk(response, instance, 'Không thể tải media');
+  return (await response.json()) as { id: string; kind: string; mime: string };
+}
+
+export async function downloadOriginal(
+  assessmentId: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
+  const instance = `/assessments/${assessmentId}/original`;
+  const response = await fetch(`${API_BASE_URL}${instance}`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    signal,
+  });
+  await throwIfNotOk(response, instance, 'Không có file gốc để tải lại');
+  const blob = await response.blob();
+  const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(response.headers.get('content-disposition') ?? '');
+  const filename = match ? decodeURIComponent(match[1]!.replace(/"/g, '')) : 'de-goc';
+  return { blob, filename };
+}
+
 export async function importAssessment(
   file: File,
   payload: { courseId: string; type: AssessmentType; title?: string },
@@ -208,20 +322,6 @@ export async function importAssessment(
     body: form,
     signal,
   });
-  if (!response.ok) {
-    let problem: ProblemDetails;
-    try {
-      problem = (await response.json()) as ProblemDetails;
-    } catch {
-      problem = {
-        type: 'about:blank',
-        title: response.statusText || 'HTTP Error',
-        status: response.status,
-        detail: 'Không thể tải đề',
-        instance: '/assessments/import',
-      };
-    }
-    throw new ApiClientError(response.status, problem);
-  }
+  await throwIfNotOk(response, '/assessments/import', 'Không thể tải đề');
   return (await response.json()) as ImportResult;
 }

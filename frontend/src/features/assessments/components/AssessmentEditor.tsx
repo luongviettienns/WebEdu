@@ -9,12 +9,16 @@ import {
   createAssessment,
   emptyPayload,
   getAssessment,
+  listMedia,
+  updateAssessment,
   updateQuestion,
+  uploadMedia,
   type AssessmentType,
   type QuestionType,
   type TeacherAssessmentDto,
   type TeacherQuestionDto,
 } from '@/features/assessments/api/assessments.api';
+import type { MediaItem } from '@/features/assessments/components/MediaAttach';
 import { QuestionTypeFields } from '@/features/assessments/components/QuestionTypeFields';
 import { extractErrorMessage } from '@/lib/api-client';
 
@@ -31,6 +35,7 @@ export function AssessmentEditor({
   onBack: () => void;
 }) {
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [type, setType] = useState<AssessmentType>('HOMEWORK');
   const [courseId, setCourseId] = useState(courses[0]?.id ?? '');
   const [durationMinutes, setDurationMinutes] = useState('');
@@ -41,6 +46,7 @@ export function AssessmentEditor({
   const [points, setPoints] = useState('1');
   const [payload, setPayload] = useState<Record<string, unknown>>(emptyPayload('SINGLE_CHOICE'));
   const [preview, setPreview] = useState(false);
+  const [library, setLibrary] = useState<MediaItem[]>([]);
 
   useEffect(() => {
     if (!assessmentId) return;
@@ -51,6 +57,7 @@ export function AssessmentEditor({
         if (controller.signal.aborted) return;
         setDetail(row);
         setTitle(row.title);
+        setDescription(row.description ?? '');
         setType(row.type);
         setCourseId(row.courseId);
         setDurationMinutes(row.durationMinutes ? String(row.durationMinutes) : '');
@@ -61,21 +68,32 @@ export function AssessmentEditor({
     return () => controller.abort();
   }, [assessmentId]);
 
+  const detailId = detail?.id;
+  useEffect(() => {
+    if (!detailId) return;
+    const controller = new AbortController();
+    void listMedia(detailId, controller.signal).then(setLibrary).catch(() => undefined);
+    return () => controller.abort();
+  }, [detailId]);
+
   const saveMeta = async () => {
     setError('');
     if (!title.trim() || !courseId) {
       setError('Tên đề và khóa HSK là bắt buộc');
       return;
     }
+    const meta = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+      durationMinutes: durationMinutes ? Number(durationMinutes) : undefined,
+    };
     try {
-      if (!assessmentId) {
-        const created = await createAssessment({
-          title: title.trim(),
-          type,
-          courseId,
-          durationMinutes: durationMinutes ? Number(durationMinutes) : undefined,
-        });
+      if (!detail) {
+        const created = await createAssessment({ ...meta, type, courseId });
         setDetail(created);
+      } else {
+        const updated = await updateAssessment(detail.id, meta);
+        setDetail({ ...detail, ...updated, questions: detail.questions });
       }
     } catch (err) {
       setError(extractErrorMessage(err, 'Không thể lưu đề'));
@@ -117,6 +135,19 @@ export function AssessmentEditor({
     }
   };
 
+  const handleUpload = detail
+    ? async (file: File) => {
+        try {
+          const row = await uploadMedia(detail.id, file);
+          setLibrary((curr) => [...curr, row]);
+          return row.id;
+        } catch (err) {
+          setError(extractErrorMessage(err, 'Không thể tải media'));
+          throw err;
+        }
+      }
+    : undefined;
+
   return (
     <div className="space-y-4">
       <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
@@ -129,22 +160,28 @@ export function AssessmentEditor({
       ) : null}
       <div className="grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
         <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tên đề" aria-label="Tên đề" />
-        <select className={FIELD} value={type} onChange={(e) => setType(e.target.value as AssessmentType)} aria-label="Loại đề">
+        <select className={FIELD} value={type} onChange={(e) => setType(e.target.value as AssessmentType)} aria-label="Loại đề" disabled={Boolean(detail)}>
           {Object.entries(ASSESSMENT_TYPE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
         </select>
-        <select className={FIELD} value={courseId} onChange={(e) => setCourseId(e.target.value)} aria-label="Khóa HSK">
+        <select className={FIELD} value={courseId} onChange={(e) => setCourseId(e.target.value)} aria-label="Khóa HSK" disabled={Boolean(detail)}>
           {courses.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
         <input className={FIELD} value={durationMinutes} onChange={(e) => setDurationMinutes(e.target.value)} placeholder="Thời gian (phút)" aria-label="Thời gian làm bài" />
-        {!detail ? (
-          <button type="button" onClick={() => void saveMeta()} className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white">
-            Lưu nháp
-          </button>
-        ) : null}
+        <textarea
+          className={`${FIELD} md:col-span-2`}
+          rows={2}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Mô tả đề (tuỳ chọn)"
+          aria-label="Mô tả đề"
+        />
+        <button type="button" onClick={() => void saveMeta()} className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white">
+          Lưu nháp
+        </button>
       </div>
 
       {detail ? (
@@ -162,6 +199,10 @@ export function AssessmentEditor({
                 type={q.type}
                 payload={q.payload}
                 hideAnswer={preview}
+                groupId={q.id}
+                assessmentId={detail.id}
+                mediaLibrary={library}
+                onUploadMedia={handleUpload}
                 onChange={(next) => void persistQuestion(q, next)}
               />
             </div>
@@ -184,7 +225,7 @@ export function AssessmentEditor({
               </select>
               <textarea className={`${FIELD} w-full`} rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Nội dung câu hỏi" aria-label="Nội dung câu hỏi" />
               <input className={FIELD} value={points} onChange={(e) => setPoints(e.target.value)} aria-label="Điểm" />
-              <QuestionTypeFields type={qType} payload={payload} onChange={setPayload} />
+              <QuestionTypeFields type={qType} payload={payload} onChange={setPayload} onUploadMedia={handleUpload} assessmentId={detail.id} mediaLibrary={library} />
               <button type="button" onClick={() => void saveQuestion()} className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white">
                 Thêm câu
               </button>

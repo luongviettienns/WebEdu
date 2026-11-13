@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 67-endpoint inventory through Phase 5 (`docs/test-inventory-api.md`).
+ * Canonical 71-endpoint inventory through Phase 5 (`docs/test-inventory-api.md`).
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -89,9 +89,13 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'PUT', path: '/api/v1/sessions/:sessionId/attendance', isPublic: false },
   { method: 'GET', path: '/api/v1/classes/:classId/attendance/matrix', isPublic: false },
   { method: 'GET', path: '/api/v1/attendance/me', isPublic: false },
-  // AssessmentsController (13 — Phase 5)
+  // AssessmentsController (17 — Phase 5)
   { method: 'POST', path: '/api/v1/assessments/import', isPublic: false },
   { method: 'GET', path: '/api/v1/assessments/:id/review', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/original', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/media', isPublic: false },
+  { method: 'POST', path: '/api/v1/assessments/:id/media', isPublic: false },
+  { method: 'GET', path: '/api/v1/assessments/:id/media/:mediaId', isPublic: false },
   { method: 'POST', path: '/api/v1/assessments', isPublic: false },
   { method: 'GET', path: '/api/v1/assessments', isPublic: false },
   { method: 'GET', path: '/api/v1/assessments/:id', isPublic: false },
@@ -196,7 +200,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(67);
+    expect(actualRoutes).toHaveLength(71);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -473,6 +477,10 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'patch', url: `/api/v1/assessments/${nilId}` },
       { method: 'delete', url: `/api/v1/assessments/${nilId}` },
       { method: 'get', url: `/api/v1/assessments/${nilId}/review` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/original` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/media` },
+      { method: 'post', url: `/api/v1/assessments/${nilId}/media` },
+      { method: 'get', url: `/api/v1/assessments/${nilId}/media/${nilId}` },
       { method: 'post', url: `/api/v1/assessments/${nilId}/duplicate` },
       { method: 'post', url: `/api/v1/assessments/${nilId}/publish` },
       { method: 'post', url: `/api/v1/assessments/${nilId}/questions` },

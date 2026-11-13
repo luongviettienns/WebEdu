@@ -13,13 +13,16 @@ type QuestionRow = {
 type AssessmentRow = {
   id: string;
   title: string;
+  description?: string | null;
   type: TeacherAssessmentDto['type'];
   courseId: string;
   durationMinutes: number | null;
   status: TeacherAssessmentDto['status'];
   isLocked: boolean;
+  originalFileName?: string | null;
   createdById: string;
   updatedAt: Date;
+  createdBy?: { fullName: string } | null;
   questions?: QuestionRow[];
 };
 
@@ -40,14 +43,18 @@ export function toTeacherAssessmentDto(a: AssessmentRow): TeacherAssessmentDto {
   return {
     id: a.id,
     title: a.title,
+    description: a.description ?? '',
     type: a.type,
     courseId: a.courseId,
     durationMinutes: a.durationMinutes,
     status: a.status,
     isLocked: a.isLocked,
+    originalFileName: a.originalFileName ?? null,
+    assignedClassCount: 0,
     totalPoints: questions.reduce((sum, q) => sum + q.points, 0),
     questionCount: questions.length,
     createdById: a.createdById,
+    createdByName: a.createdBy?.fullName ?? '',
     updatedAt: a.updatedAt.toISOString(),
     questions,
   };

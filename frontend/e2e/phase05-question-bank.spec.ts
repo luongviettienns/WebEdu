@@ -23,6 +23,12 @@ async function loginThroughUi(page: Page, email: string, password = 'Password@12
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
 }
 
+async function openUpload(page: Page): Promise<void> {
+  await page.goto('/teacher/assessments');
+  await page.getByRole('button', { name: 'Tải đề Word/PDF' }).click();
+  await expect(page.getByRole('heading', { name: 'Tải đề Word/PDF' })).toBeVisible();
+}
+
 test.describe('Phase 5 — Question bank & import review', () => {
   test.beforeEach(async () => {
     await reseedQaDatabase();
@@ -51,11 +57,7 @@ test.describe('Phase 5 — Question bank & import review', () => {
 
   test('legacy .doc upload shows a clear error', async ({ page }) => {
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
-    await page.goto('/teacher/assessments');
-    const courseSelect = page.getByLabel('Khóa HSK');
-    const courseValue = await courseSelect.locator('option').nth(1).getAttribute('value');
-    if (courseValue) await courseSelect.selectOption(courseValue);
-
+    await openUpload(page);
     await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles({
       name: 'de.doc',
       mimeType: 'application/msword',
@@ -66,14 +68,14 @@ test.describe('Phase 5 — Question bank & import review', () => {
 
   test('publish is blocked while imported questions still need review', async ({ page }) => {
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
-    await page.goto('/teacher/assessments');
-    const courseSelect = page.getByLabel('Khóa HSK');
-    const courseValue = await courseSelect.locator('option').nth(1).getAttribute('value');
-    if (courseValue) await courseSelect.selectOption(courseValue);
-
+    await openUpload(page);
     await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
+    await expect(page.getByText('3 · Hoàn tất')).toBeVisible();
     await expect(page.getByText('Nhận diện 3 câu; 1 câu cần kiểm tra')).toBeVisible();
-    await page.getByRole('button', { name: 'Phát hành' }).click();
-    await expect(page.getByText(/Còn câu hỏi cần kiểm tra/i)).toBeVisible();
+    await page.getByRole('button', { name: 'Kiểm tra đề' }).click();
+    await expect(page.getByRole('button', { name: 'Phát hành' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Thêm câu' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Lưu nháp' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Xem trước như HV' })).toBeVisible();
   });
 });

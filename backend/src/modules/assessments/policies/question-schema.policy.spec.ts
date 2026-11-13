@@ -28,10 +28,31 @@ describe('QuestionSchemaPolicy (Task 5.2 TDD)', () => {
       },
     ],
     [QuestionType.FILL_BLANK, { acceptedAnswers: ['你好', '您好'] }],
-    [QuestionType.ORDERING, { tokens: ['我', '是', '学生'] }],
-    [QuestionType.ESSAY, { sampleAnswer: '我是学生', rubric: 'Đúng ngữ pháp' }],
-    [QuestionType.LISTENING, { mediaId: 'media-1' }],
+    [QuestionType.ORDERING, { tokens: ['我', '是', '学生'], correctSentence: '我是学生' }],
+    [QuestionType.ESSAY, { sampleAnswer: '我是学生', rubric: 'Đúng ngữ pháp', maxLength: 500 }],
+    [QuestionType.LISTENING, { mediaId: 'media-1', maxListens: 3 }],
     [QuestionType.IMAGE_BASED, { mediaId: 'media-1' }],
+    [
+      QuestionType.IMAGE_BASED,
+      {
+        mediaId: 'media-1',
+        options: [
+          { id: 'a', text: '' },
+          { id: 'b', text: '' },
+        ],
+        correctOptionIds: [],
+      },
+    ],
+    [
+      QuestionType.IMAGE_BASED,
+      {
+        options: [
+          { id: 'a', text: '', imageMediaId: 'img-a' },
+          { id: 'b', text: '', imageMediaId: 'img-b' },
+        ],
+        correctOptionIds: ['a'],
+      },
+    ],
   ])('accepts valid %s payload', (type, payload) => {
     expect(() => policy.validatePayload(type, payload)).not.toThrow();
   });
@@ -71,8 +92,42 @@ describe('QuestionSchemaPolicy (Task 5.2 TDD)', () => {
     [QuestionType.FILL_BLANK, { acceptedAnswers: [] }],
     [QuestionType.FILL_BLANK, { acceptedAnswers: ['  '] }],
     [QuestionType.ORDERING, { tokens: ['我'] }],
+    [QuestionType.ORDERING, { tokens: ['我', '好'] }],
+    [QuestionType.ESSAY, { maxLength: -5 }],
+    [QuestionType.LISTENING, { mediaId: 'media-1', maxListens: 'abc' }],
     [QuestionType.LISTENING, {}],
     [QuestionType.IMAGE_BASED, { mediaId: '' }],
+    [
+      QuestionType.IMAGE_BASED,
+      {
+        options: [
+          { id: 'a', text: '猫' },
+          { id: 'b', text: '狗' },
+        ],
+        correctOptionIds: ['a'],
+      },
+    ],
+    [
+      QuestionType.SINGLE_CHOICE,
+      {
+        options: [
+          { id: 'a', text: '你' },
+          { id: 'a', text: '我' },
+        ],
+        correctOptionIds: ['a'],
+      },
+    ],
+    [
+      QuestionType.MULTIPLE_CHOICE,
+      {
+        options: [
+          { id: 'a', text: '你' },
+          { id: 'b', text: '我' },
+          { id: 'c', text: '他' },
+        ],
+        correctOptionIds: ['a', 'a'],
+      },
+    ],
   ])('rejects invalid %s payload', (type, payload) => {
     expect(() => policy.validatePayload(type, payload)).toThrow(BadRequestException);
   });

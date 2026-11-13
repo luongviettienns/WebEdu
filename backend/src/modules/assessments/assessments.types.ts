@@ -13,14 +13,25 @@ export interface TeacherQuestionDto {
 export interface TeacherAssessmentDto {
   id: string;
   title: string;
+  description: string;
   type: AssessmentType;
   courseId: string;
   durationMinutes: number | null;
   status: AssessmentStatus;
   isLocked: boolean;
+  originalFileName: string | null;
+  assignedClassCount: number;
   totalPoints: number;
   questionCount: number;
   createdById: string;
+  createdByName: string;
   updatedAt: string;
   questions?: TeacherQuestionDto[];
+}
+
+export interface AssessmentListResult {
+  items: TeacherAssessmentDto[];
+  total: number;
+  page: number;
+  limit: number;
 }

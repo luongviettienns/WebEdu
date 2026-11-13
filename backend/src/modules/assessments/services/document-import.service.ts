@@ -1,18 +1,23 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { MediaKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
-import { assertSafeUpload } from '../policies/media-upload.policy.js';
+import { assertCanViewAssessment, type AssessmentActor } from '../policies/assessment-access.policy.js';
+import { assertSafeDocxZip, assertSafeUpload } from '../policies/media-upload.policy.js';
 import {
   parseImportedQuestions,
   type ExtractedImage,
   type ParsedDraftQuestion,
 } from '../policies/document-import.parser.js';
 import { toTeacherAssessmentDto } from '../mappers/assessment.mapper.js';
-import { extractDocx, extractPdf, persistMediaBytes } from './document-extract.js';
+import { extractDocx, extractPdf, persistMediaBytes, unlinkStoredFile } from './document-extract.js';
 import type { ImportAssessmentDto } from '../dto/import.dto.js';
 import type { TeacherAssessmentDto } from '../assessments.types.js';
 
 const QUESTIONS_ORDERED = { orderBy: { position: 'asc' as const } };
+const MAX_IMPORT_QUESTIONS = 200;
+const MAX_IMPORT_IMAGES = 30;
+const MAX_IMPORT_IMAGE_BYTES = 5 * 1024 * 1024;
+const EXTRACT_TIMEOUT_MS = 15_000;
 
 export type ImportResult = {
   assessmentId: string;
@@ -49,9 +54,18 @@ export class DocumentImportService {
     if (ext === 'doc') {
       throw new BadRequestException('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
     }
-    assertSafeUpload(buffer, filename);
+    const { mime } = assertSafeUpload(buffer, filename);
+    if (ext === 'docx') assertSafeDocxZip(buffer);
 
-    const extracted = ext === 'pdf' ? await this.extractors.extractPdf(buffer) : await this.extractors.extractDocx(buffer);
+    let extracted: { text: string; images: ExtractedImage[] };
+    try {
+      extracted = await withTimeout(
+        ext === 'pdf' ? this.extractors.extractPdf(buffer) : this.extractors.extractDocx(buffer),
+        EXTRACT_TIMEOUT_MS,
+      );
+    } catch (err) {
+      rethrowImportError(err);
+    }
     if (!extracted.text.trim()) {
       if (ext === 'pdf') {
         throw new BadRequestException(
@@ -65,29 +79,57 @@ export class DocumentImportService {
     if (parsed.length === 0) {
       throw new BadRequestException('Không nhận diện được câu hỏi nào');
     }
+    if (parsed.length > MAX_IMPORT_QUESTIONS) {
+      throw new BadRequestException('Đề vượt quá 200 câu');
+    }
 
     const course = await this.prisma.course.findUnique({ where: { id: dto.courseId } });
     if (!course) throw new NotFoundException('Không tìm thấy khóa học');
 
     const title = (dto.title?.trim() || filename.replace(/\.[^.]+$/, '')).slice(0, 200);
-    return this.prisma.$transaction((tx) =>
-      this.persistDraft(tx, {
-        actorId,
-        title,
-        type: dto.type,
-        courseId: dto.courseId,
-        questions: parsed,
-        images: extracted.images,
-      }),
-    );
+    const storedKeys: string[] = [];
+    try {
+      const originalStorageKey = await this.extractors.persistBytes(buffer, mime);
+      storedKeys.push(originalStorageKey);
+      const images: Array<ExtractedImage & { storageKey: string }> = [];
+      for (const image of extracted.images.slice(0, MAX_IMPORT_IMAGES)) {
+        if (!image.mime.startsWith('image/') || image.bytes.byteLength === 0) continue;
+        if (image.bytes.byteLength > MAX_IMPORT_IMAGE_BYTES) {
+          throw new BadRequestException('Ảnh nhúng vượt quá 5MB');
+        }
+        const storageKey = await this.extractors.persistBytes(image.bytes, image.mime);
+        storedKeys.push(storageKey);
+        images.push({ ...image, storageKey });
+      }
+      return await this.prisma.$transaction(
+        (tx) =>
+          this.persistDraft(tx, {
+            actorId,
+            title,
+            type: dto.type,
+            courseId: dto.courseId,
+            originalFileName: filename,
+            originalStorageKey,
+            questions: parsed,
+            images,
+          }),
+        { timeout: 15_000 },
+      );
+    } catch (err) {
+      await Promise.all(storedKeys.map((key) => unlinkStoredFile(key)));
+      throw err;
+    }
   }
 
-  async getReview(id: string): Promise<TeacherAssessmentDto & { recognizedCount: number; needsReviewCount: number; summary: string }> {
+  async getReview(
+    id: string,
+    actor: AssessmentActor,
+  ): Promise<TeacherAssessmentDto & { recognizedCount: number; needsReviewCount: number; summary: string }> {
     const row = await this.prisma.assessment.findUnique({
       where: { id },
-      include: { questions: QUESTIONS_ORDERED },
+      include: { questions: QUESTIONS_ORDERED, createdBy: { select: { fullName: true } } },
     });
-    if (!row) throw new NotFoundException('Không tìm thấy đề');
+    assertCanViewAssessment(actor, row);
     const dto = toTeacherAssessmentDto(row);
     const needsReviewCount = (dto.questions ?? []).filter((q) => q.needsReview).length;
     return {
@@ -105,8 +147,10 @@ export class DocumentImportService {
       title: string;
       type: ImportAssessmentDto['type'];
       courseId: string;
+      originalFileName: string;
+      originalStorageKey: string;
       questions: ParsedDraftQuestion[];
-      images: ExtractedImage[];
+      images: Array<ExtractedImage & { storageKey: string }>;
     },
   ): Promise<ImportResult> {
     const assessment = await tx.assessment.create({
@@ -115,43 +159,33 @@ export class DocumentImportService {
         type: input.type,
         courseId: input.courseId,
         createdById: input.actorId,
+        originalFileName: input.originalFileName,
+        originalStorageKey: input.originalStorageKey,
       },
     });
 
-    const createdQuestions: Array<{ id: string }> = [];
-    for (let i = 0; i < input.questions.length; i += 1) {
-      const q = input.questions[i]!;
-      const row = await tx.question.create({
-        data: {
-          assessmentId: assessment.id,
-          type: q.type,
-          position: i + 1,
-          prompt: q.prompt,
-          payload: q.payload as Prisma.InputJsonValue,
-          points: q.points,
-          needsReview: q.needsReview,
-        },
-      });
-      createdQuestions.push(row);
-    }
+    await tx.question.createMany({
+      data: input.questions.map((q, i) => ({
+        assessmentId: assessment.id,
+        type: q.type,
+        position: i + 1,
+        prompt: q.prompt.slice(0, 5000),
+        payload: q.payload as Prisma.InputJsonValue,
+        points: q.points,
+        needsReview: q.needsReview,
+      })),
+    });
 
     for (const image of input.images) {
-      if (!image.mime.startsWith('image/') || image.bytes.byteLength === 0) continue;
-      const storageKey = await this.extractors.persistBytes(image.bytes, image.mime);
-      const asset = await tx.mediaAsset.create({
+      await tx.mediaAsset.create({
         data: {
           kind: MediaKind.IMAGE,
           mime: image.mime,
           sizeBytes: image.bytes.byteLength,
-          storageKey,
+          storageKey: image.storageKey,
+          assessmentId: assessment.id,
         },
       });
-      const first = createdQuestions[0];
-      if (first) {
-        await tx.questionMedia.create({
-          data: { questionId: first.id, mediaAssetId: asset.id, role: 'stem' },
-        });
-      }
     }
 
     const needsReviewCount = input.questions.filter((q) => q.needsReview).length;
@@ -161,5 +195,24 @@ export class DocumentImportService {
       needsReviewCount,
       summary: `Nhận diện ${input.questions.length} câu; ${needsReviewCount} câu cần kiểm tra`,
     };
+  }
+}
+
+function rethrowImportError(err: unknown): never {
+  if (err instanceof HttpException) throw err;
+  throw new BadRequestException('Không đọc được file đề');
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new BadRequestException('File quá phức tạp, vượt thời gian xử lý')), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

@@ -1,16 +1,20 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { StatusTag } from '@/features/common/components/StatusTag';
+import { ConfirmDialog } from '@/features/common/components/ConfirmDialog';
+import { PaginationBar } from '@/features/common/components/PaginationBar';
 import type { CourseItemDto } from '@/features/courses/api/courses.api';
 import {
   ASSESSMENT_TYPE_LABELS,
-  importAssessment,
+  deleteAssessment,
+  duplicateAssessment,
   type AssessmentStatus,
   type AssessmentType,
   type TeacherAssessmentDto,
 } from '@/features/assessments/api/assessments.api';
 import { extractErrorMessage } from '@/lib/api-client';
+import { formatDateDdMmYyyy } from '@/lib/utils/date';
 
 const FIELD =
   'rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
@@ -23,14 +27,19 @@ export function AssessmentList({
   courseId,
   status,
   loading,
+  page,
+  limit,
+  total,
   onSearch,
   onType,
   onCourse,
   onStatus,
+  onPage,
   onCreate,
   onOpen,
   onReview,
-  onImported,
+  onUpload,
+  onChanged,
 }: {
   items: TeacherAssessmentDto[];
   courses: CourseItemDto[];
@@ -39,44 +48,27 @@ export function AssessmentList({
   courseId: string;
   status: AssessmentStatus | '';
   loading: boolean;
+  page: number;
+  limit: number;
+  total: number;
   onSearch: (v: string) => void;
   onType: (v: AssessmentType | '') => void;
   onCourse: (v: string) => void;
   onStatus: (v: AssessmentStatus | '') => void;
+  onPage: (page: number) => void;
   onCreate: () => void;
   onOpen: (id: string) => void;
   onReview: (id: string) => void;
-  onImported: (id: string) => void;
+  onUpload: () => void;
+  onChanged: () => void;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importError, setImportError] = useState('');
-  const [importing, setImporting] = useState(false);
-
+  const [error, setError] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<TeacherAssessmentDto | null>(null);
   const courseName = (id: string) => courses.find((c) => c.id === id)?.name ?? id;
-
-  const handleImport = async (file: File) => {
-    setImportError('');
-    if (!courseId) {
-      setImportError('Chọn khóa HSK trước khi tải đề');
-      return;
-    }
-    setImporting(true);
-    try {
-      const result = await importAssessment(file, {
-        courseId,
-        type: type || 'HOMEWORK',
-      });
-      onImported(result.assessmentId);
-    } catch (err) {
-      setImportError(extractErrorMessage(err, 'Không thể tải đề'));
-    } finally {
-      setImporting(false);
-    }
-  };
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -105,25 +97,12 @@ export function AssessmentList({
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".docx,.pdf,.doc"
-            className="hidden"
-            aria-label="Tải đề Word hoặc PDF"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void handleImport(file);
-            }}
-          />
           <button
             type="button"
-            disabled={importing}
-            onClick={() => fileRef.current?.click()}
+            onClick={onUpload}
             className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm font-semibold"
           >
-            {importing ? 'Đang tải...' : 'Tải Word/PDF'}
+            Tải đề Word/PDF
           </button>
           <button
             type="button"
@@ -135,13 +114,18 @@ export function AssessmentList({
         </div>
       </div>
 
-      {importError ? (
+      {error ? (
         <div role="alert" className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] px-4 py-3 text-sm text-[var(--red-ink)]">
-          {importError}
+          {error}
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)]">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label="Danh sách đề và bài tập"
+        className="overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--surface)]"
+      >
         <table className="w-full text-left text-sm">
           <thead className="border-b border-[var(--line)] bg-[var(--surface-2)] text-xs font-semibold uppercase text-[var(--ink-2)]">
             <tr>
@@ -150,23 +134,34 @@ export function AssessmentList({
               <th className="px-4 py-3">Khóa</th>
               <th className="px-4 py-3">Số câu</th>
               <th className="px-4 py-3">Tổng điểm</th>
+              <th className="px-4 py-3">Người tạo</th>
+              <th className="px-4 py-3">Ngày cập nhật</th>
+              <th className="px-4 py-3">Số lớp đã giao</th>
               <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--line)]">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-[var(--ink-3)]">Đang tải ngân hàng đề...</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-[var(--ink-3)]">Đang tải ngân hàng đề...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-[var(--ink-3)]">Chưa có đề nào</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-[var(--ink-3)]">Chưa có đề nào</td></tr>
             ) : (
               items.map((a) => (
                 <tr key={a.id}>
-                  <td className="px-4 py-3 font-medium">{a.title}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{a.title}</div>
+                    {a.originalFileName ? (
+                      <div className="text-xs text-[var(--ink-3)]">{a.originalFileName}</div>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-3">{ASSESSMENT_TYPE_LABELS[a.type]}</td>
                   <td className="px-4 py-3">{courseName(a.courseId)}</td>
                   <td className="px-4 py-3">{a.questionCount}</td>
                   <td className="px-4 py-3">{a.totalPoints}</td>
+                  <td className="px-4 py-3">{a.createdByName || '—'}</td>
+                  <td className="px-4 py-3">{formatDateDdMmYyyy(a.updatedAt)}</td>
+                  <td className="px-4 py-3">{a.assignedClassCount ?? 0}</td>
                   <td className="px-4 py-3">
                     <StatusTag tone={a.status === 'PUBLISHED' ? 'jade' : 'grey'}>
                       {a.status === 'PUBLISHED' ? 'Đã phát hành' : 'Nháp'}
@@ -176,13 +171,57 @@ export function AssessmentList({
                     <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => onOpen(a.id)}>Sửa</button>
                     {' · '}
                     <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => onReview(a.id)}>Duyệt</button>
+                    {' · '}
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-[var(--blue)]"
+                      onClick={() => {
+                        void duplicateAssessment(a.id).then(onChanged).catch((err) => {
+                          setError(extractErrorMessage(err, 'Không thể nhân bản'));
+                        });
+                      }}
+                    >
+                      Nhân bản
+                    </button>
+                    {a.status === 'DRAFT' && !a.isLocked ? (
+                      <>
+                        {' · '}
+                        <button type="button" className="text-xs font-semibold text-[var(--red)]" onClick={() => setPendingDelete(a)}>
+                          Xóa
+                        </button>
+                      </>
+                    ) : null}
                   </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
+        <PaginationBar
+          page={page}
+          limit={limit}
+          total={total}
+          loading={loading}
+          itemLabel="đề"
+          onPageChange={onPage}
+        />
       </div>
+
+      {pendingDelete ? (
+        <ConfirmDialog
+          title="Xóa đề nháp?"
+          confirmLabel="Xóa"
+          onCancel={() => setPendingDelete(null)}
+          describeError={(err) => extractErrorMessage(err, 'Không thể xóa đề')}
+          onConfirm={async () => {
+            await deleteAssessment(pendingDelete.id);
+            setPendingDelete(null);
+            onChanged();
+          }}
+        >
+          Đề “{pendingDelete.title}” sẽ bị xóa. Không hoàn tác được.
+        </ConfirmDialog>
+      ) : null}
     </div>
   );
 }

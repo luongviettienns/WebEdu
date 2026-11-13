@@ -27,6 +27,7 @@ import {
   UpdateQuestionDto,
 } from './dto/assessments.dto.js';
 import { ImportAssessmentDto } from './dto/import.dto.js';
+import { decodeUploadFilename } from './policies/media-upload.policy.js';
 import { AssessmentCrudService } from './services/assessment-crud.service.js';
 import { DocumentImportService } from './services/document-import.service.js';
 import { QuestionCrudService } from './services/question-crud.service.js';
@@ -50,12 +51,42 @@ export class AssessmentsController {
     if (!file?.buffer) {
       throw new BadRequestException('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
     }
-    return this.imports.importFile(actor.id, file.originalname, file.buffer, dto);
+    return this.imports.importFile(actor.id, decodeUploadFilename(file.originalname), file.buffer, dto);
   }
 
   @Get(':id/review')
-  getReview(@Param('id', ParseUUIDPipe) id: string) {
-    return this.imports.getReview(id);
+  getReview(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.imports.getReview(id, actor);
+  }
+
+  @Get(':id/original')
+  streamOriginal(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.assessments.streamOriginal(id, actor);
+  }
+
+  @Get(':id/media')
+  listMedia(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.assessments.listMedia(id, actor);
+  }
+
+  @Post(':id/media')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 20 * 1024 * 1024 } }))
+  uploadMedia(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: { originalname: string; buffer: Buffer } | undefined,
+  ) {
+    if (!file?.buffer) throw new BadRequestException('Chỉ hỗ trợ ảnh hoặc audio');
+    return this.assessments.uploadMedia(id, decodeUploadFilename(file.originalname), file.buffer, actor);
+  }
+
+  @Get(':id/media/:mediaId')
+  streamMedia(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('mediaId', ParseUUIDPipe) mediaId: string,
+  ) {
+    return this.assessments.streamMedia(id, mediaId, actor);
   }
 
   @Post()
@@ -64,64 +95,75 @@ export class AssessmentsController {
   }
 
   @Get()
-  list(@Query() query: ListAssessmentsQueryDto) {
-    return this.assessments.list(query);
+  list(@CurrentUser() actor: AuthenticatedUser, @Query() query: ListAssessmentsQueryDto) {
+    return this.assessments.list(query, actor);
   }
 
   @Get(':id')
-  getDetail(@Param('id', ParseUUIDPipe) id: string) {
-    return this.assessments.getDetail(id);
+  getDetail(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.assessments.getDetail(id, actor);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateAssessmentDto) {
-    return this.assessments.update(id, dto);
+  update(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateAssessmentDto,
+  ) {
+    return this.assessments.update(id, dto, actor);
   }
 
   @Delete(':id')
-  async remove(@Param('id', ParseUUIDPipe) id: string) {
-    await this.assessments.remove(id);
+  async remove(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    await this.assessments.remove(id, actor);
     return { success: true };
   }
 
   @Post(':id/duplicate')
   duplicate(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.assessments.duplicate(id, actor.id);
+    return this.assessments.duplicate(id, actor);
   }
 
   @Post(':id/publish')
-  publish(@Param('id', ParseUUIDPipe) id: string) {
-    return this.assessments.publish(id);
+  publish(@CurrentUser() actor: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.assessments.publish(id, actor);
   }
 
   @Post(':id/questions')
   addQuestion(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CreateQuestionDto,
   ) {
-    return this.questions.add(id, dto);
+    return this.questions.add(id, dto, actor);
   }
 
   @Put(':id/questions/reorder')
-  reorderQuestions(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReorderQuestionsDto) {
-    return this.questions.reorder(id, dto);
+  reorderQuestions(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReorderQuestionsDto,
+  ) {
+    return this.questions.reorder(id, dto, actor);
   }
 
   @Patch(':id/questions/:qid')
   updateQuestion(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('qid', ParseUUIDPipe) qid: string,
     @Body() dto: UpdateQuestionDto,
   ) {
-    return this.questions.update(id, qid, dto);
+    return this.questions.update(id, qid, dto, actor);
   }
 
   @Delete(':id/questions/:qid')
   async removeQuestion(
+    @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('qid', ParseUUIDPipe) qid: string,
   ) {
-    await this.questions.remove(id, qid);
+    await this.questions.remove(id, qid, actor);
     return { success: true };
   }
 }

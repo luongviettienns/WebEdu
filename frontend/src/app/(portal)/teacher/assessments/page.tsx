@@ -6,6 +6,7 @@ import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { AssessmentEditor } from '@/features/assessments/components/AssessmentEditor';
 import { AssessmentList } from '@/features/assessments/components/AssessmentList';
 import { ImportReviewPane } from '@/features/assessments/components/ImportReviewPane';
+import { ImportUploadPane } from '@/features/assessments/components/ImportUploadPane';
 import { useAssessments } from '@/features/assessments/hooks/useAssessments';
 import type { Role } from '@/types/user';
 
@@ -14,7 +15,8 @@ const ALLOWED_ROLES: readonly Role[] = ['ADMIN', 'TEACHER'];
 type View =
   | { mode: 'list' }
   | { mode: 'edit'; id: string | null }
-  | { mode: 'review'; id: string };
+  | { mode: 'review'; id: string }
+  | { mode: 'upload' };
 
 function AssessmentsContent() {
   const bank = useAssessments();
@@ -29,6 +31,16 @@ function AssessmentsContent() {
           setView({ mode: 'list' });
           bank.reload();
         }}
+      />
+    );
+  }
+
+  if (view.mode === 'upload') {
+    return (
+      <ImportUploadPane
+        courses={bank.courses}
+        onBack={() => setView({ mode: 'list' })}
+        onImported={(id) => setView({ mode: 'review', id })}
       />
     );
   }
@@ -64,14 +76,19 @@ function AssessmentsContent() {
         courseId={bank.courseId}
         status={bank.status}
         loading={bank.loading}
+        page={bank.page}
+        limit={bank.limit}
+        total={bank.total}
         onSearch={bank.setSearch}
         onType={bank.setType}
         onCourse={bank.setCourseId}
         onStatus={bank.setStatus}
+        onPage={bank.setPage}
         onCreate={() => setView({ mode: 'edit', id: null })}
         onOpen={(id) => setView({ mode: 'edit', id })}
         onReview={(id) => setView({ mode: 'review', id })}
-        onImported={(id) => setView({ mode: 'review', id })}
+        onUpload={() => setView({ mode: 'upload' })}
+        onChanged={bank.reload}
       />
     </>
   );

@@ -473,20 +473,24 @@ model AttendanceAuditLog {
 }
 
 model Assessment {
-  id              String           @id @default(uuid())
-  title           String           @db.VarChar(200)
-  type            AssessmentType
-  courseId        String           @map("course_id")
-  durationMinutes Int?             @map("duration_minutes")
-  status          AssessmentStatus @default(DRAFT)
-  isLocked        Boolean          @default(false) @map("is_locked")
-  createdById     String           @map("created_by_id")
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                 String           @id @default(uuid())
+  title              String           @db.VarChar(200)
+  description        String?          @db.VarChar(2000)
+  type               AssessmentType
+  courseId           String           @map("course_id")
+  durationMinutes    Int?             @map("duration_minutes")
+  status             AssessmentStatus @default(DRAFT)
+  isLocked           Boolean          @default(false) @map("is_locked")
+  originalFileName   String?          @map("original_file_name") @db.VarChar(255)
+  originalStorageKey String?          @map("original_storage_key") @db.VarChar(255)
+  createdById        String           @map("created_by_id")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   course    Course     @relation(fields: [courseId], references: [id], onDelete: Restrict)
-  createdBy User       @relation("AssessmentAuthor", fields: [createdById], references: [id], onDelete: Restrict)
-  questions Question[]
+  createdBy   User         @relation("AssessmentAuthor", fields: [createdById], references: [id], onDelete: Restrict)
+  questions   Question[]
+  mediaAssets MediaAsset[]
 
   @@index([courseId, status])
   @@index([createdById])
@@ -514,15 +518,18 @@ model Question {
 }
 
 model MediaAsset {
-  id         String    @id @default(uuid())
-  kind       MediaKind
-  mime       String    @db.VarChar(100)
-  sizeBytes  Int       @map("size_bytes")
-  storageKey String    @unique @map("storage_key") @db.VarChar(255)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  id           String    @id @default(uuid())
+  kind         MediaKind
+  mime         String    @db.VarChar(100)
+  sizeBytes    Int       @map("size_bytes")
+  storageKey   String    @unique @map("storage_key") @db.VarChar(255)
+  assessmentId String?   @map("assessment_id")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  questions QuestionMedia[]
+  assessment Assessment?    @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  questions  QuestionMedia[]
 
+  @@index([assessmentId])
   @@map("media_assets")
 }
 

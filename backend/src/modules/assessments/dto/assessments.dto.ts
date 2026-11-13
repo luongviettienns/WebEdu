@@ -1,20 +1,30 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  ArrayUnique,
+  IsArray,
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsObject,
   IsOptional,
   IsPositive,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { AssessmentStatus, AssessmentType, QuestionType } from '@prisma/client';
 
+const trimValue = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
+
 export class CreateAssessmentDto {
+  @Transform(trimValue)
   @IsString()
+  @IsNotEmpty({ message: 'Tên đề không được để trống' })
   @MaxLength(200)
   title!: string;
 
@@ -25,54 +35,78 @@ export class CreateAssessmentDto {
   courseId!: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(1440)
   durationMinutes?: number;
 }
 
 export class UpdateAssessmentDto {
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
+  @Transform(trimValue)
   @IsString()
+  @IsNotEmpty({ message: 'Tên đề không được để trống' })
   @MaxLength(200)
   title?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
-  durationMinutes?: number;
+  @Max(1440)
+  durationMinutes?: number | null;
 }
 
 export class CreateQuestionDto {
   @IsEnum(QuestionType)
   type!: QuestionType;
 
+  @Transform(trimValue)
   @IsString()
+  @IsNotEmpty({ message: 'Nội dung câu hỏi không được để trống' })
+  @MaxLength(5000)
   prompt!: string;
 
   @IsObject()
   payload!: Record<string, unknown>;
 
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsPositive()
+  @Max(1000)
   points!: number;
 }
 
 export class UpdateQuestionDto {
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
+  @Transform(trimValue)
   @IsString()
+  @IsNotEmpty({ message: 'Nội dung câu hỏi không được để trống' })
+  @MaxLength(5000)
   prompt?: string;
 
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsObject()
   payload?: Record<string, unknown>;
 
-  @IsOptional()
-  @IsNumber()
+  @ValidateIf((_, value) => value !== undefined)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsPositive()
+  @Max(1000)
   points?: number;
 }
 
 export class ReorderQuestionsDto {
+  @IsArray()
+  @ArrayUnique({ message: 'Danh sách câu hỏi không được chứa id trùng lặp' })
   @IsUUID(undefined, { each: true })
   @Type(() => String)
   questionIds!: string[];
@@ -95,4 +129,10 @@ export class ListAssessmentsQueryDto {
   @IsOptional()
   @IsEnum(AssessmentStatus)
   status?: AssessmentStatus;
+
+  @IsOptional()
+  page?: number | string;
+
+  @IsOptional()
+  limit?: number | string;
 }

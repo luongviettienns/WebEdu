@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
 
-type Option = { id: string; text: string };
+type Option = { id: string; text: string; imageMediaId?: string };
 
 function optionsOf(payload: Record<string, unknown>): Option[] {
   return Array.isArray(payload.options)
@@ -12,13 +12,19 @@ function optionsOf(payload: Record<string, unknown>): Option[] {
 @Injectable()
 export class QuestionSchemaPolicy {
   validatePayload(type: QuestionType, payload: unknown): void {
-    const p = (payload ?? {}) as Record<string, unknown>;
+    if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+      throw new BadRequestException('payload phải là object hợp lệ');
+    }
+    const p = payload as Record<string, unknown>;
+    if (JSON.stringify(p).length > 32_768) {
+      throw new BadRequestException('payload vượt quá 32KB');
+    }
     switch (type) {
       case QuestionType.SINGLE_CHOICE:
-        this.validateChoice(optionsOf(p), p, 1, 1);
+        this.validateChoice(optionsOf(p), p, 1, true);
         return;
       case QuestionType.MULTIPLE_CHOICE:
-        this.validateChoice(optionsOf(p), p, 2, 4);
+        this.validateChoice(optionsOf(p), p, 2, true);
         return;
       case QuestionType.FILL_BLANK: {
         const answers = Array.isArray(p.acceptedAnswers)
@@ -32,27 +38,74 @@ export class QuestionSchemaPolicy {
           ? (p.tokens as unknown[]).filter((t) => typeof t === 'string' && t.trim())
           : [];
         if (tokens.length < 2) throw new BadRequestException('Câu sắp xếp cần ít nhất 2 mảnh từ');
+        if (typeof p.correctSentence !== 'string' || !p.correctSentence.trim()) {
+          throw new BadRequestException('Câu sắp xếp cần nhập câu đáp án đúng');
+        }
         return;
       }
-      case QuestionType.ESSAY:
+      case QuestionType.ESSAY: {
+        this.assertOptionalIntRange(p.maxLength, 1, 50_000, 'Giới hạn ký tự phải là số nguyên từ 1 đến 50000');
+        this.assertOptionalString(p.sampleAnswer, 'Đáp án mẫu phải là chuỗi');
+        this.assertOptionalString(p.rubric, 'Rubric phải là chuỗi');
         return;
-      case QuestionType.LISTENING:
-      case QuestionType.IMAGE_BASED: {
+      }
+      case QuestionType.LISTENING: {
         if (typeof p.mediaId !== 'string' || !p.mediaId.trim()) {
           throw new BadRequestException('Dạng câu này yêu cầu mediaId');
         }
+        this.assertOptionalIntRange(p.maxListens, 1, 20, 'Số lần nghe tối đa phải là số nguyên từ 1 đến 20');
+        return;
+      }
+      case QuestionType.IMAGE_BASED: {
+        const options = optionsOf(p);
+        const stem = typeof p.mediaId === 'string' ? p.mediaId.trim() : '';
+        const optionImages = options.filter((o) => o.imageMediaId?.trim());
+        if (!stem && optionImages.length < 2) {
+          throw new BadRequestException('Câu kèm hình cần ảnh đề hoặc ít nhất 2 phương án ảnh');
+        }
+        const hasOptionContent = options.some((o) => o.text?.trim() || o.imageMediaId?.trim());
+        if (hasOptionContent) this.validateChoice(options, p, 1, false);
         return;
       }
     }
   }
 
-  private validateChoice(options: Option[], p: Record<string, unknown>, minCorrect: number, _maxOptions: number): void {
+  private assertOptionalIntRange(value: unknown, min: number, max: number, message: string): void {
+    if (value === undefined || value === null) return;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+      throw new BadRequestException(message);
+    }
+  }
+
+  private assertOptionalString(value: unknown, message: string): void {
+    if (value === undefined || value === null) return;
+    if (typeof value !== 'string') {
+      throw new BadRequestException(message);
+    }
+  }
+
+  private validateChoice(
+    options: Option[],
+    p: Record<string, unknown>,
+    minCorrect: number,
+    requireContent: boolean,
+  ): void {
     if (options.length < 2 || options.length > 4) {
       throw new BadRequestException('Trắc nghiệm cần 2–4 phương án');
     }
+    if (requireContent && options.some((o) => !o.text?.trim() && !o.imageMediaId?.trim())) {
+      throw new BadRequestException('Mỗi phương án cần có nội dung hoặc ảnh');
+    }
+    const optionIds = options.map((o) => o.id);
+    if (new Set(optionIds).size !== optionIds.length) {
+      throw new BadRequestException('Phương án không được trùng id');
+    }
     const correct = Array.isArray(p.correctOptionIds) ? (p.correctOptionIds as unknown[]) : [];
-    const ids = new Set(options.map((o) => o.id));
+    const ids = new Set(optionIds);
     const valid = correct.filter((c) => typeof c === 'string' && ids.has(c));
+    if (new Set(valid).size !== valid.length) {
+      throw new BadRequestException('correctOptionIds không được trùng');
+    }
     if (valid.length !== correct.length || valid.length < minCorrect || valid.length > options.length) {
       throw new BadRequestException('correctOptionIds phải trỏ tới phương án hợp lệ');
     }

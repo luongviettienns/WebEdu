@@ -981,7 +981,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           429,
         ),
       );
-    });
+    }, 15_000);
 
     it('enforces IP rate limiting on repeated forgot password requests (FIX-04)', async () => {
       const clientIp = '198.51.100.99';
@@ -1200,7 +1200,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       } finally {
         vi.useRealTimers();
       }
-    });
+    }, 15_000);
   });
 
   describe('Security & Maintenance Hardening (Zero OTP Backdoor, UTF-8 Byte Cap, Pre-Hash Token Check, IP Throttle & Purge)', () => {

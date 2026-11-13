@@ -59,3 +59,57 @@ export function assertSafeUpload(buffer: Buffer, filename: string): { mime: stri
   }
   return { mime };
 }
+
+const MAX_ZIP_UNCOMPRESSED = 80 * 1024 * 1024;
+const MAX_ZIP_ENTRY = 20 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 500;
+
+/** Rejects zip-bombs / ZIP64 before mammoth inflates a .docx. */
+export function assertSafeDocxZip(buffer: Buffer): void {
+  if (buffer.length < 22) throw new BadRequestException('File Word không hợp lệ');
+  let eocd = -1;
+  const start = Math.max(0, buffer.length - 22 - 65535);
+  for (let i = buffer.length - 22; i >= start; i -= 1) {
+    if (buffer[i] === 0x50 && buffer[i + 1] === 0x4b && buffer[i + 2] === 0x05 && buffer[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new BadRequestException('File Word không hợp lệ');
+  const entries = buffer.readUInt16LE(eocd + 10);
+  const cdSize = buffer.readUInt32LE(eocd + 12);
+  const cdOffset = buffer.readUInt32LE(eocd + 16);
+  if (entries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
+    throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+  }
+  if (entries > MAX_ZIP_ENTRIES) throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+  let pos = cdOffset;
+  let total = 0;
+  for (let i = 0; i < entries; i += 1) {
+    if (pos + 46 > buffer.length || buffer.readUInt32LE(pos) !== 0x02014b50) {
+      throw new BadRequestException('File Word không hợp lệ');
+    }
+    const uncompressed = buffer.readUInt32LE(pos + 24);
+    const nameLen = buffer.readUInt16LE(pos + 28);
+    const extraLen = buffer.readUInt16LE(pos + 30);
+    const commentLen = buffer.readUInt16LE(pos + 32);
+    if (uncompressed === 0xffffffff || uncompressed > MAX_ZIP_ENTRY) {
+      throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+    }
+    total += uncompressed;
+    if (total > MAX_ZIP_UNCOMPRESSED) throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+    pos += 46 + nameLen + extraLen + commentLen;
+  }
+}
+
+/** shortcut: multer latin1 originalname; drop when busboy utf8 is default */
+export function decodeUploadFilename(name: string): string {
+  for (let i = 0; i < name.length; i += 1) {
+    if (name.charCodeAt(i) > 0xff) return name;
+  }
+  try {
+    return Buffer.from(name, 'latin1').toString('utf8') || name;
+  } catch {
+    return name;
+  }
+}
