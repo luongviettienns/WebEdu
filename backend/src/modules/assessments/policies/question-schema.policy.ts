@@ -71,7 +71,7 @@ export class QuestionSchemaPolicy {
         }
         const hasOptionContent = options.some((o) => trimmed(o.text) || trimmed(o.imageMediaId));
         if (hasOptionContent) {
-          this.validateChoice(options, p, p.multiple === true ? 2 : 1, false);
+          this.validateChoice(options, p, p.multiple === true ? 2 : 1, true);
         }
         return;
       }

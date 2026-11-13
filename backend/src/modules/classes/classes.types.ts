@@ -84,6 +84,7 @@ export interface ClassItemDto {
   activeStudentsCount: number;
   totalEnrollmentsCount: number;
   completedSessionsCount: number;
+  isStartDateLocked?: boolean;
   scheduleConflictWarning?: string | null;
   createdAt: string;
   updatedAt: string;

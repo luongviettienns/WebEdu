@@ -96,6 +96,9 @@ export class ProfileService {
       include: { studentProfile: true },
     });
     if (!user) throw new NotFoundException('Tài khoản không tồn tại');
+    if (user.status === UserStatus.INACTIVE) {
+      throw new ForbiddenException('Tài khoản đã bị khóa');
+    }
     if (isStudentUnder16(user)) {
       throw new ForbiddenException(UNDER_16_SELF_EMAIL_CHANGE_ERROR);
     }

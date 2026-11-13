@@ -30,12 +30,14 @@ import {
 import {
   assertValidTimeRange,
   calculateExpectedEndDate,
-  computeStudentAbsencesMap,
-  findTeacherScheduleConflictWarning,
   formatScheduleText,
   normalizeScheduleDays,
   parseRequiredCalendarDate,
 } from '../policies/class-schedule.util.js';
+import {
+  computeStudentAbsencesMap,
+  findTeacherScheduleConflictWarning,
+} from '../policies/class-session-lifecycle.util.js';
 import { ClassAccessService } from './class-access.service.js';
 
 const CLASS_DETAIL_INCLUDE = {
@@ -151,12 +153,21 @@ export class ClassQueryService {
     ]);
 
     const classEntities = rows as unknown as ClassItemEntity[];
-    const completedCountMap = await this.getCompletedSessionsCountMap(
-      classEntities.map((row) => row.id),
-    );
-    const items = classEntities.map((row) =>
-      toClassItemDto(row, null, completedCountMap.get(row.id) ?? 0),
-    );
+    const classIds = classEntities.map((row) => row.id);
+    const [completedCountMap, attendanceCountMap] = await Promise.all([
+      this.getCompletedSessionsCountMap(classIds),
+      this.getAttendanceRecordsCountMap(classIds),
+    ]);
+    const items = classEntities.map((row) => {
+      const completedCount = completedCountMap.get(row.id) ?? 0;
+      const attendanceCount = attendanceCountMap.get(row.id) ?? 0;
+      return toClassItemDto(
+        row,
+        null,
+        completedCount,
+        completedCount > 0 || attendanceCount > 0,
+      );
+    });
 
     return { items, total, page, limit };
   }
@@ -260,6 +271,12 @@ export class ClassQueryService {
     );
   }
 
+  private toClassCountMap(
+    rows: ReadonlyArray<{ classId: string; _count: { _all: number } }>,
+  ): Map<string, number> {
+    return new Map(rows.map((row) => [row.classId, row._count._all]));
+  }
+
   private async getCompletedSessionsCountMap(
     classIds: string[],
   ): Promise<Map<string, number>> {
@@ -269,7 +286,19 @@ export class ClassQueryService {
       where: { classId: { in: classIds }, status: SessionStatus.COMPLETED },
       _count: { _all: true },
     });
-    return new Map(rows.map((row) => [row.classId, row._count._all]));
+    return this.toClassCountMap(rows);
+  }
+
+  private async getAttendanceRecordsCountMap(
+    classIds: string[],
+  ): Promise<Map<string, number>> {
+    if (classIds.length === 0) return new Map();
+    const rows = await this.prisma.attendanceRecord.groupBy({
+      by: ['classId'],
+      where: { classId: { in: classIds } },
+      _count: { _all: true },
+    });
+    return this.toClassCountMap(rows);
   }
 
   async previewSchedule(dto: PreviewClassScheduleDto): Promise<{

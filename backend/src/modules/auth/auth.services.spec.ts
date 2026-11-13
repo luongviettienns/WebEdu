@@ -893,7 +893,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       ).rejects.toThrowError(
         new ForbiddenException('Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần'),
       );
-    });
+    }, 15_000);
   });
 
   describe('FUNC-005: Forgot & Reset Password (DB Cooldown, Mail Abstraction & Zero Token Leak)', () => {

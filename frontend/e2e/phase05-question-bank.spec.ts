@@ -66,6 +66,30 @@ test.describe('Phase 5 — Question bank & import review', () => {
     await expect(page.getByText('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB')).toBeVisible();
   });
 
+  test('pre-validates duration and oversized image before calling import API', async ({ page }) => {
+    await loginThroughUi(page, 'teacher.lan@webedu.vn');
+    await openUpload(page);
+
+    let importCalls = 0;
+    await page.route('**/api/assessments/import', (route) => {
+      importCalls += 1;
+      return route.continue();
+    });
+
+    await page.getByLabel('Thời gian làm bài').fill('0');
+    await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
+    await expect(page.getByText('Thời gian làm bài phải là số nguyên từ 1 đến 1440 phút')).toBeVisible();
+    expect(importCalls).toBe(0);
+
+    await page.getByLabel('Thời gian làm bài').fill('');
+    await page.getByLabel('Thêm hình').setInputFiles({
+      name: 'huge.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(5 * 1024 * 1024 + 10, 0x89),
+    });
+    await expect(page.getByText('Ảnh "huge.png" phải khác rỗng và không vượt quá 5MB')).toBeVisible();
+  });
+
   test('publish is blocked while imported questions still need review', async ({ page }) => {
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
     await openUpload(page);

@@ -1092,6 +1092,26 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         ),
       },
       attendanceRecord: {
+        groupBy: vi.fn(
+          async ({
+            where,
+          }: {
+            by: ['classId'];
+            where?: { classId?: { in?: string[] } };
+            _count?: { _all?: boolean };
+          }) => {
+            const allowedIds = new Set(where?.classId?.in ?? []);
+            const counts = new Map<string, number>();
+            for (const r of attendanceRecordsStore) {
+              if (where?.classId?.in && !allowedIds.has(r.classId)) continue;
+              counts.set(r.classId, (counts.get(r.classId) ?? 0) + 1);
+            }
+            return Array.from(counts.entries()).map(([classId, count]) => ({
+              classId,
+              _count: { _all: count },
+            }));
+          },
+        ),
         count: vi.fn(
           async ({ where }: { where?: { classId?: string } } = {}) => {
             return attendanceRecordsStore.filter(
@@ -1140,6 +1160,10 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           sessionChangeLogs.push(data);
           return data;
+        }),
+        createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+          sessionChangeLogs.push(...data);
+          return { count: data.length };
         }),
       },
       $executeRaw: vi.fn(
@@ -1301,10 +1325,22 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         { id: 's-8', classId: 'class-completed-1', status: SessionStatus.COMPLETED },
       );
 
+      attendanceRecordsStore.push({
+        id: 'ar-list-other',
+        classId: 'class-other',
+        sessionId: 's-6',
+        studentId: 'student-01',
+        status: AttendanceStatus.PRESENT,
+      });
+
       const groupBySpy = (
         mockPrisma.lessonSession as { groupBy: ReturnType<typeof vi.fn> }
       ).groupBy;
+      const attGroupBySpy = (
+        mockPrisma.attendanceRecord as { groupBy: ReturnType<typeof vi.fn> }
+      ).groupBy;
       groupBySpy.mockClear();
+      attGroupBySpy.mockClear();
 
       const listRes = await queryService.listClasses(adminActor, {});
       expect(groupBySpy).toHaveBeenCalledTimes(1);
@@ -1316,19 +1352,31 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         },
         _count: { _all: true },
       });
+      expect(attGroupBySpy).toHaveBeenCalledTimes(1);
+      expect(attGroupBySpy).toHaveBeenCalledWith({
+        by: ['classId'],
+        where: {
+          classId: { in: ['class-active-1', 'class-other'] },
+        },
+        _count: { _all: true },
+      });
 
       const activeItem = listRes.items.find((c) => c.id === 'class-active-1');
       const otherItem = listRes.items.find((c) => c.id === 'class-other');
       expect(activeItem?.completedSessionsCount).toBe(3);
+      expect(activeItem?.isStartDateLocked).toBe(true);
       expect(otherItem?.completedSessionsCount).toBe(0);
+      expect(otherItem?.isStartDateLocked).toBe(true);
 
-      // Empty page skips lessonSession.groupBy completely
+      // Empty page skips lessonSession.groupBy and attendanceRecord.groupBy completely
       groupBySpy.mockClear();
+      attGroupBySpy.mockClear();
       const emptyRes = await queryService.listClasses(adminActor, {
         search: 'NO_MATCH_999',
       });
       expect(emptyRes.items).toEqual([]);
       expect(groupBySpy).not.toHaveBeenCalled();
+      expect(attGroupBySpy).not.toHaveBeenCalled();
 
       // getClassById populates accurate completedSessionsCount for each class
       groupBySpy.mockClear();
@@ -1781,6 +1829,12 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         (l) => l.action === SessionChangeAction.CANCEL,
       );
       expect(cancelLogs).toHaveLength(2);
+      const changeLogApi = mockPrisma.sessionChangeLog as {
+        create: ReturnType<typeof vi.fn>;
+        createMany: ReturnType<typeof vi.fn>;
+      };
+      expect(changeLogApi.createMany).toHaveBeenCalledTimes(1);
+      expect(changeLogApi.create).not.toHaveBeenCalled();
       const completedAudit = auditLogs.find((a) => a.action === 'CLASS_COMPLETED');
       expect(
         (completedAudit?.metadata as { autoCancelledSessionsCount?: number })
@@ -1788,6 +1842,8 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       ).toBe(2);
 
       // Reopen within 2 days -> restores 2 auto-cancelled sessions, keeps manual-cancelled CANCELLED!
+      changeLogApi.createMany.mockClear();
+      changeLogApi.create.mockClear();
       const closedAt = classesStore.get('class-active-1')!.closedAt!;
       const reopened = await lifecycleService.reopenClass(
         adminActor,
@@ -1816,6 +1872,8 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         (l) => l.action === SessionChangeAction.GENERATE,
       );
       expect(restoreLogs).toHaveLength(2);
+      expect(changeLogApi.createMany).toHaveBeenCalledTimes(1);
+      expect(changeLogApi.create).not.toHaveBeenCalled();
       const reopenedAudit = auditLogs.find((a) => a.action === 'CLASS_REOPENED');
       expect(
         (reopenedAudit?.metadata as { restoredSessionsCount?: number })

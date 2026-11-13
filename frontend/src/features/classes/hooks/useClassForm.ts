@@ -5,7 +5,6 @@ import {
   createClass,
   previewClassSchedule,
   updateClass,
-  type ClassDetail,
   type ClassItem,
   type ClassStatus,
   type CourseItem,
@@ -71,7 +70,7 @@ export function useClassForm({ mode, initialData, courses, onSuccess }: UseClass
     mode === 'edit' &&
     Boolean(
       initialData &&
-        ((initialData as ClassDetail).isStartDateLocked ||
+        (initialData.isStartDateLocked ||
           (initialData.completedSessionsCount ?? 0) > 0),
     );
   const isTeacherChanged =

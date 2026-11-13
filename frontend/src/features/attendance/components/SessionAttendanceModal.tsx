@@ -77,7 +77,7 @@ export function SessionAttendanceModal({ sessionId, onClose, onSaved }: SessionA
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
-    if (!sheet) return;
+    if (!sheet || sheet.roster.length === 0) return;
     if (hasUnmarkedStudents) {
       setError(`Vui lòng điểm danh đầy đủ 100% học viên (còn ${unmarkedCount} học viên chưa chọn trạng thái) trước khi lưu.`);
       return;
@@ -91,10 +91,6 @@ export function SessionAttendanceModal({ sessionId, onClose, onSaved }: SessionA
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
 
-    if (records.length === 0) {
-      setError('Vui lòng chọn trạng thái điểm danh cho ít nhất 1 học viên.');
-      return;
-    }
     if (requiresReason && !reason.trim()) {
       setError('Buổi học đã từng điểm danh — vui lòng nhập lý do chỉnh sửa.');
       return;

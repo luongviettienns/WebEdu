@@ -16,6 +16,40 @@ const FIELD =
 
 const STEPS = ['1 · Tải lên', '2 · Phân tích', '3 · Hoàn tất'] as const;
 type Step = 'idle' | 'up' | 'parse' | 'done' | 'err';
+const MAX_DOC_BYTES = 20 * 1024 * 1024;
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a']);
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg']);
+
+function getFileExtension(name: string): string {
+  return name.split('.').pop()?.toLowerCase() ?? '';
+}
+
+function validateExtraFile(file: File): string | null {
+  const ext = getFileExtension(file.name);
+  if (IMAGE_EXTS.has(ext)) {
+    return file.size > 0 && file.size <= MAX_IMAGE_BYTES
+      ? null
+      : `Ảnh "${file.name}" phải khác rỗng và không vượt quá 5MB`;
+  }
+  if (AUDIO_EXTS.has(ext)) {
+    return file.size > 0 && file.size <= MAX_AUDIO_BYTES
+      ? null
+      : `Audio "${file.name}" phải khác rỗng và không vượt quá 20MB`;
+  }
+  return `File đính kèm "${file.name}" chỉ hỗ trợ ảnh (.png, .jpg, .jpeg) hoặc audio (.mp3, .wav, .m4a)`;
+}
+
+function parseOptionalDuration(raw: string): { valid: boolean; value?: number; error?: string } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { valid: true };
+  const num = Number(trimmed);
+  if (!Number.isInteger(num) || num < 1 || num > 1440) {
+    return { valid: false, error: 'Thời gian làm bài phải là số nguyên từ 1 đến 1440 phút' };
+  }
+  return { valid: true, value: num };
+}
 
 export function ImportUploadPane({
   courses,
@@ -42,10 +76,27 @@ export function ImportUploadPane({
   const selectedCourseId = courseId || courses[0]?.id || '';
   const stepIdx = step === 'up' ? 0 : step === 'parse' ? 1 : step === 'done' ? 2 : -1;
 
+  const appendExtras = (files: FileList | null) => {
+    const list = Array.from(files ?? []);
+    if (list.length === 0) return;
+    const accepted: File[] = [];
+    const errors: string[] = [];
+    for (const item of list) {
+      const err = validateExtraFile(item);
+      if (err) errors.push(err);
+      else accepted.push(item);
+    }
+    if (errors.length > 0) setError(errors[0]!);
+    else setError('');
+    if (accepted.length > 0) setExtras((curr) => [...curr, ...accepted]);
+  };
+
   const runImport = async (file: File) => {
     setError('');
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    if (ext !== 'docx' && ext !== 'pdf') {
+    setAssessmentId('');
+    setSummary('');
+    const ext = getFileExtension(file.name);
+    if ((ext !== 'docx' && ext !== 'pdf') || file.size === 0 || file.size > MAX_DOC_BYTES) {
       setError('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
       setStep('err');
       setFileName(file.name);
@@ -54,6 +105,22 @@ export function ImportUploadPane({
     if (!selectedCourseId) {
       setError('Khóa HSK là bắt buộc');
       return;
+    }
+    const parsedDuration = parseOptionalDuration(duration);
+    if (!parsedDuration.valid) {
+      setError(parsedDuration.error!);
+      setStep('err');
+      setFileName(file.name);
+      return;
+    }
+    for (const extra of extras) {
+      const extraError = validateExtraFile(extra);
+      if (extraError) {
+        setError(extraError);
+        setStep('err');
+        setFileName(file.name);
+        return;
+      }
     }
     setFileName(file.name);
     setStep('up');
@@ -64,14 +131,14 @@ export function ImportUploadPane({
         type,
         title: title.trim() || undefined,
       });
-      if (duration) {
-        await updateAssessment(result.assessmentId, { durationMinutes: Number(duration) });
+      setAssessmentId(result.assessmentId);
+      setSummary(result.summary);
+      if (parsedDuration.value !== undefined) {
+        await updateAssessment(result.assessmentId, { durationMinutes: parsedDuration.value });
       }
       for (const extra of extras) {
         await uploadMedia(result.assessmentId, extra);
       }
-      setAssessmentId(result.assessmentId);
-      setSummary(result.summary);
       setStep('done');
     } catch (err) {
       setError(extractErrorMessage(err, 'Không thể tải đề'));
@@ -157,6 +224,19 @@ export function ImportUploadPane({
                   Kiểm tra đề
                 </button>
               </>
+            ) : step === 'err' && assessmentId ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <span className="text-xs text-[var(--ink-2)]">
+                  Đề nháp đã được tạo từ file gốc ({summary}). Bạn có thể mở để hoàn tất cấu hình hoặc tải lại tệp đính kèm.
+                </span>
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--hover)]"
+                  onClick={() => onImported(assessmentId)}
+                >
+                  Mở đề nháp vừa tạo
+                </button>
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -164,9 +244,9 @@ export function ImportUploadPane({
           <div className="text-sm font-medium">Audio / hình ảnh đính kèm riêng</div>
           <div className="flex flex-wrap items-center gap-2">
             <input ref={audioRef} type="file" accept=".mp3,.m4a,.wav" className="hidden" aria-label="Thêm audio" multiple
-              onChange={(e) => { setExtras((curr) => [...curr, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
+              onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
             <input ref={imageRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" aria-label="Thêm hình" multiple
-              onChange={(e) => { setExtras((curr) => [...curr, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
+              onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
             <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => audioRef.current?.click()}>Thêm audio</button>
             <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => imageRef.current?.click()}>Thêm hình</button>
             <span className="text-xs text-[var(--ink-3)]">Nếu không nhúng trong file đề</span>

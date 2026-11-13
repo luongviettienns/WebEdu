@@ -10,11 +10,11 @@ import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
 import { syncTeacherActiveClassesCount } from '../../../common/policies/teacher-invariants.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
+import { assertEffectiveDateNotInFuture } from '../policies/class-schedule.util.js';
 import {
-  assertEffectiveDateNotInFuture,
   cancelScheduledSessionsOnCompleteInTx,
   restoreAutoCancelledSessionsOnReopenInTx,
-} from '../policies/class-schedule.util.js';
+} from '../policies/class-session-lifecycle.util.js';
 import type { CompleteClassDto, ReopenClassDto } from '../dto/classes.dto.js';
 import type { ClassDetailDto } from '../classes.types.js';
 import { SessionGeneratorService } from '../../schedules/services/session-generator.service.js';

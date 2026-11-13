@@ -1765,7 +1765,10 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       (rejectedMakeup[0]!.reason as { getStatus(): number }).getStatus(),
     );
 
-    // 2b. Concurrent cancel vs reschedule on the same active session -> FOR UPDATE serializes -> strictly 1 wins!
+    // 2b. Concurrent cancel vs reschedule on the same active session -> FOR UPDATE serializes cleanly:
+    // - Case A: cancel locks first -> cancel succeeds, reschedule fails (400/409).
+    // - Case B: reschedule locks first -> reschedule updates SCHEDULED session, then cancel validly cancels it (both fulfill).
+    // In BOTH serializations the final row must be CANCELLED with sessionNumber = null.
     const scheduled3 = afterCancel.find((s) => s.id === generated[2]!.id)!;
     const cancelVsReschedule = await Promise.allSettled([
       workflowService.cancelSession(adminActor, scheduled3.id, {
@@ -1778,12 +1781,23 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
         reason: 'Đổi đồng thời',
       }),
     ]);
-    expect(cancelVsReschedule.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const fulfilledRace = cancelVsReschedule.filter((r) => r.status === 'fulfilled');
     const rejectedRace = cancelVsReschedule.filter(
       (r): r is PromiseRejectedResult => r.status === 'rejected',
     );
-    expect(rejectedRace).toHaveLength(1);
-    expect([400, 409]).toContain((rejectedRace[0]!.reason as { getStatus(): number }).getStatus());
+    expect([1, 2]).toContain(fulfilledRace.length);
+    if (fulfilledRace.length === 1) {
+      expect(rejectedRace).toHaveLength(1);
+      expect([400, 409]).toContain((rejectedRace[0]!.reason as { getStatus(): number }).getStatus());
+    } else {
+      expect(rejectedRace).toHaveLength(0);
+    }
+    const afterRaceRow = await prisma.lessonSession.findUniqueOrThrow({
+      where: { id: scheduled3.id },
+    });
+    expect(afterRaceRow.status).toBe('CANCELLED');
+    expect(afterRaceRow.sessionNumber).toBeNull();
+    expect(afterRaceRow.cancelReason).toBe('Hủy đồng thời');
 
     // 2c. SEC-P4-02: Rescheduled/makeup expectedEndDate is preserved when updating non-schedule fields like notes
     const latestActive = await prisma.lessonSession.findFirstOrThrow({

@@ -22,7 +22,7 @@ export function StudentMetricsSidebar({
   const attendanceRateDisplay = metrics
     ? metrics.attendanceRatePercent !== null
       ? `${metrics.attendanceRatePercent}%`
-      : '100%'
+      : '—'
     : '—';
 
   return (

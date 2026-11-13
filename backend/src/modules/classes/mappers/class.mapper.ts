@@ -125,6 +125,7 @@ export function toClassItemDto(
   entity: ClassItemEntity,
   scheduleConflictWarning: string | null = null,
   completedSessionsCount = 0,
+  isStartDateLocked?: boolean,
 ): ClassItemDto {
   const enrollments = entity.enrollments ?? [];
   const activeStudentsCount = enrollments.filter(
@@ -155,25 +156,18 @@ export function toClassItemDto(
     scheduleDays: [...entity.scheduleDays],
     scheduleStartTime: entity.scheduleStartTime,
     scheduleEndTime: entity.scheduleEndTime,
-    scheduleText: formatScheduleText(
-      entity.scheduleDays,
-      entity.scheduleStartTime,
-      entity.scheduleEndTime,
-    ),
+    scheduleText: formatScheduleText(entity.scheduleDays, entity.scheduleStartTime, entity.scheduleEndTime),
     startDate: formatIsoDateUtc(entity.startDate),
     totalSessions: entity.totalSessions,
-    expectedEndDate: entity.expectedEndDate
-      ? formatIsoDateUtc(entity.expectedEndDate)
-      : null,
-    actualEndDate: entity.actualEndDate
-      ? formatIsoDateUtc(entity.actualEndDate)
-      : null,
+    expectedEndDate: entity.expectedEndDate ? formatIsoDateUtc(entity.expectedEndDate) : null,
+    actualEndDate: entity.actualEndDate ? formatIsoDateUtc(entity.actualEndDate) : null,
     closedReason: entity.closedReason ?? null,
     closedAt: entity.closedAt ? entity.closedAt.toISOString() : null,
     notes: entity.notes ?? null,
     activeStudentsCount,
     totalEnrollmentsCount,
     completedSessionsCount,
+    ...(isStartDateLocked !== undefined && { isStartDateLocked }),
     scheduleConflictWarning,
     createdAt: entity.createdAt.toISOString(),
     updatedAt: entity.updatedAt.toISOString(),
@@ -199,7 +193,7 @@ export function toClassDetailDto(
   completedSessionsCount = 0,
   extras?: ClassDetailExtras,
 ): ClassDetailDto {
-  const base = toClassItemDto(entity, scheduleConflictWarning, completedSessionsCount);
+  const base = toClassItemDto(entity, scheduleConflictWarning, completedSessionsCount, extras?.isStartDateLocked);
   const resolvedAccessMode: ClassAccessMode =
     accessMode ??
     (entity.status === ClassStatus.COMPLETED || entity.status === ClassStatus.ARCHIVED

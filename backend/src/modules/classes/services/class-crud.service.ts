@@ -11,17 +11,19 @@ import type { ClassItemDto } from '../classes.types.js';
 import {
   assertClassIsEditable,
   assertOpenClassStatus,
+  assertValidTimeRange,
+  calculateExpectedEndDate,
+  normalizeScheduleDays,
+  parseRequiredCalendarDate,
+} from '../policies/class-schedule.util.js';
+import {
   assertStartDateMutableInTx,
   assertValidActiveCourseInDb,
   assertValidActiveTeacherInDb,
-  assertValidTimeRange,
-  calculateExpectedEndDate,
   findTeacherScheduleConflictWarning,
-  getCompletedSessionsCountInTx,
-  normalizeScheduleDays,
-  parseRequiredCalendarDate,
+  getClassMutabilityCountsInTx,
   resolveUpdatedClassSchedule,
-} from '../policies/class-schedule.util.js';
+} from '../policies/class-session-lifecycle.util.js';
 import {
   CLASS_ITEM_INCLUDE,
   normalizeAndValidateClassCode,
@@ -109,18 +111,11 @@ export class ClassCrudService {
           action: 'CLASS_CREATED',
           targetType: 'Class',
           targetId: cls.id,
-          metadata: {
-            code: cls.code,
-            courseId: course.id,
-            teacherId: dto.teacherId,
-            totalSessions,
-            startDate: formatIsoDateUtc(startDate),
-            expectedEndDate: formatIsoDateUtc(expectedEndDate),
-          },
+          metadata: { code: cls.code, courseId: course.id, teacherId: dto.teacherId, totalSessions, startDate: formatIsoDateUtc(startDate), expectedEndDate: formatIsoDateUtc(expectedEndDate) },
         });
         return { created: cls, scheduleConflictWarning: warning };
       });
-      return toClassItemDto(created, scheduleConflictWarning);
+      return toClassItemDto(created, scheduleConflictWarning, 0, false);
     } catch (err: unknown) {
       if (isPrismaUniqueConstraintError(err)) {
         throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
@@ -133,7 +128,7 @@ export class ClassCrudService {
     if (dto.status !== undefined) assertOpenClassStatus(dto.status);
 
     try {
-      const { updated, warning, completedSessionsCount } =
+      const { updated, warning, completedSessionsCount, isStartDateLocked } =
         await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
         const existing = (await tx.class.findUnique({
@@ -288,21 +283,12 @@ export class ClassCrudService {
           action: 'CLASS_UPDATED',
           targetType: 'Class',
           targetId: classId,
-          metadata: {
-            code: cls.code,
-            courseId: cls.courseId,
-            teacherId: cls.teacherId,
-            status: cls.status,
-            totalSessions: cls.totalSessions,
-            expectedEndDate: formatIsoDateUtc(reconciled.expectedEndDate ?? nextExpectedEndDate),
-          },
+          metadata: { code: cls.code, courseId: cls.courseId, teacherId: cls.teacherId, status: cls.status, totalSessions: cls.totalSessions, expectedEndDate: formatIsoDateUtc(reconciled.expectedEndDate ?? nextExpectedEndDate) },
         });
-        const completedSessionsCount = startDateChanged
-          ? 0
-          : await getCompletedSessionsCountInTx(tx, classId);
-        return { updated: cls, warning: scheduleWarning, completedSessionsCount };
+        const mutability = startDateChanged ? { completedSessionsCount: 0, isStartDateLocked: false } : await getClassMutabilityCountsInTx(tx, classId);
+        return { updated: cls, warning: scheduleWarning, completedSessionsCount: mutability.completedSessionsCount, isStartDateLocked: mutability.isStartDateLocked };
       });
-      return toClassItemDto(updated, warning, completedSessionsCount);
+      return toClassItemDto(updated, warning, completedSessionsCount, isStartDateLocked);
     } catch (err: unknown) {
       if (isPrismaUniqueConstraintError(err)) {
         throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');

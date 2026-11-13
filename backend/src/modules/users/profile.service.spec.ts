@@ -629,4 +629,20 @@ describe('ProfileService (FUNC-078)', () => {
     expect(ok.profile.phone).toBe('0999888776');
     expect(emailVerifications[0]?.verifiedAt).not.toBeNull();
   });
+
+  it('rejects INACTIVE account on sendEmailChangeCode without sending OTP email', async () => {
+    userState.status = UserStatus.INACTIVE;
+    const svc = service as unknown as {
+      sendEmailChangeCode: (
+        userId: string,
+        dto: { newEmail: string },
+      ) => Promise<{ message: string; expiresInSeconds: number }>;
+    };
+
+    await expect(
+      svc.sendEmailChangeCode('u-1', { newEmail: 'new.email@webedu.vn' }),
+    ).rejects.toThrowError(new ForbiddenException('Tài khoản đã bị khóa'));
+    expect(sendVerificationCodeEmailMock).not.toHaveBeenCalled();
+    expect(sentOtps).toHaveLength(0);
+  });
 });

@@ -151,6 +151,17 @@ describe('QuestionSchemaPolicy (Task 5.2 TDD)', () => {
       },
     ],
     [
+      QuestionType.IMAGE_BASED,
+      {
+        mediaId: 'media-1',
+        options: [
+          { id: 'a', text: '猫' },
+          { id: 'b', text: '' },
+        ],
+        correctOptionIds: ['a'],
+      },
+    ],
+    [
       QuestionType.SINGLE_CHOICE,
       {
         options: [

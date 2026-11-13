@@ -952,6 +952,7 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       });
       expect(movedStart.startDate).toBe('2026-11-04');
       expect(movedStart.completedSessionsCount).toBe(0);
+      expect(movedStart.isStartDateLocked).toBe(false);
 
       // Add an AttendanceRecord (even with 0 COMPLETED sessions) -> startDate change rejected
       attendanceRecordsStore.push({ id: 'ar-lock-1', classId: created.id });
@@ -980,6 +981,7 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       });
       expect(updatedNotes.notes).toBe('Giữ nguyên ngày khai giảng');
       expect(updatedNotes.completedSessionsCount).toBe(2);
+      expect(updatedNotes.isStartDateLocked).toBe(true);
     });
   });
 
