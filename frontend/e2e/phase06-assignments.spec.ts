@@ -457,9 +457,12 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     const reopenedCard = page.locator('article', { hasText: assessmentTitle });
     await expect(reopenedCard.getByText('Đang làm dở')).toBeVisible();
     await expect(reopenedCard.getByText(/Lần làm 2/)).toBeVisible();
+    await expect(reopenedCard.getByRole('link', { name: 'Tiếp tục làm bài' })).toBeVisible();
+    await expect(reopenedCard.getByText(/Học viên rớt mạng giữa chừng E2E/)).toHaveCount(0);
     await reopenedCard.getByRole('link', { name: 'Tiếp tục làm bài' }).click();
 
-    await expect(page.getByText(/Học viên rớt mạng giữa chừng E2E/)).toBeVisible();
+    await expect(page.getByText(/Lần làm 2/).first()).toBeVisible();
+    await expect(page.getByText(/Học viên rớt mạng giữa chừng E2E/)).toHaveCount(0);
     await page.getByRole('button', { name: /Câu 2\b/i }).click();
     await expect(page.getByLabel('Câu trả lời điền từ')).toHaveValue('你好');
     await page.getByLabel('Câu trả lời điền từ').fill('您好');
@@ -492,7 +495,120 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     await page.getByRole('dialog').getByRole('button', { name: 'Xác nhận nộp bài' }).click();
     await expect(page.getByText('Bài đã nộp, đang chờ giáo viên chấm')).toBeVisible();
     await expect(page.getByText('Lần làm 2').first()).toBeVisible();
+    await expect(page.getByText(/Học viên rớt mạng giữa chừng E2E/)).toHaveCount(0);
     await expect(page.getByLabel('Câu trả lời điền từ')).toHaveValue('您好');
+
+    for (const payloadText of capturedStudentPayloads) {
+      expect(payloadText).not.toContain('reopenReason');
+      expect(payloadText).not.toContain('Học viên rớt mạng giữa chừng E2E');
+    }
+
+    expect(autosaveErrorStatuses).toEqual([]);
+    expect(pageErrors).toEqual([]);
+    expect(hydrationErrors).toEqual([]);
+  });
+
+  test('Student exam renders LISTENING <audio controlsList="nodownload"> safely', async ({
+    page,
+  }) => {
+    const { pageErrors, hydrationErrors } = attachStrictGuards(page);
+    const assessmentTitle = 'Đề Listening E2E nodownload';
+
+    await loginThroughUi(page, 'teacher.lan@webedu.vn');
+    const appOrigin = new URL(page.url()).origin;
+    const coursesRes = await page.request.get(`${API_BASE_URL}/courses`);
+    expect(coursesRes.ok()).toBeTruthy();
+    const coursesJson = (await coursesRes.json()) as {
+      items: Array<{ id: string; code: string }>;
+    };
+    const hsk2Course = coursesJson.items.find((c) => c.code === 'HSK2');
+    expect(hsk2Course).toBeTruthy();
+
+    const createRes = await page.request.post(`${API_BASE_URL}/assessments`, {
+      headers: { Origin: appOrigin },
+      data: {
+        title: assessmentTitle,
+        type: 'MINI_TEST',
+        courseId: hsk2Course!.id,
+        durationMinutes: 15,
+      },
+    });
+    expect(createRes.ok()).toBeTruthy();
+    const created = (await createRes.json()) as { id: string };
+
+    const mp3Buffer = Buffer.concat([
+      Buffer.from('ID3'),
+      Buffer.from([0x04, 0x00, 0x00]),
+      Buffer.alloc(256, 2),
+    ]);
+    const uploadRes = await page.request.post(
+      `${API_BASE_URL}/assessments/${created.id}/media`,
+      {
+        headers: { Origin: appOrigin },
+        multipart: {
+          file: {
+            name: 'listening-e2e.mp3',
+            mimeType: 'audio/mpeg',
+            buffer: mp3Buffer,
+          },
+        },
+      },
+    );
+    expect(uploadRes.ok(), `Audio upload failed: ${uploadRes.status()}`).toBeTruthy();
+    const media = (await uploadRes.json()) as { id: string };
+
+    const qRes = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
+      headers: { Origin: appOrigin },
+      data: {
+        type: 'LISTENING',
+        prompt: 'Nghe đoạn hội thoại và chọn đáp án đúng',
+        points: 2,
+        payload: {
+          mediaId: media.id,
+          maxListens: 2,
+          options: [
+            { id: 'a', text: 'Tôi đi thư viện' },
+            { id: 'b', text: 'Tôi ở nhà' },
+          ],
+          correctOptionIds: ['a'],
+        },
+      },
+    });
+    expect(qRes.ok()).toBeTruthy();
+
+    const pubRes = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/publish`, {
+      headers: { Origin: appOrigin },
+    });
+    expect(pubRes.ok()).toBeTruthy();
+
+    const classesRes = await page.request.get(`${API_BASE_URL}/classes`);
+    expect(classesRes.ok()).toBeTruthy();
+    const classesJson = (await classesRes.json()) as {
+      items: Array<{ id: string; code: string }>;
+    };
+    const hsk2Class = classesJson.items.find((c) => c.code === 'HSK2-K26-01');
+    expect(hsk2Class).toBeTruthy();
+
+    const assignRes = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/assign`, {
+      headers: { Origin: appOrigin },
+      data: {
+        classIds: [hsk2Class!.id],
+        dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    });
+    expect(assignRes.ok()).toBeTruthy();
+
+    await logoutViaApi(page);
+    await loginThroughUi(page, 'active.student@webedu.vn');
+    await page.goto('/student/assignments');
+    const listeningCard = page.locator('article', { hasText: assessmentTitle });
+    await expect(listeningCard).toBeVisible();
+    await listeningCard.getByRole('link', { name: 'Làm bài' }).click();
+
+    await expect(page.getByText('Nghe đoạn hội thoại và chọn đáp án đúng')).toBeVisible();
+    const audioEl = page.locator('audio');
+    await expect(audioEl).toBeVisible();
+    await expect(audioEl).toHaveAttribute('controlsList', 'nodownload');
 
     expect(pageErrors).toEqual([]);
     expect(hydrationErrors).toEqual([]);

@@ -67,7 +67,7 @@ export function useExamBrowserSync({
   ]);
 }
 
-/** Ticks countdown every second while active, online, and tab is visible; auto-submits once at zero. */
+/** Ticks countdown every second while active and online (wall-clock anchored); auto-submits once at zero. */
 export function useExamCountdown(options: {
   active: boolean;
   submissionId: string | undefined;

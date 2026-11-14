@@ -45,9 +45,9 @@ export class ScheduleAccessPolicy {
   }
 
   /**
-   * Resolves read access to a class's sessions (`FUNC-028`, `DEC-024`, `DEC-025`):
+   * Resolves read access to a class's sessions:
    * - ADMIN: all classes
-   * - TEACHER: currently assigned lead teacher (including completed/archived classes per `DEC-025`)
+   * - TEACHER: currently assigned lead teacher (including completed/archived classes)
    * - STUDENT: only classes where student holds an enrollment (`ACTIVE`, `COMPLETED`, etc.)
    * - Pure SUPERADMIN: denied unless also ADMIN
    */
@@ -78,7 +78,7 @@ export class ScheduleAccessPolicy {
     throw new ForbiddenException('Bạn không có quyền xem lịch học của lớp này');
   }
 
-  /** Only `ADMIN` may mutate schedule rules, reschedule, cancel, or add manual/makeup sessions (`DEC-031`). */
+  /** Only `ADMIN` may mutate schedule rules, reschedule, cancel, or add manual/makeup sessions. */
   assertAdminCanMutateSchedule(actor: AuthenticatedUser, classStatus: ClassStatus): void {
     if (!actor.roles.includes(Role.ADMIN)) {
       throw new ForbiddenException(
@@ -92,7 +92,7 @@ export class ScheduleAccessPolicy {
     }
   }
 
-  /** Calendar-wide scope filter by actor role (`DEC-024`, `DEC-025`). */
+  /** Calendar-wide scope filter by actor role. */
   async resolveCalendarClassScope(
     prisma: PrismaService,
     actor: AuthenticatedUser,

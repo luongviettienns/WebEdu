@@ -13,6 +13,7 @@ import {
   isAnswerNonEmpty,
   isRecord,
   matchesSequence,
+  shuffleOptionsDeterministically,
   shuffleTokensDeterministically,
 } from './submission-payload.util.js';
 
@@ -47,7 +48,13 @@ export class SubmissionAnswerPolicy {
     switch (question.type) {
       case QuestionType.SINGLE_CHOICE:
       case QuestionType.MULTIPLE_CHOICE:
-        return { ...base, options: extractOptions(p) };
+        return {
+          ...base,
+          options: shuffleOptionsDeterministically(
+            extractOptions(p),
+            `${seedKey}:${question.id}:options`,
+          ),
+        };
       case QuestionType.FILL_BLANK:
         return base;
       case QuestionType.ORDERING:
@@ -65,7 +72,10 @@ export class SubmissionAnswerPolicy {
       }
       case QuestionType.LISTENING:
       case QuestionType.IMAGE_BASED: {
-        const options = extractOptions(p);
+        const rawOptions = extractOptions(p);
+        const options = hasUsableOptionContent(rawOptions)
+          ? shuffleOptionsDeterministically(rawOptions, `${seedKey}:${question.id}:options`)
+          : undefined;
         return {
           ...base,
           ...(typeof p.mediaId === 'string' && p.mediaId.trim() ? { mediaId: p.mediaId } : {}),
@@ -76,7 +86,7 @@ export class SubmissionAnswerPolicy {
             ? { caption: p.caption }
             : {}),
           ...(typeof p.multiple === 'boolean' ? { multiple: p.multiple } : {}),
-          ...(hasUsableOptionContent(options) ? { options } : {}),
+          ...(options ? { options } : {}),
         };
       }
     }

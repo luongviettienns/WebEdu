@@ -11,19 +11,14 @@ import {
   assertRateLimitNotExceeded,
   resetRateLimitKey,
 } from '../../../common/auth/auth-rate-limit.util.js';
-import {
-  comparePassword,
-  hashPasswordSync,
-} from '../../../common/auth/password-hash.util.js';
+import { comparePassword } from '../../../common/auth/password-hash.util.js';
 import { IDLE_TIMEOUT_MS } from '../../../common/guards/jwt-auth.guard.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { EMAIL_REGEX } from '../../../common/utils/contact-validation.util.js';
 import type { LoginDto } from '../dto/auth.dto.js';
 import { AuthSessionService } from './auth-session.service.js';
 
-export const DUMMY_PASSWORD_HASH = hashPasswordSync(
-  'webedu_dummy_anti_timing_secret_2026',
-);
+export const DUMMY_PASSWORD_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iK8O';
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 

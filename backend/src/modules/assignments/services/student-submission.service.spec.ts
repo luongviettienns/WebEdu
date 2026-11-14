@@ -2,6 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   NotFoundException,
   StreamableFile,
 } from '@nestjs/common';
@@ -14,12 +16,18 @@ import {
   SubmissionStatus,
   UserStatus,
 } from '@prisma/client';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
-import type { AssessmentMediaAccessService } from '../../assessments/services/assessment-media-access.service.js';
+import type { AssessmentMediaAccessService } from '../../assessments/index.js';
 import { AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import { StudentSubmissionService } from './student-submission.service.js';
+import {
+  AUDIO_LISTEN_WINDOW_MS,
+  MAX_AUTOSAVE_ELAPSED_STEP_SECONDS,
+  SUBMIT_GRACE_MS,
+  isExpired,
+} from './submission-session.util.js';
 
 function makeStudent(id = 'student-1'): AuthenticatedUser {
   return {
@@ -99,6 +107,7 @@ function makeMockDeps() {
   };
 
   const prisma = {
+    $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     enrollment: {
       findFirst: vi.fn(async () => ({ id: 'enr-1' })),
@@ -112,7 +121,6 @@ function makeMockDeps() {
         courseId: 'course-1',
         status: 'ACTIVE',
         course: { name: 'Tiếng Trung HSK 1' },
-        teacherHistory: [],
       })),
     },
     classAssignment: {
@@ -163,6 +171,10 @@ function makeMockDeps() {
 
 describe('StudentSubmissionService (RED-GREEN TDD)', () => {
   const student = makeStudent();
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   describe('listMyAssignments', () => {
     it('returns empty items immediately when student has no ACTIVE/COMPLETED enrollments', async () => {
@@ -385,7 +397,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(tx.submission.update).not.toHaveBeenCalled();
     });
 
-    it('auto-submits expired IN_PROGRESS session on resume and includes reopenReason on attemptNumber > 1', async () => {
+    it('auto-submits expired IN_PROGRESS session on resume and omits reopenReason on attemptNumber > 1', async () => {
       const { tx, service } = makeMockDeps();
       const baseActive = {
         id: 'sub-2',
@@ -417,7 +429,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const session = await service.startOrResume('assign-1', student);
       expect(session.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
       expect(session.submission.autoSubmitted).toBe(true);
-      expect(session.submission.reopenReason).toBe('GV mở lại lượt 2');
+      expect('reopenReason' in session.submission).toBe(false);
     });
   });
 
@@ -919,7 +931,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       ).rejects.toThrowError(new BadRequestException('Chưa bắt đầu làm bài'));
       expect(streamStoredFile).not.toHaveBeenCalled();
 
-      // 2. First request increments audioPlayCount to 1 and streams file
+      // 2. First request increments audioPlayCount to 1 and sets lastAudioPlayAt
       tx.submission.findFirst.mockResolvedValueOnce({
         id: 'sub-1',
         status: SubmissionStatus.IN_PROGRESS,
@@ -933,12 +945,13 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
           questionId: 'q-list',
           answerPayload: {},
           audioPlayCount: 1,
+          lastAudioPlayAt: expect.any(Date),
         },
-        update: { audioPlayCount: 1 },
+        update: { audioPlayCount: 1, lastAudioPlayAt: expect.any(Date) },
       });
       expect(streamStoredFile).toHaveBeenCalledTimes(1);
 
-      // 3. Second request increments audioPlayCount from 1 to 2 and streams file
+      // 3. Second request (no prior lastAudioPlayAt) increments audioPlayCount from 1 to 2 and sets lastAudioPlayAt
       tx.submissionAnswer.upsert.mockClear();
       tx.submission.findFirst.mockResolvedValueOnce({
         id: 'sub-1',
@@ -952,9 +965,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
           submissionId: 'sub-1',
           questionId: 'q-list',
           answerPayload: {},
-          audioPlayCount: 1,
+          audioPlayCount: 2,
+          lastAudioPlayAt: expect.any(Date),
         },
-        update: { audioPlayCount: 2 },
+        update: { audioPlayCount: 2, lastAudioPlayAt: expect.any(Date) },
       });
       expect(streamStoredFile).toHaveBeenCalledTimes(2);
 
@@ -972,7 +986,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(tx.submissionAnswer.upsert).not.toHaveBeenCalled();
       expect(streamStoredFile).not.toHaveBeenCalled();
 
-      // 5. Teacher streaming does not touch student submission quota
+      // 5. Teacher streaming does not touch student submission quota; former teacher gets 403
       tx.submission.findFirst.mockClear();
       await service.streamAssignmentMedia('assign-1', 'audio-1', {
         ...student,
@@ -982,6 +996,579 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       });
       expect(tx.submission.findFirst).not.toHaveBeenCalled();
       expect(streamStoredFile).toHaveBeenCalledTimes(1);
+
+      streamStoredFile.mockClear();
+      await expect(
+        service.streamAssignmentMedia('assign-1', 'audio-1', {
+          ...student,
+          id: 'teacher-former',
+          roles: [Role.TEACHER],
+          effectiveRole: Role.TEACHER,
+        }),
+      ).rejects.toThrowError(new ForbiddenException('Bạn không có quyền xem bài tập của lớp này'));
+      expect(streamStoredFile).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Round 2 Hardening (RED-GREEN TDD)', () => {
+    it('deduplicates seek/range audio streams within AUDIO_LISTEN_WINDOW_MS (2 min) and increments after window expires', async () => {
+      vi.useFakeTimers();
+      const t0 = new Date('2026-11-15T10:00:00.000Z');
+      vi.setSystemTime(t0);
+
+      expect(AUDIO_LISTEN_WINDOW_MS).toBe(120_000);
+
+      const { prisma, tx, streamStoredFile, service } = makeMockDeps();
+      prisma.classAssignment.findUnique.mockResolvedValue(
+        makeAssignmentRow({
+          questions: [
+            {
+              id: 'q-list',
+              position: 1,
+              type: QuestionType.LISTENING,
+              prompt: 'Nghe',
+              points: 2,
+              payload: { mediaId: 'audio-1', maxListens: 2, options: [{ id: 'a', text: 'A' }] },
+            },
+          ],
+        }) as never,
+      );
+
+      // 1. Initial play at t0 -> sets audioPlayCount=1, lastAudioPlayAt=t0
+      tx.submission.findFirst.mockResolvedValueOnce({
+        id: 'sub-1',
+        status: SubmissionStatus.IN_PROGRESS,
+        answers: [],
+      } as never);
+      await service.streamAssignmentMedia('assign-1', 'audio-1', student);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledTimes(1);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ audioPlayCount: 1, lastAudioPlayAt: t0 }),
+          update: expect.objectContaining({ audioPlayCount: 1, lastAudioPlayAt: t0 }),
+        }),
+      );
+
+      // 2. Seek/range storm within 2 minutes (+5s, +45s, +119s) -> must NOT increment or call upsert
+      for (const offsetMs of [5_000, 45_000, 119_000]) {
+        vi.setSystemTime(new Date(t0.getTime() + offsetMs));
+        tx.submissionAnswer.upsert.mockClear();
+        tx.submission.findFirst.mockResolvedValueOnce({
+          id: 'sub-1',
+          status: SubmissionStatus.IN_PROGRESS,
+          answers: [{ questionId: 'q-list', audioPlayCount: 1, lastAudioPlayAt: t0 }],
+        } as never);
+        await service.streamAssignmentMedia('assign-1', 'audio-1', student);
+        expect(tx.submissionAnswer.upsert).not.toHaveBeenCalled();
+      }
+      expect(streamStoredFile).toHaveBeenCalledTimes(4);
+
+      // 3. Call at exact 2-minute boundary (+120s) -> window expired -> increments to 2
+      const t2 = new Date(t0.getTime() + AUDIO_LISTEN_WINDOW_MS);
+      vi.setSystemTime(t2);
+      tx.submissionAnswer.upsert.mockClear();
+      tx.submission.findFirst.mockResolvedValueOnce({
+        id: 'sub-1',
+        status: SubmissionStatus.IN_PROGRESS,
+        answers: [{ questionId: 'q-list', audioPlayCount: 1, lastAudioPlayAt: t0 }],
+      } as never);
+      await service.streamAssignmentMedia('assign-1', 'audio-1', student);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledTimes(1);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ audioPlayCount: 2, lastAudioPlayAt: t2 }),
+          update: expect.objectContaining({ audioPlayCount: 2, lastAudioPlayAt: t2 }),
+        }),
+      );
+
+      // 4. Seek during 2nd listen window (+150s) -> allowed without incrementing past maxListens=2
+      vi.setSystemTime(new Date(t2.getTime() + 30_000));
+      tx.submissionAnswer.upsert.mockClear();
+      tx.submission.findFirst.mockResolvedValueOnce({
+        id: 'sub-1',
+        status: SubmissionStatus.IN_PROGRESS,
+        answers: [{ questionId: 'q-list', audioPlayCount: 2, lastAudioPlayAt: t2 }],
+      } as never);
+      await service.streamAssignmentMedia('assign-1', 'audio-1', student);
+      expect(tx.submissionAnswer.upsert).not.toHaveBeenCalled();
+
+      // 5. Over-maxListens inside window still throws 400
+      tx.submission.findFirst.mockResolvedValueOnce({
+        id: 'sub-1',
+        status: SubmissionStatus.IN_PROGRESS,
+        answers: [{ questionId: 'q-list', audioPlayCount: 3, lastAudioPlayAt: t2 }],
+      } as never);
+      await expect(
+        service.streamAssignmentMedia('assign-1', 'audio-1', student),
+      ).rejects.toThrowError(new BadRequestException('Đã hết lượt nghe cho phép'));
+
+      // 6. After 2nd window expires (+121s from t2), audioPlayCount=2 >= maxListens=2 -> throws 400
+      vi.setSystemTime(new Date(t2.getTime() + AUDIO_LISTEN_WINDOW_MS + 1_000));
+      streamStoredFile.mockClear();
+      tx.submission.findFirst.mockResolvedValueOnce({
+        id: 'sub-1',
+        status: SubmissionStatus.IN_PROGRESS,
+        answers: [{ questionId: 'q-list', audioPlayCount: 2, lastAudioPlayAt: t2 }],
+      } as never);
+      await expect(
+        service.streamAssignmentMedia('assign-1', 'audio-1', student),
+      ).rejects.toThrowError(new BadRequestException('Đã hết lượt nghe cho phép'));
+      expect(streamStoredFile).not.toHaveBeenCalled();
+    });
+
+    it('caps client-reported elapsedSeconds=999999999 to prevElapsed + 120 and <= durationMinutes * 60 (timed & untimed)', async () => {
+      expect(MAX_AUTOSAVE_ELAPSED_STEP_SECONDS).toBe(120);
+
+      const { prisma, tx, service } = makeMockDeps();
+      const timedSub = {
+        id: 'sub-timed',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        elapsedSeconds: 100,
+        remainingSeconds: 1700,
+        startedAt: new Date('2026-11-15T10:00:00.000Z'),
+        lastSavedAt: new Date('2026-11-15T10:01:40.000Z'),
+        lastSyncedAt: new Date('2026-11-15T10:01:40.000Z'),
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: [],
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(timedSub as never);
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...timedSub,
+        ...args.data,
+        answers: [],
+      })) as never);
+
+      // Timed 30 min (1800s): 100 -> capped at 100 + 120 = 220
+      const cappedTimed = await service.autosave(
+        'assign-1',
+        { answers: [], elapsedSeconds: 999_999_999 },
+        student,
+      );
+      expect(cappedTimed.submission.elapsedSeconds).toBe(220);
+      expect(cappedTimed.submission.remainingSeconds).toBe(1580);
+      expect(cappedTimed.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
+
+      // Timed near ceiling (1750 -> min(1750 + 120, 1800) = 1800, remaining = 0 -> autoSubmitted)
+      tx.submission.findFirst.mockResolvedValueOnce({
+        ...timedSub,
+        elapsedSeconds: 1750,
+        remainingSeconds: 50,
+      } as never);
+      const cappedAtMax = await service.autosave(
+        'assign-1',
+        { answers: [], elapsedSeconds: 999_999_999 },
+        student,
+      );
+      expect(cappedAtMax.submission.elapsedSeconds).toBe(1800);
+      expect(cappedAtMax.submission.remainingSeconds).toBe(0);
+      expect(cappedAtMax.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(cappedAtMax.submission.autoSubmitted).toBe(true);
+
+      // Untimed (effectiveDurationMinutes: null): 50 -> capped at 50 + 120 = 170, remainingSeconds: null
+      prisma.classAssignment.findUnique.mockResolvedValueOnce(
+        makeAssignmentRow({ effectiveDurationMinutes: null }) as never,
+      );
+      const untimedSub = {
+        ...timedSub,
+        id: 'sub-untimed',
+        elapsedSeconds: 50,
+        remainingSeconds: null,
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(untimedSub as never);
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...untimedSub,
+        ...args.data,
+        answers: [],
+      })) as never);
+
+      const cappedUntimed = await service.submit(
+        'assign-1',
+        { elapsedSeconds: 999_999_999 },
+        student,
+      );
+      expect(cappedUntimed.submission.elapsedSeconds).toBe(170);
+      expect(cappedUntimed.submission.remainingSeconds).toBeNull();
+    });
+
+    it('keeps autosave and submit behavior identical at dueAt + 30s (within 60s grace) and dueAt + 61s (expired)', async () => {
+      vi.useFakeTimers();
+      const dueAt = new Date('2026-11-15T12:00:00.000Z');
+      expect(SUBMIT_GRACE_MS).toBe(60_000);
+      expect(isExpired(new Date(dueAt.getTime() + 30_000), dueAt, 1200)).toBe(false);
+      expect(isExpired(new Date(dueAt.getTime() + 60_000), dueAt, 1200)).toBe(false);
+      expect(isExpired(new Date(dueAt.getTime() + 61_000), dueAt, 1200)).toBe(true);
+      expect(isExpired(new Date(dueAt.getTime() - 10_000), dueAt, 0)).toBe(true);
+
+      const { prisma, tx, service } = makeMockDeps();
+      prisma.classAssignment.findUnique.mockResolvedValue(makeAssignmentRow({ dueAt }) as never);
+
+      const activeSub = {
+        id: 'sub-grace',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        elapsedSeconds: 100,
+        remainingSeconds: 1700,
+        startedAt: new Date('2026-11-15T11:30:00.000Z'),
+        lastSavedAt: new Date('2026-11-15T11:31:40.000Z'),
+        lastSyncedAt: new Date('2026-11-15T11:31:40.000Z'),
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: [],
+      };
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...activeSub,
+        ...args.data,
+        answers: [],
+      })) as never);
+
+      // At dueAt + 30s -> both autosave and manual submit succeed WITHOUT autoSubmitted=true
+      vi.setSystemTime(new Date(dueAt.getTime() + 30_000));
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      const savedInGrace = await service.autosave(
+        'assign-1',
+        { answers: [], elapsedSeconds: 110, remainingSeconds: 1690 },
+        student,
+      );
+      expect(savedInGrace.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
+      expect(savedInGrace.submission.autoSubmitted).toBe(false);
+
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      const submittedInGrace = await service.submit(
+        'assign-1',
+        { elapsedSeconds: 115, remainingSeconds: 1685 },
+        student,
+      );
+      expect(submittedInGrace.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(submittedInGrace.submission.autoSubmitted).toBe(false);
+
+      // At dueAt + 61s -> autosave auto-submits, manual submit throws 400
+      vi.setSystemTime(new Date(dueAt.getTime() + 61_000));
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      const autoSavedPastGrace = await service.autosave(
+        'assign-1',
+        { answers: [], elapsedSeconds: 120, remainingSeconds: 1680 },
+        student,
+      );
+      expect(autoSavedPastGrace.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(autoSavedPastGrace.submission.autoSubmitted).toBe(true);
+
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      await expect(
+        service.submit('assign-1', { elapsedSeconds: 120, remainingSeconds: 1680 }, student),
+      ).rejects.toThrowError(new BadRequestException('Đã quá hạn nộp bài'));
+    });
+
+    it('rate-limits autosave (> 30 req/min) and submit (> 10 req/min) with 429 TOO_MANY_REQUESTS', async () => {
+      const { prisma, tx, service } = makeMockDeps();
+      const rateCounts = new Map<string, number>();
+      const capturedMaxPoints = new Map<string, number>();
+
+      prisma.$queryRaw.mockImplementation((async (
+        _strings: TemplateStringsArray,
+        key: string,
+        ...rest: unknown[]
+      ) => {
+        const maxPointsArg = rest.find((v): v is number => typeof v === 'number') ?? 0;
+        capturedMaxPoints.set(key, maxPointsArg);
+        const next = (rateCounts.get(key) ?? 0) + 1;
+        rateCounts.set(key, next);
+        return [
+          {
+            key,
+            points: next,
+            last_attempt_at: new Date(),
+            blocked_until: next > maxPointsArg ? new Date(Date.now() + 60_000) : null,
+          },
+        ];
+      }) as never);
+
+      const baseSub = {
+        id: 'sub-rl',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        elapsedSeconds: 10,
+        remainingSeconds: 1790,
+        startedAt: new Date(),
+        lastSavedAt: new Date(),
+        lastSyncedAt: new Date(),
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: [],
+      };
+      tx.submission.findFirst.mockResolvedValue(baseSub as never);
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...baseSub,
+        ...args.data,
+        answers: [],
+      })) as never);
+
+      for (let i = 0; i < 30; i += 1) {
+        await expect(
+          service.autosave('assign-1', { answers: [], elapsedSeconds: 10 }, student),
+        ).resolves.toMatchObject({ submission: { id: 'sub-rl' } });
+      }
+      expect(capturedMaxPoints.get('autosave:assign-1:student-1')).toBe(30);
+
+      await expect(
+        service.autosave('assign-1', { answers: [], elapsedSeconds: 10 }, student),
+      ).rejects.toSatisfy(
+        (err: unknown) =>
+          err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS,
+      );
+
+      for (let i = 0; i < 10; i += 1) {
+        await expect(service.submit('assign-1', { elapsedSeconds: 20 }, student)).resolves.toMatchObject(
+          { submission: { id: 'sub-rl' } },
+        );
+      }
+      expect(capturedMaxPoints.get('submit:assign-1:student-1')).toBe(10);
+
+      await expect(service.submit('assign-1', { elapsedSeconds: 20 }, student)).rejects.toSatisfy(
+        (err: unknown) =>
+          err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS,
+      );
+    });
+  });
+
+  describe('Post-deadline & expired-timer answer overwrite protection (RED-GREEN TDD)', () => {
+    it('autosave past effectiveDueAt + SUBMIT_GRACE_MS does NOT persist late answers and auto-submits with previously saved DB answers', async () => {
+      vi.useFakeTimers();
+      const dueAt = new Date('2026-11-15T12:00:00.000Z');
+      vi.setSystemTime(new Date(dueAt.getTime() + SUBMIT_GRACE_MS + 3_600_000));
+
+      const { prisma, tx, service } = makeMockDeps();
+      prisma.classAssignment.findUnique.mockResolvedValue(makeAssignmentRow({ dueAt }) as never);
+
+      const savedAnswerAt = new Date('2026-11-15T11:50:00.000Z');
+      const existingAnswers = [
+        {
+          questionId: 'q-1',
+          answerPayload: { selectedOptionIds: ['a'] },
+          audioPlayCount: 0,
+          updatedAt: savedAnswerAt,
+        },
+      ];
+      const activeSub = {
+        id: 'sub-late-autosave',
+        studentId: 'student-1',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        elapsedSeconds: 500,
+        remainingSeconds: 1300,
+        startedAt: new Date('2026-11-15T11:30:00.000Z'),
+        lastSavedAt: savedAnswerAt,
+        lastSyncedAt: savedAnswerAt,
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: existingAnswers,
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...activeSub,
+        ...args.data,
+        answers: existingAnswers,
+      })) as never);
+
+      const res = await service.autosave(
+        'assign-1',
+        {
+          answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+          elapsedSeconds: 520,
+          remainingSeconds: 1280,
+        },
+        student,
+      );
+
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(res.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(res.submission.autoSubmitted).toBe(true);
+      expect(res.answers).toHaveLength(1);
+      expect(res.answers[0]?.answerPayload).toEqual({ selectedOptionIds: ['a'] });
+    });
+
+    it('submit past effectiveDueAt + SUBMIT_GRACE_MS blocks late answer overwrites for autoSubmitted=true while rejecting manual submit with 400', async () => {
+      vi.useFakeTimers();
+      const dueAt = new Date('2026-11-15T12:00:00.000Z');
+      vi.setSystemTime(new Date(dueAt.getTime() + SUBMIT_GRACE_MS + 3_600_000));
+
+      const { prisma, tx, service } = makeMockDeps();
+      prisma.classAssignment.findUnique.mockResolvedValue(makeAssignmentRow({ dueAt }) as never);
+
+      const savedAnswerAt = new Date('2026-11-15T11:50:00.000Z');
+      const existingAnswers = [
+        {
+          questionId: 'q-1',
+          answerPayload: { selectedOptionIds: ['a'] },
+          audioPlayCount: 0,
+          updatedAt: savedAnswerAt,
+        },
+      ];
+      const activeSub = {
+        id: 'sub-late-submit',
+        studentId: 'student-1',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        elapsedSeconds: 500,
+        remainingSeconds: 1300,
+        startedAt: new Date('2026-11-15T11:30:00.000Z'),
+        lastSavedAt: savedAnswerAt,
+        lastSyncedAt: savedAnswerAt,
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: existingAnswers,
+      };
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...activeSub,
+        ...args.data,
+        answers: existingAnswers,
+      })) as never);
+
+      // Without autoSubmitted: true -> throws 400 and never writes answers
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      await expect(
+        service.submit(
+          'assign-1',
+          {
+            answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+            elapsedSeconds: 520,
+          },
+          student,
+        ),
+      ).rejects.toThrowError(new BadRequestException('Đã quá hạn nộp bài'));
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+
+      // With autoSubmitted: true -> closes as SUBMITTED_WAITING without modifying DB answers
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      const res = await service.submit(
+        'assign-1',
+        {
+          autoSubmitted: true,
+          answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+          elapsedSeconds: 520,
+        },
+        student,
+      );
+
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(res.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(res.submission.autoSubmitted).toBe(true);
+      expect(res.answers).toHaveLength(1);
+      expect(res.answers[0]?.answerPayload).toEqual({ selectedOptionIds: ['a'] });
+    });
+
+    it('blocks late dto.answers on autosave/submit when server submission.remainingSeconds is already <= 0, while preserving legitimate final-tick saves within grace', async () => {
+      vi.useFakeTimers();
+      const now = new Date('2026-11-15T11:45:00.000Z');
+      const dueAt = new Date('2026-11-15T12:00:00.000Z');
+      vi.setSystemTime(now);
+
+      const { prisma, tx, service } = makeMockDeps();
+      prisma.classAssignment.findUnique.mockResolvedValue(makeAssignmentRow({ dueAt }) as never);
+
+      const preExpiryAnswers = [
+        {
+          questionId: 'q-1',
+          answerPayload: { selectedOptionIds: ['a'] },
+          audioPlayCount: 0,
+          updatedAt: new Date('2026-11-15T11:40:00.000Z'),
+        },
+      ];
+      const alreadyZeroSub = {
+        id: 'sub-zero-server',
+        studentId: 'student-1',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        elapsedSeconds: 1800,
+        remainingSeconds: 0,
+        startedAt: new Date('2026-11-15T11:15:00.000Z'),
+        lastSavedAt: new Date('2026-11-15T11:44:50.000Z'),
+        lastSyncedAt: new Date('2026-11-15T11:44:50.000Z'),
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: preExpiryAnswers,
+      };
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...alreadyZeroSub,
+        ...args.data,
+        answers: preExpiryAnswers,
+      })) as never);
+
+      // Server already had remainingSeconds = 0 -> autosave does NOT persist late answers
+      tx.submission.findFirst.mockResolvedValueOnce(alreadyZeroSub as never);
+      const autosaveRes = await service.autosave(
+        'assign-1',
+        {
+          answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+          elapsedSeconds: 1810,
+          remainingSeconds: 0,
+        },
+        student,
+      );
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(autosaveRes.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(autosaveRes.submission.autoSubmitted).toBe(true);
+      expect(autosaveRes.answers[0]?.answerPayload).toEqual({ selectedOptionIds: ['a'] });
+
+      // Server already had remainingSeconds = 0 -> submit with autoSubmitted=true does NOT persist late answers
+      tx.submission.findFirst.mockResolvedValueOnce(alreadyZeroSub as never);
+      const submitRes = await service.submit(
+        'assign-1',
+        {
+          autoSubmitted: true,
+          answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+          elapsedSeconds: 1810,
+          remainingSeconds: 0,
+        },
+        student,
+      );
+      expect(tx.$executeRaw).not.toHaveBeenCalled();
+      expect(submitRes.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(submitRes.submission.autoSubmitted).toBe(true);
+      expect(submitRes.answers[0]?.answerPayload).toEqual({ selectedOptionIds: ['a'] });
+
+      // Legitimate final tick while server remainingSeconds > 0 and within grace -> DOES persist final answers!
+      vi.setSystemTime(new Date(dueAt.getTime() + 30_000));
+      const finalTickSub = {
+        ...alreadyZeroSub,
+        id: 'sub-final-tick',
+        elapsedSeconds: 1790,
+        remainingSeconds: 10,
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(finalTickSub as never);
+      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+        ...finalTickSub,
+        ...args.data,
+        answers: [
+          {
+            questionId: 'q-1',
+            answerPayload: { selectedOptionIds: ['b'] },
+            audioPlayCount: 0,
+            updatedAt: new Date(),
+          },
+        ],
+      })) as never);
+
+      const finalTickRes = await service.submit(
+        'assign-1',
+        {
+          autoSubmitted: true,
+          answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+          elapsedSeconds: 1800,
+          remainingSeconds: 0,
+        },
+        student,
+      );
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      expect(finalTickRes.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+      expect(finalTickRes.submission.autoSubmitted).toBe(true);
     });
   });
 });

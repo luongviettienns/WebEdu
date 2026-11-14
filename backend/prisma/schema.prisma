@@ -358,6 +358,7 @@ model Enrollment {
   student User  @relation("StudentEnrollments", fields: [studentId], references: [id], onDelete: Restrict)
 
   @@index([classId, status])
+  /// Partial unique index `idx_unique_student_active_enrollment` ON "enrollments"("student_id") WHERE "status" = 'ACTIVE' is enforced in SQL migrations (1 student = at most 1 ACTIVE enrollment).
   @@index([studentId, status])
   @@map("enrollments")
 }
@@ -634,9 +635,10 @@ model SubmissionAnswer {
   id             String   @id @default(uuid())
   submissionId   String   @map("submission_id")
   questionId     String   @map("question_id")
-  answerPayload  Json     @map("answer_payload")
-  audioPlayCount Int      @default(0) @map("audio_play_count")
-  isCorrect      Boolean? @map("is_correct")
+  answerPayload   Json      @map("answer_payload")
+  audioPlayCount  Int       @default(0) @map("audio_play_count")
+  lastAudioPlayAt DateTime? @map("last_audio_play_at") @db.Timestamptz(3)
+  isCorrect       Boolean?  @map("is_correct")
   earnedPoints   Float?   @map("earned_points")
   aiFeedback     String?  @map("ai_feedback") @db.Text
   teacherComment String?  @map("teacher_comment") @db.Text

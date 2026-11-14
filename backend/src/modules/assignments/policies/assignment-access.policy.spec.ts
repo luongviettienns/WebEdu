@@ -28,7 +28,9 @@ function makeClassRecord(overrides?: {
     courseId: 'course-1',
     status: ClassStatus.ACTIVE,
     course: { name: 'Tiếng Trung HSK 1' },
-    teacherHistory: (overrides?.coTeacherIds ?? []).map((teacherId) => ({ teacherId })),
+    ...(overrides?.coTeacherIds
+      ? { teacherHistory: overrides.coTeacherIds.map((teacherId) => ({ teacherId })) }
+      : {}),
   };
 }
 
@@ -51,8 +53,8 @@ describe('AssignmentAccessPolicy', () => {
   const policy = new AssignmentAccessPolicy();
 
   describe('loadClassForAccess', () => {
-    it('loads the class with course name and open teacherHistory records', async () => {
-      const cls = makeClassRecord({ coTeacherIds: ['teacher-co'] });
+    it('loads the class with course name without querying teacherHistory', async () => {
+      const cls = makeClassRecord();
       const { db, findUnique } = makeDbMock({ classRecord: cls });
 
       const result = await policy.loadClassForAccess(db, 'class-1');
@@ -67,10 +69,6 @@ describe('AssignmentAccessPolicy', () => {
           courseId: true,
           status: true,
           course: { select: { name: true } },
-          teacherHistory: {
-            where: { assignedTo: null },
-            select: { teacherId: true },
-          },
         },
       });
     });
@@ -158,7 +156,7 @@ describe('AssignmentAccessPolicy', () => {
   });
 
   describe('assertTeacherOrAdminCanReadClass', () => {
-    it('allows ADMIN, lead teacher, and teacher in teacherHistory, while rejecting unrelated teacher and STUDENT', async () => {
+    it('allows ADMIN and current lead teacher, while rejecting former teacher in teacherHistory, unrelated teacher, and STUDENT', async () => {
       const cls = makeClassRecord({ teacherId: 'teacher-lead', coTeacherIds: ['teacher-co'] });
       const { db } = makeDbMock({ classRecord: cls });
 
@@ -172,14 +170,16 @@ describe('AssignmentAccessPolicy', () => {
           'class-1',
         ),
       ).resolves.toEqual(cls);
+
       await expect(
         policy.assertTeacherOrAdminCanReadClass(
           db,
           makeActor('teacher-co', [Role.TEACHER]),
           'class-1',
         ),
-      ).resolves.toEqual(cls);
-
+      ).rejects.toThrowError(
+        new ForbiddenException('Bạn không có quyền xem bài tập của lớp này'),
+      );
       await expect(
         policy.assertTeacherOrAdminCanReadClass(
           db,
@@ -270,17 +270,19 @@ describe('AssignmentAccessPolicy', () => {
       expect(findFirst).not.toHaveBeenCalled();
     });
 
-    it('resolves TEACHER for active co-teacher', async () => {
-      const cls = makeClassRecord({ coTeacherIds: ['teacher-co'] });
-      const { db } = makeDbMock({ classRecord: cls });
+    it('rejects former teacher in teacherHistory with 403 ForbiddenException when not current class teacher', async () => {
+      const cls = makeClassRecord({ teacherId: 'teacher-lead', coTeacherIds: ['teacher-co'] });
+      const { db } = makeDbMock({ classRecord: cls, enrollmentRecord: null });
 
-      const res = await policy.resolveClassAssignmentViewer(
-        db,
-        makeActor('teacher-co', [Role.TEACHER]),
-        'class-1',
+      await expect(
+        policy.resolveClassAssignmentViewer(
+          db,
+          makeActor('teacher-co', [Role.TEACHER]),
+          'class-1',
+        ),
+      ).rejects.toThrowError(
+        new ForbiddenException('Bạn không có quyền xem bài tập của lớp này'),
       );
-
-      expect(res).toEqual({ role: 'TEACHER', cls });
     });
 
     it('falls back to STUDENT when multi-role TEACHER+STUDENT is not class teacher but is enrolled', async () => {

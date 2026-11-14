@@ -81,12 +81,6 @@ export function StudentSubmittedView({ session }: StudentSubmittedViewProps) {
         </div>
       ) : null}
 
-      {submission.reopenReason ? (
-        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5 text-xs text-[var(--ink-2)]">
-          Lý do mở lại lượt làm: <strong className="text-[var(--ink)]">{submission.reopenReason}</strong>
-        </div>
-      ) : null}
-
       {showScore ? (
         <div className="rounded-2xl border border-[var(--jade)]/30 bg-[var(--jade-soft)]/60 p-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

@@ -32,7 +32,10 @@ import {
   resolveSystemSettingsServices,
   type SystemSettingsServicesHandle,
 } from './helpers/system-settings-services.js';
-import { calculateAgeInVnTimezone } from '../src/common/utils/timezone.util.js';
+import {
+  calculateAgeInVnTimezone,
+  resolveVnCalendarDateForDb,
+} from '../src/common/utils/timezone.util.js';
 import type { AuthenticatedUser } from '../src/common/auth/auth.types.js';
 import {
   startIsolatedPostgresTestDb,
@@ -1023,7 +1026,10 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     // 2. Simulate Phase 3 DROPPED enrollment (currentClassId = null, Enrollment = DROPPED, User = INACTIVE)
     await prisma.enrollment.updateMany({
       where: { studentId: reg.user.id },
-      data: { status: EnrollmentStatus.DROPPED, leftDate: new Date() },
+      data: {
+        status: EnrollmentStatus.DROPPED,
+        leftDate: resolveVnCalendarDateForDb() ?? new Date(),
+      },
     });
     await prisma.studentProfile.update({
       where: { userId: reg.user.id },
@@ -1424,7 +1430,7 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
       }),
     ).rejects.toThrowError(
       new BadRequestException(
-        'Bạn đã nhập sai mã xác thực quá nhiều lần. Vui lòng yêu cầu mã mới',
+        'Mã xác thực không tồn tại, đã hết hạn hoặc đã nhập sai quá số lần cho phép. Vui lòng yêu cầu mã mới',
       ),
     );
 

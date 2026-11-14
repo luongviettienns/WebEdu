@@ -1,7 +1,13 @@
+import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import { isAnswerNonEmpty, SubmissionAnswerPolicy } from './submission-answer.policy.js';
+import {
+  resolveShuffleSecret,
+  shuffleOptionsDeterministically,
+  shuffleTokensDeterministically,
+} from './submission-payload.util.js';
 
 const FORBIDDEN_SECRET_KEYS = [
   'correctOptionIds',
@@ -53,10 +59,13 @@ describe('SubmissionAnswerPolicy', () => {
           },
         },
         assertShape: (dto: ReturnType<SubmissionAnswerPolicy['sanitizeQuestionForStudent']>) => {
-          expect(dto.options).toEqual([
-            { id: 'a', text: 'Xin chào' },
-            { id: 'b', text: 'Tạm biệt', imageMediaId: 'img-b' },
-          ]);
+          expect(dto.options).toHaveLength(2);
+          expect(dto.options).toEqual(
+            expect.arrayContaining([
+              { id: 'a', text: 'Xin chào' },
+              { id: 'b', text: 'Tạm biệt', imageMediaId: 'img-b' },
+            ]),
+          );
         },
       },
       {
@@ -162,10 +171,13 @@ describe('SubmissionAnswerPolicy', () => {
         assertShape: (dto: ReturnType<SubmissionAnswerPolicy['sanitizeQuestionForStudent']>) => {
           expect(dto.mediaId).toBe('audio-1');
           expect(dto.maxListens).toBe(3);
-          expect(dto.options).toEqual([
-            { id: 'a', text: 'A' },
-            { id: 'b', text: 'B' },
-          ]);
+          expect(dto.options).toHaveLength(2);
+          expect(dto.options).toEqual(
+            expect.arrayContaining([
+              { id: 'a', text: 'A' },
+              { id: 'b', text: 'B' },
+            ]),
+          );
         },
       },
       {
@@ -211,10 +223,13 @@ describe('SubmissionAnswerPolicy', () => {
           expect(dto.mediaId).toBe('img-stem');
           expect(dto.caption).toBe('Gia đình');
           expect(dto.multiple).toBe(true);
-          expect(dto.options).toEqual([
-            { id: 'a', text: '爸爸', imageMediaId: 'img-a' },
-            { id: 'b', text: '妈妈', imageMediaId: 'img-b' },
-          ]);
+          expect(dto.options).toHaveLength(2);
+          expect(dto.options).toEqual(
+            expect.arrayContaining([
+              { id: 'a', text: '爸爸', imageMediaId: 'img-a' },
+              { id: 'b', text: '妈妈', imageMediaId: 'img-b' },
+            ]),
+          );
         },
       },
       {
@@ -293,10 +308,13 @@ describe('SubmissionAnswerPolicy', () => {
         },
         'seed-1',
       );
-      expect(choiceDto.options).toEqual([
-        { id: 'a', text: 'A', imageMediaId: 'img-trimmed' },
-        { id: 'b', text: 'B' },
-      ]);
+      expect(choiceDto.options).toHaveLength(2);
+      expect(choiceDto.options).toEqual(
+        expect.arrayContaining([
+          { id: 'a', text: 'A', imageMediaId: 'img-trimmed' },
+          { id: 'b', text: 'B' },
+        ]),
+      );
     });
   });
 
@@ -391,6 +409,152 @@ describe('SubmissionAnswerPolicy', () => {
       expect([...(orderAlpha1 ?? [])].sort()).toEqual([...fiveTokenQ.payload.tokens].sort());
       expect([...(orderBeta ?? [])].sort()).toEqual([...fiveTokenQ.payload.tokens].sort());
       expect(orderAlpha1).not.toEqual(orderBeta);
+    });
+
+    it('uses server-secret HMAC-SHA256 so knowing (submissionId, questionId) cannot invert ORDERING via plain SHA-256', () => {
+      const tokens = ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12'];
+      const q = {
+        id: 'q-hmac-ord',
+        position: 1,
+        type: QuestionType.ORDERING,
+        prompt: 'Sắp xếp 12 mảnh',
+        points: 2,
+        payload: {
+          tokens,
+          correctSentence: tokens.join(''),
+        },
+      };
+      const seedKey = 'sub-public-uuid';
+      const plainShaSeed = `${seedKey}:${q.id}`;
+      let state = createHash('sha256').update(plainShaSeed).digest().readUInt32BE(0) || 1;
+      const rng = () => {
+        state = (state + 0x6d2b79f5) | 0;
+        let t = Math.imul(state ^ (state >>> 15), 1 | state);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const plainShaShuffled = [...tokens];
+      for (let i = plainShaShuffled.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(rng() * (i + 1));
+        [plainShaShuffled[i], plainShaShuffled[j]] = [plainShaShuffled[j]!, plainShaShuffled[i]!];
+      }
+
+      const prevSecret = process.env.EXAM_SHUFFLE_SECRET;
+      const prevNodeEnv = process.env.NODE_ENV;
+      try {
+        process.env.EXAM_SHUFFLE_SECRET = 'server-secret-alpha-001';
+        const withSecretA = policy.sanitizeQuestionForStudent(q, seedKey).tokens;
+        expect(withSecretA).not.toEqual(plainShaShuffled);
+        expect(policy.sanitizeQuestionForStudent(q, seedKey).tokens).toEqual(withSecretA);
+
+        process.env.EXAM_SHUFFLE_SECRET = 'server-secret-beta-002';
+        const withSecretB = policy.sanitizeQuestionForStudent(q, seedKey).tokens;
+        expect(withSecretB).not.toEqual(withSecretA);
+        expect(withSecretB).not.toEqual(plainShaShuffled);
+
+        expect(
+          shuffleTokensDeterministically(tokens, plainShaSeed, undefined, 'explicit-secret-1'),
+        ).not.toEqual(
+          shuffleTokensDeterministically(tokens, plainShaSeed, undefined, 'explicit-secret-2'),
+        );
+
+        delete process.env.EXAM_SHUFFLE_SECRET;
+        const prevJwt = process.env.JWT_SECRET;
+        delete process.env.JWT_SECRET;
+        process.env.NODE_ENV = 'production';
+        try {
+          expect(() => resolveShuffleSecret()).toThrow();
+        } finally {
+          if (prevJwt !== undefined) process.env.JWT_SECRET = prevJwt;
+        }
+      } finally {
+        if (prevSecret === undefined) delete process.env.EXAM_SHUFFLE_SECRET;
+        else process.env.EXAM_SHUFFLE_SECRET = prevSecret;
+        if (prevNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = prevNodeEnv;
+      }
+    });
+  });
+
+  describe('Choice options deterministic HMAC shuffle across choice-capable question types', () => {
+    it.each([
+      {
+        label: 'SINGLE_CHOICE',
+        type: QuestionType.SINGLE_CHOICE,
+        extraPayload: { correctOptionIds: ['opt-1'] },
+      },
+      {
+        label: 'MULTIPLE_CHOICE',
+        type: QuestionType.MULTIPLE_CHOICE,
+        extraPayload: { correctOptionIds: ['opt-1', 'opt-3'] },
+      },
+      {
+        label: 'LISTENING',
+        type: QuestionType.LISTENING,
+        extraPayload: { mediaId: 'audio-1', maxListens: 2, correctOptionIds: ['opt-1'] },
+      },
+      {
+        label: 'IMAGE_BASED',
+        type: QuestionType.IMAGE_BASED,
+        extraPayload: { mediaId: 'img-1', multiple: true, correctOptionIds: ['opt-1', 'opt-3'] },
+      },
+    ])(
+      'deterministically shuffles options per (submissionId, questionId) for $label and validates answers by option.id',
+      ({ type, extraPayload }) => {
+        const rawOptions = [
+          { id: 'opt-1', text: 'Option 1' },
+          { id: 'opt-2', text: 'Option 2' },
+          { id: 'opt-3', text: 'Option 3' },
+          { id: 'opt-4', text: 'Option 4' },
+          { id: 'opt-5', text: 'Option 5' },
+          { id: 'opt-6', text: 'Option 6' },
+        ];
+        const q = {
+          id: `q-opt-${type}`,
+          position: 1,
+          type,
+          prompt: 'Chọn đáp án',
+          points: 2,
+          payload: {
+            options: rawOptions,
+            ...extraPayload,
+          },
+        };
+
+        const prevSecret = process.env.EXAM_SHUFFLE_SECRET;
+        try {
+          process.env.EXAM_SHUFFLE_SECRET = 'choice-shuffle-secret-1';
+          const first = policy.sanitizeQuestionForStudent(q, 'sub-A').options;
+          const second = policy.sanitizeQuestionForStudent(q, 'sub-A').options;
+          const otherSub = policy.sanitizeQuestionForStudent(q, 'sub-B').options;
+
+          expect(first).toEqual(second);
+          expect(first).toHaveLength(rawOptions.length);
+          expect(first).toEqual(expect.arrayContaining(rawOptions));
+          expect(first).not.toEqual(rawOptions);
+          expect(otherSub).not.toEqual(first);
+
+          process.env.EXAM_SHUFFLE_SECRET = 'choice-shuffle-secret-2';
+          const rotated = policy.sanitizeQuestionForStudent(q, 'sub-A').options;
+          expect(rotated).not.toEqual(first);
+
+          // Validation compares against option.id cleanly regardless of display order
+          expect(
+            policy.validateStudentAnswer(q, { selectedOptionIds: ['opt-1'] }, 0).normalizedPayload,
+          ).toEqual({ selectedOptionIds: ['opt-1'] });
+        } finally {
+          if (prevSecret === undefined) delete process.env.EXAM_SHUFFLE_SECRET;
+          else process.env.EXAM_SHUFFLE_SECRET = prevSecret;
+        }
+      },
+    );
+
+    it('returns shallow copy without mutating when options length <= 1', () => {
+      const single = [{ id: 'a', text: 'Only' }];
+      const resSingle = shuffleOptionsDeterministically(single, 'seed');
+      expect(resSingle).toEqual(single);
+      expect(resSingle).not.toBe(single);
+      expect(shuffleOptionsDeterministically([], 'seed')).toEqual([]);
     });
   });
 

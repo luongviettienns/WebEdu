@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { AssessmentsModule } from '../assessments/assessments.module.js';
+import { AssessmentsModule } from '../assessments/index.js';
 import { AssignmentsController } from './assignments.controller.js';
 import { AssignmentAccessPolicy } from './policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from './policies/submission-answer.policy.js';

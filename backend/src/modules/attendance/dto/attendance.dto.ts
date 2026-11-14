@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsEnum,
@@ -27,6 +28,7 @@ export class AttendanceRecordEntryDto {
 export class SaveSessionAttendanceDto {
   @IsArray()
   @ArrayMinSize(1, { message: 'Danh sách điểm danh phải có ít nhất 1 học viên' })
+  @ArrayMaxSize(200, { message: 'Danh sách điểm danh tối đa 200 học viên mỗi lần lưu' })
   @ValidateNested({ each: true })
   @Type(() => AttendanceRecordEntryDto)
   records!: AttendanceRecordEntryDto[];

@@ -1,5 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EnrollmentStatus, Prisma, SessionStatus, SubmissionStatus } from '@prisma/client';
+import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
   resolvePagination,
   type PaginationInput,
@@ -10,7 +11,6 @@ import type {
 } from '../assignments.types.js';
 import { hasExplicitTimezoneOffset } from '../dto/assignments.dto.js';
 import { toTeacherTrackerStudentRowDto } from '../mappers/assignment.mapper.js';
-import type { DbClient } from '../policies/assignment-access.policy.js';
 
 export const SUMMARY_INCLUDE = {
   assessment: {
@@ -39,29 +39,40 @@ export const REOPENABLE_STATUSES = new Set<SubmissionStatus>([
   SubmissionStatus.RETURNED,
 ]);
 
-export function computeAssignmentStats(
-  enrolledStudentIds: ReadonlySet<string>,
-  activeSubmissions: ReadonlyArray<{ studentId: string; status: SubmissionStatus }>,
+function aggregateAssignmentStats(
+  totalStudents: number,
+  entries: ReadonlyArray<{ status: SubmissionStatus; count: number }>,
 ): ClassAssignmentStatsDto {
-  const totalStudents = enrolledStudentIds.size;
   let inProgressCount = 0;
   let submittedWaitingCount = 0;
   let gradedCount = 0;
 
-  for (const sub of activeSubmissions) {
-    if (!enrolledStudentIds.has(sub.studentId)) continue;
-    if (sub.status === SubmissionStatus.IN_PROGRESS) inProgressCount += 1;
-    else if (sub.status === SubmissionStatus.SUBMITTED_WAITING) submittedWaitingCount += 1;
-    else if (GRADED_COUNT_STATUSES.has(sub.status)) gradedCount += 1;
+  for (const entry of entries) {
+    if (entry.status === SubmissionStatus.IN_PROGRESS) inProgressCount += entry.count;
+    else if (entry.status === SubmissionStatus.SUBMITTED_WAITING) submittedWaitingCount += entry.count;
+    else if (GRADED_COUNT_STATUSES.has(entry.status)) gradedCount += entry.count;
   }
 
   return {
     totalStudents,
-    notStartedCount: Math.max(0, totalStudents - (inProgressCount + submittedWaitingCount + gradedCount)),
+    notStartedCount: Math.max(
+      0,
+      totalStudents - (inProgressCount + submittedWaitingCount + gradedCount),
+    ),
     inProgressCount,
     submittedWaitingCount,
     gradedCount,
   };
+}
+
+export function computeAssignmentStats(
+  enrolledStudentIds: ReadonlySet<string>,
+  activeSubmissions: ReadonlyArray<{ studentId: string; status: SubmissionStatus }>,
+): ClassAssignmentStatsDto {
+  const entries = activeSubmissions
+    .filter((sub) => enrolledStudentIds.has(sub.studentId))
+    .map((sub) => ({ status: sub.status, count: 1 }));
+  return aggregateAssignmentStats(enrolledStudentIds.size, entries);
 }
 
 export function parseRequiredOffsetIsoDate(raw: string, errorLabel: string): Date {
@@ -99,7 +110,7 @@ export async function assertAttachableSession(
 }
 
 export async function loadAssignmentTrackerData(
-  db: DbClient,
+  db: PrismaService,
   classId: string,
   assignmentId: string,
   questionCount: number,
@@ -112,52 +123,67 @@ export async function loadAssignmentTrackerData(
   limit: number;
 }> {
   const { page, limit, skip } = resolvePagination(query, 50);
-  const [enrollments, activeStatuses] = await Promise.all([
-    db.enrollment.findMany({
+  const enrollmentWhere: Prisma.EnrollmentWhereInput = {
+    classId,
+    status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
+  };
+
+  const [total, pagedGroups, groupedStatuses] = await Promise.all([
+    db.user.count({
+      where: { enrollments: { some: enrollmentWhere } },
+    }),
+    db.enrollment.groupBy({
+      by: ['studentId'],
+      where: enrollmentWhere,
+      _min: { enrolledDate: true, id: true },
+      orderBy: [{ _min: { enrolledDate: 'asc' } }, { _min: { id: 'asc' } }],
+      skip,
+      take: limit,
+    }),
+    db.submission.groupBy({
+      by: ['status'],
       where: {
-        classId,
-        status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
+        classAssignmentId: assignmentId,
+        status: { not: SubmissionStatus.SUPERSEDED },
+        student: {
+          enrollments: {
+            some: enrollmentWhere,
+          },
+        },
       },
-      orderBy: [{ student: { fullName: 'asc' } }, { studentId: 'asc' }],
-      select: { student: { select: { id: true, fullName: true, email: true } } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const stats = aggregateAssignmentStats(
+    total,
+    groupedStatuses.map((row) => ({ status: row.status, count: row._count._all })),
+  );
+  const pagedStudentIds = pagedGroups.map((group) => group.studentId);
+
+  if (pagedStudentIds.length === 0) {
+    return { students: [], stats, total, page, limit };
+  }
+
+  const [pagedUsers, submissions] = await Promise.all([
+    db.user.findMany({
+      where: { id: { in: pagedStudentIds } },
+      select: { id: true, fullName: true, email: true },
     }),
     db.submission.findMany({
       where: {
         classAssignmentId: assignmentId,
-        status: { not: SubmissionStatus.SUPERSEDED },
+        studentId: { in: pagedStudentIds },
       },
-      select: { studentId: true, status: true },
+      orderBy: { attemptNumber: 'asc' },
+      include: {
+        answers: { select: { answerPayload: true } },
+        reopenLogs: { select: { reason: true, reopenedAt: true }, orderBy: { reopenedAt: 'asc' } },
+      },
     }),
   ]);
 
-  const enrolledIds = new Set<string>();
-  const uniqueStudents: Array<{ id: string; fullName: string; email: string }> = [];
-  for (const enr of enrollments) {
-    if (enrolledIds.has(enr.student.id)) continue;
-    enrolledIds.add(enr.student.id);
-    uniqueStudents.push(enr.student);
-  }
-
-  const total = uniqueStudents.length;
-  const pagedStudents = uniqueStudents.slice(skip, skip + limit);
-  const stats = computeAssignmentStats(enrolledIds, activeStatuses);
-
-  if (pagedStudents.length === 0) {
-    return { students: [], stats, total, page, limit };
-  }
-
-  const submissions = await db.submission.findMany({
-    where: {
-      classAssignmentId: assignmentId,
-      studentId: { in: pagedStudents.map((student) => student.id) },
-    },
-    orderBy: { attemptNumber: 'asc' },
-    include: {
-      answers: { select: { answerPayload: true } },
-      reopenLogs: { select: { reason: true, reopenedAt: true }, orderBy: { reopenedAt: 'asc' } },
-    },
-  });
-
+  const userById = new Map(pagedUsers.map((user) => [user.id, user]));
   const byStudent = new Map<string, typeof submissions>();
   for (const sub of submissions) {
     const bucket = byStudent.get(sub.studentId) ?? [];
@@ -165,11 +191,15 @@ export async function loadAssignmentTrackerData(
     byStudent.set(sub.studentId, bucket);
   }
 
-  const students = pagedStudents.map((student) => {
-    const rows = byStudent.get(student.id) ?? [];
+  const students = pagedStudentIds.flatMap((studentId) => {
+    const student = userById.get(studentId);
+    if (!student) {
+      return [];
+    }
+    const rows = byStudent.get(studentId) ?? [];
     const active = rows.find((r) => r.status !== SubmissionStatus.SUPERSEDED) ?? null;
     const superseded = rows.filter((r) => r.status === SubmissionStatus.SUPERSEDED);
-    return toTeacherTrackerStudentRowDto(student, active, superseded, questionCount);
+    return [toTeacherTrackerStudentRowDto(student, active, superseded, questionCount)];
   });
 
   return { students, stats, total, page, limit };

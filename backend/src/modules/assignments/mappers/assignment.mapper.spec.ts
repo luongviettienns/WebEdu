@@ -10,7 +10,6 @@ import {
   toTeacherTrackerStudentRowDto,
 } from './assignment.mapper.js';
 import type { AssignmentDisplayStatus } from '../assignments.types.js';
-import type { DbClient } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import { buildStudentExamSessionDto } from '../services/submission-session.util.js';
 
@@ -384,9 +383,6 @@ describe('assignment.mapper', () => {
 
   describe('buildStudentExamSessionDto (StudentExamSessionDto mapper)', () => {
     const answerPolicy = new SubmissionAnswerPolicy();
-    const fakeDb = {
-      submissionReopenLog: { findFirst: async () => ({ reason: 'Gia hạn thêm lần 2' }) },
-    } as unknown as DbClient;
 
     const baseAssignment = {
       id: 'assign-1',
@@ -422,11 +418,10 @@ describe('assignment.mapper', () => {
       },
     };
 
-    it('masks autoScore, totalScore, and teacherFeedback as null for AUTO_GRADED_PENDING_REVIEW and exposes them for GRADED & RETURNED', async () => {
+    it('masks autoScore, totalScore, and teacherFeedback as null for AUTO_GRADED_PENDING_REVIEW and exposes them for GRADED & RETURNED', () => {
       const now = new Date('2026-11-16T08:00:00.000Z');
       const overrideDue = new Date('2026-11-20T12:00:00.000Z');
-      const pendingDto = await buildStudentExamSessionDto(
-        fakeDb,
+      const pendingDto = buildStudentExamSessionDto(
         answerPolicy,
         baseAssignment,
         {
@@ -456,14 +451,13 @@ describe('assignment.mapper', () => {
       expect(pendingDto.assignment.teacherFeedback).toBeNull();
       expect(pendingDto.assignment.dueAt).toBe(overrideDue.toISOString());
       expect(pendingDto.submission.dueAtOverride).toBe(overrideDue.toISOString());
-      expect(pendingDto.submission.reopenReason).toBe('Gia hạn thêm lần 2');
+      expect('reopenReason' in pendingDto.submission).toBe(false);
       expect('autoScore' in pendingDto.submission).toBe(false);
       expect('totalScore' in pendingDto.submission).toBe(false);
       expect('teacherFeedback' in pendingDto.submission).toBe(false);
 
       for (const released of [SubmissionStatus.GRADED, SubmissionStatus.RETURNED]) {
-        const releasedDto = await buildStudentExamSessionDto(
-          fakeDb,
+        const releasedDto = buildStudentExamSessionDto(
           answerPolicy,
           baseAssignment,
           {

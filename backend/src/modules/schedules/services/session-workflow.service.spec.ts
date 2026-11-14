@@ -513,4 +513,49 @@ describe('SessionWorkflowService & ScheduleAccessPolicy (TDD Slice 4.2)', () => 
     expect(studentView.attendanceSummary).toBeNull();
     expect(adminView.attendanceSummary).not.toBeNull();
   });
+
+  it('translates Prisma P2002 unique constraint errors in all 4 workflow transactions into 409 ConflictException', async () => {
+    const p2002Error = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+    const expectedConflict = new ConflictException(
+      'Thao tác lịch học bị xung đột đồng thời, vui lòng thử lại',
+    );
+    const txMock = mockPrisma.$transaction as ReturnType<typeof vi.fn>;
+
+    txMock.mockRejectedValueOnce(p2002Error);
+    await expect(
+      workflow.addManualSession(adminActor, 'class-1', {
+        sessionDate: '2026-12-20',
+        startTime: '18:00',
+        endTime: '19:30',
+        reason: 'Thêm buổi học',
+      }),
+    ).rejects.toThrowError(expectedConflict);
+
+    txMock.mockRejectedValueOnce(p2002Error);
+    await expect(
+      workflow.rescheduleSession(adminActor, 'sess-1', {
+        sessionDate: '2026-12-21',
+        startTime: '18:00',
+        endTime: '19:30',
+        reason: 'Đổi lịch học',
+      }),
+    ).rejects.toThrowError(expectedConflict);
+
+    txMock.mockRejectedValueOnce(p2002Error);
+    await expect(
+      workflow.cancelSession(adminActor, 'sess-1', {
+        reason: 'Hủy buổi học',
+      }),
+    ).rejects.toThrowError(expectedConflict);
+
+    txMock.mockRejectedValueOnce(p2002Error);
+    await expect(
+      workflow.createMakeupSession(adminActor, 'sess-1', {
+        sessionDate: '2026-12-22',
+        startTime: '18:00',
+        endTime: '19:30',
+        reason: 'Tạo buổi bù',
+      }),
+    ).rejects.toThrowError(expectedConflict);
+  });
 });

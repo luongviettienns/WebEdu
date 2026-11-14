@@ -6,9 +6,10 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { EnrollmentStatus, SubmissionStatus } from '@prisma/client';
+import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
-import { AssessmentMediaAccessService } from '../../assessments/services/assessment-media-access.service.js';
+import { AssessmentMediaAccessService } from '../../assessments/index.js';
 import type {
   StudentAssignmentListItemDto,
   StudentExamSessionDto,
@@ -22,20 +23,19 @@ import {
 import { AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import {
+  SUBMIT_GRACE_MS,
+  applySubmissionTickAndPersist,
   autoSubmitExpiredSubmission,
   buildStudentExamSessionDto,
-  computeNextTimers,
   createInitialSubmission,
+  isExpired,
   isPrismaUniqueError,
   loadAssignmentForMediaStream,
   loadAssignmentForSession,
   lockAndFindActiveSubmission,
   recordListeningStreamQuota,
   recoverSessionAfterUniqueConflict,
-  validateAndUpsertAnswers,
 } from './submission-session.util.js';
-
-const SUBMIT_GRACE_MS = 60_000;
 
 @Injectable()
 export class StudentSubmissionService {
@@ -108,7 +108,7 @@ export class StudentSubmissionService {
         const now = new Date();
 
         if (!submission) {
-          if (now.getTime() > assignment.dueAt.getTime()) {
+          if (isExpired(now, assignment.dueAt, null, 0)) {
             throw new BadRequestException('Đã quá hạn nộp bài');
           }
           submission = await createInitialSubmission(tx, assignment, actor.id, now);
@@ -116,16 +116,12 @@ export class StudentSubmissionService {
           throw new ConflictException('Bài tập đã được nộp');
         } else {
           const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
-          if (
-            (submission.remainingSeconds !== null && submission.remainingSeconds <= 0) ||
-            now.getTime() > effectiveDueAt.getTime()
-          ) {
+          if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
             submission = await autoSubmitExpiredSubmission(tx, submission.id, now);
           }
         }
 
         return buildStudentExamSessionDto(
-          tx,
           this.answerPolicy,
           assignment,
           submission,
@@ -151,6 +147,14 @@ export class StudentSubmissionService {
     dto: AutosaveSubmissionDto,
     actor: AuthenticatedUser,
   ): Promise<StudentExamSessionDto> {
+    await assertRateLimitNotExceeded(this.prisma, {
+      key: `autosave:${assignmentId}:${actor.id}`,
+      maxPoints: 30,
+      windowMs: 60_000,
+      blockDurationMs: 60_000,
+      errorMessage: 'Thao tác lưu nháp quá nhanh. Vui lòng thử lại sau ít giây',
+    });
+
     const assignment = await loadAssignmentForSession(this.prisma, assignmentId);
     await this.accessPolicy.assertStudentEnrolledInClass(this.prisma, actor.id, assignment.classId);
 
@@ -163,46 +167,20 @@ export class StudentSubmissionService {
         throw new ConflictException('Bài tập đã được nộp, không thể lưu nháp');
       }
 
-      await validateAndUpsertAnswers(
+      return applySubmissionTickAndPersist(
         tx,
         this.answerPolicy,
-        submission.id,
-        assignment.assessment.questions,
-        submission.answers,
-        dto.answers,
-      );
-
-      const now = new Date();
-      const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
-      const timers = computeNextTimers(
+        assignment,
         submission,
-        assignment.effectiveDurationMinutes,
-        dto.elapsedSeconds,
-        dto.remainingSeconds,
-      );
-      const expired =
-        (timers.remainingSeconds !== null && timers.remainingSeconds <= 0) ||
-        now.getTime() > effectiveDueAt.getTime();
-
-      const updated = await tx.submission.update({
-        where: { id: submission.id },
-        data: {
-          elapsedSeconds: timers.elapsedSeconds,
-          remainingSeconds: timers.remainingSeconds,
-          lastSavedAt: now,
-          lastSyncedAt: now,
-          ...(expired
-            ? {
-                status: SubmissionStatus.SUBMITTED_WAITING,
-                autoSubmitted: true,
-                submittedAt: now,
-              }
-            : {}),
+        actor.id,
+        new Date(),
+        {
+          answers: dto.answers,
+          elapsedSeconds: dto.elapsedSeconds,
+          remainingSeconds: dto.remainingSeconds,
+          forceSubmit: false,
         },
-        include: { answers: { orderBy: { updatedAt: 'asc' } } },
-      });
-
-      return buildStudentExamSessionDto(tx, this.answerPolicy, assignment, updated, now, actor.id);
+      );
     });
   }
 
@@ -211,6 +189,14 @@ export class StudentSubmissionService {
     dto: SubmitSubmissionDto,
     actor: AuthenticatedUser,
   ): Promise<StudentExamSessionDto> {
+    await assertRateLimitNotExceeded(this.prisma, {
+      key: `submit:${assignmentId}:${actor.id}`,
+      maxPoints: 10,
+      windowMs: 60_000,
+      blockDurationMs: 60_000,
+      errorMessage: 'Quá nhiều yêu cầu nộp bài. Vui lòng thử lại sau ít giây',
+    });
+
     const assignment = await loadAssignmentForSession(this.prisma, assignmentId);
     await this.accessPolicy.assertStudentEnrolledInClass(this.prisma, actor.id, assignment.classId);
 
@@ -225,47 +211,25 @@ export class StudentSubmissionService {
 
       const now = new Date();
       const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
-      if (now.getTime() > effectiveDueAt.getTime() + SUBMIT_GRACE_MS && !dto.autoSubmitted) {
+      if (isExpired(now, effectiveDueAt, null, SUBMIT_GRACE_MS) && !dto.autoSubmitted) {
         throw new BadRequestException('Đã quá hạn nộp bài');
       }
 
-      if (dto.answers?.length) {
-        await validateAndUpsertAnswers(
-          tx,
-          this.answerPolicy,
-          submission.id,
-          assignment.assessment.questions,
-          submission.answers,
-          dto.answers,
-        );
-      }
-
-      const timers = computeNextTimers(
+      return applySubmissionTickAndPersist(
+        tx,
+        this.answerPolicy,
+        assignment,
         submission,
-        assignment.effectiveDurationMinutes,
-        dto.elapsedSeconds,
-        dto.remainingSeconds,
-      );
-      const autoSubmitted =
-        Boolean(dto.autoSubmitted) ||
-        (timers.remainingSeconds !== null && timers.remainingSeconds <= 0) ||
-        now.getTime() > effectiveDueAt.getTime();
-
-      const updated = await tx.submission.update({
-        where: { id: submission.id },
-        data: {
-          status: SubmissionStatus.SUBMITTED_WAITING,
-          elapsedSeconds: timers.elapsedSeconds,
-          remainingSeconds: timers.remainingSeconds,
-          submittedAt: now,
-          lastSavedAt: now,
-          lastSyncedAt: now,
-          autoSubmitted,
+        actor.id,
+        now,
+        {
+          answers: dto.answers,
+          elapsedSeconds: dto.elapsedSeconds,
+          remainingSeconds: dto.remainingSeconds,
+          forceSubmit: true,
+          clientAutoSubmitted: dto.autoSubmitted,
         },
-        include: { answers: { orderBy: { updatedAt: 'asc' } } },
-      });
-
-      return buildStudentExamSessionDto(tx, this.answerPolicy, assignment, updated, now, actor.id);
+      );
     });
   }
 
@@ -291,7 +255,6 @@ export class StudentSubmissionService {
     }
 
     return buildStudentExamSessionDto(
-      this.prisma,
       this.answerPolicy,
       assignment,
       submission,

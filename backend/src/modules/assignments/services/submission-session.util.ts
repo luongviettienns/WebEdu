@@ -22,6 +22,22 @@ import type { DbClient } from '../policies/assignment-access.policy.js';
 import type { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import { isRecord } from '../policies/submission-payload.util.js';
 
+export const AUDIO_LISTEN_WINDOW_MS = 2 * 60 * 1000;
+export const MAX_AUTOSAVE_ELAPSED_STEP_SECONDS = 120;
+export const SUBMIT_GRACE_MS = 60_000;
+
+export function isExpired(
+  now: Date,
+  effectiveDueAt: Date,
+  remainingSeconds: number | null,
+  graceMs = SUBMIT_GRACE_MS,
+): boolean {
+  return (
+    now.getTime() > effectiveDueAt.getTime() + graceMs ||
+    (remainingSeconds !== null && remainingSeconds <= 0)
+  );
+}
+
 export interface QuestionRecord {
   id: string;
   position: number;
@@ -39,16 +55,19 @@ export interface AssignmentSessionRow extends Omit<StudentAssignmentRowInput, 'a
   };
 }
 
+export interface SubmissionAnswerRow {
+  questionId: string;
+  answerPayload: unknown;
+  audioPlayCount: number;
+  lastAudioPlayAt?: Date | null;
+  updatedAt: Date;
+}
+
 export interface SubmissionWithAnswersRow extends StudentSubmissionRowInput {
   studentId?: string;
   startedAt: Date;
   lastSyncedAt: Date;
-  answers: Array<{
-    questionId: string;
-    answerPayload: unknown;
-    audioPlayCount: number;
-    updatedAt: Date;
-  }>;
+  answers: SubmissionAnswerRow[];
 }
 
 export function isPrismaUniqueError(err: unknown): boolean {
@@ -64,14 +83,24 @@ export function computeNextTimers(
   dtoElapsed?: number,
   dtoRemaining?: number | null,
 ): { elapsedSeconds: number; remainingSeconds: number | null } {
-  const elapsedSeconds = Math.max(submission.elapsedSeconds, dtoElapsed ?? 0);
+  const prevElapsed = Math.max(0, submission.elapsedSeconds);
+  const rawRequested =
+    typeof dtoElapsed === 'number' && Number.isFinite(dtoElapsed)
+      ? Math.max(0, Math.floor(dtoElapsed))
+      : prevElapsed;
+  let elapsedSeconds = Math.min(
+    Math.max(prevElapsed, rawRequested),
+    prevElapsed + MAX_AUTOSAVE_ELAPSED_STEP_SECONDS,
+  );
   if (effectiveDurationMinutes === null) {
     return { elapsedSeconds, remainingSeconds: null };
   }
   const maxSeconds = effectiveDurationMinutes * 60;
+  elapsedSeconds = Math.min(elapsedSeconds, maxSeconds);
   const upperBound = Math.min(submission.remainingSeconds ?? maxSeconds, maxSeconds);
-  const candidate = dtoRemaining ?? submission.remainingSeconds ?? maxSeconds;
-  const remainingSeconds = Math.max(0, Math.min(candidate, upperBound));
+  const maxByElapsed = Math.max(0, maxSeconds - elapsedSeconds);
+  const candidate = dtoRemaining ?? Math.min(upperBound, maxByElapsed);
+  const remainingSeconds = Math.max(0, Math.min(candidate, upperBound, maxByElapsed));
   return { elapsedSeconds, remainingSeconds };
 }
 
@@ -234,6 +263,69 @@ export async function autoSubmitExpiredSubmission(
   });
 }
 
+export async function applySubmissionTickAndPersist(
+  tx: Prisma.TransactionClient,
+  answerPolicy: SubmissionAnswerPolicy,
+  assignment: AssignmentSessionRow,
+  submission: SubmissionWithAnswersRow,
+  actorId: string,
+  now: Date,
+  params: {
+    answers?: ReadonlyArray<AutosaveAnswerItemDto>;
+    elapsedSeconds?: number;
+    remainingSeconds?: number | null;
+    forceSubmit: boolean;
+    clientAutoSubmitted?: boolean;
+  },
+): Promise<StudentExamSessionDto> {
+  const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
+  if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
+    const updated = await autoSubmitExpiredSubmission(tx, submission.id, now);
+    return buildStudentExamSessionDto(answerPolicy, assignment, updated, now, actorId);
+  }
+
+  if (params.answers?.length) {
+    await validateAndUpsertAnswers(
+      tx,
+      answerPolicy,
+      submission.id,
+      assignment.assessment.questions,
+      submission.answers,
+      params.answers,
+    );
+  }
+
+  const timers = computeNextTimers(
+    submission,
+    assignment.effectiveDurationMinutes,
+    params.elapsedSeconds,
+    params.remainingSeconds,
+  );
+  const expired = isExpired(now, effectiveDueAt, timers.remainingSeconds, SUBMIT_GRACE_MS);
+  const shouldSubmit = params.forceSubmit || expired;
+  const autoSubmitted = Boolean(params.clientAutoSubmitted) || expired;
+
+  const updated = await tx.submission.update({
+    where: { id: submission.id },
+    data: {
+      elapsedSeconds: timers.elapsedSeconds,
+      remainingSeconds: timers.remainingSeconds,
+      lastSavedAt: now,
+      lastSyncedAt: now,
+      ...(shouldSubmit
+        ? {
+            status: SubmissionStatus.SUBMITTED_WAITING,
+            autoSubmitted,
+            submittedAt: now,
+          }
+        : {}),
+    },
+    include: { answers: { orderBy: { updatedAt: 'asc' } } },
+  });
+
+  return buildStudentExamSessionDto(answerPolicy, assignment, updated, now, actorId);
+}
+
 export async function recoverSessionAfterUniqueConflict(
   prisma: PrismaService,
   answerPolicy: SubmissionAnswerPolicy,
@@ -247,13 +339,10 @@ export async function recoverSessionAfterUniqueConflict(
     }
     const now = new Date();
     const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, existing.dueAtOverride);
-    if (
-      (existing.remainingSeconds !== null && existing.remainingSeconds <= 0) ||
-      now.getTime() > effectiveDueAt.getTime()
-    ) {
+    if (isExpired(now, effectiveDueAt, existing.remainingSeconds, SUBMIT_GRACE_MS)) {
       existing = await autoSubmitExpiredSubmission(tx, existing.id, now);
     }
-    return buildStudentExamSessionDto(tx, answerPolicy, assignment, existing, now, studentId);
+    return buildStudentExamSessionDto(answerPolicy, assignment, existing, now, studentId);
   });
 }
 
@@ -280,12 +369,68 @@ export async function loadAssignmentForMediaStream(db: DbClient, assignmentId: s
   return assignment;
 }
 
+async function consumeQuestionListeningQuota(
+  tx: Prisma.TransactionClient,
+  submission: {
+    id: string;
+    answers: ReadonlyArray<{
+      questionId: string;
+      audioPlayCount: number;
+      lastAudioPlayAt?: Date | null;
+    }>;
+  },
+  question: { id: string; payload: unknown },
+  now: Date,
+): Promise<void> {
+  const p = isRecord(question.payload) ? question.payload : {};
+  const maxListens = typeof p.maxListens === 'number' && p.maxListens > 0 ? p.maxListens : null;
+  const existing = submission.answers.find((ans) => ans.questionId === question.id);
+  const currentPlays = existing?.audioPlayCount ?? 0;
+  const lastPlayAt = existing?.lastAudioPlayAt ?? null;
+  const withinActivePlayWindow =
+    currentPlays > 0 &&
+    lastPlayAt !== null &&
+    now.getTime() - lastPlayAt.getTime() < AUDIO_LISTEN_WINDOW_MS;
+
+  if (withinActivePlayWindow) {
+    if (maxListens !== null && currentPlays > maxListens) {
+      throw new BadRequestException('Đã hết lượt nghe cho phép');
+    }
+    return;
+  }
+
+  if (maxListens !== null && currentPlays >= maxListens) {
+    throw new BadRequestException('Đã hết lượt nghe cho phép');
+  }
+
+  await tx.submissionAnswer.upsert({
+    where: {
+      submissionId_questionId: {
+        submissionId: submission.id,
+        questionId: question.id,
+      },
+    },
+    create: {
+      submissionId: submission.id,
+      questionId: question.id,
+      answerPayload: {},
+      audioPlayCount: currentPlays + 1,
+      lastAudioPlayAt: now,
+    },
+    update: {
+      audioPlayCount: currentPlays + 1,
+      lastAudioPlayAt: now,
+    },
+  });
+}
+
 export async function recordListeningStreamQuota(
   prisma: PrismaService,
   assignmentId: string,
   studentId: string,
   listeningQuestions: ReadonlyArray<{ id: string; payload: unknown }>,
   mediaId: string,
+  now: Date = new Date(),
 ): Promise<void> {
   const matchingQuestions = listeningQuestions.filter(
     (q) => isRecord(q.payload) && q.payload.mediaId === mediaId,
@@ -300,58 +445,18 @@ export async function recordListeningStreamQuota(
     if (submission.status !== SubmissionStatus.IN_PROGRESS) return;
 
     for (const q of matchingQuestions) {
-      const p = isRecord(q.payload) ? q.payload : {};
-      const maxListens = typeof p.maxListens === 'number' && p.maxListens > 0 ? p.maxListens : null;
-      const existing = submission.answers.find((ans) => ans.questionId === q.id);
-      const currentPlays = existing?.audioPlayCount ?? 0;
-
-      if (maxListens !== null && currentPlays >= maxListens) {
-        throw new BadRequestException('Đã hết lượt nghe cho phép');
-      }
-
-      await tx.submissionAnswer.upsert({
-        where: {
-          submissionId_questionId: {
-            submissionId: submission.id,
-            questionId: q.id,
-          },
-        },
-        create: {
-          submissionId: submission.id,
-          questionId: q.id,
-          answerPayload: {},
-          audioPlayCount: 1,
-        },
-        update: { audioPlayCount: currentPlays + 1 },
-      });
+      await consumeQuestionListeningQuota(tx, submission, q, now);
     }
   });
 }
 
-export async function buildStudentExamSessionDto(
-  db: DbClient,
+export function buildStudentExamSessionDto(
   answerPolicy: SubmissionAnswerPolicy,
   assignment: AssignmentSessionRow,
   submission: SubmissionWithAnswersRow,
   now: Date,
   studentId: string,
-): Promise<StudentExamSessionDto> {
-  let reopenReason: string | null = null;
-  if (submission.attemptNumber > 1) {
-    const latestReopen = await db.submissionReopenLog.findFirst({
-      where: {
-        submission: {
-          classAssignmentId: assignment.id,
-          studentId,
-          status: SubmissionStatus.SUPERSEDED,
-        },
-      },
-      orderBy: { reopenedAt: 'desc' },
-      select: { reason: true },
-    });
-    reopenReason = latestReopen?.reason ?? null;
-  }
-
+): StudentExamSessionDto {
   return {
     assignment: toStudentAssignmentListItemDto(
       assignment,
@@ -373,7 +478,6 @@ export async function buildStudentExamSessionDto(
       submittedAt: submission.submittedAt ? submission.submittedAt.toISOString() : null,
       autoSubmitted: submission.autoSubmitted,
       dueAtOverride: submission.dueAtOverride ? submission.dueAtOverride.toISOString() : null,
-      reopenReason,
     },
     questions: assignment.assessment.questions.map((q) =>
       answerPolicy.sanitizeQuestionForStudent(q, submission.id),

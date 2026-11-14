@@ -126,7 +126,6 @@ export interface StudentExamSessionDto {
     submittedAt: string | null;
     autoSubmitted: boolean;
     dueAtOverride: string | null;
-    reopenReason: string | null;
   };
   questions: SanitizedQuestionDto[];
   answers: StudentSubmissionAnswerDto[];

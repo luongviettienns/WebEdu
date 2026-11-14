@@ -10,6 +10,7 @@ import {
   EnrollmentStatus,
   Role,
   SessionStatus,
+  SessionType,
   UserStatus,
 } from '@prisma/client';
 import {
@@ -88,7 +89,17 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
   let classesStore: Map<string, MockClassRecord>;
   let assignmentsStore: MockAssignmentRecord[];
   let enrollmentsStore: MockEnrollmentRecord[];
-  let sessionsStore: Array<{ id: string; classId: string; status: SessionStatus }>;
+  let sessionsStore: Array<{
+    id: string;
+    classId: string;
+    status: SessionStatus;
+    type?: SessionType;
+    sessionDate?: Date;
+    startTime?: string;
+    endTime?: string;
+    isRescheduled?: boolean;
+    isMakeup?: boolean;
+  }>;
   let attendanceRecordsStore: Array<{ id: string; classId: string }>;
   let auditLogs: Array<Record<string, unknown>>;
   let mockPrisma: Record<string, unknown>;
@@ -472,7 +483,65 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       lessonSession: {
         createMany: vi.fn().mockResolvedValue({ count: 0 }),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
-        findMany: vi.fn().mockResolvedValue([]),
+        findMany: vi.fn(
+          async ({
+            where,
+          }: {
+            where?: {
+              classId?: string | { not?: string };
+              status?: SessionStatus | { not?: SessionStatus };
+              sessionDate?: { gte?: Date };
+              class?: { teacherId?: string; status?: { in?: ClassStatus[] } };
+            };
+          } = {}) => {
+            return sessionsStore
+              .filter((s) => {
+                if (typeof where?.classId === 'string' && s.classId !== where.classId) {
+                  return false;
+                }
+                if (
+                  where?.classId &&
+                  typeof where.classId === 'object' &&
+                  where.classId.not &&
+                  s.classId === where.classId.not
+                ) {
+                  return false;
+                }
+                if (typeof where?.status === 'string' && s.status !== where.status) {
+                  return false;
+                }
+                if (
+                  where?.status &&
+                  typeof where.status === 'object' &&
+                  where.status.not &&
+                  s.status === where.status.not
+                ) {
+                  return false;
+                }
+                if (
+                  where?.sessionDate?.gte &&
+                  (!s.sessionDate || s.sessionDate.getTime() < where.sessionDate.gte.getTime())
+                ) {
+                  return false;
+                }
+                const cls = classesStore.get(s.classId);
+                if (where?.class?.teacherId && cls?.teacherId !== where.class.teacherId) {
+                  return false;
+                }
+                if (
+                  where?.class?.status?.in &&
+                  (!cls || !where.class.status.in.includes(cls.status))
+                ) {
+                  return false;
+                }
+                return true;
+              })
+              .map((s) => ({
+                ...s,
+                class: classesStore.get(s.classId) ?? { code: 'UNKNOWN' },
+              }));
+          },
+        ),
         findFirst: vi.fn().mockResolvedValue(null),
         count: vi.fn(
           async ({
@@ -507,8 +576,24 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
         }),
       },
       $transaction: vi.fn(
-        async (cb: (tx: Record<string, unknown>) => Promise<unknown>) =>
-          cb(mockPrisma),
+        async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
+          const classesSnap = new Map<string, MockClassRecord>();
+          for (const [id, c] of classesStore.entries()) {
+            classesSnap.set(id, { ...c, scheduleDays: [...c.scheduleDays] });
+          }
+          const assignmentsSnap = assignmentsStore.map((a) => ({ ...a }));
+          const teacherCountsSnap = new Map(teacherProfileCounts);
+          const auditSnap = [...auditLogs];
+          try {
+            return await cb(mockPrisma);
+          } catch (err) {
+            classesStore = classesSnap;
+            assignmentsStore = assignmentsSnap;
+            teacherProfileCounts = teacherCountsSnap;
+            auditLogs = auditSnap;
+            throw err;
+          }
+        },
       ),
     };
 
@@ -1098,6 +1183,165 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
       });
 
       expect(order).toEqual(['lock_teacher', 'check_course']);
+    });
+
+    it('rejects teacher reassignment when new teacher teaches an overlapping UPCOMING/ACTIVE class from assignedFromDate, while allowing non-overlapping handoff', async () => {
+      const classA = await service.createClass(adminActor, {
+        code: 'HSK1-REASSIGN-CF',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 24,
+      });
+
+      // teacher-02 already teaches overlapping class on [1,3,5] 18:30-20:00 from 2026-11-02 (6 sessions -> ends 2026-11-13)
+      await service.createClass(adminActor, {
+        code: 'HSK1-T2-BUSY',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-02',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:30',
+        scheduleEndTime: '20:00',
+        startDate: '2026-11-02',
+        totalSessions: 6,
+      });
+
+      // Reassigning at 2026-11-09 overlaps HSK1-T2-BUSY (2026-11-02 .. 2026-11-13) -> must reject 409 ConflictException
+      await expect(
+        service.updateClass(adminActor, classA.id, {
+          teacherId: 'teacher-02',
+          teacherAssignedFrom: '2026-11-09',
+        }),
+      ).rejects.toThrowError(ConflictException);
+      expect(classesStore.get(classA.id)?.teacherId).toBe('teacher-01');
+
+      // Reassigning at 2026-11-16 (after HSK1-T2-BUSY ends on 2026-11-13) succeeds even though classA.startDate is 2026-11-02
+      const reassigned = await service.updateClass(adminActor, classA.id, {
+        teacherId: 'teacher-02',
+        teacherAssignedFrom: '2026-11-16',
+      });
+      expect(reassigned.teacherId).toBe('teacher-02');
+    });
+
+    it('detects conflict in extended tail when totalSessions increases alongside teacherId reassignment (no stale expectedEndDate bypass)', async () => {
+      const classA = await service.createClass(adminActor, {
+        code: 'HSK1-EXTEND-A',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6, // ends 2026-11-13 initially
+      });
+
+      // teacher-02 starts overlapping class ONLY from 2026-11-16..2026-11-27
+      await service.createClass(adminActor, {
+        code: 'HSK1-EXTEND-BUSY',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-02',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:30',
+        scheduleEndTime: '20:00',
+        startDate: '2026-11-16',
+        totalSessions: 6,
+      });
+
+      // Extending totalSessions 6 -> 12 extends endDate to 2026-11-27; stale existing.expectedEndDate (2026-11-13) MUST NOT bypass overlap!
+      await expect(
+        service.updateClass(adminActor, classA.id, {
+          totalSessions: 12,
+          teacherId: 'teacher-02',
+          teacherAssignedFrom: '2026-11-16',
+        }),
+      ).rejects.toThrowError(ConflictException);
+      expect(classesStore.get(classA.id)?.teacherId).toBe('teacher-01');
+      expect(classesStore.get(classA.id)?.totalSessions).toBe(6);
+    });
+
+    it('checks actual SCHEDULED lesson_sessions on reassign: catches MANUAL/MAKEUP overlap and ignores CANCELLED sessions', async () => {
+      const classA = await service.createClass(adminActor, {
+        code: 'HSK1-SESS-A',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6,
+      });
+
+      // teacher-02 has a template on Tue/Thu 08:00-09:30 (no template overlap with Mon/Wed/Fri 18:00-19:30)
+      const classB = await service.createClass(adminActor, {
+        code: 'HSK1-SESS-B',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-02',
+        scheduleDays: [2, 4],
+        scheduleStartTime: '08:00',
+        scheduleEndTime: '09:30',
+        startDate: '2026-11-03',
+        totalSessions: 4,
+      });
+
+      sessionsStore.push(
+        {
+          id: 'sess-a-1',
+          classId: classA.id,
+          status: SessionStatus.SCHEDULED,
+          type: SessionType.REGULAR,
+          sessionDate: new Date('2026-11-13T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 'sess-b-manual',
+          classId: classB.id,
+          status: SessionStatus.SCHEDULED,
+          type: SessionType.MANUAL,
+          sessionDate: new Date('2026-11-13T00:00:00.000Z'),
+          startTime: '18:30',
+          endTime: '20:00',
+        },
+      );
+
+      // Actual MANUAL session overlaps on 2026-11-13 -> must throw 409 ConflictException!
+      await expect(
+        service.updateClass(adminActor, classA.id, {
+          teacherId: 'teacher-02',
+          teacherAssignedFrom: '2026-11-09',
+        }),
+      ).rejects.toThrowError(ConflictException);
+
+      // Once that MANUAL session is CANCELLED, AND even with a template-overlapping class whose sessions are CANCELLED, reassignment succeeds!
+      sessionsStore[1]!.status = SessionStatus.CANCELLED;
+      const classC = await service.createClass(adminActor, {
+        code: 'HSK1-SESS-C',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-02',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6,
+      });
+      sessionsStore.push({
+        id: 'sess-c-cancelled',
+        classId: classC.id,
+        status: SessionStatus.CANCELLED,
+        type: SessionType.REGULAR,
+        sessionDate: new Date('2026-11-13T00:00:00.000Z'),
+        startTime: '18:00',
+        endTime: '19:30',
+      });
+
+      const ok = await service.updateClass(adminActor, classA.id, {
+        teacherId: 'teacher-02',
+        teacherAssignedFrom: '2026-11-09',
+      });
+      expect(ok.teacherId).toBe('teacher-02');
     });
   });
 });

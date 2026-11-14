@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { MediaKind, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
@@ -23,6 +23,7 @@ const MAX_IMPORT_QUESTIONS = 200;
 const MAX_IMPORT_IMAGES = 30;
 const MAX_IMPORT_IMAGE_BYTES = 5 * 1024 * 1024;
 const EXTRACT_TIMEOUT_MS = 15_000;
+export const MAX_CONCURRENT_EXTRACTS = 2;
 const DECORATION_IMAGE_MIMES = new Set(['image/x-emf', 'image/emf', 'image/x-wmf', 'image/wmf']);
 
 export type ImportResult = {
@@ -33,8 +34,8 @@ export type ImportResult = {
 };
 
 export type DocumentExtractors = {
-  extractDocx: (buffer: Buffer) => Promise<{ text: string; images: ExtractedImage[] }>;
-  extractPdf: (buffer: Buffer) => Promise<{ text: string; images: ExtractedImage[] }>;
+  extractDocx: (buffer: Buffer, timeoutMs?: number) => Promise<{ text: string; images: ExtractedImage[] }>;
+  extractPdf: (buffer: Buffer, timeoutMs?: number) => Promise<{ text: string; images: ExtractedImage[] }>;
   persistBytes: (bytes: Buffer, mime: string) => Promise<string>;
 };
 
@@ -47,6 +48,7 @@ const defaultExtractors: DocumentExtractors = {
 @Injectable()
 export class DocumentImportService {
   extractors: DocumentExtractors = defaultExtractors;
+  private activeExtracts = 0;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -63,14 +65,26 @@ export class DocumentImportService {
     const { mime } = assertSafeUpload(buffer, filename);
     if (ext === 'docx') assertSafeDocxZip(buffer);
 
+    if (this.activeExtracts >= MAX_CONCURRENT_EXTRACTS) {
+      throw new HttpException(
+        'Hệ thống đang xử lý tối đa số lượng file đề cùng lúc, vui lòng thử lại sau ít giây',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    this.activeExtracts += 1;
     let extracted: { text: string; images: ExtractedImage[] };
     try {
       extracted = await withTimeout(
-        ext === 'pdf' ? this.extractors.extractPdf(buffer) : this.extractors.extractDocx(buffer),
+        ext === 'pdf'
+          ? this.extractors.extractPdf(buffer, EXTRACT_TIMEOUT_MS)
+          : this.extractors.extractDocx(buffer, EXTRACT_TIMEOUT_MS),
         EXTRACT_TIMEOUT_MS,
       );
     } catch (err) {
       rethrowImportError(err);
+    } finally {
+      this.activeExtracts -= 1;
     }
     if (!extracted.text.trim()) {
       if (ext === 'pdf') {

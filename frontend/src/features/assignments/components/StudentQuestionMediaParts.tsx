@@ -130,6 +130,7 @@ export function StudentListeningBody({
         {question.mediaId ? (
           <audio
             controls
+            controlsList="nodownload"
             preload="none"
             crossOrigin="use-credentials"
             src={getAssignmentMediaUrl(assignmentId, question.mediaId)}

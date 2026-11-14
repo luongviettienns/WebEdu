@@ -20,6 +20,9 @@ export class AttendanceCrudService {
     sessionId: string,
     dto: SaveSessionAttendanceDto,
   ): Promise<SessionAttendanceSheetDto> {
+    if (dto.records.length > 200) {
+      throw new BadRequestException('Danh sách điểm danh tối đa 200 học viên mỗi lần lưu');
+    }
     const now = new Date();
     const trimmedReason = dto.reason?.trim() || '';
 

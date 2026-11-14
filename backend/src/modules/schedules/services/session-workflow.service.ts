@@ -48,7 +48,7 @@ export class SessionWorkflowService {
     const sessionDate = parseSessionCalendarDateOrThrow(dto.sessionDate, 'Ngày học');
     const { startTime, endTime } = assertValidTimeRange(dto.startTime, dto.endTime);
 
-    const { createdId, expectedEndDate, warning } = await this.prisma.$transaction(async (tx) => {
+    const { createdId, expectedEndDate, warning } = await this.runWorkflowTx(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
       const lockedClass = await tx.class.findUniqueOrThrow({ where: { id: classId } });
       this.access.assertAdminCanMutateSchedule(actor, lockedClass.status);
@@ -121,7 +121,7 @@ export class SessionWorkflowService {
     assertSessionDateNotPastVn(newDate, 'Không thể đổi lịch buổi học sang ngày trong quá khứ');
     const { startTime, endTime } = assertValidTimeRange(dto.startTime, dto.endTime);
 
-    const { expectedEndDate, warning } = await this.prisma.$transaction(async (tx) => {
+    const { expectedEndDate, warning } = await this.runWorkflowTx(async (tx) => {
       const target = await this.lockClassAndLoadSessionOrThrow(tx, sessionId, 'Không tìm thấy buổi học');
       this.access.assertAdminCanMutateSchedule(actor, target.class.status);
       if (target.status !== SessionStatus.SCHEDULED) {
@@ -188,7 +188,7 @@ export class SessionWorkflowService {
       assertValidTimeRange(dto.makeup.startTime, dto.makeup.endTime);
     }
 
-    const { expectedEndDate, warning } = await this.prisma.$transaction(async (tx) => {
+    const { expectedEndDate, warning } = await this.runWorkflowTx(async (tx) => {
       const target = await this.lockClassAndLoadSessionOrThrow(tx, sessionId, 'Không tìm thấy buổi học');
       this.access.assertAdminCanMutateSchedule(actor, target.class.status);
       if (target.status !== SessionStatus.SCHEDULED) {
@@ -245,13 +245,12 @@ export class SessionWorkflowService {
     assertSessionDateNotPastVn(mDate, 'Không thể tạo buổi học bù vào ngày trong quá khứ');
     assertValidTimeRange(dto.startTime, dto.endTime);
 
-    try {
-      const { makeupId, expectedEndDate, warning } = await this.prisma.$transaction(async (tx) => {
-        const target = await this.lockClassAndLoadSessionOrThrow(
-          tx,
-          cancelledSessionId,
-          'Không tìm thấy buổi học đã hủy',
-        );
+    const { makeupId, expectedEndDate, warning } = await this.runWorkflowTx(async (tx) => {
+      const target = await this.lockClassAndLoadSessionOrThrow(
+        tx,
+        cancelledSessionId,
+        'Không tìm thấy buổi học đã hủy',
+      );
       this.access.assertAdminCanMutateSchedule(actor, target.class.status);
       if (target.status !== SessionStatus.CANCELLED) {
         throw new BadRequestException('Chỉ được tạo buổi học bù cho buổi đã bị hủy');
@@ -272,12 +271,17 @@ export class SessionWorkflowService {
         target.classId,
       );
       return { makeupId: createdId, expectedEndDate: nextExpectedEnd, warning: teacherWarning };
-      });
+    });
 
-      return this.buildMutationResult(actor, makeupId, expectedEndDate, warning);
+    return this.buildMutationResult(actor, makeupId, expectedEndDate, warning);
+  }
+
+  private async runWorkflowTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    try {
+      return await this.prisma.$transaction(fn);
     } catch (err) {
       if (isPrismaUniqueConstraintError(err)) {
-        throw new ConflictException('Buổi đã hủy này đã được tạo buổi học bù trước đó');
+        throw new ConflictException('Thao tác lịch học bị xung đột đồng thời, vui lòng thử lại');
       }
       throw err;
     }

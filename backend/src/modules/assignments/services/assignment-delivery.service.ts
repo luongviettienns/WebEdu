@@ -270,13 +270,21 @@ export class AssignmentDeliveryService {
         },
       });
 
-      if (submission.answers.length > 0) {
+      const validQuestionIds = new Set(
+        submission.classAssignment.assessment.questions.map((q) => q.id),
+      );
+      const carryOverAnswers = submission.answers.filter((ans) =>
+        validQuestionIds.has(ans.questionId),
+      );
+
+      if (carryOverAnswers.length > 0) {
         await tx.submissionAnswer.createMany({
-          data: submission.answers.map((ans) => ({
+          data: carryOverAnswers.map((ans) => ({
             submissionId: createdAttempt.id,
             questionId: ans.questionId,
             answerPayload: ans.answerPayload as Prisma.InputJsonValue,
             audioPlayCount: ans.audioPlayCount,
+            lastAudioPlayAt: null,
             isCorrect: null,
             earnedPoints: null,
             aiFeedback: null,

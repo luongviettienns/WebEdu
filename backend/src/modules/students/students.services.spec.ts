@@ -1116,4 +1116,132 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
     expect(maskedItemA.assignedClass).toBeNull();
     expect(maskedItemA.enrolledAt).toBeNull();
   });
+
+  it('aborts and retries in a fresh tx with canonical superadmin locks (no intra-tx lock upgrade) when target student is concurrently promoted to SUPERADMIN', async () => {
+    const saExternalActor: AuthenticatedUser = {
+      id: 'sa-external',
+      email: 'sa.ext@webedu.vn',
+      fullName: 'External SA',
+      phone: '0909777666',
+      roles: [Role.SUPERADMIN],
+      effectiveRole: Role.SUPERADMIN,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    const setupConcurrencyProbe = (targetId: string) => {
+      usersStore.set(targetId, {
+        id: targetId,
+        email: `${targetId}@example.com`,
+        phone: targetId === 'student-toctou-1' ? '0905111001' : '0905111002',
+        fullName: 'TOCTOU Student',
+        roles: [Role.STUDENT],
+        status: UserStatus.ACTIVE,
+        tokenVersion: 0,
+        createdAt: new Date('2025-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+        studentProfile: {
+          id: `sp-${targetId}`,
+          userId: targetId,
+          dateOfBirth: new Date('2000-01-01T00:00:00.000Z'),
+          guardianEmail: null,
+          assignedClass: 'HSK1-K21',
+          currentClassId: 'cls-k21',
+          internalNotes: null,
+          enrolledAt: new Date('2026-10-01T00:00:00.000Z'),
+          consent: null,
+        },
+      });
+
+      const txSqlPerAttempt: string[][] = [];
+      let activeAttemptIdx = -1;
+
+      (mockPrisma.$transaction as ReturnType<typeof vi.fn>).mockImplementation(
+        async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
+          activeAttemptIdx += 1;
+          txSqlPerAttempt[activeAttemptIdx] = [];
+          return cb(mockPrisma);
+        },
+      );
+
+      (mockPrisma.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(
+        async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          if (activeAttemptIdx >= 0) {
+            txSqlPerAttempt[activeAttemptIdx]!.push(sql);
+          }
+          const lockedTargetId = typeof values[0] === 'string' ? values[0] : '';
+          const locksSuperadmins = sql.includes('SUPERADMIN');
+          return Array.from(usersStore.values())
+            .filter(
+              (u) =>
+                u.id === lockedTargetId ||
+                (locksSuperadmins &&
+                  u.roles.includes(Role.SUPERADMIN) &&
+                  u.status === UserStatus.ACTIVE),
+            )
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map((u) => ({ id: u.id, roles: u.roles, status: u.status }));
+        },
+      );
+
+      let findCount = 0;
+      (
+        mockPrisma.user as { findUnique: ReturnType<typeof vi.fn> }
+      ).findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => {
+        findCount += 1;
+        // Call #1: preliminary unlocked read sees [STUDENT] -> fast-path lockTargetUser.
+        // Call #2: targetUser read inside tx 1 sees concurrent promotion to SUPERADMIN.
+        if (where.id === targetId && findCount >= 2) {
+          usersStore.get(targetId)!.roles = [Role.STUDENT, Role.SUPERADMIN];
+        }
+        return usersStore.get(where.id) ?? null;
+      });
+
+      return txSqlPerAttempt;
+    };
+
+    // Case 1: No other active Superadmin exists -> retries with canonical locks and enforces last-Superadmin guard
+    const attemptsFail = setupConcurrencyProbe('student-toctou-1');
+    await expect(
+      service.updateStudent(saExternalActor, 'student-toctou-1', {
+        status: UserStatus.INACTIVE,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động'),
+    );
+    expect(attemptsFail).toHaveLength(2);
+    expect(attemptsFail[0]).toHaveLength(1);
+    expect(attemptsFail[0]![0]).not.toContain('SUPERADMIN');
+    expect(attemptsFail[0]![0]).not.toContain('ORDER BY id ASC');
+    expect(attemptsFail[1]).toHaveLength(1);
+    expect(attemptsFail[1]![0]).toContain('SUPERADMIN');
+    expect(attemptsFail[1]![0]).toContain('ORDER BY id ASC');
+    expect(attemptsFail[1]![0]).toContain('FOR UPDATE');
+
+    // Case 2: Another active Superadmin exists -> retry succeeds with canonical locks from start
+    usersStore.set('sa-other-active', {
+      id: 'sa-other-active',
+      email: 'sa.other@webedu.vn',
+      phone: '0909888999',
+      fullName: 'Other Active SA',
+      roles: [Role.SUPERADMIN],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      studentProfile: null,
+    });
+    const attemptsOk = setupConcurrencyProbe('student-toctou-2');
+    const updated = await service.updateStudent(saExternalActor, 'student-toctou-2', {
+      status: UserStatus.INACTIVE,
+    });
+    expect(updated.status).toBe(UserStatus.INACTIVE);
+    expect(attemptsOk).toHaveLength(2);
+    expect(attemptsOk[0]).toHaveLength(1);
+    expect(attemptsOk[0]![0]).not.toContain('SUPERADMIN');
+    expect(attemptsOk[1]).toHaveLength(1);
+    expect(attemptsOk[1]![0]).toContain('SUPERADMIN');
+    expect(attemptsOk[1]![0]).toContain('ORDER BY id ASC');
+  });
 });

@@ -1,16 +1,20 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
-import { EnrollmentStatus, Role, UserStatus } from '@prisma/client';
+import { EnrollmentStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import {
+  RetryWithSuperadminLocksError,
+  assertAnotherActiveSuperadminRemains,
+  assertFreshActiveSuperadminActorInTx,
+  assertSuperadminNotSelfDeactivating,
   lockTargetUser,
   lockUserAndActiveSuperadmins,
+  runWithSuperadminLockRetry,
+  type LockedUserRow,
 } from '../../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { loadEnrollmentFacts } from '../../../common/policies/enrollment-invariants.policy.js';
@@ -54,61 +58,77 @@ export class UserRoleStatusService {
       throw new BadRequestException('Tài khoản phải có ít nhất một vai trò');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      // Determine locking strategy without acquiring out-of-order locks
-      const preliminary = await tx.user.findUnique({
-        where: { id: targetUserId },
-        select: { roles: true, status: true },
-      });
-      if (!preliminary) {
-        throw new NotFoundException('Không tìm thấy tài khoản');
-      }
+    return runWithSuperadminLockRetry(this.prisma, (tx, forceSuperadminLocks) =>
+      this.executeRoleStatusUpdateTx(
+        tx,
+        actor,
+        targetUserId,
+        dto,
+        forceSuperadminLocks,
+      ),
+    );
+  }
 
-      // If target or requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC.
-      const touchesSuperadmin =
-        preliminary.roles.includes(Role.SUPERADMIN) ||
-        (dto.roles !== undefined && dto.roles.includes(Role.SUPERADMIN));
+  private async executeRoleStatusUpdateTx(
+    tx: Prisma.TransactionClient,
+    actor: AuthenticatedUser,
+    targetUserId: string,
+    dto: UpdateUserRolesStatusDto,
+    forceSuperadminLocks: boolean,
+  ): Promise<SystemUserItemDto> {
+    // Determine locking strategy without acquiring out-of-order locks
+    const preliminary = await tx.user.findUnique({
+      where: { id: targetUserId },
+      select: { roles: true, status: true },
+    });
+    if (!preliminary) {
+      throw new NotFoundException('Không tìm thấy tài khoản');
+    }
 
-      if (touchesSuperadmin) {
-        await lockUserAndActiveSuperadmins(tx, targetUserId);
-      } else {
-        // Normal user role/status change: lock only target row to prevent contention
-        await lockTargetUser(tx, targetUserId);
-      }
+    // If retry forced or target/requested roles touch SUPERADMIN, lock all active superadmins in canonical ORDER BY id ASC.
+    const touchesSuperadmin =
+      forceSuperadminLocks ||
+      preliminary.roles.includes(Role.SUPERADMIN) ||
+      (dto.roles !== undefined && dto.roles.includes(Role.SUPERADMIN));
 
-      // Re-verify actor inside transaction after locks are acquired to eliminate race window (F2)
-      const freshActor = await tx.user.findUnique({
-        where: { id: actor.id },
-        select: { id: true, roles: true, status: true, tokenVersion: true },
-      });
-      if (
-        !freshActor ||
-        freshActor.status !== UserStatus.ACTIVE ||
-        !freshActor.roles.includes(Role.SUPERADMIN)
-      ) {
-        throw new ForbiddenException(
-          'Chỉ Quản trị tối cao (Superadmin) mới có quyền phân quyền hoặc đổi trạng thái người dùng',
-        );
-      }
-      if (freshActor.tokenVersion !== actor.tokenVersion) {
-        throw new UnauthorizedException(
-          'Phiên đăng nhập đã hết hiệu lực, vui lòng đăng nhập lại',
-        );
-      }
+    let lockedSuperadmins: LockedUserRow[] | undefined;
+    if (touchesSuperadmin) {
+      lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, targetUserId);
+    } else {
+      // Normal user role/status change: lock only target row to prevent contention
+      await lockTargetUser(tx, targetUserId);
+    }
 
-      const targetUser = await tx.user.findUnique({
-        where: { id: targetUserId },
-        include: { studentProfile: true, teacherProfile: true },
-      });
-      if (!targetUser) {
-        throw new NotFoundException('Không tìm thấy tài khoản');
-      }
+    await assertFreshActiveSuperadminActorInTx(
+      tx,
+      actor,
+      'Chỉ Quản trị tối cao (Superadmin) mới có quyền phân quyền hoặc đổi trạng thái người dùng',
+    );
+
+    const targetUser = await tx.user.findUnique({
+      where: { id: targetUserId },
+      include: { studentProfile: true, teacherProfile: true },
+    });
+    if (!targetUser) {
+      throw new NotFoundException('Không tìm thấy tài khoản');
+    }
+
+    // Concurrent transaction promoted target to SUPERADMIN after preliminary read:
+    // abort this tx rather than upgrading locks out of ORDER BY id ASC order (40P01 hazard).
+    if (!lockedSuperadmins && targetUser.roles.includes(Role.SUPERADMIN)) {
+      throw new RetryWithSuperadminLocksError();
+    }
 
       const nextRoles =
         dto.roles !== undefined
           ? Array.from(new Set(dto.roles))
           : targetUser.roles;
       const nextStatus = dto.status ?? targetUser.status;
+      assertSuperadminNotSelfDeactivating(
+        actor,
+        { id: targetUserId, roles: targetUser.roles },
+        nextStatus,
+      );
 
       // F3: Prevent stale form from granting ADMIN/SUPERADMIN while deactivating or to inactive user
       const isGrantingAdminPrivilege =
@@ -185,78 +205,58 @@ export class UserRoleStatusService {
         assertNoActiveClassesLed(effective);
       }
 
-      await this.assertLastActiveSuperadminSurvives(tx, targetUser, nextRoles, nextStatus);
-
-      const updated = await tx.user.update({
-        where: { id: targetUserId },
-        data: {
-          roles: nextRoles,
-          status: nextStatus,
-          tokenVersion: { increment: 1 },
-        },
-      });
-
-      if (nextRoles.includes(Role.TEACHER)) {
-        await tx.teacherProfile.upsert({
-          where: { userId: targetUserId },
-          update: {},
-          create: { userId: targetUserId, activeClassesCount: 0 },
-        });
-      }
-
-      if (nextRoles.includes(Role.STUDENT)) {
-        await tx.studentProfile.upsert({
-          where: { userId: targetUserId },
-          update: {},
-          create: {
-            userId: targetUserId,
-            dateOfBirth: new Date('2000-01-01'),
-          },
-        });
-      }
-
-      await writeAuditLog(tx, actor, {
-        action: 'UPDATE_USER_ROLES_STATUS',
-        targetType: 'User',
-        targetId: targetUserId,
-        metadata: {
-          previousRoles: targetUser.roles,
-          newRoles: nextRoles,
-          previousStatus: targetUser.status,
-          newStatus: nextStatus,
-        },
-      });
-
-      return toSystemUserDto(updated);
-    });
-  }
-
-  /** Demoting/deactivating an active Superadmin requires another active one. */
-  private async assertLastActiveSuperadminSurvives(
-    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
-    targetUser: { id: string; roles: Role[]; status: UserStatus },
-    nextRoles: Role[],
-    nextStatus: UserStatus,
-  ): Promise<void> {
     const wasActiveSuperadmin =
       targetUser.roles.includes(Role.SUPERADMIN) &&
       targetUser.status === UserStatus.ACTIVE;
     const willBeActiveSuperadmin =
       nextRoles.includes(Role.SUPERADMIN) && nextStatus === UserStatus.ACTIVE;
-
-    if (!wasActiveSuperadmin || willBeActiveSuperadmin) {
-      return;
+    if (wasActiveSuperadmin && !willBeActiveSuperadmin) {
+      if (!lockedSuperadmins) {
+        throw new RetryWithSuperadminLocksError();
+      }
+      assertAnotherActiveSuperadminRemains(targetUserId, lockedSuperadmins);
     }
 
-    const otherActiveSuperadmins = await tx.user.count({
-      where: {
-        id: { not: targetUser.id },
-        roles: { has: Role.SUPERADMIN },
-        status: UserStatus.ACTIVE,
+    const updated = await tx.user.update({
+      where: { id: targetUserId },
+      data: {
+        roles: nextRoles,
+        status: nextStatus,
+        tokenVersion: { increment: 1 },
       },
     });
-    if (otherActiveSuperadmins < 1) {
-      throw new BadRequestException(LAST_SUPERADMIN_MESSAGE);
+
+    if (nextRoles.includes(Role.TEACHER)) {
+      await tx.teacherProfile.upsert({
+        where: { userId: targetUserId },
+        update: {},
+        create: { userId: targetUserId, activeClassesCount: 0 },
+      });
     }
+
+    if (nextRoles.includes(Role.STUDENT)) {
+      await tx.studentProfile.upsert({
+        where: { userId: targetUserId },
+        update: {},
+        create: {
+          userId: targetUserId,
+          dateOfBirth: new Date('2000-01-01'),
+        },
+      });
+    }
+
+    await writeAuditLog(tx, actor, {
+      action: 'UPDATE_USER_ROLES_STATUS',
+      targetType: 'User',
+      targetId: targetUserId,
+      metadata: {
+        previousRoles: targetUser.roles,
+        newRoles: nextRoles,
+        previousStatus: targetUser.status,
+        newStatus: nextStatus,
+      },
+    });
+
+    return toSystemUserDto(updated);
   }
 }

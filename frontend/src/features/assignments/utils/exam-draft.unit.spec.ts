@@ -13,6 +13,7 @@ import {
   MAX_LOCAL_DRAFT_DRIFT_MS,
   mergeAudioPlayCounts,
   persistExamDraftSnapshot,
+  purgePriorAttemptDrafts,
   readLocalDraft,
   resolveInitialSessionDraft,
   sanitizeAdoptedLocalDraft,
@@ -21,7 +22,11 @@ import {
   type ExamLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
 import {
+  buildResolvedSessionSnapshot,
+  buildSyncPayload,
   reconcileAutosaveSnapshot,
+  resolveResumeSyncAction,
+  tickCountdownSnapshot,
   type ExamSnapshotLike,
 } from '@/features/assignments/utils/exam-session-transport';
 import { purgeLegacyWebStorageTokens } from '@/lib/api-client';
@@ -183,6 +188,8 @@ function createSampleQuestions(): SanitizedQuestionDto[] {
 function createSessionDto(overrides?: {
   studentId?: string;
   submissionId?: string;
+  attemptNumber?: number;
+  assignmentId?: string;
   lastSavedAt?: string;
   elapsedSeconds?: number;
   remainingSeconds?: number | null;
@@ -191,11 +198,13 @@ function createSessionDto(overrides?: {
 }): StudentExamSessionDto {
   const studentId = overrides?.studentId ?? 'student-1';
   const submissionId = overrides?.submissionId ?? 'sub-1';
+  const attemptNumber = overrides?.attemptNumber ?? 1;
+  const assignmentId = overrides?.assignmentId ?? 'assign-1';
   const lastSavedAt = overrides?.lastSavedAt ?? '2026-11-14T10:00:00.000Z';
   const questions = overrides?.questions ?? createSampleQuestions();
   return {
     assignment: {
-      assignmentId: 'assign-1',
+      assignmentId,
       assessmentId: 'assess-1',
       assessmentTitle: 'HSK2 Mini Test',
       assessmentType: 'MINI_TEST',
@@ -210,7 +219,7 @@ function createSessionDto(overrides?: {
       totalPoints: 22,
       isOverdue: false,
       submissionId,
-      attemptNumber: 1,
+      attemptNumber,
       status: 'IN_PROGRESS',
       displayStatusLabel: 'Đang làm dở',
       remainingSeconds: overrides?.remainingSeconds !== undefined ? overrides.remainingSeconds : 1200,
@@ -226,7 +235,7 @@ function createSessionDto(overrides?: {
     submission: {
       id: submissionId,
       studentId,
-      attemptNumber: 1,
+      attemptNumber,
       status: 'IN_PROGRESS',
       displayStatusLabel: 'Đang làm dở',
       startedAt: '2026-11-14T09:58:00.000Z',
@@ -237,7 +246,6 @@ function createSessionDto(overrides?: {
       submittedAt: null,
       autoSubmitted: false,
       dueAtOverride: null,
-      reopenReason: null,
     },
     questions,
     answers: overrides?.answers ?? [
@@ -507,6 +515,9 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
       audioPlayCounts: { 'q-listen-opt': 1, 'q-single': 2 },
       elapsedSeconds: 150,
       remainingSeconds: 1170,
+      timerAnchorMs: nowMs - 30_000,
+      anchorElapsedSeconds: 120,
+      anchorRemainingSeconds: 1200,
     };
 
     const tamperedIncoming = {
@@ -584,6 +595,9 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
       audioPlayCounts: { 'q-listen-opt': 2, 'q-listen-text': 0 },
       elapsedSeconds: 140,
       remainingSeconds: 1160,
+      timerAnchorMs: 1_763_114_500_000,
+      anchorElapsedSeconds: 130,
+      anchorRemainingSeconds: 1170,
     };
 
     const updated = createSessionDto({
@@ -634,5 +648,180 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(requestedUrls[1]).toMatch(/\/assignments\/assign-1\/submissions\?page=2&limit=20$/);
     expect(mockWin.localStorage.getItem('webedu_access_token')).toBeNull();
     expect(mockWin.localStorage.getItem('webedu_exam_draft_stu-1_sub-1')).toBe('{"updatedAtMs":100}');
+  });
+
+  test('tickCountdownSnapshot calculates wall-clock delta across backgrounding (+45s) and clamps at 0', () => {
+    const anchorMs = 1_763_114_600_000;
+    const session = createSessionDto({ elapsedSeconds: 120, remainingSeconds: 60 });
+    const resolved = buildResolvedSessionSnapshot(session, 'taking');
+
+    // Simulate deterministic anchor at anchorMs
+    const anchoredSnap: ExamSnapshotLike = {
+      ...resolved.snapshot,
+      timerAnchorMs: anchorMs,
+      anchorElapsedSeconds: 120,
+      anchorRemainingSeconds: 60,
+    };
+
+    // Tab was backgrounded for 45 seconds before next tick
+    const afterBg = tickCountdownSnapshot(anchoredSnap, anchorMs + 45_000);
+    expect(afterBg).not.toBeNull();
+    expect(afterBg!.nextRemaining).toBe(15);
+    expect(afterBg!.nextSnap.remainingSeconds).toBe(15);
+    expect(afterBg!.nextSnap.elapsedSeconds).toBe(165);
+
+    // Tab stays backgrounded past expiration (+75s from anchor) -> clamps at 0
+    const afterExpire = tickCountdownSnapshot(afterBg!.nextSnap, anchorMs + 75_000);
+    expect(afterExpire).not.toBeNull();
+    expect(afterExpire!.nextRemaining).toBe(0);
+    expect(afterExpire!.nextSnap.remainingSeconds).toBe(0);
+    expect(afterExpire!.nextSnap.elapsedSeconds).toBe(195);
+
+    // Untimed session returns null
+    const untimedSnap: ExamSnapshotLike = {
+      ...anchoredSnap,
+      remainingSeconds: null,
+      anchorRemainingSeconds: null,
+    };
+    expect(tickCountdownSnapshot(untimedSnap, anchorMs + 45_000)).toBeNull();
+  });
+
+  test('resolveResumeSyncAction catches up wall-clock timers on reconnect before expiry and triggers auto-submit at 0', () => {
+    const anchorMs = 1_763_114_700_000;
+    const session = createSessionDto({ elapsedSeconds: 120, remainingSeconds: 60 });
+    const resolved = buildResolvedSessionSnapshot(session, 'taking', anchorMs);
+
+    // Offline for 45s -> handleOnline must tick elapsed/remaining before flushing autosave
+    const resumeUnexpired = resolveResumeSyncAction(resolved.snapshot, anchorMs + 45_000);
+    expect(resumeUnexpired.action).toBe('autosave');
+    if (resumeUnexpired.action !== 'autosave' || !resumeUnexpired.nextSnap) {
+      throw new Error('Expected autosave action with updated snapshot');
+    }
+    expect(resumeUnexpired.nextSnap.elapsedSeconds).toBe(165);
+    expect(resumeUnexpired.nextSnap.remainingSeconds).toBe(15);
+    expect(buildSyncPayload(resumeUnexpired.nextSnap)).toMatchObject({
+      elapsedSeconds: 165,
+      remainingSeconds: 15,
+    });
+
+    // Offline past deadline (+75s) -> must trigger auto-submit with remainingSeconds=0
+    const resumeExpired = resolveResumeSyncAction(resolved.snapshot, anchorMs + 75_000);
+    expect(resumeExpired.action).toBe('submit');
+    if (resumeExpired.action !== 'submit') {
+      throw new Error('Expected submit action when expired offline');
+    }
+    expect(resumeExpired.nextSnap.remainingSeconds).toBe(0);
+    expect(resumeExpired.nextSnap.elapsedSeconds).toBe(195);
+
+    // Untimed active attempt -> autosaves immediately with null nextSnap
+    const untimed = buildResolvedSessionSnapshot(
+      createSessionDto({ elapsedSeconds: 20, remainingSeconds: null }),
+      'taking',
+      anchorMs,
+    );
+    expect(resolveResumeSyncAction(untimed.snapshot, anchorMs + 45_000)).toEqual({
+      action: 'autosave',
+      nextSnap: null,
+    });
+
+    // Review mode -> ignored
+    const review = buildResolvedSessionSnapshot(session, 'review', anchorMs);
+    expect(resolveResumeSyncAction(review.snapshot, anchorMs + 45_000)).toEqual({
+      action: 'ignore',
+    });
+  });
+
+  test('purgePriorAttemptDrafts removes Attempt #1, legacy, and corrupt drafts for same assignment while preserving other assignments and Attempt #2', () => {
+    writeLocalDraft('sub-1', 'student-1', {
+      assignmentId: 'assign-1',
+      updatedAtMs: 1000,
+      answers: { 'q-fill': { text: 'attempt 1' } },
+      elapsedSeconds: 30,
+      remainingSeconds: 1770,
+      audioPlayCounts: {},
+    });
+    writeLocalDraft('sub-legacy', 'student-1', {
+      updatedAtMs: 1000,
+      answers: { 'q-fill': { text: 'legacy no assignmentId' } },
+      elapsedSeconds: 30,
+      remainingSeconds: 1770,
+      audioPlayCounts: {},
+    });
+    mockWin.localStorage.setItem('webedu_exam_draft_student-1_sub-corrupt', '{bad-json');
+    writeLocalDraft('sub-other-assign', 'student-1', {
+      assignmentId: 'assign-other',
+      updatedAtMs: 2000,
+      answers: { 'q-fill': { text: 'other assignment keep me' } },
+      elapsedSeconds: 15,
+      remainingSeconds: 1785,
+      audioPlayCounts: {},
+    });
+    writeLocalDraft('sub-other-student', 'student-2', {
+      assignmentId: 'assign-1',
+      updatedAtMs: 2000,
+      answers: { 'q-fill': { text: 'other student keep me' } },
+      elapsedSeconds: 15,
+      remainingSeconds: 1785,
+      audioPlayCounts: {},
+    });
+    writeLocalDraft('sub-2', 'student-1', {
+      assignmentId: 'assign-1',
+      updatedAtMs: 3000,
+      answers: { 'q-fill': { text: 'attempt 2 keep me' } },
+      elapsedSeconds: 0,
+      remainingSeconds: 1800,
+      audioPlayCounts: {},
+    });
+    mockWin.localStorage.setItem('unrelated_setting', 'keep');
+
+    purgePriorAttemptDrafts('sub-2', 'student-1', 'assign-1');
+
+    expect(readLocalDraft('sub-1', 'student-1')).toBeNull();
+    expect(readLocalDraft('sub-legacy', 'student-1')).toBeNull();
+    expect(mockWin.localStorage.getItem('webedu_exam_draft_student-1_sub-corrupt')).toBeNull();
+    expect(readLocalDraft('sub-2', 'student-1')?.answers).toEqual({ 'q-fill': { text: 'attempt 2 keep me' } });
+    expect(readLocalDraft('sub-other-assign', 'student-1')?.answers).toEqual({
+      'q-fill': { text: 'other assignment keep me' },
+    });
+    expect(readLocalDraft('sub-other-student', 'student-2')?.answers).toEqual({
+      'q-fill': { text: 'other student keep me' },
+    });
+    expect(mockWin.localStorage.getItem('unrelated_setting')).toBe('keep');
+  });
+
+  test('resolveInitialSessionDraft purges Attempt #1 draft automatically when attemptNumber > 1 while preserving unrelated assignments', () => {
+    const serverSavedAt = '2026-11-14T10:00:00.000Z';
+    const serverSavedMs = new Date(serverSavedAt).getTime();
+
+    writeLocalDraft('sub-1', 'student-1', {
+      assignmentId: 'assign-1',
+      updatedAtMs: serverSavedMs + 10_000,
+      answers: { 'q-fill': { text: 'stale attempt 1' } },
+      elapsedSeconds: 45,
+      remainingSeconds: 1755,
+      audioPlayCounts: {},
+    });
+    writeLocalDraft('sub-other', 'student-1', {
+      assignmentId: 'assign-2',
+      updatedAtMs: serverSavedMs + 10_000,
+      answers: { 'q-fill': { text: 'other assignment' } },
+      elapsedSeconds: 10,
+      remainingSeconds: 1790,
+      audioPlayCounts: {},
+    });
+
+    const reopenedSession = createSessionDto({
+      submissionId: 'sub-2',
+      attemptNumber: 2,
+      assignmentId: 'assign-1',
+      lastSavedAt: serverSavedAt,
+    });
+
+    resolveInitialSessionDraft(reopenedSession, 'taking', serverSavedMs + 15_000);
+
+    expect(readLocalDraft('sub-1', 'student-1')).toBeNull();
+    expect(readLocalDraft('sub-other', 'student-1')?.answers).toEqual({
+      'q-fill': { text: 'other assignment' },
+    });
   });
 });

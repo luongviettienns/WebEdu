@@ -1,71 +1,191 @@
 import { copyFile, mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { Worker } from 'node:worker_threads';
 import { BadRequestException } from '@nestjs/common';
-import { htmlToPlainText, type ExtractedImage } from '../policies/document-import.parser.js';
+import type { ExtractedImage } from '../policies/document-import.parser.js';
 
 export type ExtractedDocument = { text: string; images: ExtractedImage[] };
 
 const MAX_PDF_PAGES = 50;
 const MAX_IMPORT_IMAGES = 30;
-const MAX_IMAGE_B64 = Math.ceil((5 * 1024 * 1024 * 4) / 3);
+const MAX_IMPORT_IMAGE_BYTES = 5 * 1024 * 1024;
+const DEFAULT_EXTRACT_TIMEOUT_MS = 15_000;
 
-export async function extractDocx(buffer: Buffer): Promise<ExtractedDocument> {
-  try {
-    const mammoth = await import('mammoth');
+type WorkerExtractResult =
+  | { ok: true; text: string; images: Array<{ mime: string; bytes: Uint8Array }> }
+  | { ok: false; badRequest?: string; error?: string };
+
+const EXTRACT_WORKER_SCRIPT = `
+import { parentPort, workerData } from 'node:worker_threads';
+
+function htmlToPlainText(html) {
+  const images = [];
+  const withoutImgs = html.replace(
+    /<img\\b[^>]*src="data:([^;]+);base64,([^"]+)"[^>]*>/gi,
+    (_m, mime, b64) => {
+      images.push({ mime, bytes: Buffer.from(b64, 'base64') });
+      return '\\n';
+    },
+  );
+  const text = withoutImgs
+    .replace(/<(?:br|\\/p|\\/div|\\/li|\\/h[1-6])\\s*\\/?>/gi, '\\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+  return { text, images };
+}
+
+(async () => {
+  if (workerData.kind === 'docx') {
+    const mammothMod = await import(workerData.mammothUrl);
+    const mammoth = mammothMod.default ?? mammothMod;
     let imageCount = 0;
+    let imageBadRequest = null;
     const result = await mammoth.convertToHtml(
-      { buffer },
+      { buffer: Buffer.from(workerData.buffer) },
       {
         convertImage: mammoth.images.imgElement(async (image) => {
+          if (imageBadRequest) return { src: '' };
           imageCount += 1;
-          if (imageCount > MAX_IMPORT_IMAGES) return { src: '' };
-          const b64 = await image.read('base64');
-          if (b64.length > MAX_IMAGE_B64) return { src: '' };
-          return { src: `data:${image.contentType};base64,${b64}` };
+          if (imageCount > workerData.maxImportImages) return { src: '' };
+          const rawBuffer = await image.read();
+          if (rawBuffer.byteLength > workerData.maxImportImageBytes) {
+            imageBadRequest = 'Ảnh nhúng vượt quá 5MB';
+            return { src: '' };
+          }
+          return { src: 'data:' + image.contentType + ';base64,' + rawBuffer.toString('base64') };
         }),
       },
     );
-    return htmlToPlainText(result.value);
-  } catch (err) {
-    if (err instanceof BadRequestException) throw err;
-    throw new BadRequestException('File Word bị hỏng hoặc không đọc được');
+    if (imageBadRequest) {
+      parentPort.postMessage({ ok: false, badRequest: imageBadRequest });
+      return;
+    }
+    parentPort.postMessage({ ok: true, ...htmlToPlainText(result.value ?? '') });
+    return;
   }
+
+  const pdfjs = await import(workerData.pdfjsUrl);
+  const doc = await pdfjs.getDocument({
+    data: new Uint8Array(workerData.buffer),
+    verbosity: 0,
+  }).promise;
+  if (doc.numPages > workerData.maxPdfPages) {
+    parentPort.postMessage({ ok: false, badRequest: 'PDF vượt quá 50 trang' });
+    return;
+  }
+  const lines = [];
+  for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
+    const page = await doc.getPage(pageNo);
+    const content = await page.getTextContent();
+    let lastY = null;
+    let line = '';
+    for (const item of content.items) {
+      if (!('str' in item)) continue;
+      const y = 'transform' in item ? Number(item.transform[5]) : 0;
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        if (line.trim()) lines.push(line.trim());
+        line = '';
+      }
+      line += (line ? ' ' : '') + item.str;
+      lastY = y;
+    }
+    if (line.trim()) lines.push(line.trim());
+  }
+  parentPort.postMessage({ ok: true, text: lines.join('\\n'), images: [] });
+})().catch((err) => {
+  const message = err instanceof Error ? err.message : String(err);
+  parentPort.postMessage({ ok: false, error: message });
+});
+`;
+
+function runExtractInWorker(
+  kind: 'docx' | 'pdf',
+  buffer: Buffer,
+  timeoutMs = DEFAULT_EXTRACT_TIMEOUT_MS,
+): Promise<ExtractedDocument> {
+  if (timeoutMs <= 0) {
+    return Promise.reject(new BadRequestException('File quá phức tạp, vượt thời gian xử lý'));
+  }
+
+  const worker = new Worker(EXTRACT_WORKER_SCRIPT, {
+    eval: true,
+    workerData: {
+      kind,
+      buffer: new Uint8Array(buffer),
+      mammothUrl: import.meta.resolve('mammoth'),
+      pdfjsUrl: import.meta.resolve('pdfjs-dist/legacy/build/pdf.mjs'),
+      maxPdfPages: MAX_PDF_PAGES,
+      maxImportImages: MAX_IMPORT_IMAGES,
+      maxImportImageBytes: MAX_IMPORT_IMAGE_BYTES,
+    },
+  });
+
+  const corruptMsg =
+    kind === 'pdf'
+      ? 'File PDF bị hỏng hoặc không đọc được'
+      : 'File Word bị hỏng hoặc không đọc được';
+
+  return new Promise<ExtractedDocument>((resolve, reject) => {
+    let settled = false;
+    const stopAndRun = (afterTerminate: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker
+        .terminate()
+        .catch(() => undefined)
+        .then(afterTerminate);
+    };
+
+    const timer = setTimeout(() => {
+      stopAndRun(() => {
+        reject(new BadRequestException('File quá phức tạp, vượt thời gian xử lý'));
+      });
+    }, timeoutMs);
+
+    worker.on('message', (msg: WorkerExtractResult) => {
+      stopAndRun(() => {
+        if (!msg.ok) {
+          reject(new BadRequestException(msg.badRequest ?? corruptMsg));
+          return;
+        }
+        resolve({
+          text: msg.text,
+          images: msg.images.map((img) => ({
+            mime: img.mime,
+            bytes: Buffer.from(img.bytes),
+          })),
+        });
+      });
+    });
+
+    worker.on('error', () => {
+      stopAndRun(() => reject(new BadRequestException(corruptMsg)));
+    });
+
+    worker.on('exit', () => {
+      stopAndRun(() => reject(new BadRequestException(corruptMsg)));
+    });
+  });
 }
 
-export async function extractPdf(buffer: Buffer): Promise<ExtractedDocument> {
-  try {
-    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const doc = await pdfjs.getDocument({
-      data: new Uint8Array(buffer),
-      verbosity: 0,
-    }).promise;
-    if (doc.numPages > MAX_PDF_PAGES) {
-      throw new BadRequestException('PDF vượt quá 50 trang');
-    }
-    const lines: string[] = [];
-    for (let pageNo = 1; pageNo <= doc.numPages; pageNo += 1) {
-      const page = await doc.getPage(pageNo);
-      const content = await page.getTextContent();
-      let lastY: number | null = null;
-      let line = '';
-      for (const item of content.items) {
-        if (!('str' in item)) continue;
-        const y = 'transform' in item ? Number(item.transform[5]) : 0;
-        if (lastY !== null && Math.abs(y - lastY) > 2) {
-          if (line.trim()) lines.push(line.trim());
-          line = '';
-        }
-        line += (line ? ' ' : '') + item.str;
-        lastY = y;
-      }
-      if (line.trim()) lines.push(line.trim());
-    }
-    return { text: lines.join('\n'), images: [] };
-  } catch (err) {
-    if (err instanceof BadRequestException) throw err;
-    throw new BadRequestException('File PDF bị hỏng hoặc không đọc được');
-  }
+export async function extractDocx(
+  buffer: Buffer,
+  timeoutMs = DEFAULT_EXTRACT_TIMEOUT_MS,
+): Promise<ExtractedDocument> {
+  return runExtractInWorker('docx', buffer, timeoutMs);
+}
+
+export async function extractPdf(
+  buffer: Buffer,
+  timeoutMs = DEFAULT_EXTRACT_TIMEOUT_MS,
+): Promise<ExtractedDocument> {
+  return runExtractInWorker('pdf', buffer, timeoutMs);
 }
 
 const MIME_EXT: Record<string, string> = {

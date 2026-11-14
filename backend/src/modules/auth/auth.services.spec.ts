@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { Role, UserStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { AuthLoginService } from './services/auth-login.service.js';
+import { AuthLoginService, DUMMY_PASSWORD_HASH } from './services/auth-login.service.js';
 import { AuthMaintenanceService } from './services/auth-maintenance.service.js';
 import { AuthRegistrationService } from './services/auth-registration.service.js';
 import { AuthSessionService } from './services/auth-session.service.js';
@@ -798,16 +798,61 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       });
       expect(regSuccess.user.status).toBe(UserStatus.PENDING_CLASS);
     });
+
+    it('throws unified OTP failure message WITHOUT secondary emailVerification.findFirst query when OTP is exhausted or missing', async () => {
+      await service.sendVerificationCode('exhaust.otp@example.com');
+      const sentEmail = sentVerificationEmails.at(-1)!;
+
+      for (let i = 0; i < 5; i++) {
+        await expect(
+          service.register({
+            fullName: 'Học Viên Exhaust',
+            dateOfBirth: '2000-01-01',
+            phone: '0908887766',
+            email: 'exhaust.otp@example.com',
+            password: 'Password123',
+            verificationCode: '000000',
+          }),
+        ).rejects.toThrowError(new BadRequestException('Mã xác thực không chính xác'));
+      }
+
+      const evFindFirst = (
+        mockPrisma.emailVerification as { findFirst: ReturnType<typeof vi.fn> }
+      ).findFirst;
+      evFindFirst.mockClear();
+
+      await expect(
+        service.register({
+          fullName: 'Học Viên Exhaust',
+          dateOfBirth: '2000-01-01',
+          phone: '0908887766',
+          email: 'exhaust.otp@example.com',
+          password: 'Password123',
+          verificationCode: sentEmail.code,
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException(
+          'Mã xác thực không tồn tại, đã hết hạn hoặc đã nhập sai quá số lần cho phép. Vui lòng yêu cầu mã mới',
+        ),
+      );
+      expect(evFindFirst).not.toHaveBeenCalled();
+    });
   });
 
   describe('FUNC-003: Login, Anti-Timing & Atomic Commit-Before-Throw 5-Strike Lockout', () => {
-    it('runs dummy bcrypt comparison when user does not exist (SEC-05)', async () => {
+    it('runs dummy bcrypt comparison against precomputed DUMMY_PASSWORD_HASH constant when user does not exist (SEC-05)', async () => {
+      expect(DUMMY_PASSWORD_HASH).toBe(
+        '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iK8O',
+      );
+      expect(DUMMY_PASSWORD_HASH).toMatch(/^\$2b\$12\$.{53}$/);
+
       const compareSpy = vi.spyOn(bcrypt, 'compare');
       await expect(
         service.login({ email: 'nonexistent@example.com', password: 'WrongPassword123' }),
       ).rejects.toThrowError(new UnauthorizedException('Email hoặc mật khẩu không chính xác'));
 
       expect(compareSpy).toHaveBeenCalledTimes(1);
+      expect(compareSpy).toHaveBeenCalledWith('WrongPassword123', DUMMY_PASSWORD_HASH);
       compareSpy.mockRestore();
     });
 

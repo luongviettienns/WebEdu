@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { crc32, deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   cloneAssessmentFiles,
@@ -94,5 +95,109 @@ function buildMinimalPdf(text: string): Buffer {
 
     await expect(extractDocx(Buffer.from('not-a-docx'))).rejects.toThrow(BadRequestException);
     await expect(extractPdf(Buffer.from('not-a-pdf'))).rejects.toThrow(BadRequestException);
+
+    // Worker thread execution must terminate cleanly on timeout and preserve Buffer image payloads
+    await expect(extractDocx(sample, 1)).rejects.toThrowError(
+      new BadRequestException('File quá phức tạp, vượt thời gian xử lý'),
+    );
+    await expect(extractPdf(buildMinimalPdf('Cau 1. Hello'), 1)).rejects.toThrowError(
+      new BadRequestException('File quá phức tạp, vượt thời gian xử lý'),
+    );
+    expect(extracted.images.every((img) => Buffer.isBuffer(img.bytes))).toBe(true);
+  }, 60_000);
+
+function buildMinimalZip(entries: Array<{ name: string; data: Buffer }>): Buffer {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBuf = Buffer.from(entry.name, 'utf8');
+    const compressed = deflateRawSync(entry.data);
+    const sum = crc32(entry.data);
+
+    const local = Buffer.alloc(30 + nameBuf.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(sum >>> 0, 14);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(entry.data.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    nameBuf.copy(local, 30);
+    localParts.push(local, compressed);
+
+    const central = Buffer.alloc(46 + nameBuf.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(sum >>> 0, 16);
+    central.writeUInt32LE(compressed.length, 20);
+    central.writeUInt32LE(entry.data.length, 24);
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42);
+    nameBuf.copy(central, 46);
+    centralParts.push(central);
+
+    offset += local.length + compressed.length;
+  }
+
+  const centralDir = Buffer.concat(centralParts);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(centralDir.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...localParts, centralDir, eocd]);
+}
+
+function buildDocxWithImage(imageBytes: Buffer): Buffer {
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+  const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+  const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+</Relationships>`;
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  <w:body>
+    <w:p><w:r><w:t>Cau 1. Hello</w:t></w:r></w:p>
+    <w:p><w:r><w:drawing><wp:inline><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rId2"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>
+  </w:body>
+</w:document>`;
+
+  return buildMinimalZip([
+    { name: '[Content_Types].xml', data: Buffer.from(contentTypes, 'utf8') },
+    { name: '_rels/.rels', data: Buffer.from(rootRels, 'utf8') },
+    { name: 'word/document.xml', data: Buffer.from(docXml, 'utf8') },
+    { name: 'word/_rels/document.xml.rels', data: Buffer.from(docRels, 'utf8') },
+    { name: 'word/media/image1.png', data: imageBytes },
+  ]);
+}
+
+  it('rejects embedded docx image > 5MB with BadRequestException instead of silently dropping it', async () => {
+    const oversizedPng = Buffer.alloc(5 * 1024 * 1024 + 1, 0);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(oversizedPng, 0);
+    const docxWithOversizedImg = buildDocxWithImage(oversizedPng);
+
+    await expect(extractDocx(docxWithOversizedImg)).rejects.toThrowError(
+      new BadRequestException('Ảnh nhúng vượt quá 5MB'),
+    );
   }, 60_000);
 });

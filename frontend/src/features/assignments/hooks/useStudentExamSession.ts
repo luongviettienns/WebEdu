@@ -26,6 +26,7 @@ import {
   INITIAL_SESSION_SNAPSHOT,
   persistDraftFromSnapshot,
   reconcileAutosaveSnapshot,
+  resolveResumeSyncAction,
   tickCountdownSnapshot,
   type ExamSaveState,
   type ExamSnapshotLike,
@@ -50,7 +51,6 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   const [actionError, setActionError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
-  const [isTabHidden, setIsTabHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
 
   const snapshotRef = useRef<ExamSnapshotLike>(INITIAL_SESSION_SNAPSHOT);
   const submittingRef = useRef(false);
@@ -183,18 +183,26 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     };
   }, [assignmentId, mode, applySession, clearPendingTimers, flushAutosave, resetDirty]);
 
-  const handleOnline = useCallback(() => {
-    setIsOffline(false);
-    if (snapshotRef.current.viewMode === 'taking') void flushAutosave();
-  }, [flushAutosave]);
+  const handleCountdownTick = useCallback(() => {
+    const ticked = tickCountdownSnapshot(snapshotRef.current);
+    if (!ticked) return null;
+    snapshotRef.current = ticked.nextSnap;
+    setElapsedSeconds(ticked.nextSnap.elapsedSeconds);
+    setRemainingSeconds(ticked.nextRemaining);
+    return ticked.nextRemaining;
+  }, []);
+
+  const syncCountdownAndFlush = useCallback(() => {
+    const plan = resolveResumeSyncAction(snapshotRef.current);
+    if (plan.action === 'ignore') return;
+    if (plan.nextSnap) syncSnapshotState(plan.nextSnap);
+    if (plan.action === 'submit') { void submitNow(true); return; }
+    void flushAutosave();
+  }, [flushAutosave, submitNow, syncSnapshotState]);
+
+  const handleOnline = useCallback(() => { setIsOffline(false); syncCountdownAndFlush(); }, [syncCountdownAndFlush]);
   const handleOffline = useCallback(() => { setIsOffline(true); setSaveState('offline'); }, []);
-  const handleVisibilityChange = useCallback(
-    (hidden: boolean) => {
-      setIsTabHidden(hidden);
-      if (!hidden && snapshotRef.current.viewMode === 'taking') void flushAutosave();
-    },
-    [flushAutosave],
-  );
+  const handleVisibilityChange = useCallback((hidden: boolean) => { if (!hidden) syncCountdownAndFlush(); }, [syncCountdownAndFlush]);
   const handleRemoteSubmit = useCallback(() => {
     if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined);
   }, [loadSubmittedFallback]);
@@ -216,19 +224,10 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     onAdoptDraft: handleAdoptDraft,
   });
 
-  const handleCountdownTick = useCallback(() => {
-    const ticked = tickCountdownSnapshot(snapshotRef.current);
-    if (!ticked) return null;
-    snapshotRef.current = ticked.nextSnap;
-    setElapsedSeconds(ticked.nextSnap.elapsedSeconds);
-    setRemainingSeconds(ticked.nextRemaining);
-    return ticked.nextRemaining;
-  }, []);
-
   const handleCountdownExpire = useCallback(() => void submitNow(true), [submitNow]);
 
   useExamCountdown({
-    active: viewMode === 'taking' && !isOffline && !isTabHidden && remainingSeconds !== null && !submitting,
+    active: viewMode === 'taking' && !isOffline && remainingSeconds !== null && !submitting,
     submissionId: session?.submission.id,
     onTick: handleCountdownTick,
     onExpire: handleCountdownExpire,

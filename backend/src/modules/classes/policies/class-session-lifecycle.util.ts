@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   ClassStatus,
   Prisma,
@@ -9,6 +13,8 @@ import {
 } from '@prisma/client';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
+import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
+import { hasTimeRangeOverlap } from '../../schedules/policies/session-schedule.policy.js';
 import {
   assertValidTimeRange,
   buildScheduleConflictWarning,
@@ -50,6 +56,131 @@ export async function findTeacherScheduleConflictWarning(
       endDate: actualEndDate ?? expectedEndDate,
     })),
   );
+}
+
+/**
+ * Evaluates teacher schedule conflicts inside `updateClass` after session reconciliation.
+ * When `classId` has `lesson_sessions` persisted, compares actual `SCHEDULED` sessions
+ * against the new teacher's non-`CANCELLED` sessions in `UPCOMING`/`ACTIVE` classes;
+ * otherwise falls back to template-range overlap using `effectiveEndDate`.
+ */
+export async function resolveUpdateClassScheduleConflictInTx(
+  tx: Prisma.TransactionClient,
+  params: {
+    classId: string;
+    nextTeacherId: string;
+    teacherChanged: boolean;
+    assignedFromDate: Date | null;
+    scheduleDays: number[];
+    scheduleStartTime: string;
+    scheduleEndTime: string;
+    nextStartDate: Date;
+    effectiveEndDate: Date;
+  },
+): Promise<string | null> {
+  if (!params.teacherChanged || !params.assignedFromDate) {
+    return findTeacherScheduleConflictWarning(
+      tx,
+      params.nextTeacherId,
+      {
+        scheduleDays: params.scheduleDays,
+        scheduleStartTime: params.scheduleStartTime,
+        scheduleEndTime: params.scheduleEndTime,
+        startDate: params.nextStartDate,
+        endDate: params.effectiveEndDate,
+      },
+      params.classId,
+    );
+  }
+
+  const totalClassSessionsCount = await tx.lessonSession.count({
+    where: { classId: params.classId },
+  });
+
+  if (totalClassSessionsCount === 0) {
+    const templateConflict = await findTeacherScheduleConflictWarning(
+      tx,
+      params.nextTeacherId,
+      {
+        scheduleDays: params.scheduleDays,
+        scheduleStartTime: params.scheduleStartTime,
+        scheduleEndTime: params.scheduleEndTime,
+        startDate: params.assignedFromDate,
+        endDate: params.effectiveEndDate,
+      },
+      params.classId,
+    );
+    if (templateConflict) {
+      throw new ConflictException(templateConflict);
+    }
+    return null;
+  }
+
+  const candidateSessions = await tx.lessonSession.findMany({
+    where: {
+      classId: params.classId,
+      status: SessionStatus.SCHEDULED,
+      sessionDate: { gte: params.assignedFromDate },
+    },
+    orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }],
+    select: { sessionDate: true, startTime: true, endTime: true },
+  });
+  if (candidateSessions.length === 0) {
+    return null;
+  }
+
+  const otherSessions = await tx.lessonSession.findMany({
+    where: {
+      classId: { not: params.classId },
+      status: { not: SessionStatus.CANCELLED },
+      sessionDate: { gte: params.assignedFromDate },
+      class: {
+        teacherId: params.nextTeacherId,
+        status: { in: [ClassStatus.UPCOMING, ClassStatus.ACTIVE] },
+      },
+    },
+    orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }],
+    select: {
+      sessionDate: true,
+      startTime: true,
+      endTime: true,
+      class: { select: { code: true } },
+    },
+  });
+
+  const byDate = new Map<string, typeof otherSessions>();
+  for (const session of otherSessions) {
+    const dateKey = formatIsoDateUtc(session.sessionDate);
+    const list = byDate.get(dateKey);
+    if (list) {
+      list.push(session);
+    } else {
+      byDate.set(dateKey, [session]);
+    }
+  }
+
+  for (const candidate of candidateSessions) {
+    const dateKey = formatIsoDateUtc(candidate.sessionDate);
+    const sameDaySessions = byDate.get(dateKey);
+    if (!sameDaySessions) continue;
+
+    for (const other of sameDaySessions) {
+      if (
+        hasTimeRangeOverlap(
+          candidate.startTime,
+          candidate.endTime,
+          other.startTime,
+          other.endTime,
+        )
+      ) {
+        throw new ConflictException(
+          `Giáo viên đang có lịch dạy trùng giờ tại lớp ${other.class.code} (${dateKey} · ${other.startTime}–${other.endTime})`,
+        );
+      }
+    }
+  }
+
+  return null;
 }
 
 export function resolveUpdatedClassSchedule(

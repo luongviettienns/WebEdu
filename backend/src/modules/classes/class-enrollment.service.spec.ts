@@ -723,4 +723,23 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
       expect(result.status).toBe('DROPPED');
     });
   });
+
+  describe('enrollStudents batch cap guard', () => {
+    it('rejects > 100 unique studentIds in service before starting a transaction', async () => {
+      const tooManyIds = Array.from({ length: 101 }, (_, i) => `stu-${i}`);
+
+      await expect(
+        service.enrollStudents(adminActor, 'class-hsk1', {
+          studentIds: tooManyIds,
+        }),
+      ).rejects.toThrowError(
+        new BadRequestException(
+          'Mỗi lần chỉ có thể thêm tối đa 100 học viên vào lớp',
+        ),
+      );
+      expect(
+        mockPrisma.$transaction as ReturnType<typeof vi.fn>,
+      ).not.toHaveBeenCalled();
+    });
+  });
 });

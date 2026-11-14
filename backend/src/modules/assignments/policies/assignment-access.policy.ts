@@ -19,7 +19,6 @@ export interface ClassAccessRecord {
   courseId: string;
   status: ClassStatus;
   course: { name: string };
-  teacherHistory: Array<{ teacherId: string }>;
 }
 
 export type ClassAssignmentViewerResolution =
@@ -39,10 +38,6 @@ export class AssignmentAccessPolicy {
         courseId: true,
         status: true,
         course: { select: { name: true } },
-        teacherHistory: {
-          where: { assignedTo: null },
-          select: { teacherId: true },
-        },
       },
     });
     if (!cls) {
@@ -56,14 +51,12 @@ export class AssignmentAccessPolicy {
     actor: AssignmentActor,
     classId: string,
   ): Promise<ClassAccessRecord> {
-    const cls = await this.loadClassForAccess(db, classId);
-    if (actor.roles.includes(Role.ADMIN)) {
-      return cls;
-    }
-    if (actor.roles.includes(Role.TEACHER) && cls.teacherId === actor.id) {
-      return cls;
-    }
-    throw new ForbiddenException('Bạn không có quyền thao tác bài tập của lớp này');
+    return this.assertCurrentTeacherOrAdmin(
+      db,
+      actor,
+      classId,
+      'Bạn không có quyền thao tác bài tập của lớp này',
+    );
   }
 
   async assertTeacherOrAdminCanReadClass(
@@ -71,14 +64,12 @@ export class AssignmentAccessPolicy {
     actor: AssignmentActor,
     classId: string,
   ): Promise<ClassAccessRecord> {
-    const cls = await this.loadClassForAccess(db, classId);
-    if (actor.roles.includes(Role.ADMIN)) {
-      return cls;
-    }
-    if (actor.roles.includes(Role.TEACHER) && this.isClassTeacherReadOnly(actor.id, cls)) {
-      return cls;
-    }
-    throw new ForbiddenException('Bạn không có quyền xem bài tập của lớp này');
+    return this.assertCurrentTeacherOrAdmin(
+      db,
+      actor,
+      classId,
+      'Bạn không có quyền xem bài tập của lớp này',
+    );
   }
 
   async assertStudentEnrolledInClass(
@@ -101,7 +92,7 @@ export class AssignmentAccessPolicy {
     if (actor.roles.includes(Role.ADMIN)) {
       return { role: 'ADMIN', cls };
     }
-    if (actor.roles.includes(Role.TEACHER) && this.isClassTeacherReadOnly(actor.id, cls)) {
+    if (this.isCurrentClassTeacher(actor, cls)) {
       return { role: 'TEACHER', cls };
     }
     if (
@@ -133,11 +124,21 @@ export class AssignmentAccessPolicy {
     throw new NotFoundException('Không tìm thấy đề');
   }
 
-  private isClassTeacherReadOnly(teacherId: string, cls: ClassAccessRecord): boolean {
-    return (
-      cls.teacherId === teacherId ||
-      cls.teacherHistory.some((assignment) => assignment.teacherId === teacherId)
-    );
+  private async assertCurrentTeacherOrAdmin(
+    db: DbClient,
+    actor: AssignmentActor,
+    classId: string,
+    forbiddenMessage: string,
+  ): Promise<ClassAccessRecord> {
+    const cls = await this.loadClassForAccess(db, classId);
+    if (actor.roles.includes(Role.ADMIN) || this.isCurrentClassTeacher(actor, cls)) {
+      return cls;
+    }
+    throw new ForbiddenException(forbiddenMessage);
+  }
+
+  private isCurrentClassTeacher(actor: AssignmentActor, cls: ClassAccessRecord): boolean {
+    return actor.roles.includes(Role.TEACHER) && cls.teacherId === actor.id;
   }
 
   private async hasActiveOrCompletedEnrollment(

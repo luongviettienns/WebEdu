@@ -1,5 +1,19 @@
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { SanitizedOptionDto } from '../assignments.types.js';
+
+const DEV_FALLBACK_SHUFFLE_SECRET = 'webedu-dev-exam-shuffle-secret';
+
+export function resolveShuffleSecret(explicitSecret?: string): string {
+  const resolved =
+    explicitSecret?.trim() ||
+    process.env.EXAM_SHUFFLE_SECRET?.trim() ||
+    process.env.JWT_SECRET?.trim();
+  if (resolved) return resolved;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('EXAM_SHUFFLE_SECRET or JWT_SECRET must be configured in production');
+  }
+  return DEV_FALLBACK_SHUFFLE_SECRET;
+}
 
 export const compareLex = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -29,8 +43,9 @@ export function extractTokens(payload: Record<string, unknown>): string[] {
 export const matchesSequence = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((item, idx) => item === b[idx]);
 
-function createSeededRng(seedInput: string): () => number {
-  let state = createHash('sha256').update(seedInput).digest().readUInt32BE(0) || 1;
+function createSeededRng(seedInput: string, secret?: string): () => number {
+  const hmacSecret = resolveShuffleSecret(secret);
+  let state = createHmac('sha256', hmacSecret).update(seedInput).digest().readUInt32BE(0) || 1;
   return () => {
     state = (state + 0x6d2b79f5) | 0;
     let t = Math.imul(state ^ (state >>> 15), 1 | state);
@@ -39,23 +54,38 @@ function createSeededRng(seedInput: string): () => number {
   };
 }
 
+function fisherYatesShuffle<T>(items: readonly T[], seedInput: string, secret?: string): T[] {
+  const shuffled = [...items];
+  if (shuffled.length <= 1) return shuffled;
+  const rng = createSeededRng(seedInput, secret);
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+  }
+  return shuffled;
+}
+
 function matchesCorrectSentence(candidate: readonly string[], correctSentence?: string): boolean {
   if (typeof correctSentence !== 'string' || !correctSentence.trim()) return false;
   return candidate.join('').replace(/\s+/g, '').trim() === correctSentence.replace(/\s+/g, '').trim();
+}
+
+export function shuffleOptionsDeterministically<T>(
+  options: readonly T[],
+  seedInput: string,
+  secret?: string,
+): T[] {
+  return fisherYatesShuffle(options, seedInput, secret);
 }
 
 export function shuffleTokensDeterministically(
   tokens: readonly string[],
   seedInput: string,
   correctSentence?: string,
+  secret?: string,
 ): string[] {
-  const shuffled = [...tokens];
-  if (shuffled.length < 2) return shuffled;
-  const rng = createSeededRng(seedInput);
-  for (let i = shuffled.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(rng() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
-  }
+  if (tokens.length < 2) return [...tokens];
+  const shuffled = fisherYatesShuffle(tokens, seedInput, secret);
   if (new Set(tokens).size < 2) return shuffled;
 
   const matchesSolution = (seq: readonly string[]): boolean =>

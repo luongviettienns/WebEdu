@@ -1202,4 +1202,141 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     expect(reopenedH2.body.reopenSummary?.restoredStudentsCount).toBe(1);
     expect(reopenedH2.body.scheduleConflictWarning).toContain('HSK1-H1');
   });
+
+  it('Scenario 7 (Dev #5): Reassignment validates real SCHEDULED sessions, catches tail extension conflict with rollback, and ignores CANCELLED sessions', async () => {
+    const { server, teacher1, teacher2, adminToken } = await seedActors();
+
+    const hsk1 = await request(server)
+      .post('/api/v1/courses')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-D5',
+        name: 'HSK 1 Dev 5',
+        level: CourseLevel.HSK1,
+        defaultSessions: 6,
+      })
+      .expect(201);
+
+    // 1. Class A starts with 6 sessions on Mon/Wed/Fri 18:00-19:30 from 2026-11-02 (ends 2026-11-13)
+    const classA = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-D5-A',
+        courseId: hsk1.body.id,
+        teacherId: teacher1.id,
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-11-02',
+        totalSessions: 6,
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    // teacher2 leads Class B on Mon/Wed/Fri 18:30-20:00 from 2026-11-16..2026-11-27
+    await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-D5-B',
+        courseId: hsk1.body.id,
+        teacherId: teacher2.id,
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:30',
+        scheduleEndTime: '20:00',
+        startDate: '2026-11-16',
+        totalSessions: 6,
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    // Combined totalSessions 6 -> 12 + teacherId = teacher2 (teacherAssignedFrom = 2026-11-14) MUST reject 409 & rollback DB
+    await request(server)
+      .patch(`/api/v1/classes/${classA.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        totalSessions: 12,
+        teacherId: teacher2.id,
+        teacherAssignedFrom: '2026-11-14',
+      })
+      .expect(409);
+
+    const afterRollback = await harness.prisma.class.findUniqueOrThrow({
+      where: { id: classA.body.id },
+      select: { teacherId: true, totalSessions: true },
+    });
+    expect(afterRollback.teacherId).toBe(teacher1.id);
+    expect(afterRollback.totalSessions).toBe(6);
+
+    // 2. Class D (teacher1, Sat [6] 14:00-15:30, 2026-11-07..2026-11-28) vs Class C (teacher2, Tue/Thu 08:00-09:30 + MANUAL session on Sat 2026-11-21)
+    const classD = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-D5-D',
+        courseId: hsk1.body.id,
+        teacherId: teacher1.id,
+        scheduleDays: [6],
+        scheduleStartTime: '14:00',
+        scheduleEndTime: '15:30',
+        startDate: '2026-11-07',
+        totalSessions: 4,
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    const classC = await request(server)
+      .post('/api/v1/classes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'HSK1-D5-C',
+        courseId: hsk1.body.id,
+        teacherId: teacher2.id,
+        scheduleDays: [2, 4],
+        scheduleStartTime: '08:00',
+        scheduleEndTime: '09:30',
+        startDate: '2026-11-03',
+        totalSessions: 4,
+        status: ClassStatus.ACTIVE,
+      })
+      .expect(201);
+
+    const manualRes = await request(server)
+      .post(`/api/v1/classes/${classC.body.id}/sessions`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        sessionDate: '2026-11-21',
+        startTime: '14:30',
+        endTime: '16:00',
+        reason: 'Bổ sung buổi ôn thi',
+      })
+      .expect(201);
+
+    await request(server)
+      .patch(`/api/v1/classes/${classD.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        teacherId: teacher2.id,
+        teacherAssignedFrom: '2026-11-14',
+      })
+      .expect(409);
+
+    // 3. Once the conflicting MANUAL session is CANCELLED, reassignment at 2026-11-14 succeeds 200!
+    await request(server)
+      .post(`/api/v1/sessions/${manualRes.body.session.id}/cancel`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ reason: 'Hủy buổi ôn để tránh trùng lịch' })
+      .expect(201);
+
+    const okReassign = await request(server)
+      .patch(`/api/v1/classes/${classD.body.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        teacherId: teacher2.id,
+        teacherAssignedFrom: '2026-11-14',
+      })
+      .expect(200);
+    expect(okReassign.body.teacherId).toBe(teacher2.id);
+  });
 });

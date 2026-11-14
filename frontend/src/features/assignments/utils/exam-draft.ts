@@ -7,6 +7,7 @@ import {
 } from '@/features/assignments/api/assignments.api';
 
 export interface ExamLocalDraft {
+  assignmentId?: string;
   updatedAtMs: number;
   answers: Record<string, StudentAnswerPayload>;
   elapsedSeconds: number;
@@ -41,6 +42,9 @@ function parseDraftJson(raw: string, minUpdatedAtMs = 0): ExamLocalDraft | null 
       return null;
     }
     return {
+      ...(typeof parsed.assignmentId === 'string' && parsed.assignmentId.trim().length > 0
+        ? { assignmentId: parsed.assignmentId }
+        : {}),
       updatedAtMs: parsed.updatedAtMs,
       answers: parsed.answers as Record<string, StudentAnswerPayload>,
       elapsedSeconds:
@@ -101,6 +105,60 @@ export function clearLocalDraft(submissionId: string, studentId: string): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(getDraftStorageKey(submissionId, studentId));
+  } catch {
+    // Ignore storage cleanup errors
+  }
+}
+
+function shouldPurgeDraftRaw(raw: string | null, targetAssignmentId?: string | null): boolean {
+  if (!raw) return true;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPlainRecord(parsed)) return true;
+    const draftAssignmentId =
+      typeof parsed.assignmentId === 'string' && parsed.assignmentId.trim().length > 0
+        ? parsed.assignmentId
+        : null;
+    if (!draftAssignmentId) return true;
+    if (!targetAssignmentId) return true;
+    return draftAssignmentId === targetAssignmentId;
+  } catch {
+    return true;
+  }
+}
+
+export function purgePriorAttemptDrafts(
+  currentSubmissionId: string,
+  studentId?: string | null,
+  assignmentId?: string | null,
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const storage = window.localStorage;
+    const userScope = studentId?.trim() || '';
+    const prefix = userScope ? `${DRAFT_PREFIX}${userScope}_` : DRAFT_PREFIX;
+    const currentKey = userScope ? getDraftStorageKey(currentSubmissionId, userScope) : null;
+    const keysToRemove: string[] = [];
+
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+      if (currentKey && key === currentKey) continue;
+      if (
+        !currentKey &&
+        (key === `${DRAFT_PREFIX}${currentSubmissionId}` ||
+          key.endsWith(`_${currentSubmissionId}`))
+      ) {
+        continue;
+      }
+      if (shouldPurgeDraftRaw(storage.getItem(key), assignmentId)) {
+        keysToRemove.push(key);
+      }
+    }
+
+    for (const key of keysToRemove) {
+      storage.removeItem(key);
+    }
   } catch {
     // Ignore storage cleanup errors
   }
@@ -252,6 +310,9 @@ export interface AdoptableExamSnapshot {
   audioPlayCounts: Record<string, number>;
   elapsedSeconds: number;
   remainingSeconds: number | null;
+  timerAnchorMs?: number;
+  anchorElapsedSeconds?: number;
+  anchorRemainingSeconds?: number | null;
 }
 
 export function sanitizeAdoptedLocalDraft<TSnap extends AdoptableExamSnapshot>(
@@ -297,6 +358,13 @@ export function sanitizeAdoptedLocalDraft<TSnap extends AdoptableExamSnapshot>(
       audioPlayCounts,
       elapsedSeconds: timers.elapsedSeconds,
       remainingSeconds: timers.remainingSeconds,
+      ...(typeof currentSnapshot.timerAnchorMs === 'number'
+        ? {
+            timerAnchorMs: nowMs,
+            anchorElapsedSeconds: timers.elapsedSeconds,
+            anchorRemainingSeconds: timers.remainingSeconds,
+          }
+        : {}),
     },
   };
 }
@@ -333,7 +401,10 @@ export function resolveInitialSessionDraft(
   let draftUpdatedAtMs = 0;
   let mergedFromLocal = false;
 
-  const { id: submissionId, studentId } = session.submission;
+  const { id: submissionId, studentId, attemptNumber } = session.submission;
+  if (attemptNumber > 1) {
+    purgePriorAttemptDrafts(submissionId, studentId, session.assignment.assignmentId);
+  }
   if (nextMode === 'taking') {
     const localDraft = readLocalDraft(submissionId, studentId);
     const serverSavedMs = new Date(session.submission.lastSavedAt).getTime();

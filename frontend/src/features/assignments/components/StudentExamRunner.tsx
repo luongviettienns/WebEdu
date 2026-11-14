@@ -96,15 +96,6 @@ export function StudentExamRunner({
         </div>
       </div>
 
-      {session.submission.reopenReason ? (
-        <div
-          role="status"
-          className="rounded-xl border border-[var(--amber)]/40 bg-[var(--amber-soft)] p-3.5 text-xs font-medium text-[var(--amber)]"
-        >
-          Giáo viên đã mở lại lượt làm: {session.submission.reopenReason}
-        </div>
-      ) : null}
-
       {session.assignment.instructions ? (
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/70 p-3.5 text-xs text-[var(--ink-2)]">
           <strong className="text-[var(--ink)]">Hướng dẫn:</strong> {session.assignment.instructions}

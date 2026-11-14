@@ -1,7 +1,7 @@
 import type { SessionChangeAction, SessionStatus, SessionType } from '@prisma/client';
 
 /**
- * Computed UI status combining persisted `SessionStatus` and `Asia/Ho_Chi_Minh` calendar date (`DEC-009`).
+ * Computed UI status combining persisted `SessionStatus` and `Asia/Ho_Chi_Minh` calendar date.
  * Cancelled stays `CANCELLED`, attended stays `COMPLETED`, past unmarked becomes `MISSED_ATTENDANCE`,
  * today's unmarked becomes `TODAY`, future unmarked stays `SCHEDULED`.
  */
@@ -57,7 +57,7 @@ export interface LessonSessionItemDto {
   canMarkAttendance: boolean;
   canEditAttendance: boolean;
   canMutateSchedule: boolean;
-  /** Applicable when viewer is a STUDENT (`FUNC-035`, `FUNC-036`): personal attendance mark for this session. */
+  /** Applicable when viewer is a STUDENT: personal attendance mark for this session. */
   myAttendanceStatus?: 'PRESENT' | 'ABSENT' | 'EXCUSED' | null;
   myAttendanceNote?: string | null;
   createdAt: string;
