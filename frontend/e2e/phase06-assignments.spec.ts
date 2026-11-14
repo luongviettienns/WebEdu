@@ -201,10 +201,14 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     const assessmentTitle = 'Đề kiểm tra HSK2 Giao bài E2E';
     const isMobileProject = testInfo.project.name.includes('mobile');
 
-    // Capture all student submission JSON payloads to verify zero answer-key leaks
+    // Capture all student submission JSON payloads to verify zero answer-key leaks and zero 4xx autosaves
     const capturedStudentPayloads: string[] = [];
+    const autosaveErrorStatuses: number[] = [];
     page.on('response', async (response) => {
       const url = response.url();
+      if (url.includes('/autosave') && response.status() >= 400) {
+        autosaveErrorStatuses.push(response.status());
+      }
       if (
         url.includes('/assignments/') &&
         url.includes('/submissions/') &&
@@ -292,13 +296,20 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     await expect(page.getByText('Điền từ tiếng Trung cho "Xin chào"')).toBeVisible();
     await page.getByLabel('Câu trả lời điền từ').fill('你好');
 
-    // Switch to Q3 (ORDERING)
+    // Switch to Q3 (ORDERING): click 1 token -> wait past 500ms debounce -> verify zero 400 / offline state
     await page.getByRole('button', { name: 'Câu tiếp' }).click();
     await expect(page.getByText('Sắp xếp thành câu đúng')).toBeVisible();
     const tokenBank = page.getByRole('group', { name: 'Kho mảnh từ' });
     await tokenBank.getByRole('button', { name: '我', exact: true }).click();
+    await page.waitForTimeout(650);
+    expect(autosaveErrorStatuses).toEqual([]);
+    await expect(page.getByText(/Ngoại tuyến/i)).toHaveCount(0);
+    await expect(page.getByText('2/4 đã làm')).toBeVisible();
+
+    // Finish remaining tokens -> now 3/4 answered
     await tokenBank.getByRole('button', { name: '很', exact: true }).click();
     await tokenBank.getByRole('button', { name: '好', exact: true }).click();
+    await expect(page.getByText('3/4 đã làm')).toBeVisible();
 
     // Switch to Q4 (ESSAY)
     await page.getByRole('button', { name: 'Câu tiếp' }).click();
@@ -322,7 +333,8 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
       await assertNoHorizontalOverflow(page, 'student-exam-runner-mobile');
     }
 
-    // Reload and verify all 4 answers persisted from server
+    // Clear localStorage before reload so test proves real PostgreSQL server persistence
+    await page.evaluate(() => window.localStorage.clear());
     await page.reload();
     await page.getByRole('button', { name: /Câu 1\b/i }).click();
     await expect(page.getByRole('radio', { name: /Cảm ơn/i })).toBeChecked();

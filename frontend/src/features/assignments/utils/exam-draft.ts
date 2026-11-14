@@ -1,8 +1,9 @@
-import type {
-  AutosaveAnswerItemPayload,
-  SanitizedQuestionDto,
-  StudentAnswerPayload,
-  StudentExamSessionDto,
+import {
+  isAnswerPayloadNonEmpty,
+  type AutosaveAnswerItemPayload,
+  type SanitizedQuestionDto,
+  type StudentAnswerPayload,
+  type StudentExamSessionDto,
 } from '@/features/assignments/api/assignments.api';
 
 export interface ExamLocalDraft {
@@ -160,15 +161,54 @@ export function emptyAnswerForQuestion(question: SanitizedQuestionDto): StudentA
   return { text: '' };
 }
 
+export function isPartialOrderingAnswer(
+  question: SanitizedQuestionDto,
+  payload: StudentAnswerPayload | undefined,
+): boolean {
+  if (question.type !== 'ORDERING' || !payload || !('orderedTokens' in payload)) return false;
+  const total = question.tokens?.length ?? 0;
+  const len = Array.isArray(payload.orderedTokens) ? payload.orderedTokens.length : 0;
+  return len > 0 && len < total;
+}
+
+export function isQuestionAnswered(
+  question: SanitizedQuestionDto,
+  payload: StudentAnswerPayload | undefined,
+): boolean {
+  if (question.type === 'ORDERING') {
+    if (!payload || !('orderedTokens' in payload) || !Array.isArray(payload.orderedTokens)) {
+      return false;
+    }
+    const total = question.tokens?.length ?? 0;
+    return payload.orderedTokens.length > 0 && payload.orderedTokens.length === total;
+  }
+  return isAnswerPayloadNonEmpty(payload);
+}
+
+export function findFirstPartialOrderingIndex(
+  questions: ReadonlyArray<SanitizedQuestionDto>,
+  answers: Record<string, StudentAnswerPayload>,
+): number {
+  return questions.findIndex((q) => isPartialOrderingAnswer(q, answers[q.id]));
+}
+
 export function toAutosaveAnswerItems(
   questions: ReadonlyArray<SanitizedQuestionDto>,
   answers: Record<string, StudentAnswerPayload>,
   audioPlayCounts: Record<string, number>,
+  serverAnswerQuestionIds?: ReadonlySet<string>,
 ): AutosaveAnswerItemPayload[] {
   const items: AutosaveAnswerItemPayload[] = [];
   for (const q of questions) {
     const payload = answers[q.id];
     const audioPlayCount = audioPlayCounts[q.id] ?? 0;
+    if (isPartialOrderingAnswer(q, payload)) {
+      // Partial ORDERING fails backend exact-multiset validation; keep locally and clear server only if previously saved.
+      if (serverAnswerQuestionIds?.has(q.id) || audioPlayCount > 0) {
+        items.push({ questionId: q.id, answerPayload: { orderedTokens: [] }, audioPlayCount });
+      }
+      continue;
+    }
     if (payload !== undefined || audioPlayCount > 0) {
       items.push({
         questionId: q.id,
@@ -213,6 +253,14 @@ export function toVnDateTimeLocalValue(date: Date): string {
   }).formatToParts(date);
   const pick = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
   return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}`;
+}
+
+export function parseVnDateTimeLocalToIso(value: string): string | null {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(trimmed)) return null;
+  const withSeconds = trimmed.length === 16 ? `${trimmed}:00` : trimmed;
+  const parsed = new Date(`${withSeconds}+07:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 export function parseIncomingDraftUpdate(

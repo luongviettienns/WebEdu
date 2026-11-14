@@ -16,28 +16,23 @@ import {
 } from '@/features/assignments/hooks/useExamBrowserSync';
 import {
   clearLocalDraft,
+  findFirstPartialOrderingIndex,
   formatSavedTimeHmS,
-  persistExamDraftSnapshot,
   resolveInitialSessionDraft,
   type ExamLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
 import {
   buildSyncPayload,
   fetchExamEntrySession,
+  INITIAL_SESSION_SNAPSHOT,
+  persistDraftFromSnapshot,
+  type ExamSaveState,
+  type ExamSnapshotLike,
+  type ExamViewMode,
 } from '@/features/assignments/utils/exam-session-transport';
 import { ApiClientError, extractErrorMessage } from '@/lib/api-client';
 
-export type ExamViewMode = 'loading' | 'taking' | 'review' | 'error';
-export type ExamSaveState = 'idle' | 'saving' | 'saved' | 'offline';
-
-interface SessionSnapshot {
-  session: StudentExamSessionDto | null;
-  viewMode: ExamViewMode;
-  answers: Record<string, StudentAnswerPayload>;
-  audioPlayCounts: Record<string, number>;
-  elapsedSeconds: number;
-  remainingSeconds: number | null;
-}
+export type { ExamSaveState, ExamViewMode } from '@/features/assignments/utils/exam-session-transport';
 
 export function useStudentExamSession(assignmentId: string, mode?: string | null) {
   const [viewMode, setViewMode] = useState<ExamViewMode>('loading');
@@ -56,22 +51,11 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
   const [isTabHidden, setIsTabHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
 
-  const snapshotRef = useRef<SessionSnapshot>({
-    session: null,
-    viewMode: 'loading',
-    answers: {},
-    audioPlayCounts: {},
-    elapsedSeconds: 0,
-    remainingSeconds: null,
-  });
+  const snapshotRef = useRef<ExamSnapshotLike>(INITIAL_SESSION_SNAPSHOT);
   const submittingRef = useRef(false);
   const lastDraftUpdatedAtRef = useRef(0);
-  const {
-    clearTimers: clearPendingTimers,
-    markClean,
-    scheduleForType,
-    hasPendingChanges,
-  } = useAutosaveScheduler();
+  const { clearTimers: clearPendingTimers, resetDirty, markDirty, beginFlush, completeFlush, scheduleForType, hasPendingChanges } =
+    useAutosaveScheduler();
 
   const applySession = useCallback((dto: StudentExamSessionDto, nextMode: 'taking' | 'review') => {
     const resolved = resolveInitialSessionDraft(dto, nextMode);
@@ -107,32 +91,52 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     clearPendingTimers();
     const snap = snapshotRef.current;
     if (!snap.session || snap.viewMode !== 'taking' || submittingRef.current) return;
+    const seqAtStart = beginFlush();
     setSaveState('saving');
     setActionError('');
     try {
       const updated = await autosaveAssignment(assignmentId, buildSyncPayload(snap));
-      markClean();
       if (updated.submission.status !== 'IN_PROGRESS') {
+        resetDirty();
         applySession(updated, 'review');
         return;
       }
       snapshotRef.current = { ...snapshotRef.current, session: updated };
       setSession(updated);
-      setLastSavedText(formatSavedTimeHmS(updated.submission.lastSavedAt));
-      setSaveState('saved');
+      if (completeFlush(seqAtStart)) {
+        setLastSavedText(formatSavedTimeHmS(updated.submission.lastSavedAt));
+        setSaveState('saved');
+      } else {
+        setSaveState('dirty');
+      }
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 409) {
         await loadSubmittedFallback().catch(() => undefined);
         return;
       }
+      if (err instanceof ApiClientError) {
+        setActionError(extractErrorMessage(err, 'Không thể lưu bản nháp lúc này.'));
+        setSaveState('dirty');
+        return;
+      }
       setSaveState('offline');
     }
-  }, [assignmentId, applySession, clearPendingTimers, loadSubmittedFallback, markClean]);
+  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, loadSubmittedFallback, resetDirty]);
 
   const submitNow = useCallback(
     async (autoSubmitted = false) => {
       const snap = snapshotRef.current;
       if (submittingRef.current || !snap.session || snap.viewMode !== 'taking') return;
+      if (!autoSubmitted) {
+        const partialIdx = findFirstPartialOrderingIndex(snap.session.questions, snap.answers);
+        if (partialIdx >= 0) {
+          setActionError(
+            'Còn câu sắp xếp chưa chọn đủ các mảnh từ. Vui lòng hoàn thành hoặc xóa hết trước khi nộp.',
+          );
+          setCurrentIndex(partialIdx);
+          return;
+        }
+      }
       submittingRef.current = true;
       setSubmitting(true);
       setActionError('');
@@ -144,7 +148,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
           remainingSeconds: autoSubmitted ? 0 : payload.remainingSeconds,
           autoSubmitted,
         });
-        markClean();
+        resetDirty();
         clearLocalDraft(result.submission.id);
         applySession(result, 'review');
       } catch (err) {
@@ -158,14 +162,14 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
         setSubmitting(false);
       }
     },
-    [assignmentId, applySession, clearPendingTimers, loadSubmittedFallback, markClean],
+    [assignmentId, applySession, clearPendingTimers, loadSubmittedFallback, resetDirty],
   );
 
   useEffect(() => {
     if (!assignmentId) return;
     const controller = new AbortController();
     submittingRef.current = false;
-    markClean();
+    resetDirty();
     void (async () => {
       setViewMode('loading');
       setErrorMessage('');
@@ -183,21 +187,11 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       controller.abort();
       clearPendingTimers();
     };
-  }, [assignmentId, mode, applySession, clearPendingTimers, flushAutosave, markClean]);
+  }, [assignmentId, mode, applySession, clearPendingTimers, flushAutosave, resetDirty]);
 
-  const handleOnline = useCallback(() => {
-    setIsOffline(false);
-    if (snapshotRef.current.viewMode === 'taking') void flushAutosave();
-  }, [flushAutosave]);
-
-  const handleOffline = useCallback(() => {
-    setIsOffline(true);
-    setSaveState('offline');
-  }, []);
-
-  const handleRemoteSubmit = useCallback(() => {
-    if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined);
-  }, [loadSubmittedFallback]);
+  const handleOnline = useCallback(() => { setIsOffline(false); if (snapshotRef.current.viewMode === 'taking') void flushAutosave(); }, [flushAutosave]);
+  const handleOffline = useCallback(() => { setIsOffline(true); setSaveState('offline'); }, []);
+  const handleRemoteSubmit = useCallback(() => { if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined); }, [loadSubmittedFallback]);
 
   const handleAdoptDraft = useCallback((incoming: ExamLocalDraft) => {
     snapshotRef.current = { ...snapshotRef.current, ...incoming };
@@ -239,15 +233,10 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
 
   const persistDraftLocally = useCallback(
     (nextAnswers: Record<string, StudentAnswerPayload>, nextAudio: Record<string, number>) => {
-      const snap = snapshotRef.current;
-      snapshotRef.current = { ...snap, answers: nextAnswers, audioPlayCounts: nextAudio };
-      if (!snap.session) return;
-      lastDraftUpdatedAtRef.current = persistExamDraftSnapshot(snap.session.submission.id, {
-        answers: nextAnswers,
-        elapsedSeconds: snap.elapsedSeconds,
-        remainingSeconds: snap.remainingSeconds,
-        audioPlayCounts: nextAudio,
-      });
+      const updated = { ...snapshotRef.current, answers: nextAnswers, audioPlayCounts: nextAudio };
+      snapshotRef.current = updated;
+      const savedAtMs = persistDraftFromSnapshot(updated);
+      if (savedAtMs !== null) lastDraftUpdatedAtRef.current = savedAtMs;
     },
     [],
   );
@@ -258,6 +247,8 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       if (snap.viewMode !== 'taking') return;
       const nextAnswers = { ...snap.answers, [questionId]: payload };
       setAnswers(nextAnswers);
+      setActionError('');
+      setSaveState((curr) => (curr === 'offline' ? curr : 'dirty'));
       persistDraftLocally(nextAnswers, snap.audioPlayCounts);
       scheduleForType(questionType, () => void flushAutosave());
     },
@@ -269,11 +260,12 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       const snap = snapshotRef.current;
       if (snap.viewMode !== 'taking') return;
       const nextAudio = { ...snap.audioPlayCounts, [questionId]: (snap.audioPlayCounts[questionId] ?? 0) + 1 };
+      markDirty();
       setAudioPlayCounts(nextAudio);
       persistDraftLocally(snap.answers, nextAudio);
       void flushAutosave();
     },
-    [flushAutosave, persistDraftLocally],
+    [flushAutosave, markDirty, persistDraftLocally],
   );
 
   const selectQuestion = useCallback(

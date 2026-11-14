@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   getAssignmentMediaUrl,
   type SanitizedOptionDto,
@@ -107,6 +107,11 @@ export function StudentListeningBody({
   onAudioPlay?: () => void;
 }) {
   const countedPlayRef = useRef(false);
+
+  useEffect(() => {
+    countedPlayRef.current = false;
+  }, [question.id]);
+
   const maxListens = question.maxListens;
   const isLimitReached =
     typeof maxListens === 'number' && maxListens > 0 && audioPlayCount >= maxListens;

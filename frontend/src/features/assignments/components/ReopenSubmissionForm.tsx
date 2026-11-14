@@ -5,6 +5,7 @@ import {
   reopenSubmission,
   type TeacherTrackerStudentRowDto,
 } from '@/features/assignments/api/assignments.api';
+import { parseVnDateTimeLocalToIso } from '@/features/assignments/utils/exam-draft';
 import {
   DIALOG_INPUT_CLS,
   DIALOG_LABEL_CLS,
@@ -44,12 +45,12 @@ export function ReopenSubmissionForm({
 
     let isoNewDue: string | undefined;
     if (isOverdue || newDueAt.trim()) {
-      const parsed = new Date(newDueAt);
-      if (!newDueAt || Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+      const parsedIso = parseVnDateTimeLocalToIso(newDueAt);
+      if (!parsedIso || new Date(parsedIso).getTime() <= Date.now()) {
         setError('Hạn nộp mới phải nằm ở tương lai.');
         return;
       }
-      isoNewDue = parsed.toISOString();
+      isoNewDue = parsedIso;
     }
 
     onBusyChange(true);

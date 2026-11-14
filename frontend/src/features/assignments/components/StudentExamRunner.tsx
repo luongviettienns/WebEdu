@@ -7,15 +7,15 @@ import {
   QUESTION_TYPE_LABELS,
   type QuestionType,
 } from '@/features/assessments/api/assessments.api';
-import {
-  isAnswerPayloadNonEmpty,
-  type StudentAnswerPayload,
-  type StudentExamSessionDto,
+import type {
+  StudentAnswerPayload,
+  StudentExamSessionDto,
 } from '@/features/assignments/api/assignments.api';
 import { StudentExamSidebar } from '@/features/assignments/components/StudentExamSidebar';
 import { StudentQuestionBody } from '@/features/assignments/components/StudentQuestionBody';
 import { SubmitConfirmModal } from '@/features/assignments/components/SubmitConfirmModal';
 import type { ExamSaveState } from '@/features/assignments/hooks/useStudentExamSession';
+import { isQuestionAnswered } from '@/features/assignments/utils/exam-draft';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import { formatDateTimeVn } from '@/lib/utils/date';
 
@@ -62,7 +62,7 @@ export function StudentExamRunner({
   const questions = session.questions;
   const safeIndex = Math.min(Math.max(0, currentIndex), Math.max(0, questions.length - 1));
   const currentQuestion = questions[safeIndex];
-  const answeredCount = questions.filter((q) => isAnswerPayloadNonEmpty(answers[q.id])).length;
+  const answeredCount = questions.filter((q) => isQuestionAnswered(q, answers[q.id])).length;
 
   return (
     <div className="space-y-5">
@@ -154,6 +154,7 @@ export function StudentExamRunner({
               </div>
 
               <StudentQuestionBody
+                key={currentQuestion.id}
                 question={currentQuestion}
                 assignmentId={session.assignment.assignmentId}
                 answer={answers[currentQuestion.id]}

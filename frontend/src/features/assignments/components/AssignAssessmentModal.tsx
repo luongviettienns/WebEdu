@@ -7,7 +7,10 @@ import {
 } from '@/features/assessments/api/assessments.api';
 import { assignAssessment } from '@/features/assignments/api/assignments.api';
 import { AssignAssessmentFields } from '@/features/assignments/components/AssignAssessmentFields';
-import { toVnDateTimeLocalValue } from '@/features/assignments/utils/exam-draft';
+import {
+  parseVnDateTimeLocalToIso,
+  toVnDateTimeLocalValue,
+} from '@/features/assignments/utils/exam-draft';
 import { listClasses, type ClassItem } from '@/features/classes/api/classes.api';
 import {
   BaseDialog,
@@ -135,8 +138,8 @@ function AssignAssessmentModalBody({
       setError('Vui lòng chọn ít nhất một lớp học.');
       return;
     }
-    const parsedDue = new Date(dueAt);
-    if (!dueAt || Number.isNaN(parsedDue.getTime()) || parsedDue.getTime() <= Date.now()) {
+    const dueAtIso = parseVnDateTimeLocalToIso(dueAt);
+    if (!dueAtIso || new Date(dueAtIso).getTime() <= Date.now()) {
       setError('Hạn nộp bài phải nằm ở tương lai.');
       return;
     }
@@ -145,7 +148,7 @@ function AssignAssessmentModalBody({
     try {
       await assignAssessment(selectedAssessmentId, {
         classIds: selectedClassIds,
-        dueAt: parsedDue.toISOString(),
+        dueAt: dueAtIso,
         ...(instructions.trim() ? { instructions: instructions.trim() } : {}),
         ...(singleClassId && sessionId ? { sessionId } : {}),
       });

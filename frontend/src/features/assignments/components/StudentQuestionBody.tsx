@@ -121,7 +121,7 @@ export function StudentQuestionBody({
           >
             {orderedTokens.length === 0 ? (
               <span className="text-xs text-[var(--ink-3)]">
-                Chọn các mảnh từ bên dưới theo đúng thứ tự câu...
+                {readOnly ? 'Chưa trả lời' : 'Chọn các mảnh từ bên dưới theo đúng thứ tự câu...'}
               </span>
             ) : (
               orderedTokens.map((tok, idx) => (

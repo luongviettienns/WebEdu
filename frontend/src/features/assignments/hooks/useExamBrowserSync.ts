@@ -93,11 +93,12 @@ export function useExamCountdown(options: {
 const DISCRETE_DEBOUNCE_MS = 500;
 const ESSAY_AUTOSAVE_MS = 30_000;
 
-/** Schedules debounced autosave (500ms discrete, 30s essay) and tracks dirty essay flag. */
+/** Schedules debounced autosave (500ms discrete, 30s essay) and tracks in-flight edit sequence. */
 export function useAutosaveScheduler() {
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const essayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirtyEssayRef = useRef(false);
+  const editSeqRef = useRef(0);
 
   const clearTimers = useCallback(() => {
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -106,11 +107,25 @@ export function useAutosaveScheduler() {
     essayTimerRef.current = null;
   }, []);
 
-  const markClean = useCallback(() => {
+  const resetDirty = useCallback(() => {
     dirtyEssayRef.current = false;
+    editSeqRef.current += 1;
+  }, []);
+
+  const markDirty = useCallback(() => {
+    editSeqRef.current += 1;
+  }, []);
+
+  const beginFlush = useCallback(() => editSeqRef.current, []);
+
+  const completeFlush = useCallback((seqAtStart: number): boolean => {
+    if (editSeqRef.current !== seqAtStart) return false;
+    dirtyEssayRef.current = false;
+    return true;
   }, []);
 
   const scheduleForType = useCallback((questionType: QuestionType, onFlush: () => void) => {
+    editSeqRef.current += 1;
     if (questionType === 'ESSAY') {
       dirtyEssayRef.current = true;
       if (!essayTimerRef.current) {
@@ -133,5 +148,13 @@ export function useAutosaveScheduler() {
     [],
   );
 
-  return { clearTimers, markClean, scheduleForType, hasPendingChanges };
+  return {
+    clearTimers,
+    resetDirty,
+    markDirty,
+    beginFlush,
+    completeFlush,
+    scheduleForType,
+    hasPendingChanges,
+  };
 }

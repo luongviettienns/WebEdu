@@ -1,13 +1,15 @@
 'use client';
 
 import React from 'react';
-import {
-  isAnswerPayloadNonEmpty,
-  type SanitizedQuestionDto,
-  type StudentAnswerPayload,
+import type {
+  SanitizedQuestionDto,
+  StudentAnswerPayload,
 } from '@/features/assignments/api/assignments.api';
 import type { ExamSaveState } from '@/features/assignments/hooks/useStudentExamSession';
-import { formatCountdown } from '@/features/assignments/utils/exam-draft';
+import {
+  formatCountdown,
+  isQuestionAnswered,
+} from '@/features/assignments/utils/exam-draft';
 
 export interface StudentExamSidebarProps {
   questions: readonly SanitizedQuestionDto[];
@@ -38,7 +40,7 @@ export function StudentExamSidebar({
   onSaveDraft,
   onRequestSubmit,
 }: StudentExamSidebarProps) {
-  const answeredCount = questions.filter((q) => isAnswerPayloadNonEmpty(answers[q.id])).length;
+  const answeredCount = questions.filter((q) => isQuestionAnswered(q, answers[q.id])).length;
   const isLowTime = remainingSeconds !== null && remainingSeconds < 300;
 
   let saveLabel = 'Sẵn sàng lưu tự động';
@@ -49,6 +51,9 @@ export function StudentExamSidebar({
   } else if (saveState === 'saving') {
     saveLabel = 'Đang lưu...';
     saveToneCls = 'text-[var(--blue)] bg-[var(--blue-soft)]';
+  } else if (saveState === 'dirty') {
+    saveLabel = 'Chưa lưu lên máy chủ';
+    saveToneCls = 'text-[var(--amber)] bg-[var(--amber-soft)]';
   } else if (saveState === 'saved' && lastSavedText) {
     saveLabel = `Đã lưu lúc ${lastSavedText}`;
     saveToneCls = 'text-[var(--jade)] bg-[var(--jade-soft)]';
@@ -93,7 +98,7 @@ export function StudentExamSidebar({
         <div className="grid grid-cols-5 gap-2">
           {questions.map((q, idx) => {
             const isCurrent = idx === currentIndex;
-            const isAnswered = isAnswerPayloadNonEmpty(answers[q.id]);
+            const isAnswered = isQuestionAnswered(q, answers[q.id]);
             const isFlagged = Boolean(flaggedIds[q.id]);
 
             let stateText = 'Chưa làm';

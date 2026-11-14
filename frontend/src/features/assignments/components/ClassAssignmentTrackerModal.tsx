@@ -40,9 +40,29 @@ export function ClassAssignmentTrackerModal({
   onClose,
   onChanged,
 }: ClassAssignmentTrackerModalProps) {
+  if (!assignmentId) return null;
+  return (
+    <ClassAssignmentTrackerBody
+      key={assignmentId}
+      assignmentId={assignmentId}
+      onClose={onClose}
+      onChanged={onChanged}
+    />
+  );
+}
+
+function ClassAssignmentTrackerBody({
+  assignmentId,
+  onClose,
+  onChanged,
+}: {
+  assignmentId: string;
+  onClose: () => void;
+  onChanged?: () => void;
+}) {
   const [data, setData] = useState<TeacherAssignmentSubmissionsDto | null>(null);
   const [isOverdue, setIsOverdue] = useState(false);
-  const [loading, setLoading] = useState(Boolean(assignmentId));
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadTick, setReloadTick] = useState(0);
   const [reopenState, setReopenState] = useState<{
@@ -52,7 +72,6 @@ export function ClassAssignmentTrackerModal({
   const [reopening, setReopening] = useState(false);
 
   useEffect(() => {
-    if (!assignmentId) return;
     const controller = new AbortController();
     void (async () => {
       setLoading(true);
@@ -73,8 +92,6 @@ export function ClassAssignmentTrackerModal({
     })();
     return () => controller.abort();
   }, [assignmentId, reloadTick]);
-
-  if (!assignmentId) return null;
 
   const stats = data?.assignment.stats;
 
