@@ -67,6 +67,19 @@ function collectAllKeys(value: unknown, keys: string[] = []): string[] {
   return keys;
 }
 
+function toVnOffsetIso(date: Date): string {
+  const vnDate = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return `${vnDate.toISOString().slice(0, 19)}+07:00`;
+}
+
+function readProblemDetail(res: request.Response): string {
+  const payload =
+    res.body && typeof res.body === 'object' && 'detail' in res.body
+      ? (res.body as { detail: string })
+      : (JSON.parse(res.text) as { detail: string });
+  return payload.detail;
+}
+
 describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL)', () => {
   let harness: RealE2eAppHarness;
   let server: Server;
@@ -76,6 +89,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
   let courseId: string;
   let classId: string;
   let teacherId: string;
+  let otherTeacherId: string;
   let studentId: string;
   let droppedStudentId: string;
   let outsideStudentId: string;
@@ -132,6 +146,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     const outside = await seedAndLoginUser('hv.outside@webedu.vn', [Role.STUDENT], '0906000005', 'Lê Chi');
 
     teacherId = teacher.id;
+    otherTeacherId = otherTeacher.id;
     teacherClient = teacher.client;
     otherTeacherClient = otherTeacher.client;
     studentId = stu.id;
@@ -609,5 +624,391 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     expect(body.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
     expect(body.submission.autoSubmitted).toBe(true);
     expect(body.submission.remainingSeconds).toBe(0);
+  });
+
+  it('Scenario 9 (Audit #13.1): Reopening Student A with future +07:00 newDueAt keeps classAssignment.dueAt immutable and preserves Student B overdue block', async () => {
+    const studentB = await seedAndLoginUser(
+      'hv.studentb@webedu.vn',
+      [Role.STUDENT],
+      '0906000010',
+      'Phạm Dung',
+    );
+    await harness.prisma.enrollment.create({
+      data: {
+        classId,
+        studentId: studentB.id,
+        status: EnrollmentStatus.ACTIVE,
+        enrolledDate: new Date('2026-10-01T00:00:00.000Z'),
+      },
+    });
+
+    const { assessmentId, questionIds } = await buildPublishedAll7TypesAssessment();
+    const initialFutureDue = new Date(Date.now() + 86_400_000).toISOString();
+    const assignRes = await teacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: initialFutureDue })
+      .expect(201);
+    const assignmentId = (assignRes.body as { items: Array<{ id: string }> }).items[0]!.id;
+
+    // Student A completes Attempt #1 before deadline
+    const startA1 = await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/start`)
+      .expect(200);
+    const firstSubmissionId = (startA1.body as { submission: { id: string } }).submission.id;
+    await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
+      .send({
+        elapsedSeconds: 30,
+        remainingSeconds: 1770,
+        answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }],
+      })
+      .expect(200);
+
+    // Backdate classAssignment.dueAt into the past
+    const pastDue = new Date(Date.now() - 3_600_000);
+    await harness.prisma.classAssignment.update({
+      where: { id: assignmentId },
+      data: { dueAt: pastDue },
+    });
+
+    // Teacher reopens only Student A with a future +07:00 newDueAt
+    const newDueAt = toVnOffsetIso(new Date(Date.now() + 72 * 3_600_000));
+    const expectedOverrideIso = new Date(newDueAt).toISOString();
+    await teacherClient
+      .post(`/api/v1/submissions/${firstSubmissionId}/reopen`)
+      .send({ reason: 'Gia hạn riêng cho học viên A', newDueAt })
+      .expect(200);
+
+    // classAssignment.dueAt remains unchanged; Student A Submission Attempt #2 has dueAtOverride
+    const dbAssignment = await harness.prisma.classAssignment.findUniqueOrThrow({
+      where: { id: assignmentId },
+    });
+    expect(dbAssignment.dueAt.toISOString()).toBe(pastDue.toISOString());
+
+    const reopenedSub = await harness.prisma.submission.findFirstOrThrow({
+      where: { classAssignmentId: assignmentId, studentId, attemptNumber: 2 },
+    });
+    expect(reopenedSub.dueAtOverride?.toISOString()).toBe(expectedOverrideIso);
+
+    // Student A sees isOverdue=false and completes Attempt #2 after original dueAt
+    const listARes = await studentClient.get('/api/v1/assignments/me').expect(200);
+    const itemA = (
+      listARes.body as { items: Array<{ assignmentId: string; dueAt: string; isOverdue: boolean }> }
+    ).items.find((item) => item.assignmentId === assignmentId);
+    expect(itemA?.dueAt).toBe(expectedOverrideIso);
+    expect(itemA?.isOverdue).toBe(false);
+
+    await studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
+    await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({
+        elapsedSeconds: 45,
+        remainingSeconds: 1755,
+        answers: [{ questionId: questionIds.fill, answerPayload: { text: '是' } }],
+      })
+      .expect(200);
+    await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
+      .send({ elapsedSeconds: 60, remainingSeconds: 1740 })
+      .expect(200);
+
+    // Student B still sees isOverdue=true and receives 400 on POST /start
+    const listBRes = await studentB.client.get('/api/v1/assignments/me').expect(200);
+    const itemB = (
+      listBRes.body as { items: Array<{ assignmentId: string; dueAt: string; isOverdue: boolean }> }
+    ).items.find((item) => item.assignmentId === assignmentId);
+    expect(itemB?.dueAt).toBe(pastDue.toISOString());
+    expect(itemB?.isOverdue).toBe(true);
+
+    const startBRes = await studentB.client
+      .post(`/api/v1/assignments/${assignmentId}/submissions/start`)
+      .expect(400);
+    expect(readProblemDetail(startBRes)).toContain('Đã quá hạn nộp bài');
+  });
+
+  it('Scenario 10 (Audit #13.2): Concurrent double-Start race recovers cleanly via P2002 with 1 DB row', async () => {
+    const { assessmentId } = await buildPublishedAll7TypesAssessment();
+    const futureDue = toVnOffsetIso(new Date(Date.now() + 86_400_000));
+    const assignRes = await teacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue })
+      .expect(201);
+    const assignmentId = (assignRes.body as { items: Array<{ id: string }> }).items[0]!.id;
+
+    const [res1, res2] = await Promise.all([
+      studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`),
+      studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`),
+    ]);
+
+    expect(res1.status).toBe(200);
+    expect(res2.status).toBe(200);
+    const body1 = res1.body as { submission: { id: string; attemptNumber: number } };
+    const body2 = res2.body as { submission: { id: string; attemptNumber: number } };
+    expect(body1.submission.id).toBe(body2.submission.id);
+    expect(body1.submission.attemptNumber).toBe(1);
+
+    const dbCount = await harness.prisma.submission.count({
+      where: { classAssignmentId: assignmentId, studentId },
+    });
+    expect(dbCount).toBe(1);
+  });
+
+  it('Scenario 11 (Audit #13.3): Teacher history entry grants read-only access while unrelated teacher receives 403 on all class assignment routes', async () => {
+    const unrelatedTeacher = await seedAndLoginUser(
+      'gv.unrelated@webedu.vn',
+      [Role.TEACHER],
+      '0906000011',
+      'Thầy Hùng',
+    );
+    const { assessmentId, audioId } = await buildPublishedAll7TypesAssessment();
+    const futureDue = toVnOffsetIso(new Date(Date.now() + 86_400_000));
+    const assignRes = await teacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue })
+      .expect(201);
+    const assignmentId = (assignRes.body as { items: Array<{ id: string }> }).items[0]!.id;
+
+    // Seed a submission so reopen route checks class write ownership after loading submission
+    const startRes = await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/start`)
+      .expect(200);
+    const submissionId = (startRes.body as { submission: { id: string } }).submission.id;
+    await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
+      .send({ elapsedSeconds: 10 })
+      .expect(200);
+
+    // Attach otherTeacher via ClassTeacherAssignment with assignedTo: null while cls.teacherId stays teacherId
+    await harness.prisma.classTeacherAssignment.create({
+      data: {
+        classId,
+        teacherId: otherTeacherId,
+        assignedFrom: new Date('2026-10-01T00:00:00.000Z'),
+        assignedTo: null,
+      },
+    });
+
+    // Co-teacher/history teacher has READ access (200) and NO WRITE access (403)
+    await otherTeacherClient.get(`/api/v1/classes/${classId}/assignments`).expect(200);
+    await otherTeacherClient.get(`/api/v1/assignments/${assignmentId}/submissions`).expect(200);
+    await otherTeacherClient.get(`/api/v1/assignments/${assignmentId}/media/${audioId}`).expect(200);
+    await otherTeacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue })
+      .expect(403);
+    await otherTeacherClient
+      .post(`/api/v1/submissions/${submissionId}/reopen`)
+      .send({ reason: 'Co-teacher cannot reopen' })
+      .expect(403);
+
+    // Unrelated teacher gets 403 on all read and write routes
+    await unrelatedTeacher.client.get(`/api/v1/classes/${classId}/assignments`).expect(403);
+    await unrelatedTeacher.client.get(`/api/v1/assignments/${assignmentId}/submissions`).expect(403);
+    await unrelatedTeacher.client.get(`/api/v1/assignments/${assignmentId}/media/${audioId}`).expect(403);
+    await unrelatedTeacher.client
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue })
+      .expect(403);
+    await unrelatedTeacher.client
+      .post(`/api/v1/submissions/${submissionId}/reopen`)
+      .send({ reason: 'Unrelated teacher cannot reopen' })
+      .expect(403);
+  });
+
+  it('Scenario 12 (Audit #13.4): Media stream returns 404 across assessments, enforces maxListens=2 with no-store headers, and rejects stale autosave audioPlayCount desync', async () => {
+    const { assessmentId, audioId, questionIds } = await buildPublishedAll7TypesAssessment();
+
+    // Create a second assessment with its own uploaded media asset
+    const otherAsmRes = await teacherClient
+      .post('/api/v1/assessments')
+      .send({
+        title: 'Đề khác kiểm tra cách ly media',
+        type: AssessmentType.HOMEWORK,
+        courseId,
+        durationMinutes: 15,
+      })
+      .expect(201);
+    const otherAsmId = (otherAsmRes.body as { id: string }).id;
+    const otherMediaRes = await teacherClient
+      .post(`/api/v1/assessments/${otherAsmId}/media`)
+      .attach('file', MP3, { filename: 'other-listen.mp3', contentType: 'audio/mpeg' })
+      .expect(201);
+    const otherAudioId = (otherMediaRes.body as { id: string }).id;
+
+    const futureDue = toVnOffsetIso(new Date(Date.now() + 86_400_000));
+    const assignRes = await teacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue })
+      .expect(201);
+    const assignmentId = (assignRes.body as { items: Array<{ id: string }> }).items[0]!.id;
+
+    const startRes = await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/start`)
+      .expect(200);
+    const submissionId = (startRes.body as { submission: { id: string } }).submission.id;
+
+    // Cross-assessment media asset returns 404 for both student and teacher
+    await studentClient
+      .get(`/api/v1/assignments/${assignmentId}/media/${otherAudioId}`)
+      .expect(404);
+    await teacherClient
+      .get(`/api/v1/assignments/${assignmentId}/media/${otherAudioId}`)
+      .expect(404);
+
+    // Streams #1 and #2 succeed with Cache-Control: private, no-store and increment DB audioPlayCount to 2
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const streamRes = await studentClient
+        .get(`/api/v1/assignments/${assignmentId}/media/${audioId}`)
+        .expect(200);
+      expect(streamRes.headers['cache-control']).toBe('private, no-store');
+      expect(streamRes.headers['x-content-type-options']).toBe('nosniff');
+    }
+
+    const answerAfterStreams = await harness.prisma.submissionAnswer.findUniqueOrThrow({
+      where: {
+        submissionId_questionId: {
+          submissionId,
+          questionId: questionIds.listening!,
+        },
+      },
+    });
+    expect(answerAfterStreams.audioPlayCount).toBe(2);
+
+    // Stale client autosave sending audioPlayCount: 0 still succeeds (200) and DB remains 2
+    const staleAutosaveRes = await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({
+        elapsedSeconds: 20,
+        remainingSeconds: 1780,
+        answers: [
+          {
+            questionId: questionIds.listening,
+            answerPayload: { selectedOptionIds: ['a'] },
+            audioPlayCount: 0,
+          },
+        ],
+      })
+      .expect(200);
+    const listeningSaved = (
+      staleAutosaveRes.body as { answers: Array<{ questionId: string; audioPlayCount: number }> }
+    ).answers.find((ans) => ans.questionId === questionIds.listening);
+    expect(listeningSaved?.audioPlayCount).toBe(2);
+
+    const answerAfterStaleAutosave = await harness.prisma.submissionAnswer.findUniqueOrThrow({
+      where: {
+        submissionId_questionId: {
+          submissionId,
+          questionId: questionIds.listening!,
+        },
+      },
+    });
+    expect(answerAfterStaleAutosave.audioPlayCount).toBe(2);
+
+    // Stream #3 exceeds maxListens=2 -> 400
+    const thirdStreamRes = await studentClient
+      .get(`/api/v1/assignments/${assignmentId}/media/${audioId}`)
+      .expect(400);
+    expect(readProblemDetail(thirdStreamRes)).toContain('Đã hết lượt nghe cho phép');
+  });
+
+  it('Scenario 13 (Audit #13.5): Enforces timezone offset dates, autosave array/duplicate bounds, and tracker pagination', async () => {
+    const studentB = await seedAndLoginUser(
+      'hv.page2@webedu.vn',
+      [Role.STUDENT],
+      '0906000012',
+      'Vũ Minh',
+    );
+    await harness.prisma.enrollment.create({
+      data: {
+        classId,
+        studentId: studentB.id,
+        status: EnrollmentStatus.ACTIVE,
+        enrolledDate: new Date('2026-10-01T00:00:00.000Z'),
+      },
+    });
+
+    const { assessmentId, questionIds } = await buildPublishedAll7TypesAssessment();
+
+    // Offset-less assign dueAt -> 400
+    await teacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: '2027-12-01T23:59:00' })
+      .expect(400);
+
+    const futureDue = toVnOffsetIso(new Date(Date.now() + 86_400_000));
+    const assignRes = await teacherClient
+      .post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue })
+      .expect(201);
+    const assignmentId = (assignRes.body as { items: Array<{ id: string }> }).items[0]!.id;
+
+    const startRes = await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/start`)
+      .expect(200);
+    const submissionId = (startRes.body as { submission: { id: string } }).submission.id;
+
+    // Autosave with 201 entries -> 400 (ArrayMaxSize(200))
+    const oversizedAnswers = Array.from({ length: 201 }, () => ({
+      questionId: questionIds.single,
+      answerPayload: { selectedOptionIds: ['a'] },
+    }));
+    await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({ elapsedSeconds: 10, remainingSeconds: 1790, answers: oversizedAnswers })
+      .expect(400);
+
+    // Autosave with duplicate questionId -> 400
+    await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({
+        elapsedSeconds: 12,
+        remainingSeconds: 1788,
+        answers: [
+          { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } },
+          { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['b'] } },
+        ],
+      })
+      .expect(400);
+
+    // Submit so teacher reopen can be tested with offset-less newDueAt -> 400
+    await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
+      .send({ elapsedSeconds: 20, remainingSeconds: 1780 })
+      .expect(200);
+
+    await teacherClient
+      .post(`/api/v1/submissions/${submissionId}/reopen`)
+      .send({ reason: 'Thiếu múi giờ', newDueAt: '2027-12-01T23:59:00' })
+      .expect(400);
+
+    // Tracker pagination: page=1&limit=1 returns 1 student row with total >= 2 and accurate stats
+    const page1Res = await teacherClient
+      .get(`/api/v1/assignments/${assignmentId}/submissions?page=1&limit=1`)
+      .expect(200);
+    const page1 = page1Res.body as {
+      students: Array<{ studentId: string }>;
+      page: number;
+      limit: number;
+      total: number;
+      assignment: { stats: { totalStudents: number } };
+    };
+    expect(page1.students).toHaveLength(1);
+    expect(page1.page).toBe(1);
+    expect(page1.limit).toBe(1);
+    expect(page1.total).toBeGreaterThanOrEqual(2);
+    expect(page1.assignment.stats.totalStudents).toBe(page1.total);
+
+    const page2Res = await teacherClient
+      .get(`/api/v1/assignments/${assignmentId}/submissions?page=2&limit=1`)
+      .expect(200);
+    const page2 = page2Res.body as {
+      students: Array<{ studentId: string }>;
+      page: number;
+      limit: number;
+      total: number;
+    };
+    expect(page2.students).toHaveLength(1);
+    expect(page2.page).toBe(2);
+    expect(page2.students[0]!.studentId).not.toBe(page1.students[0]!.studentId);
   });
 });

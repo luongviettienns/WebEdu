@@ -22,13 +22,17 @@ export interface ClassAssignmentTrackerModalProps {
 
 const TRACKER_PAGE_LIMIT = 20;
 
+function isIsoPastDeadline(iso: string): boolean {
+  return new Date(iso).getTime() <= Date.now();
+}
+
 function buildReopenPromptState(
   dueAt: string | undefined,
   row: TeacherTrackerStudentRowDto,
   fallbackOverdue: boolean,
 ): { overdue: boolean; target: TeacherTrackerStudentRowDto; defaultNewDueAt: string } {
   const effectiveDueIso = row.dueAtOverride ?? dueAt;
-  const overdue = effectiveDueIso ? new Date(effectiveDueIso).getTime() <= Date.now() : fallbackOverdue;
+  const overdue = effectiveDueIso ? isIsoPastDeadline(effectiveDueIso) : fallbackOverdue;
   return {
     overdue,
     target: row,
@@ -65,11 +69,11 @@ function ClassAssignmentTrackerBody({
 }) {
   const [data, setData] = useState<TeacherAssignmentSubmissionsDto | null>(null);
   const [page, setPage] = useState(1);
-  const [isOverdue, setIsOverdue] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadTick, setReloadTick] = useState(0);
   const [reopenState, setReopenState] = useState<{
+    overdue: boolean;
     target: TeacherTrackerStudentRowDto;
     defaultNewDueAt: string;
   } | null>(null);
@@ -88,7 +92,6 @@ function ClassAssignmentTrackerBody({
         });
         if (!controller.signal.aborted) {
           setData(res);
-          setIsOverdue(new Date(res.assignment.dueAt).getTime() <= Date.now());
         }
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -105,9 +108,13 @@ function ClassAssignmentTrackerBody({
   const totalPages = data ? Math.max(1, Math.ceil(data.total / Math.max(1, data.limit))) : 1;
 
   const openReopenForm = (row: TeacherTrackerStudentRowDto) => {
-    const prompt = buildReopenPromptState(data?.assignment.dueAt, row, isOverdue);
-    setIsOverdue(prompt.overdue);
-    setReopenState({ target: prompt.target, defaultNewDueAt: prompt.defaultNewDueAt });
+    const assignmentOverdue = data ? isIsoPastDeadline(data.assignment.dueAt) : false;
+    const prompt = buildReopenPromptState(data?.assignment.dueAt, row, assignmentOverdue);
+    setReopenState({
+      overdue: prompt.overdue,
+      target: prompt.target,
+      defaultNewDueAt: prompt.defaultNewDueAt,
+    });
   };
 
   return (
@@ -145,7 +152,7 @@ function ClassAssignmentTrackerBody({
           <ReopenSubmissionForm
             key={reopenState.target.submissionId ?? reopenState.target.studentId}
             target={reopenState.target}
-            isOverdue={isOverdue}
+            isOverdue={reopenState.overdue}
             defaultNewDueAt={reopenState.defaultNewDueAt}
             reopening={reopening}
             onBusyChange={setReopening}

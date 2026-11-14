@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { QuestionType } from '@/features/assessments/api/assessments.api';
 import {
   getDraftStorageKey,
+  MAX_CLOCK_SKEW_MS,
   parseIncomingDraftUpdate,
   type ExamLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
@@ -39,7 +40,7 @@ export function useExamBrowserSync({
       }
       const parsed = parseIncomingDraftUpdate(event.newValue, lastDraftUpdatedAtRef.current);
       if (parsed) {
-        lastDraftUpdatedAtRef.current = parsed.updatedAtMs;
+        lastDraftUpdatedAtRef.current = Math.min(parsed.updatedAtMs, Date.now() + MAX_CLOCK_SKEW_MS);
         onAdoptDraft(parsed);
       }
     };

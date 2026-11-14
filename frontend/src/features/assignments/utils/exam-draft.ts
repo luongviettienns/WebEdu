@@ -192,17 +192,19 @@ export function sanitizeLocalDraftAnswers(
   return sanitized;
 }
 
-function mergeAudioPlayCounts(
+export function mergeAudioPlayCounts(
   questions: ReadonlyArray<SanitizedQuestionDto>,
   serverCounts: Record<string, number>,
   localCounts: Record<string, unknown>,
 ): Record<string, number> {
+  const safeLocalCounts = isPlainRecord(localCounts) ? localCounts : {};
   const merged: Record<string, number> = {};
   for (const q of questions) {
+    if (q.type !== 'LISTENING') continue;
     const hasServerEntry = Object.prototype.hasOwnProperty.call(serverCounts, q.id);
     const serverCount = hasServerEntry ? Math.max(0, Math.floor(serverCounts[q.id])) : 0;
-    const rawLocal = Object.prototype.hasOwnProperty.call(localCounts, q.id)
-      ? localCounts[q.id]
+    const rawLocal = Object.prototype.hasOwnProperty.call(safeLocalCounts, q.id)
+      ? safeLocalCounts[q.id]
       : undefined;
     let validLocal =
       typeof rawLocal === 'number' && Number.isInteger(rawLocal) && rawLocal >= 0 ? rawLocal : 0;
@@ -215,6 +217,88 @@ function mergeAudioPlayCounts(
     }
   }
   return merged;
+}
+
+function clampDraftTimers(
+  baselineElapsed: number,
+  baselineRemaining: number | null,
+  incomingElapsed: number,
+  incomingRemaining: number | null,
+): { elapsedSeconds: number; remainingSeconds: number | null } {
+  const baseElapsed = Math.max(0, Math.floor(baselineElapsed));
+  const localElapsed = Number.isFinite(incomingElapsed)
+    ? Math.floor(incomingElapsed)
+    : baseElapsed;
+  const elapsedSeconds = Math.min(
+    baseElapsed + MAX_ELAPSED_DELTA_SECONDS,
+    Math.max(baseElapsed, localElapsed),
+  );
+  let remainingSeconds =
+    baselineRemaining !== null ? Math.max(0, Math.floor(baselineRemaining)) : null;
+  if (remainingSeconds !== null && incomingRemaining !== null) {
+    const localRemaining = Number.isFinite(incomingRemaining)
+      ? Math.floor(incomingRemaining)
+      : remainingSeconds;
+    const minAllowed = Math.max(0, remainingSeconds - MAX_ELAPSED_DELTA_SECONDS);
+    remainingSeconds = Math.min(remainingSeconds, Math.max(minAllowed, localRemaining));
+  }
+  return { elapsedSeconds, remainingSeconds };
+}
+
+export interface AdoptableExamSnapshot {
+  session: StudentExamSessionDto | null;
+  viewMode: string;
+  answers: Record<string, StudentAnswerPayload>;
+  audioPlayCounts: Record<string, number>;
+  elapsedSeconds: number;
+  remainingSeconds: number | null;
+}
+
+export function sanitizeAdoptedLocalDraft<TSnap extends AdoptableExamSnapshot>(
+  incoming: ExamLocalDraft,
+  currentSnapshot: TSnap,
+  nowMs = Date.now(),
+): { snapshot: TSnap; updatedAtMs: number } | null {
+  if (!isPlainRecord(incoming) || !currentSnapshot.session || currentSnapshot.viewMode !== 'taking') {
+    return null;
+  }
+  const { questions, submission } = currentSnapshot.session;
+  const answers = {
+    ...currentSnapshot.answers,
+    ...sanitizeLocalDraftAnswers(questions, incoming.answers),
+  };
+  const audioPlayCounts = mergeAudioPlayCounts(
+    questions,
+    currentSnapshot.audioPlayCounts,
+    incoming.audioPlayCounts,
+  );
+  const baselineElapsed = Math.max(submission.elapsedSeconds, currentSnapshot.elapsedSeconds);
+  const baselineRemaining =
+    currentSnapshot.remainingSeconds === null
+      ? null
+      : submission.remainingSeconds === null
+        ? currentSnapshot.remainingSeconds
+        : Math.min(submission.remainingSeconds, currentSnapshot.remainingSeconds);
+  const timers = clampDraftTimers(
+    baselineElapsed,
+    baselineRemaining,
+    incoming.elapsedSeconds,
+    incoming.remainingSeconds,
+  );
+  const updatedAtMs = Number.isFinite(incoming.updatedAtMs)
+    ? Math.max(0, Math.min(incoming.updatedAtMs, nowMs + MAX_CLOCK_SKEW_MS))
+    : nowMs;
+
+  return {
+    updatedAtMs,
+    snapshot: {
+      ...currentSnapshot,
+      answers,
+      audioPlayCounts,
+      elapsedSeconds: timers.elapsedSeconds,
+      remainingSeconds: timers.remainingSeconds,
+    },
+  };
 }
 
 export function buildSessionAnswerMaps(session: StudentExamSessionDto): {
@@ -270,22 +354,14 @@ export function resolveInitialSessionDraft(
         audioPlayCounts,
         localDraft.audioPlayCounts,
       );
-      const serverElapsed = Math.max(0, Math.floor(elapsedSeconds));
-      const localElapsed = Number.isFinite(localDraft.elapsedSeconds)
-        ? Math.floor(localDraft.elapsedSeconds)
-        : serverElapsed;
-      elapsedSeconds = Math.min(
-        serverElapsed + MAX_ELAPSED_DELTA_SECONDS,
-        Math.max(serverElapsed, localElapsed),
+      const timers = clampDraftTimers(
+        elapsedSeconds,
+        remainingSeconds,
+        localDraft.elapsedSeconds,
+        localDraft.remainingSeconds,
       );
-      if (remainingSeconds !== null && localDraft.remainingSeconds !== null) {
-        const serverRemaining = Math.max(0, Math.floor(remainingSeconds));
-        const localRemaining = Number.isFinite(localDraft.remainingSeconds)
-          ? Math.floor(localDraft.remainingSeconds)
-          : serverRemaining;
-        const minAllowed = Math.max(0, serverRemaining - MAX_ELAPSED_DELTA_SECONDS);
-        remainingSeconds = Math.min(serverRemaining, Math.max(minAllowed, localRemaining));
-      }
+      elapsedSeconds = timers.elapsedSeconds;
+      remainingSeconds = timers.remainingSeconds;
       draftUpdatedAtMs = localDraft.updatedAtMs;
       mergedFromLocal = true;
     } else if (localDraft !== null) {

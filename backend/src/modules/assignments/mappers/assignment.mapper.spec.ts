@@ -1,4 +1,4 @@
-import { AssessmentType, SubmissionStatus } from '@prisma/client';
+import { AssessmentType, QuestionType, SubmissionStatus } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 import {
   countNonEmptyAnswers,
@@ -10,6 +10,9 @@ import {
   toTeacherTrackerStudentRowDto,
 } from './assignment.mapper.js';
 import type { AssignmentDisplayStatus } from '../assignments.types.js';
+import type { DbClient } from '../policies/assignment-access.policy.js';
+import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
+import { buildStudentExamSessionDto } from '../services/submission-session.util.js';
 
 describe('assignment.mapper', () => {
   describe('DISPLAY_STATUS_LABELS & getDisplayStatusLabel', () => {
@@ -376,6 +379,118 @@ describe('assignment.mapper', () => {
       );
       expect(row.canReopen).toBe(true);
       expect(row.displayStatusLabel).toBe(getDisplayStatusLabel(status));
+    });
+  });
+
+  describe('buildStudentExamSessionDto (StudentExamSessionDto mapper)', () => {
+    const answerPolicy = new SubmissionAnswerPolicy();
+    const fakeDb = {
+      submissionReopenLog: { findFirst: async () => ({ reason: 'Gia hạn thêm lần 2' }) },
+    } as unknown as DbClient;
+
+    const baseAssignment = {
+      id: 'assign-1',
+      assessmentId: 'asm-1',
+      classId: 'cls-1',
+      assignedAt: new Date('2026-11-10T08:00:00.000Z'),
+      dueAt: new Date('2026-11-15T12:00:00.000Z'),
+      effectiveDurationMinutes: 30,
+      instructions: 'Làm bài cẩn thận',
+      assessment: {
+        title: 'Bài kiểm tra tổng hợp',
+        type: AssessmentType.MINI_TEST,
+        questions: [
+          {
+            id: 'q-1',
+            position: 1,
+            type: QuestionType.SINGLE_CHOICE,
+            prompt: 'Chọn A',
+            points: 5,
+            payload: {
+              options: [
+                { id: 'a', text: 'A' },
+                { id: 'b', text: 'B' },
+              ],
+              correctOptionIds: ['a'],
+            },
+          },
+        ],
+      },
+      class: {
+        code: 'HSK1-K26-01',
+        course: { name: 'Tiếng Trung HSK 1' },
+      },
+    };
+
+    it('masks autoScore, totalScore, and teacherFeedback as null for AUTO_GRADED_PENDING_REVIEW and exposes them for GRADED & RETURNED', async () => {
+      const now = new Date('2026-11-16T08:00:00.000Z');
+      const overrideDue = new Date('2026-11-20T12:00:00.000Z');
+      const pendingDto = await buildStudentExamSessionDto(
+        fakeDb,
+        answerPolicy,
+        baseAssignment,
+        {
+          id: 'sub-pending',
+          studentId: 'stu-1',
+          attemptNumber: 2,
+          status: SubmissionStatus.AUTO_GRADED_PENDING_REVIEW,
+          elapsedSeconds: 300,
+          remainingSeconds: 1500,
+          startedAt: new Date('2026-11-16T07:00:00.000Z'),
+          lastSavedAt: new Date('2026-11-16T07:05:00.000Z'),
+          lastSyncedAt: new Date('2026-11-16T07:05:00.000Z'),
+          submittedAt: new Date('2026-11-16T07:05:00.000Z'),
+          autoSubmitted: false,
+          autoScore: 5,
+          totalScore: 5,
+          teacherFeedback: 'Internal draft note',
+          dueAtOverride: overrideDue,
+          answers: [],
+        },
+        now,
+        'stu-1',
+      );
+
+      expect(pendingDto.assignment.autoScore).toBeNull();
+      expect(pendingDto.assignment.totalScore).toBeNull();
+      expect(pendingDto.assignment.teacherFeedback).toBeNull();
+      expect(pendingDto.assignment.dueAt).toBe(overrideDue.toISOString());
+      expect(pendingDto.submission.dueAtOverride).toBe(overrideDue.toISOString());
+      expect(pendingDto.submission.reopenReason).toBe('Gia hạn thêm lần 2');
+      expect('autoScore' in pendingDto.submission).toBe(false);
+      expect('totalScore' in pendingDto.submission).toBe(false);
+      expect('teacherFeedback' in pendingDto.submission).toBe(false);
+
+      for (const released of [SubmissionStatus.GRADED, SubmissionStatus.RETURNED]) {
+        const releasedDto = await buildStudentExamSessionDto(
+          fakeDb,
+          answerPolicy,
+          baseAssignment,
+          {
+            id: `sub-${released}`,
+            studentId: 'stu-1',
+            attemptNumber: 1,
+            status: released,
+            elapsedSeconds: 300,
+            remainingSeconds: 1500,
+            startedAt: new Date('2026-11-14T07:00:00.000Z'),
+            lastSavedAt: new Date('2026-11-14T07:05:00.000Z'),
+            lastSyncedAt: new Date('2026-11-14T07:05:00.000Z'),
+            submittedAt: new Date('2026-11-14T07:05:00.000Z'),
+            autoSubmitted: false,
+            autoScore: 4,
+            totalScore: 4.5,
+            teacherFeedback: 'Rất tốt',
+            dueAtOverride: null,
+            answers: [],
+          },
+          now,
+          'stu-1',
+        );
+        expect(releasedDto.assignment.autoScore).toBe(4);
+        expect(releasedDto.assignment.totalScore).toBe(4.5);
+        expect(releasedDto.assignment.teacherFeedback).toBe('Rất tốt');
+      }
     });
   });
 });

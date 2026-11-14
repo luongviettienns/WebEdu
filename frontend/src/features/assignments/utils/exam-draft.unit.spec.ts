@@ -11,9 +11,11 @@ import {
   MAX_CLOCK_SKEW_MS,
   MAX_ELAPSED_DELTA_SECONDS,
   MAX_LOCAL_DRAFT_DRIFT_MS,
+  mergeAudioPlayCounts,
   persistExamDraftSnapshot,
   readLocalDraft,
   resolveInitialSessionDraft,
+  sanitizeAdoptedLocalDraft,
   sanitizeLocalDraftAnswers,
   writeLocalDraft,
   type ExamLocalDraft,
@@ -448,7 +450,8 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
         'q-listen-opt': 0,
         'q-listen-text': 99,
         'unknown-audio': 5,
-        'q-single': -3,
+        'q-single': 5,
+        'q-img-opt': 4,
         'q-fill': -3,
       },
     });
@@ -465,12 +468,111 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(merged.elapsedSeconds).toBe(420);
     expect(merged.remainingSeconds).toBe(900);
 
-    // Monotonic audio counts capped by maxListens, ignoring unknown/negative
+    // Monotonic audio counts capped by maxListens, ignoring non-LISTENING & unknown questions
     expect(merged.audioPlayCounts['q-listen-opt']).toBe(1);
     expect(merged.audioPlayCounts['q-listen-text']).toBe(1);
     expect(merged.audioPlayCounts['unknown-audio']).toBeUndefined();
-    expect(merged.audioPlayCounts['q-single']).toBe(0);
+    expect(merged.audioPlayCounts['q-single']).toBeUndefined();
+    expect(merged.audioPlayCounts['q-img-opt']).toBeUndefined();
     expect(merged.audioPlayCounts['q-fill']).toBeUndefined();
+  });
+
+  test('mergeAudioPlayCounts ignores entries for non-LISTENING questions', () => {
+    const questions = createSessionDto().questions;
+
+    const merged = mergeAudioPlayCounts(
+      questions,
+      { 'q-listen-opt': 1, 'q-single': 3, 'q-fill': 2, 'unknown-server': 4 },
+      { 'q-listen-opt': 9, 'q-listen-text': 1, 'q-single': 10, 'q-img-opt': 5, 'unknown-local': 3 },
+    );
+
+    expect(merged).toEqual({
+      'q-listen-opt': 2,
+      'q-listen-text': 1,
+    });
+    expect(Object.keys(merged)).not.toContain('q-single');
+    expect(Object.keys(merged)).not.toContain('q-img-opt');
+    expect(Object.keys(merged)).not.toContain('q-fill');
+    expect(Object.keys(merged)).not.toContain('unknown-server');
+    expect(Object.keys(merged)).not.toContain('unknown-local');
+  });
+
+  test('sanitizeAdoptedLocalDraft strips tampered invalid answers/non-LISTENING counts and clamps forged timers & updatedAtMs', () => {
+    const nowMs = 1_763_114_600_000;
+    const session = createSessionDto({ elapsedSeconds: 120, remainingSeconds: 1200 });
+    const currentSnap: ExamSnapshotLike = {
+      session,
+      viewMode: 'taking',
+      answers: { 'q-single': { selectedOptionIds: ['opt-1'] } },
+      audioPlayCounts: { 'q-listen-opt': 1, 'q-single': 2 },
+      elapsedSeconds: 150,
+      remainingSeconds: 1170,
+    };
+
+    const tamperedIncoming = {
+      updatedAtMs: nowMs + 600_000,
+      viewMode: 'review',
+      answers: {
+        'q-single': { selectedOptionIds: ['opt-1', 'opt-2'] }, // invalid (>1 option) -> preserve opt-1
+        'q-multiple': { selectedOptionIds: ['forged-opt'] }, // invalid -> omitted
+        'q-fill': { text: 'Cross-tab answer' }, // valid -> adopted
+        'unknown-q': { text: 'Injected' }, // unknown -> stripped
+      },
+      elapsedSeconds: 99_999, // forged far ahead
+      remainingSeconds: 9_999, // forged extra time
+      audioPlayCounts: {
+        'q-listen-opt': 0, // stale -> monotonic keeps 1
+        'q-listen-text': 5, // capped at maxListens (1)
+        'q-single': 9, // non-LISTENING -> stripped
+        'q-essay': 4, // non-LISTENING -> stripped
+        'unknown-q': 3,
+      },
+    } as unknown as ExamLocalDraft;
+
+    const adopted = sanitizeAdoptedLocalDraft(tamperedIncoming, currentSnap, nowMs);
+    expect(adopted).not.toBeNull();
+    expect(adopted!.snapshot.viewMode).toBe('taking');
+    expect(adopted!.snapshot.session).toBe(session);
+    expect(adopted!.snapshot.answers).toEqual({
+      'q-single': { selectedOptionIds: ['opt-1'] },
+      'q-fill': { text: 'Cross-tab ' }, // capped at maxLength: 10
+    });
+    expect(adopted!.snapshot.answers['q-multiple']).toBeUndefined();
+    expect(adopted!.snapshot.answers['unknown-q']).toBeUndefined();
+    expect(adopted!.snapshot.audioPlayCounts).toEqual({
+      'q-listen-opt': 1,
+      'q-listen-text': 1,
+    });
+    expect(adopted!.snapshot.elapsedSeconds).toBe(150 + MAX_ELAPSED_DELTA_SECONDS);
+    expect(adopted!.snapshot.remainingSeconds).toBe(1170);
+    expect(adopted!.updatedAtMs).toBe(nowMs + MAX_CLOCK_SKEW_MS);
+
+    // Forged low remainingSeconds clamps within MAX_ELAPSED_DELTA_SECONDS, forged low elapsedSeconds never goes backward
+    const downwardTampered: ExamLocalDraft = {
+      updatedAtMs: nowMs,
+      answers: {},
+      elapsedSeconds: 10,
+      remainingSeconds: 5,
+      audioPlayCounts: {},
+    };
+    const adoptedDown = sanitizeAdoptedLocalDraft(downwardTampered, currentSnap, nowMs);
+    expect(adoptedDown!.snapshot.elapsedSeconds).toBe(150);
+    expect(adoptedDown!.snapshot.remainingSeconds).toBe(1170 - MAX_ELAPSED_DELTA_SECONDS);
+
+    // Forged null remainingSeconds cannot wipe server countdown
+    const nullTimerTampered: ExamLocalDraft = {
+      updatedAtMs: nowMs,
+      answers: {},
+      elapsedSeconds: 160,
+      remainingSeconds: null,
+      audioPlayCounts: {},
+    };
+    const adoptedNullTimer = sanitizeAdoptedLocalDraft(nullTimerTampered, currentSnap, nowMs);
+    expect(adoptedNullTimer!.snapshot.remainingSeconds).toBe(1170);
+
+    // Non-taking viewMode ignores cross-tab adoption
+    const reviewSnap: ExamSnapshotLike = { ...currentSnap, viewMode: 'review' };
+    expect(sanitizeAdoptedLocalDraft(downwardTampered, reviewSnap, nowMs)).toBeNull();
   });
 
   test('reconcileAutosaveSnapshot merges timers and audioPlayCounts monotonically from server response', () => {

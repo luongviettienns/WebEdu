@@ -83,6 +83,22 @@ async function logoutViaApi(page: Page): Promise<void> {
   expect(res.ok()).toBeTruthy();
 }
 
+async function logoutThroughUi(page: Page): Promise<void> {
+  const isMobileLayout = await page.evaluate(() => window.innerWidth < 1024);
+  if (isMobileLayout) {
+    await page.getByRole('button', { name: 'Mở menu' }).click();
+    const drawer = page.getByRole('dialog', { name: 'Menu điều hướng di động' });
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole('button', { name: 'Đăng xuất' }).click();
+  } else {
+    await page
+      .locator('aside[aria-label="Điều hướng thanh bên"]')
+      .getByRole('button', { name: 'Đăng xuất' })
+      .click();
+  }
+  await expect(page).toHaveURL(/\/login(?:\?|$)/);
+}
+
 function futureLocalInputValue(daysAhead = 7): string {
   const target = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -320,6 +336,29 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     await page.getByRole('button', { name: 'Lưu nháp' }).click();
     await expect(page.getByText(/Đã lưu lúc/i)).toBeVisible();
 
+    // Assert localStorage draft key is strictly scoped to webedu_exam_draft_<studentId>_<submissionId> (no legacy key)
+    const latestSessionPayload = [...capturedStudentPayloads]
+      .reverse()
+      .map((raw) => {
+        try {
+          return JSON.parse(raw) as { submission?: { id?: string; studentId?: string } };
+        } catch {
+          return null;
+        }
+      })
+      .find((parsed) => Boolean(parsed?.submission?.id && parsed?.submission?.studentId));
+    expect(latestSessionPayload?.submission?.id).toBeTruthy();
+    expect(latestSessionPayload?.submission?.studentId).toBeTruthy();
+    const activeSubmissionId = latestSessionPayload!.submission!.id!;
+    const activeStudentId = latestSessionPayload!.submission!.studentId!;
+    const storedDraftKeys = await page.evaluate(() =>
+      Object.keys(window.localStorage).filter((k) => k.startsWith('webedu_exam_draft_')),
+    );
+    expect(storedDraftKeys).toEqual([
+      `webedu_exam_draft_${activeStudentId}_${activeSubmissionId}`,
+    ]);
+    expect(storedDraftKeys).not.toContain(`webedu_exam_draft_${activeSubmissionId}`);
+
     // Accessibility & responsive check on Desktop and explicit 390x844 mobile
     if (!isMobileProject) {
       await assertZeroSeriousAxeViolations(page, 'student-exam-runner-desktop');
@@ -426,6 +465,28 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     await page.getByLabel('Câu trả lời điền từ').fill('您好');
     await page.getByRole('button', { name: 'Lưu nháp' }).click();
     await expect(page.getByText(/Đã lưu lúc/i)).toBeVisible();
+
+    // Verify webedu_exam_draft_* exists before UI logout, then click UI "Đăng xuất" and confirm full purge
+    const draftKeysBeforeLogout = await page.evaluate(() =>
+      Object.keys(window.localStorage).filter((k) => k.startsWith('webedu_exam_draft_')),
+    );
+    expect(draftKeysBeforeLogout.length).toBeGreaterThanOrEqual(1);
+
+    await logoutThroughUi(page);
+    const draftKeysAfterLogout = await page.evaluate(() =>
+      Object.keys(window.localStorage).filter((k) => k.startsWith('webedu_exam_draft_')),
+    );
+    expect(draftKeysAfterLogout).toEqual([]);
+
+    // Log back in -> resume Attempt #2 -> confirm PostgreSQL still has '您好' -> submit Attempt #2
+    await loginThroughUi(page, 'active.student@webedu.vn');
+    await page.goto('/student/assignments');
+    await page
+      .locator('article', { hasText: assessmentTitle })
+      .getByRole('link', { name: 'Tiếp tục làm bài' })
+      .click();
+    await page.getByRole('button', { name: /Câu 2\b/i }).click();
+    await expect(page.getByLabel('Câu trả lời điền từ')).toHaveValue('您好');
 
     await page.getByRole('button', { name: 'Nộp bài' }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Xác nhận nộp bài' }).click();

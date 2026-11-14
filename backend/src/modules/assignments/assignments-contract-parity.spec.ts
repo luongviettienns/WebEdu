@@ -138,6 +138,15 @@ describe('Assignments Backend-Frontend DTO Contract Parity', () => {
   const backendContracts = extractContracts(BACKEND_TYPES_PATH);
   const frontendContracts = extractContracts(FRONTEND_API_PATH);
 
+  it('covers every exported interface and type alias in assignments.types.ts without omissions', () => {
+    expect(Array.from(backendContracts.interfaces.keys()).sort()).toEqual(
+      [...EXPECTED_INTERFACES].sort(),
+    );
+    expect(Array.from(backendContracts.typeAliases.keys()).sort()).toEqual(
+      [...EXPECTED_TYPE_ALIASES].sort(),
+    );
+  });
+
   it.each(EXPECTED_INTERFACES)(
     'keeps exported interface %s identical in field order, optionality, and types',
     (interfaceName) => {

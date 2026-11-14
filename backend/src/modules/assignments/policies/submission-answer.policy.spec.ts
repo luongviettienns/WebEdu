@@ -367,6 +367,31 @@ describe('SubmissionAnswerPolicy', () => {
 
       expect(policy.sanitizeQuestionForStudent(q, 'seed-1').tokens).toEqual(['A', 'A']);
     });
+
+    it('produces different deterministic token permutations for distinct submissionId seeds when >= 5 distinct tokens exist', () => {
+      const fiveTokenQ = {
+        id: 'q-ord-5',
+        position: 3,
+        type: QuestionType.ORDERING,
+        prompt: 'Sắp xếp câu gồm 5 mảnh',
+        points: 2,
+        payload: {
+          tokens: ['我', '每天', '早上', '喝', '咖啡'],
+          correctSentence: '我每天早上喝咖啡',
+        },
+      };
+
+      const orderAlpha1 = policy.sanitizeQuestionForStudent(fiveTokenQ, 'sub-seed-alpha').tokens;
+      const orderAlpha2 = policy.sanitizeQuestionForStudent(fiveTokenQ, 'sub-seed-alpha').tokens;
+      const orderBeta = policy.sanitizeQuestionForStudent(fiveTokenQ, 'sub-seed-beta').tokens;
+
+      expect(orderAlpha1).toEqual(orderAlpha2);
+      expect(orderAlpha1).not.toEqual(fiveTokenQ.payload.tokens);
+      expect(orderBeta).not.toEqual(fiveTokenQ.payload.tokens);
+      expect([...(orderAlpha1 ?? [])].sort()).toEqual([...fiveTokenQ.payload.tokens].sort());
+      expect([...(orderBeta ?? [])].sort()).toEqual([...fiveTokenQ.payload.tokens].sort());
+      expect(orderAlpha1).not.toEqual(orderBeta);
+    });
   });
 
   describe('validateStudentAnswer', () => {

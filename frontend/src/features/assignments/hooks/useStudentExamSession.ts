@@ -15,10 +15,8 @@ import {
   useExamCountdown,
 } from '@/features/assignments/hooks/useExamBrowserSync';
 import {
-  clearLocalDraft,
-  findFirstPartialOrderingIndex,
-  formatSavedTimeHmS,
-  type ExamLocalDraft,
+  clearLocalDraft, findFirstPartialOrderingIndex, formatSavedTimeHmS,
+  sanitizeAdoptedLocalDraft, type ExamLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
 import {
   buildResolvedSessionSnapshot,
@@ -200,10 +198,12 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   const handleRemoteSubmit = useCallback(() => {
     if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined);
   }, [loadSubmittedFallback]);
-  const handleAdoptDraft = useCallback(
-    (incoming: ExamLocalDraft) => syncSnapshotState({ ...snapshotRef.current, ...incoming }),
-    [syncSnapshotState],
-  );
+  const handleAdoptDraft = useCallback((incoming: ExamLocalDraft) => {
+    const adopted = sanitizeAdoptedLocalDraft(incoming, snapshotRef.current);
+    if (!adopted) return;
+    lastDraftUpdatedAtRef.current = Math.max(lastDraftUpdatedAtRef.current, adopted.updatedAtMs);
+    syncSnapshotState(adopted.snapshot);
+  }, [syncSnapshotState]);
 
   useExamBrowserSync({
     submissionId: session?.submission.id,
