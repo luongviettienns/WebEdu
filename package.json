@@ -17,6 +17,11 @@
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:migrate": "npm --prefix backend run prisma:migrate",
     "seed": "npm --prefix backend run seed",
-    "test:mail": "node scripts/test-smtp.mjs"
+    "test:mail": "node scripts/test-smtp.mjs",
+    "mcp:chrome": "npx chrome-devtools-mcp@latest",
+    "playwright-cli": "playwright-cli"
+  },
+  "devDependencies": {
+    "@playwright/cli": "^0.1.24"
   }
 }

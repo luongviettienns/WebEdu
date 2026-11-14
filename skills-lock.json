@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "skills": {
+    "nestjs-expert": {
+      "source": "sickn33/agentic-awesome-skills",
+      "sourceType": "github",
+      "skillPath": "skills/nestjs-expert/SKILL.md",
+      "computedHash": "188142a56d8b71349f428771fef74323f4ebd0e61c35d24c801ea3013f7b4d52"
+    }
+  }
+}
