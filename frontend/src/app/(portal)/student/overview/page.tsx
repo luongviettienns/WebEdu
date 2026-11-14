@@ -1,6 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import {
+  getMyAssignments,
+  type StudentAssignmentListItemDto,
+} from '@/features/assignments/api/assignments.api';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
 import {
@@ -40,6 +44,9 @@ function StudentOverviewContent({
   const [myAttendance, setMyAttendance] = useState<StudentMyAttendance | null>(
     null,
   );
+  const [myAssignments, setMyAssignments] = useState<
+    StudentAssignmentListItemDto[]
+  >([]);
   const [detailLoading, setDetailLoading] = useState<boolean>(isStudentAccount);
   const [detailError, setDetailError] = useState<string>('');
 
@@ -52,9 +59,10 @@ function StudentOverviewContent({
 
     void (async () => {
       try {
-        const [detailRes, attendanceRes] = await Promise.allSettled([
+        const [detailRes, attendanceRes, assignmentsRes] = await Promise.allSettled([
           getStudentDetail(profile.id, { signal: controller.signal }),
           getMyAttendance(undefined, controller.signal),
+          getMyAssignments({ signal: controller.signal }),
         ]);
         if (controller.signal.aborted) return;
 
@@ -80,6 +88,12 @@ function StudentOverviewContent({
           setMyAttendance(attendanceRes.value);
         } else {
           setMyAttendance(null);
+        }
+
+        if (assignmentsRes.status === 'fulfilled') {
+          setMyAssignments(assignmentsRes.value.items ?? []);
+        } else {
+          setMyAssignments([]);
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -140,6 +154,7 @@ function StudentOverviewContent({
           assignedClass={assignedClass}
           enrolledAt={enrolledAt}
           myAttendance={myAttendance}
+          myAssignments={myAssignments}
         />
       )}
     </div>

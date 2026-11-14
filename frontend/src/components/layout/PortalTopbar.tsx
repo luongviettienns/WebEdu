@@ -11,6 +11,7 @@ interface PortalTopbarProps {
 const STATIC_ROUTE_LABELS: Record<string, string> = {
   '/student/overview': 'Tổng quan học tập',
   '/student/schedule': 'Lịch học của tôi',
+  '/student/assignments': 'Bài tập & Đề thi',
   '/teacher/classes': 'Lớp học phụ trách',
   '/teacher/schedules': 'Lịch dạy',
   '/teacher/assessments': 'Ngân hàng đề',
@@ -26,6 +27,7 @@ const STATIC_ROUTE_LABELS: Record<string, string> = {
 };
 
 const DYNAMIC_ROUTE_LABELS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
+  { pattern: /^\/student\/assignments\/[^/]+$/, label: 'Làm bài & Bài nộp' },
   { pattern: /^\/teacher\/classes\/[^/]+$/, label: 'Chi tiết lớp học' },
   { pattern: /^\/admin\/classes\/[^/]+$/, label: 'Chi tiết lớp học' },
 ];

@@ -8,6 +8,8 @@ import { AssessmentList } from '@/features/assessments/components/AssessmentList
 import { ImportReviewPane } from '@/features/assessments/components/ImportReviewPane';
 import { ImportUploadPane } from '@/features/assessments/components/ImportUploadPane';
 import { useAssessments } from '@/features/assessments/hooks/useAssessments';
+import type { TeacherAssessmentDto } from '@/features/assessments/api/assessments.api';
+import { AssignAssessmentModal } from '@/features/assignments/components/AssignAssessmentModal';
 import type { Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['ADMIN', 'TEACHER'];
@@ -21,6 +23,7 @@ type View =
 function AssessmentsContent() {
   const bank = useAssessments();
   const [view, setView] = useState<View>({ mode: 'list' });
+  const [assignTarget, setAssignTarget] = useState<TeacherAssessmentDto | null>(null);
 
   if (view.mode === 'edit') {
     return (
@@ -88,7 +91,17 @@ function AssessmentsContent() {
         onOpen={(id) => setView({ mode: 'edit', id })}
         onReview={(id) => setView({ mode: 'review', id })}
         onUpload={() => setView({ mode: 'upload' })}
+        onAssign={(item) => setAssignTarget(item)}
         onChanged={bank.reload}
+      />
+      <AssignAssessmentModal
+        open={Boolean(assignTarget)}
+        assessment={assignTarget}
+        onClose={() => setAssignTarget(null)}
+        onAssigned={() => {
+          setAssignTarget(null);
+          bank.reload();
+        }}
       />
     </>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { ClassAssignmentsTab } from '@/features/assignments/components/ClassAssignmentsTab';
 import { ClassAttendanceMatrixTab } from '@/features/attendance/components/ClassAttendanceMatrixTab';
 import {
   reopenClass,
@@ -59,7 +60,7 @@ export function ClassDetailView({
   const [editWarning, setEditWarning] = useState('');
   const [transferTarget, setTransferTarget] = useState<ClassEnrollmentItem | null>(null);
   const [dropTarget, setDropTarget] = useState<ClassEnrollmentItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'info' | 'sessions' | 'attendance'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'sessions' | 'attendance' | 'assignments'>('info');
   const activeScheduleWarning = detail.scheduleConflictWarning || editWarning;
   const canMarkAttendance =
     permissions.assignedRoles.includes('ADMIN') ||
@@ -98,6 +99,7 @@ export function ClassDetailView({
             ['info', 'Thông tin & Học viên'],
             ['sessions', 'Lịch học'],
             ['attendance', 'Điểm danh'],
+            ['assignments', 'Bài tập & Kiểm tra'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -148,6 +150,17 @@ export function ClassDetailView({
 
       {activeTab === 'attendance' ? (
         <ClassAttendanceMatrixTab classId={detail.id} canMarkAttendance={canMarkAttendance} />
+      ) : null}
+
+      {activeTab === 'assignments' ? (
+        <ClassAssignmentsTab
+          classId={detail.id}
+          classCode={detail.code}
+          courseId={detail.courseId}
+          courseName={detail.course.name}
+          classStatus={detail.status}
+          canAssign={canMarkAttendance}
+        />
       ) : null}
 
       {permissions.canEditClass ? (

@@ -95,7 +95,7 @@ export function StudentMetricsSidebar({
               —
             </span>
             <span className="mt-0.5 block text-[11px] text-[var(--ink-3)]">
-              Chưa mở (Phase 6)
+              Đang cập nhật
             </span>
           </div>
         </div>
@@ -104,19 +104,18 @@ export function StudentMetricsSidebar({
         </p>
       </div>
 
-      {/* Kết quả gần đây (Phase 6 placeholder) */}
+      {/* Kết quả gần đây */}
       <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
         <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
           <h2 className="text-base font-bold text-[var(--ink)]">
             Kết quả gần đây
           </h2>
           <span className="text-xs font-medium text-[var(--ink-3)]">
-            Mở ở Phase 6
+            Chờ tổng hợp
           </span>
         </div>
         <div className="py-8 text-center text-xs text-[var(--ink-2)]">
-          Chưa có kết quả bài thi mới. Dữ liệu điểm kiểm tra sẽ hiển thị từ
-          Phase 6.
+          Chưa có kết quả bài thi đã chấm. Điểm kiểm tra sẽ hiển thị sau khi giảng viên hoàn tất chấm bài.
         </div>
       </div>
 

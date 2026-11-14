@@ -39,6 +39,7 @@ export function AssessmentList({
   onOpen,
   onReview,
   onUpload,
+  onAssign,
   onChanged,
 }: {
   items: TeacherAssessmentDto[];
@@ -60,6 +61,7 @@ export function AssessmentList({
   onOpen: (id: string) => void;
   onReview: (id: string) => void;
   onUpload: () => void;
+  onAssign?: (assessment: TeacherAssessmentDto) => void;
   onChanged: () => void;
 }) {
   const [error, setError] = useState('');
@@ -171,6 +173,14 @@ export function AssessmentList({
                     <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => onOpen(a.id)}>Sửa</button>
                     {' · '}
                     <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => onReview(a.id)}>Duyệt</button>
+                    {a.status === 'PUBLISHED' && onAssign ? (
+                      <>
+                        {' · '}
+                        <button type="button" className="text-xs font-semibold text-[var(--jade)]" onClick={() => onAssign(a)}>
+                          Giao bài
+                        </button>
+                      </>
+                    ) : null}
                     {' · '}
                     <button
                       type="button"

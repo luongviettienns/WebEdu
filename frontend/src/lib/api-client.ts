@@ -23,7 +23,7 @@ export interface HealthCheckResponse {
   timestamp: string;
 }
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = 'webedu_access_token';
