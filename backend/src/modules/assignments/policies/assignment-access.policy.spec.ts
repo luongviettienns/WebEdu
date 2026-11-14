@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client';
+import { AssessmentStatus, ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { AssignmentAccessPolicy, type DbClient } from './assignment-access.policy.js';
@@ -297,6 +297,38 @@ describe('AssignmentAccessPolicy', () => {
       await expect(
         policy.resolveClassAssignmentViewer(db, makeActor('admin-1', [Role.ADMIN]), 'missing'),
       ).rejects.toThrowError(new NotFoundException('Không tìm thấy lớp học'));
+    });
+  });
+
+  describe('assertCanViewAssessment', () => {
+    const draft = { id: 'asm-1', createdById: 'teacher-1', status: AssessmentStatus.DRAFT };
+    const published = { id: 'asm-2', createdById: 'teacher-1', status: AssessmentStatus.PUBLISHED };
+
+    it('throws 404 when assessment is null', () => {
+      expect(() =>
+        policy.assertCanViewAssessment(makeActor('admin-1', [Role.ADMIN]), null),
+      ).toThrowError(new NotFoundException('Không tìm thấy đề'));
+    });
+
+    it('allows ADMIN to view any draft or published assessment', () => {
+      expect(() =>
+        policy.assertCanViewAssessment(makeActor('admin-1', [Role.ADMIN]), draft),
+      ).not.toThrow();
+    });
+
+    it('allows TEACHER to view own draft or any published assessment, but hides others drafts with 404', () => {
+      expect(() =>
+        policy.assertCanViewAssessment(makeActor('teacher-1', [Role.TEACHER]), draft),
+      ).not.toThrow();
+      expect(() =>
+        policy.assertCanViewAssessment(makeActor('teacher-2', [Role.TEACHER]), published),
+      ).not.toThrow();
+      expect(() =>
+        policy.assertCanViewAssessment(makeActor('teacher-2', [Role.TEACHER]), draft),
+      ).toThrowError(new NotFoundException('Không tìm thấy đề'));
+      expect(() =>
+        policy.assertCanViewAssessment(makeActor('stu-1', [Role.STUDENT]), published),
+      ).toThrowError(new NotFoundException('Không tìm thấy đề'));
     });
   });
 });

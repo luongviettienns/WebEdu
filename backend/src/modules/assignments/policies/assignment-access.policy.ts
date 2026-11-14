@@ -1,10 +1,16 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ClassStatus, EnrollmentStatus, Prisma, Role } from '@prisma/client';
+import { AssessmentStatus, ClassStatus, EnrollmentStatus, Prisma, Role } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 
 export type DbClient = Prisma.TransactionClient | PrismaService;
 export type AssignmentActor = Pick<AuthenticatedUser, 'id' | 'roles'>;
+
+export interface AssessmentVisibilityRow {
+  id: string;
+  createdById: string;
+  status: AssessmentStatus;
+}
 
 export interface ClassAccessRecord {
   id: string;
@@ -90,6 +96,26 @@ export class AssignmentAccessPolicy {
       return { role: 'STUDENT', cls };
     }
     throw new ForbiddenException('Bạn không có quyền xem bài tập của lớp này');
+  }
+
+  /** Ensures ADMIN sees all papers and TEACHER sees own drafts or PUBLISHED papers without leaking foreign drafts. */
+  assertCanViewAssessment<T extends AssessmentVisibilityRow>(
+    actor: AssignmentActor,
+    assessment: T | null,
+  ): T {
+    if (!assessment) {
+      throw new NotFoundException('Không tìm thấy đề');
+    }
+    if (actor.roles.includes(Role.ADMIN)) {
+      return assessment;
+    }
+    if (
+      actor.roles.includes(Role.TEACHER) &&
+      (actor.id === assessment.createdById || assessment.status === AssessmentStatus.PUBLISHED)
+    ) {
+      return assessment;
+    }
+    throw new NotFoundException('Không tìm thấy đề');
   }
 
   private isClassTeacher(teacherId: string, cls: ClassAccessRecord): boolean {

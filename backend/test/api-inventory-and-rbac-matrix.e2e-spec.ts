@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 72-endpoint inventory through Phase 5 (`docs/test-inventory-api.md`).
+ * Canonical 82-endpoint inventory through Phase 6 (`docs/test-inventory-api.md`).
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -108,6 +108,17 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'PUT', path: '/api/v1/assessments/:id/questions/reorder', isPublic: false },
   { method: 'PATCH', path: '/api/v1/assessments/:id/questions/:qid', isPublic: false },
   { method: 'DELETE', path: '/api/v1/assessments/:id/questions/:qid', isPublic: false },
+  // AssignmentsController (10 — Phase 6)
+  { method: 'POST', path: '/api/v1/assessments/:assessmentId/assign', isPublic: false },
+  { method: 'GET', path: '/api/v1/classes/:classId/assignments', isPublic: false },
+  { method: 'GET', path: '/api/v1/assignments/me', isPublic: false },
+  { method: 'GET', path: '/api/v1/assignments/:assignmentId/submissions', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/submissions/start', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/assignments/:assignmentId/submissions/autosave', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/submissions/submit', isPublic: false },
+  { method: 'GET', path: '/api/v1/assignments/:assignmentId/submissions/me', isPublic: false },
+  { method: 'GET', path: '/api/v1/assignments/:assignmentId/media/:mediaId', isPublic: false },
+  { method: 'POST', path: '/api/v1/submissions/:submissionId/reopen', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -201,7 +212,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(72);
+    expect(actualRoutes).toHaveLength(82);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -489,6 +500,16 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'put', url: `/api/v1/assessments/${nilId}/questions/reorder` },
       { method: 'patch', url: `/api/v1/assessments/${nilId}/questions/${nilId}` },
       { method: 'delete', url: `/api/v1/assessments/${nilId}/questions/${nilId}` },
+      { method: 'post', url: `/api/v1/assessments/${nilId}/assign` },
+      { method: 'get', url: `/api/v1/classes/${activeClass.id}/assignments` },
+      { method: 'get', url: '/api/v1/assignments/me' },
+      { method: 'get', url: `/api/v1/assignments/${nilId}/submissions` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/submissions/start` },
+      { method: 'patch', url: `/api/v1/assignments/${nilId}/submissions/autosave` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/submissions/submit` },
+      { method: 'get', url: `/api/v1/assignments/${nilId}/submissions/me` },
+      { method: 'get', url: `/api/v1/assignments/${nilId}/media/${nilId}` },
+      { method: 'post', url: `/api/v1/submissions/${nilId}/reopen` },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -540,6 +561,35 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       expect(res.status, `STUDENT ${ep.method.toUpperCase()} ${ep.url}`).toBe(403);
       assertRfc7807ProblemDetails(res.body, 403);
     }
+
+    for (const ep of [
+      { method: 'post' as const, url: `/api/v1/assessments/${nilId}/assign` },
+      { method: 'get' as const, url: `/api/v1/assignments/${nilId}/submissions` },
+      { method: 'post' as const, url: `/api/v1/submissions/${nilId}/reopen` },
+    ]) {
+      const res = await request(server)
+        [ep.method](ep.url)
+        .set('Authorization', `Bearer ${studentAToken}`);
+      expect(res.status, `STUDENT ${ep.method.toUpperCase()} ${ep.url}`).toBe(403);
+      assertRfc7807ProblemDetails(res.body, 403);
+    }
+
+    await request(server)
+      .get(`/api/v1/classes/${activeClass.id}/assignments`)
+      .set('Authorization', `Bearer ${studentAToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/assignments/me')
+      .set('Authorization', `Bearer ${studentAToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/assignments/me')
+      .set('Authorization', `Bearer ${activeTeacherToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/api/v1/classes/${activeClass.id}/assignments`)
+      .set('Authorization', `Bearer ${unassignedTeacherToken}`)
+      .expect(403);
 
     // 3. TEACHER 4 data-state boundaries (Active FULL, Completed READ_ONLY, Replaced 403, Unassigned 403, ClassHistory 403)
     const activeTeacherRecs = await request(server)
