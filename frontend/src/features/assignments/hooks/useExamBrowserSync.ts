@@ -10,6 +10,7 @@ import {
 
 export interface UseExamBrowserSyncOptions {
   submissionId: string | undefined;
+  studentId: string | undefined;
   lastDraftUpdatedAtRef: React.MutableRefObject<number>;
   onOnline: () => void;
   onOffline: () => void;
@@ -20,6 +21,7 @@ export interface UseExamBrowserSyncOptions {
 
 export function useExamBrowserSync({
   submissionId,
+  studentId,
   lastDraftUpdatedAtRef,
   onOnline,
   onOffline,
@@ -30,7 +32,7 @@ export function useExamBrowserSync({
   useEffect(() => {
     const handleVisibility = () => onVisibilityChange(document.hidden);
     const handleStorage = (event: StorageEvent) => {
-      if (!submissionId || event.key !== getDraftStorageKey(submissionId)) return;
+      if (!submissionId || !studentId || event.key !== getDraftStorageKey(submissionId, studentId)) return;
       if (event.newValue === null) {
         onRemoteSubmit();
         return;
@@ -54,6 +56,7 @@ export function useExamBrowserSync({
     };
   }, [
     submissionId,
+    studentId,
     lastDraftUpdatedAtRef,
     onOnline,
     onOffline,

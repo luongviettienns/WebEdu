@@ -4,9 +4,11 @@ import {
   type AutosavePayload,
   type StudentAnswerPayload,
   type StudentExamSessionDto,
+  type SubmitPayload,
 } from '@/features/assignments/api/assignments.api';
 import {
   persistExamDraftSnapshot,
+  resolveInitialSessionDraft,
   toAutosaveAnswerItems,
 } from '@/features/assignments/utils/exam-draft';
 import { ApiClientError } from '@/lib/api-client';
@@ -34,12 +36,58 @@ export const INITIAL_SESSION_SNAPSHOT: ExamSnapshotLike = {
 
 export function persistDraftFromSnapshot(snap: ExamSnapshotLike): number | null {
   if (!snap.session) return null;
-  return persistExamDraftSnapshot(snap.session.submission.id, {
+  return persistExamDraftSnapshot(snap.session.submission.id, snap.session.submission.studentId, {
     answers: snap.answers,
     elapsedSeconds: snap.elapsedSeconds,
     remainingSeconds: snap.remainingSeconds,
     audioPlayCounts: snap.audioPlayCounts,
   });
+}
+
+export function reconcileAutosaveSnapshot(
+  prevSnap: ExamSnapshotLike,
+  updated: StudentExamSessionDto,
+): ExamSnapshotLike {
+  const elapsedSeconds = Math.max(prevSnap.elapsedSeconds, updated.submission.elapsedSeconds);
+  const remainingSeconds =
+    updated.submission.remainingSeconds === null
+      ? null
+      : prevSnap.remainingSeconds === null
+        ? updated.submission.remainingSeconds
+        : Math.min(prevSnap.remainingSeconds, updated.submission.remainingSeconds);
+
+  const audioPlayCounts: Record<string, number> = { ...prevSnap.audioPlayCounts };
+  for (const ans of updated.answers) {
+    const prevCount = audioPlayCounts[ans.questionId] ?? 0;
+    audioPlayCounts[ans.questionId] = Math.max(prevCount, ans.audioPlayCount);
+  }
+
+  return {
+    ...prevSnap,
+    session: updated,
+    elapsedSeconds,
+    remainingSeconds,
+    audioPlayCounts,
+  };
+}
+
+export function buildResolvedSessionSnapshot(
+  dto: StudentExamSessionDto,
+  nextMode: 'taking' | 'review',
+): { snapshot: ExamSnapshotLike; draftUpdatedAtMs: number; mergedFromLocal: boolean } {
+  const resolved = resolveInitialSessionDraft(dto, nextMode);
+  return {
+    snapshot: {
+      session: dto,
+      viewMode: nextMode,
+      answers: resolved.answers,
+      audioPlayCounts: resolved.audioPlayCounts,
+      elapsedSeconds: resolved.elapsedSeconds,
+      remainingSeconds: resolved.remainingSeconds,
+    },
+    draftUpdatedAtMs: resolved.draftUpdatedAtMs,
+    mergedFromLocal: resolved.mergedFromLocal,
+  };
 }
 
 export function buildSyncPayload(snap: ExamSnapshotLike): AutosavePayload {
@@ -53,6 +101,30 @@ export function buildSyncPayload(snap: ExamSnapshotLike): AutosavePayload {
     ),
     elapsedSeconds: snap.elapsedSeconds,
     remainingSeconds: snap.remainingSeconds,
+  };
+}
+
+export function buildSubmitRequestBody(
+  snap: ExamSnapshotLike,
+  autoSubmitted: boolean,
+): SubmitPayload {
+  const payload = buildSyncPayload(snap);
+  return {
+    ...payload,
+    remainingSeconds: autoSubmitted ? 0 : payload.remainingSeconds,
+    autoSubmitted,
+  };
+}
+
+export function tickCountdownSnapshot(
+  snap: ExamSnapshotLike,
+): { nextSnap: ExamSnapshotLike; nextRemaining: number } | null {
+  if (snap.remainingSeconds === null) return null;
+  const nextElapsed = snap.elapsedSeconds + 1;
+  const nextRemaining = Math.max(0, snap.remainingSeconds - 1);
+  return {
+    nextSnap: { ...snap, elapsedSeconds: nextElapsed, remainingSeconds: nextRemaining },
+    nextRemaining,
   };
 }
 

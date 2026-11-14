@@ -130,15 +130,17 @@ export function StudentListeningBody({
         {question.mediaId ? (
           <audio
             controls
+            preload="none"
             crossOrigin="use-credentials"
             src={getAssignmentMediaUrl(assignmentId, question.mediaId)}
             className="w-full"
             onPlay={(e) => {
-              if (readOnly) return;
-              if (isLimitReached) {
+              if (!readOnly && isLimitReached) {
                 e.currentTarget.pause();
-                return;
               }
+            }}
+            onPlaying={() => {
+              if (readOnly || isLimitReached) return;
               if (!countedPlayRef.current) {
                 countedPlayRef.current = true;
                 onAudioPlay?.();

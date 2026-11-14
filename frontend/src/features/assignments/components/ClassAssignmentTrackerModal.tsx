@@ -20,12 +20,15 @@ export interface ClassAssignmentTrackerModalProps {
   onChanged?: () => void;
 }
 
+const TRACKER_PAGE_LIMIT = 20;
+
 function buildReopenPromptState(
   dueAt: string | undefined,
   row: TeacherTrackerStudentRowDto,
   fallbackOverdue: boolean,
 ): { overdue: boolean; target: TeacherTrackerStudentRowDto; defaultNewDueAt: string } {
-  const overdue = dueAt ? new Date(dueAt).getTime() <= Date.now() : fallbackOverdue;
+  const effectiveDueIso = row.dueAtOverride ?? dueAt;
+  const overdue = effectiveDueIso ? new Date(effectiveDueIso).getTime() <= Date.now() : fallbackOverdue;
   return {
     overdue,
     target: row,
@@ -61,6 +64,7 @@ function ClassAssignmentTrackerBody({
   onChanged?: () => void;
 }) {
   const [data, setData] = useState<TeacherAssignmentSubmissionsDto | null>(null);
+  const [page, setPage] = useState(1);
   const [isOverdue, setIsOverdue] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -77,7 +81,11 @@ function ClassAssignmentTrackerBody({
       setLoading(true);
       setError('');
       try {
-        const res = await getAssignmentSubmissions(assignmentId, { signal: controller.signal });
+        const res = await getAssignmentSubmissions(assignmentId, {
+          page,
+          limit: TRACKER_PAGE_LIMIT,
+          signal: controller.signal,
+        });
         if (!controller.signal.aborted) {
           setData(res);
           setIsOverdue(new Date(res.assignment.dueAt).getTime() <= Date.now());
@@ -91,9 +99,10 @@ function ClassAssignmentTrackerBody({
       }
     })();
     return () => controller.abort();
-  }, [assignmentId, reloadTick]);
+  }, [assignmentId, page, reloadTick]);
 
   const stats = data?.assignment.stats;
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / Math.max(1, data.limit))) : 1;
 
   const openReopenForm = (row: TeacherTrackerStudentRowDto) => {
     const prompt = buildReopenPromptState(data?.assignment.dueAt, row, isOverdue);
@@ -237,6 +246,41 @@ function ClassAssignmentTrackerBody({
             </tbody>
           </table>
         </div>
+
+        {data && data.total > data.limit ? (
+          <nav
+            aria-label="Phân trang danh sách học viên"
+            className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--ink-2)]"
+          >
+            <span className="num">
+              Trang {data.page}/{totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={loading || data.page <= 1}
+                onClick={() => {
+                  setReopenState(null);
+                  setPage((prev) => Math.max(1, prev - 1));
+                }}
+                className="rounded-md border border-[var(--line-2)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Trước
+              </button>
+              <button
+                type="button"
+                disabled={loading || data.page * data.limit >= data.total}
+                onClick={() => {
+                  setReopenState(null);
+                  setPage((prev) => prev + 1);
+                }}
+                className="rounded-md border border-[var(--line-2)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sau
+              </button>
+            </div>
+          </nav>
+        ) : null}
       </div>
     </BaseDialog>
   );

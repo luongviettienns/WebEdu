@@ -18,14 +18,17 @@ import {
   clearLocalDraft,
   findFirstPartialOrderingIndex,
   formatSavedTimeHmS,
-  resolveInitialSessionDraft,
   type ExamLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
 import {
+  buildResolvedSessionSnapshot,
+  buildSubmitRequestBody,
   buildSyncPayload,
   fetchExamEntrySession,
   INITIAL_SESSION_SNAPSHOT,
   persistDraftFromSnapshot,
+  reconcileAutosaveSnapshot,
+  tickCountdownSnapshot,
   type ExamSaveState,
   type ExamSnapshotLike,
   type ExamViewMode,
@@ -57,27 +60,27 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   const { clearTimers: clearPendingTimers, resetDirty, markDirty, beginFlush, completeFlush, scheduleForType, hasPendingChanges } =
     useAutosaveScheduler();
 
-  const applySession = useCallback((dto: StudentExamSessionDto, nextMode: 'taking' | 'review') => {
-    const resolved = resolveInitialSessionDraft(dto, nextMode);
-    if (resolved.draftUpdatedAtMs > 0) lastDraftUpdatedAtRef.current = resolved.draftUpdatedAtMs;
-    snapshotRef.current = {
-      session: dto,
-      viewMode: nextMode,
-      answers: resolved.answers,
-      audioPlayCounts: resolved.audioPlayCounts,
-      elapsedSeconds: resolved.elapsedSeconds,
-      remainingSeconds: resolved.remainingSeconds,
-    };
-    setSession(dto);
-    setAnswers(resolved.answers);
-    setAudioPlayCounts(resolved.audioPlayCounts);
-    setElapsedSeconds(resolved.elapsedSeconds);
-    setRemainingSeconds(resolved.remainingSeconds);
-    setLastSavedText(formatSavedTimeHmS(dto.submission.lastSavedAt));
-    setSaveState('saved');
-    setViewMode(nextMode);
-    return resolved.mergedFromLocal;
+  const syncSnapshotState = useCallback((next: ExamSnapshotLike) => {
+    snapshotRef.current = next;
+    setSession(next.session);
+    setAnswers(next.answers);
+    setAudioPlayCounts(next.audioPlayCounts);
+    setElapsedSeconds(next.elapsedSeconds);
+    setRemainingSeconds(next.remainingSeconds);
   }, []);
+
+  const applySession = useCallback(
+    (dto: StudentExamSessionDto, nextMode: 'taking' | 'review') => {
+      const resolved = buildResolvedSessionSnapshot(dto, nextMode);
+      if (resolved.draftUpdatedAtMs > 0) lastDraftUpdatedAtRef.current = resolved.draftUpdatedAtMs;
+      syncSnapshotState(resolved.snapshot);
+      setLastSavedText(formatSavedTimeHmS(dto.submission.lastSavedAt));
+      setSaveState('saved');
+      setViewMode(nextMode);
+      return resolved.mergedFromLocal;
+    },
+    [syncSnapshotState],
+  );
 
   const loadSubmittedFallback = useCallback(
     async (signal?: AbortSignal) => {
@@ -85,6 +88,41 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       if (!signal?.aborted) applySession(submitted, 'review');
     },
     [assignmentId, applySession],
+  );
+
+  const submitNow = useCallback(
+    async (autoSubmitted = false) => {
+      const snap = snapshotRef.current;
+      if (submittingRef.current || !snap.session || snap.viewMode !== 'taking') return;
+      if (!autoSubmitted) {
+        const partialIdx = findFirstPartialOrderingIndex(snap.session.questions, snap.answers);
+        if (partialIdx >= 0) {
+          setActionError('Còn câu sắp xếp chưa chọn đủ các mảnh từ. Vui lòng hoàn thành hoặc xóa hết trước khi nộp.');
+          setCurrentIndex(partialIdx);
+          return;
+        }
+      }
+      submittingRef.current = true;
+      setSubmitting(true);
+      setActionError('');
+      clearPendingTimers();
+      try {
+        const result = await submitAssignment(assignmentId, buildSubmitRequestBody(snap, autoSubmitted));
+        resetDirty();
+        clearLocalDraft(result.submission.id, result.submission.studentId);
+        applySession(result, 'review');
+      } catch (err) {
+        if (err instanceof ApiClientError && err.status === 409) {
+          await loadSubmittedFallback().catch(() => undefined);
+          return;
+        }
+        setActionError(extractErrorMessage(err, 'Không thể nộp bài lúc này. Vui lòng thử lại.'));
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    },
+    [assignmentId, applySession, clearPendingTimers, loadSubmittedFallback, resetDirty],
   );
 
   const flushAutosave = useCallback(async () => {
@@ -101,14 +139,14 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
         applySession(updated, 'review');
         return;
       }
-      snapshotRef.current = { ...snapshotRef.current, session: updated };
-      setSession(updated);
+      syncSnapshotState(reconcileAutosaveSnapshot(snapshotRef.current, updated));
       if (completeFlush(seqAtStart)) {
         setLastSavedText(formatSavedTimeHmS(updated.submission.lastSavedAt));
         setSaveState('saved');
       } else {
         setSaveState('dirty');
       }
+      if (updated.submission.remainingSeconds === 0) void submitNow(true);
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 409) {
         await loadSubmittedFallback().catch(() => undefined);
@@ -121,49 +159,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       }
       setSaveState('offline');
     }
-  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, loadSubmittedFallback, resetDirty]);
-
-  const submitNow = useCallback(
-    async (autoSubmitted = false) => {
-      const snap = snapshotRef.current;
-      if (submittingRef.current || !snap.session || snap.viewMode !== 'taking') return;
-      if (!autoSubmitted) {
-        const partialIdx = findFirstPartialOrderingIndex(snap.session.questions, snap.answers);
-        if (partialIdx >= 0) {
-          setActionError(
-            'Còn câu sắp xếp chưa chọn đủ các mảnh từ. Vui lòng hoàn thành hoặc xóa hết trước khi nộp.',
-          );
-          setCurrentIndex(partialIdx);
-          return;
-        }
-      }
-      submittingRef.current = true;
-      setSubmitting(true);
-      setActionError('');
-      clearPendingTimers();
-      try {
-        const payload = buildSyncPayload(snap);
-        const result = await submitAssignment(assignmentId, {
-          ...payload,
-          remainingSeconds: autoSubmitted ? 0 : payload.remainingSeconds,
-          autoSubmitted,
-        });
-        resetDirty();
-        clearLocalDraft(result.submission.id);
-        applySession(result, 'review');
-      } catch (err) {
-        if (err instanceof ApiClientError && err.status === 409) {
-          await loadSubmittedFallback().catch(() => undefined);
-          return;
-        }
-        setActionError(extractErrorMessage(err, 'Không thể nộp bài lúc này. Vui lòng thử lại.'));
-      } finally {
-        submittingRef.current = false;
-        setSubmitting(false);
-      }
-    },
-    [assignmentId, applySession, clearPendingTimers, loadSubmittedFallback, resetDirty],
-  );
+  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, loadSubmittedFallback, resetDirty, submitNow, syncSnapshotState]);
 
   useEffect(() => {
     if (!assignmentId) return;
@@ -189,37 +185,44 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     };
   }, [assignmentId, mode, applySession, clearPendingTimers, flushAutosave, resetDirty]);
 
-  const handleOnline = useCallback(() => { setIsOffline(false); if (snapshotRef.current.viewMode === 'taking') void flushAutosave(); }, [flushAutosave]);
+  const handleOnline = useCallback(() => {
+    setIsOffline(false);
+    if (snapshotRef.current.viewMode === 'taking') void flushAutosave();
+  }, [flushAutosave]);
   const handleOffline = useCallback(() => { setIsOffline(true); setSaveState('offline'); }, []);
-  const handleRemoteSubmit = useCallback(() => { if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined); }, [loadSubmittedFallback]);
-
-  const handleAdoptDraft = useCallback((incoming: ExamLocalDraft) => {
-    snapshotRef.current = { ...snapshotRef.current, ...incoming };
-    setAnswers(incoming.answers);
-    setAudioPlayCounts(incoming.audioPlayCounts);
-    setElapsedSeconds(incoming.elapsedSeconds);
-    setRemainingSeconds(incoming.remainingSeconds);
-  }, []);
+  const handleVisibilityChange = useCallback(
+    (hidden: boolean) => {
+      setIsTabHidden(hidden);
+      if (!hidden && snapshotRef.current.viewMode === 'taking') void flushAutosave();
+    },
+    [flushAutosave],
+  );
+  const handleRemoteSubmit = useCallback(() => {
+    if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined);
+  }, [loadSubmittedFallback]);
+  const handleAdoptDraft = useCallback(
+    (incoming: ExamLocalDraft) => syncSnapshotState({ ...snapshotRef.current, ...incoming }),
+    [syncSnapshotState],
+  );
 
   useExamBrowserSync({
     submissionId: session?.submission.id,
+    studentId: session?.submission.studentId,
     lastDraftUpdatedAtRef,
     onOnline: handleOnline,
     onOffline: handleOffline,
-    onVisibilityChange: setIsTabHidden,
+    onVisibilityChange: handleVisibilityChange,
     onRemoteSubmit: handleRemoteSubmit,
     onAdoptDraft: handleAdoptDraft,
   });
 
   const handleCountdownTick = useCallback(() => {
-    const snap = snapshotRef.current;
-    if (snap.remainingSeconds === null) return null;
-    const nextElapsed = snap.elapsedSeconds + 1;
-    const nextRemaining = Math.max(0, snap.remainingSeconds - 1);
-    snapshotRef.current = { ...snap, elapsedSeconds: nextElapsed, remainingSeconds: nextRemaining };
-    setElapsedSeconds(nextElapsed);
-    setRemainingSeconds(nextRemaining);
-    return nextRemaining;
+    const ticked = tickCountdownSnapshot(snapshotRef.current);
+    if (!ticked) return null;
+    snapshotRef.current = ticked.nextSnap;
+    setElapsedSeconds(ticked.nextSnap.elapsedSeconds);
+    setRemainingSeconds(ticked.nextRemaining);
+    return ticked.nextRemaining;
   }, []);
 
   const handleCountdownExpire = useCallback(() => void submitNow(true), [submitNow]);

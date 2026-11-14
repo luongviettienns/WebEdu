@@ -16,55 +16,72 @@ export interface ExamLocalDraft {
 
 const DRAFT_PREFIX = 'webedu_exam_draft_';
 
-export function getDraftStorageKey(submissionId: string): string {
-  return `${DRAFT_PREFIX}${submissionId}`;
+export const MAX_LOCAL_DRAFT_DRIFT_MS = 5 * 60 * 1000;
+export const MAX_CLOCK_SKEW_MS = 5_000;
+export const MAX_ELAPSED_DELTA_SECONDS = 300;
+
+export function getDraftStorageKey(submissionId: string, studentId: string): string {
+  return `${DRAFT_PREFIX}${studentId}_${submissionId}`;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseDraftJson(raw: string, minUpdatedAtMs = 0): ExamLocalDraft | null {
   try {
     const parsed = JSON.parse(raw) as Partial<ExamLocalDraft>;
     if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
+      !isPlainRecord(parsed) ||
       typeof parsed.updatedAtMs !== 'number' ||
+      !Number.isFinite(parsed.updatedAtMs) ||
       parsed.updatedAtMs <= minUpdatedAtMs ||
-      typeof parsed.answers !== 'object' ||
-      parsed.answers === null
+      !isPlainRecord(parsed.answers)
     ) {
       return null;
     }
     return {
       updatedAtMs: parsed.updatedAtMs,
-      answers: parsed.answers,
-      elapsedSeconds: typeof parsed.elapsedSeconds === 'number' ? parsed.elapsedSeconds : 0,
+      answers: parsed.answers as Record<string, StudentAnswerPayload>,
+      elapsedSeconds:
+        typeof parsed.elapsedSeconds === 'number' && Number.isFinite(parsed.elapsedSeconds)
+          ? parsed.elapsedSeconds
+          : 0,
       remainingSeconds:
-        typeof parsed.remainingSeconds === 'number' || parsed.remainingSeconds === null
+        (typeof parsed.remainingSeconds === 'number' && Number.isFinite(parsed.remainingSeconds)) ||
+        parsed.remainingSeconds === null
           ? parsed.remainingSeconds
           : null,
-      audioPlayCounts:
-        typeof parsed.audioPlayCounts === 'object' && parsed.audioPlayCounts !== null
-          ? parsed.audioPlayCounts
-          : {},
+      audioPlayCounts: isPlainRecord(parsed.audioPlayCounts)
+        ? (parsed.audioPlayCounts as Record<string, number>)
+        : {},
     };
   } catch {
     return null;
   }
 }
 
-export function readLocalDraft(submissionId: string): ExamLocalDraft | null {
+export function readLocalDraft(submissionId: string, studentId: string): ExamLocalDraft | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = window.localStorage.getItem(getDraftStorageKey(submissionId));
+    const raw = window.localStorage.getItem(getDraftStorageKey(submissionId, studentId));
     return raw ? parseDraftJson(raw) : null;
   } catch {
     return null;
   }
 }
 
-export function writeLocalDraft(submissionId: string, draft: ExamLocalDraft): void {
+export function writeLocalDraft(
+  submissionId: string,
+  studentId: string,
+  draft: ExamLocalDraft,
+): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(getDraftStorageKey(submissionId), JSON.stringify(draft));
+    window.localStorage.setItem(
+      getDraftStorageKey(submissionId, studentId),
+      JSON.stringify(draft),
+    );
   } catch {
     // Ignore storage quota / privacy mode restrictions
   }
@@ -72,20 +89,132 @@ export function writeLocalDraft(submissionId: string, draft: ExamLocalDraft): vo
 
 export function persistExamDraftSnapshot(
   submissionId: string,
+  studentId: string,
   payload: Omit<ExamLocalDraft, 'updatedAtMs'>,
 ): number {
   const updatedAtMs = Date.now();
-  writeLocalDraft(submissionId, { ...payload, updatedAtMs });
+  writeLocalDraft(submissionId, studentId, { ...payload, updatedAtMs });
   return updatedAtMs;
 }
 
-export function clearLocalDraft(submissionId: string): void {
+export function clearLocalDraft(submissionId: string, studentId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.removeItem(getDraftStorageKey(submissionId));
+    window.localStorage.removeItem(getDraftStorageKey(submissionId, studentId));
   } catch {
     // Ignore storage cleanup errors
   }
+}
+
+function sanitizeOptionPayload(
+  question: SanitizedQuestionDto,
+  candidate: Record<string, unknown>,
+  allowMultiple: boolean,
+): StudentAnswerPayload | null {
+  const rawIds = candidate.selectedOptionIds;
+  if (!Array.isArray(rawIds)) return null;
+  if (!allowMultiple && rawIds.length > 1) return null;
+  const validIds = new Set((question.options ?? []).map((opt) => opt.id));
+  if (rawIds.some((id) => typeof id !== 'string' || !validIds.has(id))) {
+    return null;
+  }
+  return { selectedOptionIds: [...new Set(rawIds as string[])] };
+}
+
+function sanitizeOrderingPayload(
+  question: SanitizedQuestionDto,
+  candidate: Record<string, unknown>,
+): StudentAnswerPayload | null {
+  const rawTokens = candidate.orderedTokens;
+  if (!Array.isArray(rawTokens)) return null;
+  const remainingCounts = new Map<string, number>();
+  for (const tok of question.tokens ?? []) {
+    remainingCounts.set(tok, (remainingCounts.get(tok) ?? 0) + 1);
+  }
+  const cleanTokens: string[] = [];
+  for (const item of rawTokens) {
+    if (typeof item !== 'string') return null;
+    const left = remainingCounts.get(item) ?? 0;
+    if (left <= 0) return null;
+    remainingCounts.set(item, left - 1);
+    cleanTokens.push(item);
+  }
+  return { orderedTokens: cleanTokens };
+}
+
+function sanitizeTextPayload(
+  question: SanitizedQuestionDto,
+  candidate: Record<string, unknown>,
+): StudentAnswerPayload | null {
+  if (typeof candidate.text !== 'string') return null;
+  const maxLen = question.maxLength;
+  const text =
+    typeof maxLen === 'number' && maxLen >= 0 ? candidate.text.slice(0, maxLen) : candidate.text;
+  return { text };
+}
+
+function sanitizeQuestionAnswer(
+  question: SanitizedQuestionDto,
+  candidate: unknown,
+): StudentAnswerPayload | null {
+  if (!isPlainRecord(candidate)) return null;
+  switch (question.type) {
+    case 'SINGLE_CHOICE':
+      return sanitizeOptionPayload(question, candidate, false);
+    case 'MULTIPLE_CHOICE':
+      return sanitizeOptionPayload(question, candidate, true);
+    case 'ORDERING':
+      return sanitizeOrderingPayload(question, candidate);
+    case 'FILL_BLANK':
+    case 'ESSAY':
+      return sanitizeTextPayload(question, candidate);
+    case 'LISTENING':
+    case 'IMAGE_BASED':
+      return question.options && question.options.length > 0
+        ? sanitizeOptionPayload(question, candidate, Boolean(question.multiple))
+        : sanitizeTextPayload(question, candidate);
+  }
+}
+
+export function sanitizeLocalDraftAnswers(
+  questions: ReadonlyArray<SanitizedQuestionDto>,
+  rawAnswers: Record<string, unknown>,
+): Record<string, StudentAnswerPayload> {
+  if (!isPlainRecord(rawAnswers)) return {};
+  const sanitized: Record<string, StudentAnswerPayload> = {};
+  for (const q of questions) {
+    if (!Object.prototype.hasOwnProperty.call(rawAnswers, q.id)) continue;
+    const cleaned = sanitizeQuestionAnswer(q, rawAnswers[q.id]);
+    if (cleaned) {
+      sanitized[q.id] = cleaned;
+    }
+  }
+  return sanitized;
+}
+
+function mergeAudioPlayCounts(
+  questions: ReadonlyArray<SanitizedQuestionDto>,
+  serverCounts: Record<string, number>,
+  localCounts: Record<string, unknown>,
+): Record<string, number> {
+  const merged: Record<string, number> = {};
+  for (const q of questions) {
+    const hasServerEntry = Object.prototype.hasOwnProperty.call(serverCounts, q.id);
+    const serverCount = hasServerEntry ? Math.max(0, Math.floor(serverCounts[q.id])) : 0;
+    const rawLocal = Object.prototype.hasOwnProperty.call(localCounts, q.id)
+      ? localCounts[q.id]
+      : undefined;
+    let validLocal =
+      typeof rawLocal === 'number' && Number.isInteger(rawLocal) && rawLocal >= 0 ? rawLocal : 0;
+    if (typeof q.maxListens === 'number' && q.maxListens > 0) {
+      validLocal = Math.min(validLocal, q.maxListens);
+    }
+    const nextCount = Math.max(serverCount, validLocal);
+    if (nextCount > 0 || hasServerEntry) {
+      merged[q.id] = nextCount;
+    }
+  }
+  return merged;
 }
 
 export function buildSessionAnswerMaps(session: StudentExamSessionDto): {
@@ -104,6 +233,7 @@ export function buildSessionAnswerMaps(session: StudentExamSessionDto): {
 export function resolveInitialSessionDraft(
   session: StudentExamSessionDto,
   nextMode: 'taking' | 'review',
+  nowMs = Date.now(),
 ): {
   answers: Record<string, StudentAnswerPayload>;
   audioPlayCounts: Record<string, number>;
@@ -119,21 +249,50 @@ export function resolveInitialSessionDraft(
   let draftUpdatedAtMs = 0;
   let mergedFromLocal = false;
 
+  const { id: submissionId, studentId } = session.submission;
   if (nextMode === 'taking') {
-    const localDraft = readLocalDraft(session.submission.id);
+    const localDraft = readLocalDraft(submissionId, studentId);
     const serverSavedMs = new Date(session.submission.lastSavedAt).getTime();
-    if (localDraft && localDraft.updatedAtMs > serverSavedMs) {
-      answers = { ...answers, ...localDraft.answers };
-      audioPlayCounts = { ...audioPlayCounts, ...localDraft.audioPlayCounts };
-      elapsedSeconds = Math.max(elapsedSeconds, localDraft.elapsedSeconds);
+    const isWithinValidWindow =
+      localDraft !== null &&
+      Number.isFinite(serverSavedMs) &&
+      localDraft.updatedAtMs > serverSavedMs &&
+      localDraft.updatedAtMs <= serverSavedMs + MAX_LOCAL_DRAFT_DRIFT_MS &&
+      localDraft.updatedAtMs <= nowMs + MAX_CLOCK_SKEW_MS;
+
+    if (isWithinValidWindow) {
+      answers = {
+        ...answers,
+        ...sanitizeLocalDraftAnswers(session.questions, localDraft.answers),
+      };
+      audioPlayCounts = mergeAudioPlayCounts(
+        session.questions,
+        audioPlayCounts,
+        localDraft.audioPlayCounts,
+      );
+      const serverElapsed = Math.max(0, Math.floor(elapsedSeconds));
+      const localElapsed = Number.isFinite(localDraft.elapsedSeconds)
+        ? Math.floor(localDraft.elapsedSeconds)
+        : serverElapsed;
+      elapsedSeconds = Math.min(
+        serverElapsed + MAX_ELAPSED_DELTA_SECONDS,
+        Math.max(serverElapsed, localElapsed),
+      );
       if (remainingSeconds !== null && localDraft.remainingSeconds !== null) {
-        remainingSeconds = Math.min(remainingSeconds, localDraft.remainingSeconds);
+        const serverRemaining = Math.max(0, Math.floor(remainingSeconds));
+        const localRemaining = Number.isFinite(localDraft.remainingSeconds)
+          ? Math.floor(localDraft.remainingSeconds)
+          : serverRemaining;
+        const minAllowed = Math.max(0, serverRemaining - MAX_ELAPSED_DELTA_SECONDS);
+        remainingSeconds = Math.min(serverRemaining, Math.max(minAllowed, localRemaining));
       }
       draftUpdatedAtMs = localDraft.updatedAtMs;
       mergedFromLocal = true;
+    } else if (localDraft !== null) {
+      clearLocalDraft(submissionId, studentId);
     }
   } else {
-    clearLocalDraft(session.submission.id);
+    clearLocalDraft(submissionId, studentId);
   }
 
   return {
