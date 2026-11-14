@@ -12,11 +12,8 @@ export function extractOptions(payload: Record<string, unknown>): SanitizedOptio
   for (const item of payload.options) {
     if (!isRecord(item) || typeof item.id !== 'string') continue;
     const text = typeof item.text === 'string' ? item.text : '';
-    const imageMediaId =
-      typeof item.imageMediaId === 'string' && item.imageMediaId.trim()
-        ? item.imageMediaId
-        : undefined;
-    options.push({ id: item.id, text, ...(imageMediaId ? { imageMediaId } : {}) });
+    const imgId = typeof item.imageMediaId === 'string' ? item.imageMediaId.trim() : '';
+    options.push({ id: item.id, text, ...(imgId ? { imageMediaId: imgId } : {}) });
   }
   return options;
 }

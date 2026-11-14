@@ -257,6 +257,47 @@ describe('SubmissionAnswerPolicy', () => {
       expect(sanitized.points).toBe(question.points);
       assertShape(sanitized);
     });
+
+    it('omits non-positive or float maxLength on ESSAY and trims option imageMediaId', () => {
+      for (const invalidMax of [0, -10, 12.5]) {
+        const essayDto = policy.sanitizeQuestionForStudent(
+          {
+            id: `q-es-${invalidMax}`,
+            position: 1,
+            type: QuestionType.ESSAY,
+            prompt: 'Viết đoạn văn',
+            points: 5,
+            payload: { maxLength: invalidMax, sampleAnswer: 'Secret' },
+          },
+          'seed-1',
+        );
+        expect(essayDto.maxLength).toBeUndefined();
+        expect('maxLength' in essayDto).toBe(false);
+      }
+
+      const choiceDto = policy.sanitizeQuestionForStudent(
+        {
+          id: 'q-img-opt',
+          position: 2,
+          type: QuestionType.IMAGE_BASED,
+          prompt: 'Chọn hình',
+          points: 1,
+          payload: {
+            mediaId: 'stem-1',
+            multiple: false,
+            options: [
+              { id: 'a', text: 'A', imageMediaId: '  img-trimmed  ' },
+              { id: 'b', text: 'B', imageMediaId: '   ' },
+            ],
+          },
+        },
+        'seed-1',
+      );
+      expect(choiceDto.options).toEqual([
+        { id: 'a', text: 'A', imageMediaId: 'img-trimmed' },
+        { id: 'b', text: 'B' },
+      ]);
+    });
   });
 
   describe('ORDERING deterministic shuffle', () => {
@@ -539,6 +580,34 @@ describe('SubmissionAnswerPolicy', () => {
         normalizedPayload: { text: 'Con mèo' },
         nextAudioPlayCount: 0,
       });
+
+      const imageSingle = {
+        id: 'q-img-single',
+        type: QuestionType.IMAGE_BASED,
+        payload: {
+          mediaId: 'img-3',
+          multiple: false,
+          options: [
+            { id: 'a', text: 'Cat' },
+            { id: 'b', text: 'Dog' },
+          ],
+        },
+      };
+      expect(policy.validateStudentAnswer(imageSingle, { selectedOptionIds: ['a'] }, 0)).toEqual({
+        normalizedPayload: { selectedOptionIds: ['a'] },
+        nextAudioPlayCount: 0,
+      });
+      expect(() =>
+        policy.validateStudentAnswer(imageSingle, { selectedOptionIds: ['a', 'b'] }, 0),
+      ).toThrow(BadRequestException);
+
+      // Negative or float audioPlayCount rejected
+      expect(() =>
+        policy.validateStudentAnswer(listeningChoice, { selectedOptionIds: ['a'] }, 0, -1),
+      ).toThrow(BadRequestException);
+      expect(() =>
+        policy.validateStudentAnswer(listeningChoice, { selectedOptionIds: ['a'] }, 0, 1.5),
+      ).toThrow(BadRequestException);
     });
   });
 

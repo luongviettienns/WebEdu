@@ -20,6 +20,9 @@ export { isAnswerNonEmpty };
 
 const DEFAULT_MAX_TEXT_LENGTH = 10_000;
 
+const resolvePositiveInt = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+
 @Injectable()
 export class SubmissionAnswerPolicy {
   sanitizeQuestionForStudent(
@@ -56,8 +59,10 @@ export class SubmissionAnswerPolicy {
             typeof p.correctSentence === 'string' ? p.correctSentence : undefined,
           ),
         };
-      case QuestionType.ESSAY:
-        return { ...base, ...(typeof p.maxLength === 'number' ? { maxLength: p.maxLength } : {}) };
+      case QuestionType.ESSAY: {
+        const maxLength = resolvePositiveInt(p.maxLength);
+        return { ...base, ...(maxLength !== undefined ? { maxLength } : {}) };
+      }
       case QuestionType.LISTENING:
       case QuestionType.IMAGE_BASED: {
         const options = extractOptions(p);
@@ -136,11 +141,7 @@ export class SubmissionAnswerPolicy {
         return this.validateOptionSelection(extractOptions(questionPayload), answerPayload, true);
       case QuestionType.FILL_BLANK:
       case QuestionType.ESSAY: {
-        const rawMax = questionPayload.maxLength;
-        const maxLength =
-          typeof rawMax === 'number' && Number.isInteger(rawMax) && rawMax > 0
-            ? rawMax
-            : DEFAULT_MAX_TEXT_LENGTH;
+        const maxLength = resolvePositiveInt(questionPayload.maxLength) ?? DEFAULT_MAX_TEXT_LENGTH;
         return this.validateTextAnswer(answerPayload, maxLength);
       }
       case QuestionType.ORDERING:

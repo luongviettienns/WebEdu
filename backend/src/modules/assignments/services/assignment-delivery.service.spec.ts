@@ -338,6 +338,87 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
         }),
       );
     });
+
+    it('succeeds when assigning to a single class with a valid SCHEDULED sessionId', async () => {
+      const prisma = makeMockPrisma();
+      const service = new AssignmentDeliveryService(prisma as never, accessPolicy);
+      const dueAt = futureIso(24);
+
+      prisma.tx.assessment.findUnique.mockResolvedValueOnce({
+        id: 'asm-1',
+        createdById: 'teacher-1',
+        status: AssessmentStatus.PUBLISHED,
+        courseId: 'course-1',
+        durationMinutes: 30,
+        questions: [{ points: 4 }],
+      } as never);
+      prisma.tx.class.findUnique.mockResolvedValueOnce({
+        id: 'cls-1',
+        code: 'HSK1-A',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        status: ClassStatus.ACTIVE,
+        course: { name: 'HSK 1' },
+        teacherHistory: [],
+      } as never);
+      prisma.tx.lessonSession.findUnique.mockResolvedValueOnce({
+        id: 'sess-1',
+        classId: 'cls-1',
+        status: SessionStatus.SCHEDULED,
+      } as never);
+      prisma.tx.classAssignment.create.mockResolvedValueOnce({
+        id: 'assign-sess-1',
+        assessmentId: 'asm-1',
+        classId: 'cls-1',
+        sessionId: 'sess-1',
+        assignedById: 'teacher-1',
+        assignedAt: new Date('2026-11-14T12:00:00.000Z'),
+        dueAt: new Date(dueAt),
+        effectiveDurationMinutes: 30,
+        instructions: null,
+        assessment: {
+          title: 'Bài tập buổi 1',
+          type: AssessmentType.HOMEWORK,
+          description: null,
+          courseId: 'course-1',
+          questions: [{ points: 4 }],
+        },
+        class: { code: 'HSK1-A', course: { name: 'HSK 1' } },
+        assignedBy: { fullName: 'User teacher-1' },
+      } as never);
+
+      const res = await service.assignToClasses(
+        'asm-1',
+        { classIds: ['cls-1'], dueAt, sessionId: 'sess-1' },
+        teacher,
+      );
+
+      expect(prisma.tx.lessonSession.findUnique).toHaveBeenCalledWith({
+        where: { id: 'sess-1' },
+        select: { id: true, classId: true, status: true },
+      });
+      expect(prisma.tx.classAssignment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            classId: 'cls-1',
+            sessionId: 'sess-1',
+          }),
+        }),
+      );
+      expect(res.items[0]).toMatchObject({
+        id: 'assign-sess-1',
+        classId: 'cls-1',
+        sessionId: 'sess-1',
+      });
+      expect(prisma.tx.systemAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            action: 'ASSESSMENT_ASSIGNED',
+            metadata: expect.objectContaining({ sessionId: 'sess-1' }),
+          }),
+        }),
+      );
+    });
   });
 
   describe('listByClass', () => {

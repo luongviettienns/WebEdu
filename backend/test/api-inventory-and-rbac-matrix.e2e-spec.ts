@@ -563,7 +563,6 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     }
 
     for (const ep of [
-      { method: 'post' as const, url: `/api/v1/assessments/${nilId}/assign` },
       { method: 'get' as const, url: `/api/v1/assignments/${nilId}/submissions` },
       { method: 'post' as const, url: `/api/v1/submissions/${nilId}/reopen` },
     ]) {
@@ -582,10 +581,17 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .get('/api/v1/assignments/me')
       .set('Authorization', `Bearer ${studentAToken}`)
       .expect(200);
-    await request(server)
-      .get('/api/v1/assignments/me')
-      .set('Authorization', `Bearer ${activeTeacherToken}`)
-      .expect(403);
+    for (const ep of [
+      { method: 'get' as const, url: '/api/v1/assignments/me' },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/submissions/start` },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/submissions/submit` },
+    ]) {
+      const res = await request(server)
+        [ep.method](ep.url)
+        .set('Authorization', `Bearer ${activeTeacherToken}`);
+      expect(res.status, `TEACHER ${ep.method.toUpperCase()} ${ep.url}`).toBe(403);
+      assertRfc7807ProblemDetails(res.body, 403);
+    }
     await request(server)
       .get(`/api/v1/classes/${activeClass.id}/assignments`)
       .set('Authorization', `Bearer ${unassignedTeacherToken}`)

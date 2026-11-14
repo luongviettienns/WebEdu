@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`) — ĐANG TRIỂN KHAI TRÊN NHÁNH `feature/phase-06-assignment-delivery-and-submission`** *(Phase 5 đã merge `develop` tại `59b2038`; mọi hạng mục TECH_DEBT/SEC backlog đã `DONE`)*
+* **Giai đoạn hiện tại**: **Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`) — HOÀN THÀNH & QUA CỔNG TEST** *(Nhánh `feature/phase-06-assignment-delivery-and-submission`; Phase 5 đã merge `develop` tại `59b2038`; chuẩn bị sang Phase 7: Chấm điểm tự động & thủ công)*
 ---
 
 ## 🎨 Hạng Mục Đặc Biệt: Đại Tu UI/UX Chuẩn 100% Prototype Á Đông & Dọn Dẹp Chức Năng Thừa *(HOÀN THÀNH — 100% PASS)*
@@ -228,12 +228,17 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Ổn định 2 Flake Test Harness & CI Quality Gates**: Cấp timeout `15_000ms` cho ca test `P0-B1` bcrypt đồng thời (`auth.services.spec.ts:863`), chấp nhận cả 2 thứ tự lock `FOR UPDATE` hợp lệ kèm kiểm tra trạng thái DB cuối cùng (`CANCELLED`, `sessionNumber = null`) ở Scenario 18 `cancelVsReschedule` (`postgres.integration-spec.ts`); đồng thời cấu hình toàn cục `testTimeout: 30_000` & `hookTimeout: 30_000` trong `backend/vitest.config.ts` và nâng timeout `60_000ms` cho `document-extract.spec.ts` giải nén tài liệu, loại bỏ triệt để timeout khi chạy cùng v8 coverage trên GitHub Actions.
   - **Xác minh Toàn Nhánh Lần Đầu Đạt 100% Không Flake**: `node scripts/check-loc.js` **175 files PASS**; Backend `tsc` PASS, `oxlint` **0 warnings/0 errors** (`180` files), `nest build` PASS, Unit **37/37 files — 301/301 PASS** (`21.84s`), Coverage **301/301 PASS** (`90.34% Stmts / 81.89% Branch / 91.01% Funcs / 91.25% Lines`, `23.39s`), PG integration **1/1 — 16/16 PASS** (`24.99s`), HTTP E2E **8/8 files — 46/46 PASS** (`108.36s`); Frontend `tsc` PASS, `eslint` PASS, `next build` (**24 entries / 21 `page.tsx` + `ƒ Proxy`**) PASS, Playwright **8 spec files — 74/74 PASS** (`37` Desktop + `37` Mobile Chromium, `2.5m`).
 
-### Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`)
+### Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`) *(HOÀN THÀNH & QUA CỔNG TEST - 100% GATES PASS)*
 - [x] Lập Sub-Plan `docs/plans/phase-06-assignment-delivery-and-submission.md` & chốt `ASSIGN-02..03` (`DEC-034`, `DEC-035`).
 - [x] **Slice 6.1**: Schema `ClassAssignment`, `Submission`, `SubmissionAnswer`, `SubmissionReopenLog` (chống nộp trùng) & `assignedClassCount`.
-- [ ] **Slice 6.2**: Giao bài cho lớp (`FUNC-051`) & Danh sách bài được giao (`FUNC-052`).
-- [ ] **Slice 6.3**: Lưu nháp đang làm (`FUNC-053`), Nộp bài chính thức 1 lượt & GV mở lại lượt nộp (`FUNC-054`).
-- [ ] **Slice 6.4**: Giao diện Học viên làm bài tương tác & Xem bài nộp (Cleanup #14).
+- [x] **Slice 6.2**: Giao bài cho lớp (`FUNC-051`) & Danh sách bài được giao (`FUNC-052`).
+- [x] **Slice 6.3**: Lưu nháp đang làm (`FUNC-053`), Nộp bài chính thức 1 lượt & GV mở lại lượt nộp (`FUNC-054`).
+- [x] **Slice 6.4**: Giao diện Học viên làm bài tương tác & Xem bài nộp (Cleanup #14).
+  - **Tổng kết Phase 6 (2026-11-14)**: Hoàn thiện `AssignmentsModule` (`10` HTTP endpoints mới trên `AssignmentsController`; nâng tổng toàn hệ thống lên **26 Prisma models**, **14 SQL migrations**, **82 API endpoints / 12 controllers**, **23 `page.tsx` routes**), 2 route UI học viên (`/student/assignments`, `/student/assignments/[id]`), tab `Bài tập & Kiểm tra` trong chi tiết lớp và luồng giao đề trên `/teacher/assessments`.
+  - **Kết quả kiểm thử toàn diện (sau lần sửa code cuối):**
+    - `node scripts/check-loc.js`: **PASS** (`197` files checked across `6` categories).
+    - **Backend**: `tsc --noEmit` **PASS**, `oxlint --type-aware` **0 warnings / 0 errors** (`200` files), `nest build` **PASS**; Unit (`npm run test:cov`) **43/43 files — 389/389 tests PASS** (`90.97%` Stmts / `82.54%` Branch / `92.21%` Funcs / `91.93%` Lines); PostgreSQL Integration (`test:integration`) **1/1 file — 16/16 tests PASS**; E2E (`test:e2e`) **9/9 files — 49/49 tests PASS** (gồm kiểm chứng `82/82` API endpoints).
+    - **Frontend**: `tsc --noEmit` **PASS**, `eslint` **PASS**, `next build` **PASS** (`26` entries + `ƒ Proxy`), Playwright E2E (`test:e2e`) **76/76 PASS** trên cả `desktop-chromium` (`38/38`) & `mobile-chromium` (`38/38`) kèm kiểm tra Axe WCAG.
 
 ### Phase 7: Module 07 — Chấm điểm Rule-based, Tự luận & Công bố 2 bước (`FUNC-056`, `FUNC-058..064`)
 - [ ] Lập Sub-Plan `docs/plans/phase-07-grading-and-publication.md` & chốt `GRADE-01..02`.

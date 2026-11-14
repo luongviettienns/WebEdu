@@ -22,7 +22,7 @@
 ### Slice 6.1 — Schema, Migration & Đếm số lớp đã giao
 - Thêm enums `SubmissionStatus`, `GradingStatus`.
 - Thêm models `ClassAssignment`, `Submission`, `SubmissionAnswer`, `SubmissionReopenLog`.
-- Partial Unique Index `idx_unique_active_submission_per_student` + 4 `CHECK` constraints (`duration_minutes > 0`, `remaining_seconds >= 0`, `audio_play_count >= 0`, `attempt_number >= 1`).
+- Partial Unique Index `idx_unique_active_submission_per_student` + 5 `CHECK` constraints (`effective_duration_minutes > 0`, `attempt_number >= 1`, `elapsed_seconds >= 0`, `remaining_seconds >= 0`, `audio_play_count >= 0`).
 - Cập nhật `AssessmentMapper` & `AssessmentCrudService` để trả đúng `assignedClassCount` thực tế.
 - Tách `AssessmentMediaAccessService` export từ `AssessmentsModule` để `AssignmentsModule` stream tệp đính kèm hợp lệ qua ranh giới module sạch.
 

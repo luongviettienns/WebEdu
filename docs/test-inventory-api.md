@@ -1,7 +1,7 @@
 # Kho Lưu Trữ Bề Mặt API Backend (Backend API Surface Inventory)
 
-> **Đồng bộ gần nhất:** 2026-11-13 (sau hoàn tất 3 Wave SDD `TD-07..10`, `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01` trên nhánh `feature/phase-05-question-bank-and-import`)
-> **Phạm vi kiểm chứng hiện tại:** **72 HTTP Endpoints** trên **11 Controllers** (gồm **55 endpoints / 10 controllers** cho Modules 01–05 kể cả endpoint OTP đổi email `POST /profile/me/send-email-change-code` + **17 endpoints / 1 controller** `AssessmentsController` cho Phase 5), đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
+> **Đồng bộ gần nhất:** 2026-11-14 (sau hoàn tất Phase 6 — `AssignmentsController`, nhánh `feature/phase-06-assignment-delivery-and-submission`)
+> **Phạm vi kiểm chứng hiện tại:** **82 HTTP Endpoints** trên **12 Controllers** (gồm **55 endpoints / 10 controllers** cho Modules 01–05 kể cả endpoint OTP đổi email `POST /profile/me/send-email-change-code` + **17 endpoints / 1 controller** `AssessmentsController` cho Phase 5 + **10 endpoints / 1 controller** `AssignmentsController` cho Phase 6), đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
 
 ---
 
@@ -15,7 +15,7 @@
 
 ---
 
-## 2. Danh Sách 72 API Endpoints Theo Controller
+## 2. Danh Sách 82 API Endpoints Theo Controller
 
 ### A. Hạ Tầng & Xác Thực (Phases 1–2 — `develop`)
 
@@ -145,7 +145,7 @@ Toàn bộ endpoints dưới đây áp dụng `@Roles(Role.ADMIN, Role.TEACHER)`
 | 60 | `POST` | `/assessments/:id/media` | `:id` (UUID) + `multipart/form-data` `file` ($\le 20\text{MB}$; PNG/JPG $\le 5\text{MB}$; MP3/WAV/M4A $\le 20\text{MB}$) | `201 Created` — Kiểm tra magic bytes theo MIME cho media tải lên (khác `QuestionMedia` chưa được ghi từ nhánh CRUD) |
 | 61 | `GET` | `/assessments/:id/media/:mediaId` | `:id` (UUID), `:mediaId` (UUID) | `200 OK` — Stream an toàn file audio/image gắn với đề |
 | 62 | `POST` | `/assessments` | `CreateAssessmentDto { title, type, courseId, description?, durationMinutes? }` | `201 Created` — Tạo đề thủ công trạng thái `DRAFT` (chặn khóa học `isActive = false` trong transaction `FOR SHARE`) |
-| 63 | `GET` | `/assessments` | `ListAssessmentsQueryDto { type?, courseId?, status?, search?, page?, limit? }` | `200 OK` — Danh sách ngân hàng đề phân trang (`assignedClassCount` cố định `0` ở Phase 5) |
+| 63 | `GET` | `/assessments` | `ListAssessmentsQueryDto { type?, courseId?, status?, search?, page?, limit? }` | `200 OK` — Danh sách ngân hàng đề phân trang (trả số đếm thực tế `assignedClassCount` ở Phase 6) |
 | 64 | `GET` | `/assessments/:id` | `:id` (UUID) | `200 OK` — Chi tiết đề và mảng `questions` |
 | 65 | `PATCH` | `/assessments/:id` | `:id` (UUID) + `UpdateAssessmentDto { title?, description?, durationMinutes? }` | `200 OK` — `409 Conflict` nếu `isLocked \|\| status === 'PUBLISHED'`; `403` nếu GV không phải chủ sở hữu |
 | 66 | `DELETE` | `/assessments/:id` | `:id` (UUID) | `200 OK` — Chỉ xóa được khi `DRAFT` và `!isLocked` (`409` nếu đã phát hành/khóa) |
@@ -155,3 +155,19 @@ Toàn bộ endpoints dưới đây áp dụng `@Roles(Role.ADMIN, Role.TEACHER)`
 | 70 | `PUT` | `/assessments/:id/questions/reorder` | `:id` (UUID) + `ReorderQuestionsDto { questionIds }` | `200 OK` — Sắp xếp lại `position` câu hỏi trong transaction |
 | 71 | `PATCH` | `/assessments/:id/questions/:qid` | `:id` (UUID), `:qid` (UUID) + `UpdateQuestionDto { prompt?, payload?, points?, needsReview? }` | `200 OK` — Cập nhật câu hỏi; giữ nguyên `needsReview` nếu chỉ sửa `prompt`/`points`, chỉ xóa khi `needsReview: false` hoặc cập nhật `payload` |
 | 72 | `DELETE` | `/assessments/:id/questions/:qid` | `:id` (UUID), `:qid` (UUID) | `200 OK` — Xóa câu hỏi trong đề `DRAFT` & `!isLocked` |
+
+### 2.12 `AssignmentsController` (`backend/src/modules/assignments/assignments.controller.ts` — Phase 6)
+> **Kiểm chứng E2E:** `backend/test/phase06-assignments-submissions.e2e-spec.ts` & `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`.
+
+| STT | Method | Path (`/api/v1/...`) | Params / Body / Headers | Phản hồi & Hành vi xác thực |
+|---:|:---:|---|---|---|
+| 73 | `POST` | `/assessments/:assessmentId/assign` | `:assessmentId` (UUID) + `AssignAssessmentDto { classIds, dueAt, instructions?, sessionId? }` (`ADMIN`, `TEACHER`) | `201 Created` — Giao đề `PUBLISHED` cho một hoặc nhiều lớp (`ClassAssignmentSummaryDto[]`) |
+| 74 | `GET` | `/classes/:classId/assignments` | `:classId` (UUID) (`ADMIN`, `TEACHER`, `STUDENT`) | `200 OK` — Danh sách bài giao của lớp (`items`; trả `stats` cho `ADMIN`/`TEACHER`, ẩn với `STUDENT`; chặn `DROPPED` 403) |
+| 75 | `GET` | `/assignments/me` | JWT (`STUDENT`) | `200 OK` — Danh sách bài được giao cho học viên (`StudentAssignmentListItemDto[]` kèm `displayStatusLabel`) |
+| 76 | `GET` | `/assignments/:assignmentId/submissions` | `:assignmentId` (UUID) (`ADMIN`, `TEACHER`) | `200 OK` — Ma trận theo dõi bài nộp của lớp (`TeacherAssignmentSubmissionsDto`, gồm `students[]` cả `NOT_STARTED` và `supersededAttempts`) |
+| 77 | `POST` | `/assignments/:assignmentId/submissions/start` | `:assignmentId` (UUID) (`STUDENT`) | `200 OK` — Khởi tạo/mở lại phiên làm bài (`StudentExamSessionDto`), Zero-Leak `questions[]`, đảo vị trí `ORDERING` tất định |
+| 78 | `PATCH` | `/assignments/:assignmentId/submissions/autosave` | `:assignmentId` (UUID) + `AutosaveSubmissionDto { answers, elapsedSeconds, remainingSeconds? }` (`STUDENT`) | `200 OK` — Khóa dòng `FOR UPDATE`, kiểm tra `maxListens` & đồng hồ đơn điệu, tự nộp khi hết giờ |
+| 79 | `POST` | `/assignments/:assignmentId/submissions/submit` | `:assignmentId` (UUID) + `SubmitSubmissionDto { answers?, elapsedSeconds?, remainingSeconds?, autoSubmitted? }` (`STUDENT`) | `200 OK` — Nộp bài chính thức 1 lượt (`SUBMITTED_WAITING`), `409 Conflict` nếu đã nộp, hỗ trợ ân hạn `60s` |
+| 80 | `GET` | `/assignments/:assignmentId/submissions/me` | `:assignmentId` (UUID) (`STUDENT`) | `200 OK` — Xem lại bài đã nộp chế độ chỉ đọc Zero-Leak (`StudentExamSessionDto`); `400` nếu đang `IN_PROGRESS` |
+| 81 | `GET` | `/assignments/:assignmentId/media/:mediaId` | `:assignmentId` (UUID), `:mediaId` (UUID) (`ADMIN`, `TEACHER`, `STUDENT`) | `200 OK` — Phát tệp media đính kèm (`StreamableFile`) kèm header `X-Content-Type-Options: nosniff` |
+| 82 | `POST` | `/submissions/:submissionId/reopen` | `:submissionId` (UUID) + `ReopenSubmissionDto { reason, newDueAt? }` (`ADMIN`, `TEACHER`) | `200 OK` — Đánh dấu lượt cũ `SUPERSEDED`, ghi `SubmissionReopenLog`, nhân bản đáp án sang `Attempt #N+1` (`IN_PROGRESS`) |
