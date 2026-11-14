@@ -103,13 +103,16 @@ describe('AssignmentAccessPolicy', () => {
       expect(result).toEqual(cls);
     });
 
-    it('allows active co-teacher present in open teacherHistory', async () => {
+    it('rejects teacher present only in teacherHistory with 403 ForbiddenException (write requires current teacherId)', async () => {
       const cls = makeClassRecord({ teacherId: 'teacher-lead', coTeacherIds: ['teacher-co'] });
       const { db } = makeDbMock({ classRecord: cls });
       const coTeacher = makeActor('teacher-co', [Role.TEACHER]);
 
-      const result = await policy.assertTeacherOrAdminCanAccessClass(db, coTeacher, 'class-1');
-      expect(result).toEqual(cls);
+      await expect(
+        policy.assertTeacherOrAdminCanAccessClass(db, coTeacher, 'class-1'),
+      ).rejects.toThrowError(
+        new ForbiddenException('Bạn không có quyền thao tác bài tập của lớp này'),
+      );
     });
 
     it('rejects unrelated TEACHER with 403 ForbiddenException', async () => {
@@ -151,6 +154,50 @@ describe('AssignmentAccessPolicy', () => {
       await expect(
         policy.assertTeacherOrAdminCanAccessClass(db, makeActor('admin-1', [Role.ADMIN]), 'missing'),
       ).rejects.toThrowError(new NotFoundException('Không tìm thấy lớp học'));
+    });
+  });
+
+  describe('assertTeacherOrAdminCanReadClass', () => {
+    it('allows ADMIN, lead teacher, and teacher in teacherHistory, while rejecting unrelated teacher and STUDENT', async () => {
+      const cls = makeClassRecord({ teacherId: 'teacher-lead', coTeacherIds: ['teacher-co'] });
+      const { db } = makeDbMock({ classRecord: cls });
+
+      await expect(
+        policy.assertTeacherOrAdminCanReadClass(db, makeActor('admin-1', [Role.ADMIN]), 'class-1'),
+      ).resolves.toEqual(cls);
+      await expect(
+        policy.assertTeacherOrAdminCanReadClass(
+          db,
+          makeActor('teacher-lead', [Role.TEACHER]),
+          'class-1',
+        ),
+      ).resolves.toEqual(cls);
+      await expect(
+        policy.assertTeacherOrAdminCanReadClass(
+          db,
+          makeActor('teacher-co', [Role.TEACHER]),
+          'class-1',
+        ),
+      ).resolves.toEqual(cls);
+
+      await expect(
+        policy.assertTeacherOrAdminCanReadClass(
+          db,
+          makeActor('teacher-other', [Role.TEACHER]),
+          'class-1',
+        ),
+      ).rejects.toThrowError(
+        new ForbiddenException('Bạn không có quyền xem bài tập của lớp này'),
+      );
+      await expect(
+        policy.assertTeacherOrAdminCanReadClass(
+          db,
+          makeActor('stu-1', [Role.STUDENT]),
+          'class-1',
+        ),
+      ).rejects.toThrowError(
+        new ForbiddenException('Bạn không có quyền xem bài tập của lớp này'),
+      );
     });
   });
 

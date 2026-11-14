@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
@@ -11,10 +12,19 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
+
+export const ISO_DATETIME_WITH_OFFSET_REGEX =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:[Zz]|[+-]\d{2}:?\d{2})$/;
+
+export function hasExplicitTimezoneOffset(value: string): boolean {
+  return ISO_DATETIME_WITH_OFFSET_REGEX.test(value);
+}
 
 const trimValue = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -27,6 +37,9 @@ export class AssignAssessmentDto {
   classIds!: string[];
 
   @IsDateString()
+  @Matches(ISO_DATETIME_WITH_OFFSET_REGEX, {
+    message: 'Hạn nộp bài phải bao gồm múi giờ chuẩn ISO-8601',
+  })
   dueAt!: string;
 
   @IsOptional()
@@ -55,6 +68,7 @@ export class AutosaveAnswerItemDto {
 
 export class AutosaveSubmissionDto {
   @IsArray()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => AutosaveAnswerItemDto)
   answers!: AutosaveAnswerItemDto[];
@@ -72,6 +86,7 @@ export class AutosaveSubmissionDto {
 export class SubmitSubmissionDto {
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(200)
   @ValidateNested({ each: true })
   @Type(() => AutosaveAnswerItemDto)
   answers?: AutosaveAnswerItemDto[];
@@ -100,5 +115,23 @@ export class ReopenSubmissionDto {
 
   @IsOptional()
   @IsDateString()
+  @Matches(ISO_DATETIME_WITH_OFFSET_REGEX, {
+    message: 'Hạn nộp bài phải bao gồm múi giờ chuẩn ISO-8601',
+  })
   newDueAt?: string;
+}
+
+export class ListAssignmentSubmissionsQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

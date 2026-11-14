@@ -346,4 +346,40 @@ describe('Assessment & Question services extended coverage', () => {
       expect(await readStreamBytes(file)).toEqual(mp3);
     });
   });
+
+  describe('AssessmentMediaAccessService.verifyAssetForAssessment', () => {
+    const assetId = '11111111-1111-1111-1111-111111111111';
+
+    it('returns asset metadata without touching disk when assessmentId matches', async () => {
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: 'asm-1',
+        mime: 'audio/mpeg',
+        storageKey: 'uploads/media/nonexistent-on-disk.mp3',
+      } as never);
+
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      await expect(mediaAccess.verifyAssetForAssessment('asm-1', assetId)).resolves.toEqual({
+        id: assetId,
+        storageKey: 'uploads/media/nonexistent-on-disk.mp3',
+        mime: 'audio/mpeg',
+      });
+    });
+
+    it('throws NotFoundException when asset belongs to a foreign assessment', async () => {
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: 'asm-other',
+        mime: 'audio/mpeg',
+        storageKey: 'uploads/media/other.mp3',
+      } as never);
+
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      await expect(mediaAccess.verifyAssetForAssessment('asm-1', assetId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
 });

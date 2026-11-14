@@ -114,6 +114,7 @@ export interface StudentExamSessionDto {
   assignment: StudentAssignmentListItemDto;
   submission: {
     id: string;
+    studentId: string;
     attemptNumber: number;
     status: SubmissionStatus;
     displayStatusLabel: string;
@@ -124,6 +125,7 @@ export interface StudentExamSessionDto {
     remainingSeconds: number | null;
     submittedAt: string | null;
     autoSubmitted: boolean;
+    dueAtOverride: string | null;
     reopenReason: string | null;
   };
   questions: SanitizedQuestionDto[];
@@ -154,6 +156,7 @@ export interface TeacherTrackerStudentRowDto {
   autoSubmitted: boolean;
   elapsedSeconds: number;
   remainingSeconds: number | null;
+  dueAtOverride: string | null;
   canReopen: boolean;
   reopenCount: number;
   supersededAttempts: SupersededAttemptDto[];
@@ -162,4 +165,7 @@ export interface TeacherTrackerStudentRowDto {
 export interface TeacherAssignmentSubmissionsDto {
   assignment: ClassAssignmentSummaryDto;
   students: TeacherTrackerStudentRowDto[];
+  total: number;
+  page: number;
+  limit: number;
 }

@@ -7,8 +7,11 @@ import { mimeFromFilename, readStoredFile } from './document-extract.js';
 export class AssessmentMediaAccessService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Streams a media asset after verifying it belongs to the target assessment (directly or via legacy question payload). */
-  async streamVerifiedAsset(assessmentId: string, mediaId: string): Promise<StreamableFile> {
+  /** Verifies a media asset belongs to the target assessment without reading file bytes from disk. */
+  async verifyAssetForAssessment(
+    assessmentId: string,
+    mediaId: string,
+  ): Promise<{ id: string; storageKey: string; mime: string }> {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id: mediaId } });
     if (!asset) throw new NotFoundException('Không tìm thấy file đính kèm');
     if (asset.assessmentId && asset.assessmentId !== assessmentId) {
@@ -23,6 +26,12 @@ export class AssessmentMediaAccessService {
         throw new NotFoundException('Không tìm thấy file đính kèm');
       }
     }
+    return { id: asset.id, storageKey: asset.storageKey, mime: asset.mime };
+  }
+
+  /** Streams a media asset after verifying it belongs to the target assessment (directly or via legacy question payload). */
+  async streamVerifiedAsset(assessmentId: string, mediaId: string): Promise<StreamableFile> {
+    const asset = await this.verifyAssetForAssessment(assessmentId, mediaId);
     return this.streamStoredFile(
       asset.storageKey,
       asset.storageKey.split('/').pop() ?? 'media',

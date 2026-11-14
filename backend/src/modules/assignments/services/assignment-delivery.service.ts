@@ -15,6 +15,7 @@ import {
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
+import type { PaginationInput } from '../../../common/utils/pagination.util.js';
 import type {
   ClassAssignmentSummaryDto,
   TeacherAssignmentSubmissionsDto,
@@ -22,6 +23,7 @@ import type {
 } from '../assignments.types.js';
 import type { AssignAssessmentDto, ReopenSubmissionDto } from '../dto/assignments.dto.js';
 import {
+  resolveEffectiveDueAt,
   toClassAssignmentSummaryDto,
   toTeacherTrackerStudentRowDto,
 } from '../mappers/assignment.mapper.js';
@@ -30,6 +32,7 @@ import {
   assertAttachableSession,
   computeAssignmentStats,
   loadAssignmentTrackerData,
+  parseRequiredOffsetIsoDate,
   REOPENABLE_STATUSES,
   SUMMARY_INCLUDE,
 } from './assignment-delivery.util.js';
@@ -46,10 +49,7 @@ export class AssignmentDeliveryService {
     dto: AssignAssessmentDto,
     actor: AuthenticatedUser,
   ): Promise<{ items: ClassAssignmentSummaryDto[] }> {
-    const dueAt = new Date(dto.dueAt);
-    if (Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
-      throw new BadRequestException('Hạn nộp bài phải ở tương lai');
-    }
+    const dueAt = parseRequiredOffsetIsoDate(dto.dueAt, 'Hạn nộp bài');
 
     const classIds = [...new Set(dto.classIds)].sort();
     if (dto.sessionId && classIds.length > 1) {
@@ -166,6 +166,7 @@ export class AssignmentDeliveryService {
   async getAssignmentSubmissionsForTeacher(
     assignmentId: string,
     actor: AuthenticatedUser,
+    query?: PaginationInput,
   ): Promise<TeacherAssignmentSubmissionsDto> {
     const assignment = await this.prisma.classAssignment.findUnique({
       where: { id: assignmentId },
@@ -175,16 +176,20 @@ export class AssignmentDeliveryService {
       throw new NotFoundException('Không tìm thấy bài giao');
     }
 
-    await this.accessPolicy.assertTeacherOrAdminCanAccessClass(this.prisma, actor, assignment.classId);
-    const { students, stats } = await loadAssignmentTrackerData(
+    await this.accessPolicy.assertTeacherOrAdminCanReadClass(this.prisma, actor, assignment.classId);
+    const { students, stats, total, page, limit } = await loadAssignmentTrackerData(
       this.prisma,
       assignment.classId,
       assignmentId,
       assignment.assessment.questions.length,
+      query,
     );
     return {
       assignment: toClassAssignmentSummaryDto(assignment, stats),
       students,
+      total,
+      page,
+      limit,
     };
   }
 
@@ -198,10 +203,7 @@ export class AssignmentDeliveryService {
       throw new BadRequestException('Lý do mở lại bài nộp không được để trống');
     }
 
-    const newDueAt = dto.newDueAt ? new Date(dto.newDueAt) : null;
-    if (newDueAt !== null && (Number.isNaN(newDueAt.getTime()) || newDueAt.getTime() <= Date.now())) {
-      throw new BadRequestException('Hạn nộp mới phải ở tương lai');
-    }
+    const newDueAt = dto.newDueAt ? parseRequiredOffsetIsoDate(dto.newDueAt, 'Hạn nộp mới') : null;
 
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "submissions" WHERE id = ${submissionId} FOR UPDATE`;
@@ -228,16 +230,15 @@ export class AssignmentDeliveryService {
       if (!REOPENABLE_STATUSES.has(submission.status)) {
         throw new ConflictException('Chỉ có thể mở lại bài đã nộp');
       }
-      if (!newDueAt && submission.classAssignment.dueAt.getTime() <= Date.now()) {
+      const currentEffectiveDueAt = resolveEffectiveDueAt(
+        submission.classAssignment.dueAt,
+        submission.dueAtOverride,
+      );
+      if (!newDueAt && currentEffectiveDueAt.getTime() <= Date.now()) {
         throw new BadRequestException('Bài tập đã quá hạn, vui lòng chọn hạn nộp mới');
       }
 
-      if (newDueAt) {
-        await tx.classAssignment.update({
-          where: { id: submission.classAssignmentId },
-          data: { dueAt: newDueAt },
-        });
-      }
+      const nextDueAtOverride = newDueAt ?? submission.dueAtOverride ?? null;
 
       await tx.submissionReopenLog.create({
         data: { submissionId: submission.id, reopenedById: actor.id, reason },
@@ -265,6 +266,7 @@ export class AssignmentDeliveryService {
           gradingStatus: GradingStatus.NONE,
           elapsedSeconds: 0,
           remainingSeconds: durationMinutes !== null ? durationMinutes * 60 : null,
+          dueAtOverride: nextDueAtOverride,
         },
       });
 

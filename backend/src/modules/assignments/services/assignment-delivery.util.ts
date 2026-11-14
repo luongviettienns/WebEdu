@@ -1,9 +1,14 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { EnrollmentStatus, Prisma, SessionStatus, SubmissionStatus } from '@prisma/client';
+import {
+  resolvePagination,
+  type PaginationInput,
+} from '../../../common/utils/pagination.util.js';
 import type {
   ClassAssignmentStatsDto,
   TeacherTrackerStudentRowDto,
 } from '../assignments.types.js';
+import { hasExplicitTimezoneOffset } from '../dto/assignments.dto.js';
 import { toTeacherTrackerStudentRowDto } from '../mappers/assignment.mapper.js';
 import type { DbClient } from '../policies/assignment-access.policy.js';
 
@@ -59,6 +64,20 @@ export function computeAssignmentStats(
   };
 }
 
+export function parseRequiredOffsetIsoDate(raw: string, errorLabel: string): Date {
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new BadRequestException(`${errorLabel} phải ở tương lai`);
+  }
+  if (!hasExplicitTimezoneOffset(raw)) {
+    throw new BadRequestException(`${errorLabel} phải bao gồm múi giờ chuẩn ISO-8601`);
+  }
+  if (parsed.getTime() <= Date.now()) {
+    throw new BadRequestException(`${errorLabel} phải ở tương lai`);
+  }
+  return parsed;
+}
+
 export async function assertAttachableSession(
   tx: Prisma.TransactionClient,
   sessionId: string,
@@ -84,23 +103,30 @@ export async function loadAssignmentTrackerData(
   classId: string,
   assignmentId: string,
   questionCount: number,
-): Promise<{ students: TeacherTrackerStudentRowDto[]; stats: ClassAssignmentStatsDto }> {
-  const [enrollments, submissions] = await Promise.all([
+  query?: PaginationInput,
+): Promise<{
+  students: TeacherTrackerStudentRowDto[];
+  stats: ClassAssignmentStatsDto;
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const { page, limit, skip } = resolvePagination(query, 50);
+  const [enrollments, activeStatuses] = await Promise.all([
     db.enrollment.findMany({
       where: {
         classId,
         status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
       },
-      orderBy: { student: { fullName: 'asc' } },
-      include: { student: { select: { id: true, fullName: true, email: true } } },
+      orderBy: [{ student: { fullName: 'asc' } }, { studentId: 'asc' }],
+      select: { student: { select: { id: true, fullName: true, email: true } } },
     }),
     db.submission.findMany({
-      where: { classAssignmentId: assignmentId },
-      orderBy: { attemptNumber: 'asc' },
-      include: {
-        answers: { select: { answerPayload: true } },
-        reopenLogs: { select: { reason: true, reopenedAt: true }, orderBy: { reopenedAt: 'asc' } },
+      where: {
+        classAssignmentId: assignmentId,
+        status: { not: SubmissionStatus.SUPERSEDED },
       },
+      select: { studentId: true, status: true },
     }),
   ]);
 
@@ -112,23 +138,39 @@ export async function loadAssignmentTrackerData(
     uniqueStudents.push(enr.student);
   }
 
+  const total = uniqueStudents.length;
+  const pagedStudents = uniqueStudents.slice(skip, skip + limit);
+  const stats = computeAssignmentStats(enrolledIds, activeStatuses);
+
+  if (pagedStudents.length === 0) {
+    return { students: [], stats, total, page, limit };
+  }
+
+  const submissions = await db.submission.findMany({
+    where: {
+      classAssignmentId: assignmentId,
+      studentId: { in: pagedStudents.map((student) => student.id) },
+    },
+    orderBy: { attemptNumber: 'asc' },
+    include: {
+      answers: { select: { answerPayload: true } },
+      reopenLogs: { select: { reason: true, reopenedAt: true }, orderBy: { reopenedAt: 'asc' } },
+    },
+  });
+
   const byStudent = new Map<string, typeof submissions>();
-  const activeSubmissions: Array<{ studentId: string; status: SubmissionStatus }> = [];
   for (const sub of submissions) {
     const bucket = byStudent.get(sub.studentId) ?? [];
     bucket.push(sub);
     byStudent.set(sub.studentId, bucket);
-    if (sub.status !== SubmissionStatus.SUPERSEDED) {
-      activeSubmissions.push({ studentId: sub.studentId, status: sub.status });
-    }
   }
 
-  const students = uniqueStudents.map((student) => {
+  const students = pagedStudents.map((student) => {
     const rows = byStudent.get(student.id) ?? [];
     const active = rows.find((r) => r.status !== SubmissionStatus.SUPERSEDED) ?? null;
     const superseded = rows.filter((r) => r.status === SubmissionStatus.SUPERSEDED);
     return toTeacherTrackerStudentRowDto(student, active, superseded, questionCount);
   });
 
-  return { students, stats: computeAssignmentStats(enrolledIds, activeSubmissions) };
+  return { students, stats, total, page, limit };
 }

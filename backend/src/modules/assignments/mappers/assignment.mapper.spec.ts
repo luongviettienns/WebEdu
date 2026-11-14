@@ -4,6 +4,7 @@ import {
   countNonEmptyAnswers,
   DISPLAY_STATUS_LABELS,
   getDisplayStatusLabel,
+  resolveEffectiveDueAt,
   toClassAssignmentSummaryDto,
   toStudentAssignmentListItemDto,
   toTeacherTrackerStudentRowDto,
@@ -204,6 +205,58 @@ describe('assignment.mapper', () => {
         expect(graded.teacherFeedback).toBe('Rất tốt');
       }
     });
+
+    it('uses dueAtOverride for student dueAt and isOverdue calculations', () => {
+      const baseDue = new Date('2026-11-15T12:00:00.000Z');
+      const overrideDue = new Date('2026-11-20T12:00:00.000Z');
+      expect(resolveEffectiveDueAt(baseDue, null)).toEqual(baseDue);
+      expect(resolveEffectiveDueAt(baseDue, overrideDue)).toEqual(overrideDue);
+
+      const nowBetween = new Date('2026-11-18T12:00:00.000Z');
+      const extended = toStudentAssignmentListItemDto(
+        assignmentRow,
+        {
+          id: 'sub-reopened',
+          attemptNumber: 2,
+          status: SubmissionStatus.IN_PROGRESS,
+          elapsedSeconds: 0,
+          remainingSeconds: 1800,
+          lastSavedAt: new Date('2026-11-18T10:00:00.000Z'),
+          submittedAt: null,
+          autoSubmitted: false,
+          autoScore: null,
+          totalScore: null,
+          teacherFeedback: null,
+          dueAtOverride: overrideDue,
+        },
+        0,
+        nowBetween,
+      );
+      expect(extended.dueAt).toBe(overrideDue.toISOString());
+      expect(extended.isOverdue).toBe(false);
+
+      const afterOverride = new Date('2026-11-21T00:00:00.000Z');
+      const overdueAfterOverride = toStudentAssignmentListItemDto(
+        assignmentRow,
+        {
+          id: 'sub-reopened',
+          attemptNumber: 2,
+          status: SubmissionStatus.IN_PROGRESS,
+          elapsedSeconds: 0,
+          remainingSeconds: 1800,
+          lastSavedAt: new Date('2026-11-18T10:00:00.000Z'),
+          submittedAt: null,
+          autoSubmitted: false,
+          autoScore: null,
+          totalScore: null,
+          teacherFeedback: null,
+          dueAtOverride: overrideDue,
+        },
+        0,
+        afterOverride,
+      );
+      expect(overdueAfterOverride.isOverdue).toBe(true);
+    });
   });
 
   describe('countNonEmptyAnswers & toTeacherTrackerStudentRowDto', () => {
@@ -240,13 +293,15 @@ describe('assignment.mapper', () => {
         autoSubmitted: false,
         elapsedSeconds: 0,
         remainingSeconds: null,
+        dueAtOverride: null,
         canReopen: false,
         reopenCount: 0,
         supersededAttempts: [],
       });
     });
 
-    it('maps active IN_PROGRESS submission with answeredCount and canReopen=false', () => {
+    it('maps active IN_PROGRESS submission with answeredCount, dueAtOverride, and canReopen=false', () => {
+      const dueOverride = new Date('2026-11-25T10:00:00.000Z');
       const row = toTeacherTrackerStudentRowDto(
         student,
         {
@@ -259,6 +314,7 @@ describe('assignment.mapper', () => {
           autoSubmitted: false,
           elapsedSeconds: 120,
           remainingSeconds: 1680,
+          dueAtOverride: dueOverride,
           answers: [
             { answerPayload: { selectedOptionIds: ['a'] } },
             { answerPayload: { text: '  ' } },
@@ -281,6 +337,7 @@ describe('assignment.mapper', () => {
       );
 
       expect(row.answeredCount).toBe(1);
+      expect(row.dueAtOverride).toBe('2026-11-25T10:00:00.000Z');
       expect(row.canReopen).toBe(false);
       expect(row.reopenCount).toBe(1);
       expect(row.supersededAttempts).toEqual([

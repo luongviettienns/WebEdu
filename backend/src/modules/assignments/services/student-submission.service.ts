@@ -5,7 +5,7 @@ import {
   NotFoundException,
   StreamableFile,
 } from '@nestjs/common';
-import { EnrollmentStatus, GradingStatus, SubmissionStatus } from '@prisma/client';
+import { EnrollmentStatus, SubmissionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssessmentMediaAccessService } from '../../assessments/services/assessment-media-access.service.js';
@@ -16,16 +16,22 @@ import type {
 import type { AutosaveSubmissionDto, SubmitSubmissionDto } from '../dto/assignments.dto.js';
 import {
   countNonEmptyAnswers,
+  resolveEffectiveDueAt,
   toStudentAssignmentListItemDto,
 } from '../mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import {
+  autoSubmitExpiredSubmission,
   buildStudentExamSessionDto,
   computeNextTimers,
+  createInitialSubmission,
   isPrismaUniqueError,
+  loadAssignmentForMediaStream,
   loadAssignmentForSession,
   lockAndFindActiveSubmission,
+  recordListeningStreamQuota,
+  recoverSessionAfterUniqueConflict,
   validateAndUpsertAnswers,
 } from './submission-session.util.js';
 
@@ -105,46 +111,17 @@ export class StudentSubmissionService {
           if (now.getTime() > assignment.dueAt.getTime()) {
             throw new BadRequestException('Đã quá hạn nộp bài');
           }
-          const agg = await tx.submission.aggregate({
-            where: { classAssignmentId: assignmentId, studentId: actor.id },
-            _max: { attemptNumber: true },
-          });
-          const remainingSeconds =
-            assignment.effectiveDurationMinutes !== null
-              ? assignment.effectiveDurationMinutes * 60
-              : null;
-          submission = await tx.submission.create({
-            data: {
-              classAssignmentId: assignmentId,
-              studentId: actor.id,
-              attemptNumber: (agg._max.attemptNumber ?? 0) + 1,
-              status: SubmissionStatus.IN_PROGRESS,
-              gradingStatus: GradingStatus.NONE,
-              elapsedSeconds: 0,
-              remainingSeconds,
-              startedAt: now,
-              lastSavedAt: now,
-              lastSyncedAt: now,
-            },
-            include: { answers: { orderBy: { updatedAt: 'asc' } } },
-          });
+          submission = await createInitialSubmission(tx, assignment, actor.id, now);
         } else if (submission.status !== SubmissionStatus.IN_PROGRESS) {
           throw new ConflictException('Bài tập đã được nộp');
-        } else if (
-          (submission.remainingSeconds !== null && submission.remainingSeconds <= 0) ||
-          now.getTime() > assignment.dueAt.getTime()
-        ) {
-          submission = await tx.submission.update({
-            where: { id: submission.id },
-            data: {
-              status: SubmissionStatus.SUBMITTED_WAITING,
-              autoSubmitted: true,
-              submittedAt: now,
-              lastSavedAt: now,
-              lastSyncedAt: now,
-            },
-            include: { answers: { orderBy: { updatedAt: 'asc' } } },
-          });
+        } else {
+          const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
+          if (
+            (submission.remainingSeconds !== null && submission.remainingSeconds <= 0) ||
+            now.getTime() > effectiveDueAt.getTime()
+          ) {
+            submission = await autoSubmitExpiredSubmission(tx, submission.id, now);
+          }
         }
 
         return buildStudentExamSessionDto(
@@ -158,7 +135,12 @@ export class StudentSubmissionService {
       });
     } catch (err) {
       if (isPrismaUniqueError(err)) {
-        throw new ConflictException('Phiên làm bài đã tồn tại hoặc đã nộp');
+        return recoverSessionAfterUniqueConflict(
+          this.prisma,
+          this.answerPolicy,
+          assignment,
+          actor.id,
+        );
       }
       throw err;
     }
@@ -191,6 +173,7 @@ export class StudentSubmissionService {
       );
 
       const now = new Date();
+      const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
       const timers = computeNextTimers(
         submission,
         assignment.effectiveDurationMinutes,
@@ -199,7 +182,7 @@ export class StudentSubmissionService {
       );
       const expired =
         (timers.remainingSeconds !== null && timers.remainingSeconds <= 0) ||
-        now.getTime() > assignment.dueAt.getTime();
+        now.getTime() > effectiveDueAt.getTime();
 
       const updated = await tx.submission.update({
         where: { id: submission.id },
@@ -241,7 +224,8 @@ export class StudentSubmissionService {
       }
 
       const now = new Date();
-      if (now.getTime() > assignment.dueAt.getTime() + SUBMIT_GRACE_MS && !dto.autoSubmitted) {
+      const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
+      if (now.getTime() > effectiveDueAt.getTime() + SUBMIT_GRACE_MS && !dto.autoSubmitted) {
         throw new BadRequestException('Đã quá hạn nộp bài');
       }
 
@@ -265,7 +249,7 @@ export class StudentSubmissionService {
       const autoSubmitted =
         Boolean(dto.autoSubmitted) ||
         (timers.remainingSeconds !== null && timers.remainingSeconds <= 0) ||
-        now.getTime() > assignment.dueAt.getTime();
+        now.getTime() > effectiveDueAt.getTime();
 
       const updated = await tx.submission.update({
         where: { id: submission.id },
@@ -298,6 +282,7 @@ export class StudentSubmissionService {
         studentId: actor.id,
         status: { not: SubmissionStatus.SUPERSEDED },
       },
+      orderBy: { attemptNumber: 'desc' },
       include: { answers: { orderBy: { updatedAt: 'asc' } } },
     });
 
@@ -320,15 +305,27 @@ export class StudentSubmissionService {
     mediaId: string,
     actor: AuthenticatedUser,
   ): Promise<StreamableFile> {
-    const assignment = await this.prisma.classAssignment.findUnique({
-      where: { id: assignmentId },
-      select: { id: true, classId: true, assessmentId: true },
-    });
-    if (!assignment) {
-      throw new NotFoundException('Không tìm thấy bài giao');
+    const assignment = await loadAssignmentForMediaStream(this.prisma, assignmentId);
+    const viewer = await this.accessPolicy.resolveClassAssignmentViewer(
+      this.prisma,
+      actor,
+      assignment.classId,
+    );
+    const asset = await this.mediaAccess.verifyAssetForAssessment(assignment.assessmentId, mediaId);
+    if (viewer.role === 'STUDENT') {
+      await recordListeningStreamQuota(
+        this.prisma,
+        assignmentId,
+        actor.id,
+        assignment.assessment?.questions ?? [],
+        mediaId,
+      );
     }
-
-    await this.accessPolicy.resolveClassAssignmentViewer(this.prisma, actor, assignment.classId);
-    return this.mediaAccess.streamVerifiedAsset(assignment.assessmentId, mediaId);
+    return this.mediaAccess.streamStoredFile(
+      asset.storageKey,
+      asset.storageKey.split('/').pop() ?? 'media',
+      false,
+      asset.mime,
+    );
   }
 }

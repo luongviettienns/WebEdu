@@ -606,6 +606,7 @@ model Submission {
   lastSyncedAt      DateTime         @default(now()) @map("last_synced_at") @db.Timestamptz(3)
   elapsedSeconds    Int              @default(0) @map("elapsed_seconds")
   remainingSeconds  Int?             @map("remaining_seconds")
+  dueAtOverride     DateTime?        @map("due_at_override") @db.Timestamptz(3)
   submittedAt       DateTime?        @map("submitted_at") @db.Timestamptz(3)
   autoSubmitted     Boolean          @default(false) @map("auto_submitted")
   autoScore         Float?           @map("auto_score")

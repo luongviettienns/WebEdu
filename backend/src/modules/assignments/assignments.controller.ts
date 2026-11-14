@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
@@ -17,6 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import {
   AssignAssessmentDto,
   AutosaveSubmissionDto,
+  ListAssignmentSubmissionsQueryDto,
   ReopenSubmissionDto,
   SubmitSubmissionDto,
 } from './dto/assignments.dto.js';
@@ -60,8 +62,9 @@ export class AssignmentsController {
   getAssignmentSubmissions(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Query() query?: ListAssignmentSubmissionsQueryDto,
   ) {
-    return this.delivery.getAssignmentSubmissionsForTeacher(assignmentId, actor);
+    return this.delivery.getAssignmentSubmissionsForTeacher(assignmentId, actor, query);
   }
 
   @Post('assignments/:assignmentId/submissions/start')
@@ -107,6 +110,7 @@ export class AssignmentsController {
   @Get('assignments/:assignmentId/media/:mediaId')
   @Roles(Role.ADMIN, Role.TEACHER, Role.STUDENT)
   @Header('X-Content-Type-Options', 'nosniff')
+  @Header('Cache-Control', 'private, no-store')
   streamMedia(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,

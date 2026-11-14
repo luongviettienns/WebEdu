@@ -79,13 +79,23 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
   const student = makeActor('student-1', [Role.STUDENT]);
 
   describe('assignToClasses', () => {
-    it('rejects past or invalid dueAt without starting a transaction', async () => {
+    it('rejects past, timezone-less, or invalid dueAt without starting a transaction', async () => {
       const prisma = makeMockPrisma();
       const service = new AssignmentDeliveryService(prisma as never, accessPolicy);
 
       await expect(
         service.assignToClasses('asm-1', { classIds: ['cls-1'], dueAt: pastIso() }, teacher),
       ).rejects.toThrowError(new BadRequestException('Hạn nộp bài phải ở tương lai'));
+
+      await expect(
+        service.assignToClasses(
+          'asm-1',
+          { classIds: ['cls-1'], dueAt: '2027-12-01T10:00:00' },
+          teacher,
+        ),
+      ).rejects.toThrowError(
+        new BadRequestException('Hạn nộp bài phải bao gồm múi giờ chuẩn ISO-8601'),
+      );
 
       await expect(
         service.assignToClasses('asm-1', { classIds: ['cls-1'], dueAt: 'not-a-date' }, teacher),
@@ -165,6 +175,20 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
         status: ClassStatus.ACTIVE,
         course: { name: 'HSK 1' },
         teacherHistory: [],
+      } as never);
+      await expect(
+        service.assignToClasses('asm-1', { classIds: ['cls-1'], dueAt: futureIso() }, otherTeacher),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Historical teacher in teacherHistory (not current teacherId) -> 403 on write
+      prisma.tx.class.findUnique.mockResolvedValueOnce({
+        id: 'cls-1',
+        code: 'HSK1-A',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        status: ClassStatus.ACTIVE,
+        course: { name: 'HSK 1' },
+        teacherHistory: [{ teacherId: 'teacher-2' }],
       } as never);
       await expect(
         service.assignToClasses('asm-1', { classIds: ['cls-1'], dueAt: futureIso() }, otherTeacher),
@@ -544,24 +568,37 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
         { student: { id: 's-1', fullName: 'An', email: 'an@webedu.vn' } },
         { student: { id: 's-2', fullName: 'Bình', email: 'binh@webedu.vn' } },
       ] as never);
-      prisma.submission.findMany.mockResolvedValueOnce([
-        {
-          id: 'sub-1',
-          studentId: 's-1',
-          attemptNumber: 1,
-          status: SubmissionStatus.SUBMITTED_WAITING,
-          startedAt: new Date('2026-11-14T11:00:00.000Z'),
-          lastSavedAt: new Date('2026-11-14T11:05:00.000Z'),
-          submittedAt: new Date('2026-11-14T11:05:00.000Z'),
-          autoSubmitted: false,
-          elapsedSeconds: 300,
-          remainingSeconds: 1500,
-          answers: [{ answerPayload: { text: '你好' } }],
-          reopenLogs: [],
-        },
-      ] as never);
+      prisma.submission.findMany
+        .mockResolvedValueOnce([
+          { studentId: 's-1', status: SubmissionStatus.SUBMITTED_WAITING },
+        ] as never)
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-1',
+            studentId: 's-1',
+            attemptNumber: 1,
+            status: SubmissionStatus.SUBMITTED_WAITING,
+            startedAt: new Date('2026-11-14T11:00:00.000Z'),
+            lastSavedAt: new Date('2026-11-14T11:05:00.000Z'),
+            submittedAt: new Date('2026-11-14T11:05:00.000Z'),
+            autoSubmitted: false,
+            elapsedSeconds: 300,
+            remainingSeconds: 1500,
+            dueAtOverride: null,
+            answers: [{ answerPayload: { text: '你好' } }],
+            reopenLogs: [],
+          },
+        ] as never);
 
       const tracker = await service.getAssignmentSubmissionsForTeacher('assign-1', teacher);
+      expect(prisma.enrollment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ student: { fullName: 'asc' } }, { studentId: 'asc' }],
+        }),
+      );
+      expect(tracker.total).toBe(2);
+      expect(tracker.page).toBe(1);
+      expect(tracker.limit).toBe(50);
       expect(tracker.assignment.stats).toEqual({
         totalStudents: 2,
         notStartedCount: 1,
@@ -572,6 +609,108 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
       expect(tracker.students).toHaveLength(2);
       expect(tracker.students[0]?.canReopen).toBe(true);
       expect(tracker.students[1]?.status).toBe('NOT_STARTED');
+    });
+
+    it('paginates tracker rows with full-class stats, allows historical teacher read, and skips heavy query on empty page', async () => {
+      const prisma = makeMockPrisma();
+      const service = new AssignmentDeliveryService(prisma as never, accessPolicy);
+
+      const assignmentRecord = {
+        id: 'assign-1',
+        assessmentId: 'asm-1',
+        classId: 'cls-1',
+        sessionId: null,
+        assignedById: 'teacher-1',
+        assignedAt: new Date('2026-11-14T10:00:00.000Z'),
+        dueAt: new Date('2026-11-20T10:00:00.000Z'),
+        effectiveDurationMinutes: 30,
+        instructions: null,
+        assessment: {
+          title: 'Kiểm tra',
+          type: AssessmentType.MINI_TEST,
+          description: null,
+          courseId: 'course-1',
+          questions: [{ points: 2 }],
+        },
+        class: { code: 'HSK1-A', course: { name: 'HSK 1' } },
+        assignedBy: { fullName: 'Teacher 1' },
+      };
+      prisma.classAssignment.findUnique.mockResolvedValue(assignmentRecord as never);
+      prisma.class.findUnique.mockResolvedValue({
+        id: 'cls-1',
+        code: 'HSK1-A',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        status: ClassStatus.ACTIVE,
+        course: { name: 'HSK 1' },
+        teacherHistory: [{ teacherId: 'teacher-2' }],
+      } as never);
+      prisma.enrollment.findMany.mockResolvedValue([
+        { student: { id: 's-1', fullName: 'An', email: 's1@webedu.vn' } },
+        { student: { id: 's-2', fullName: 'Bình', email: 's2@webedu.vn' } },
+        { student: { id: 's-3', fullName: 'Chi', email: 's3@webedu.vn' } },
+        { student: { id: 's-4', fullName: 'Dũng', email: 's4@webedu.vn' } },
+        { student: { id: 's-5', fullName: 'Hà', email: 's5@webedu.vn' } },
+      ] as never);
+      prisma.submission.findMany
+        .mockResolvedValueOnce([
+          { studentId: 's-1', status: SubmissionStatus.GRADED },
+          { studentId: 's-3', status: SubmissionStatus.IN_PROGRESS },
+        ] as never)
+        .mockResolvedValueOnce([
+          {
+            id: 'sub-3',
+            studentId: 's-3',
+            attemptNumber: 1,
+            status: SubmissionStatus.IN_PROGRESS,
+            startedAt: new Date('2026-11-14T11:00:00.000Z'),
+            lastSavedAt: new Date('2026-11-14T11:02:00.000Z'),
+            submittedAt: null,
+            autoSubmitted: false,
+            elapsedSeconds: 120,
+            remainingSeconds: 1680,
+            dueAtOverride: null,
+            answers: [],
+            reopenLogs: [],
+          },
+        ] as never);
+
+      // Historical teacher (teacher-2) can read paginated tracker
+      const page2 = await service.getAssignmentSubmissionsForTeacher('assign-1', otherTeacher, {
+        page: '2',
+        limit: '2',
+      });
+      expect(page2.total).toBe(5);
+      expect(page2.page).toBe(2);
+      expect(page2.limit).toBe(2);
+      expect(page2.students.map((s) => s.studentId)).toEqual(['s-3', 's-4']);
+      expect(page2.assignment.stats).toEqual({
+        totalStudents: 5,
+        notStartedCount: 3,
+        inProgressCount: 1,
+        submittedWaitingCount: 0,
+        gradedCount: 1,
+      });
+      expect(prisma.submission.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          where: {
+            classAssignmentId: 'assign-1',
+            studentId: { in: ['s-3', 's-4'] },
+          },
+        }),
+      );
+
+      // Out-of-range page skips second heavy submission query
+      prisma.submission.findMany.mockClear();
+      prisma.submission.findMany.mockResolvedValueOnce([] as never);
+      const emptyPage = await service.getAssignmentSubmissionsForTeacher('assign-1', teacher, {
+        page: '99',
+        limit: '2',
+      });
+      expect(emptyPage.total).toBe(5);
+      expect(emptyPage.students).toEqual([]);
+      expect(prisma.submission.findMany).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -587,6 +726,16 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
       await expect(
         service.reopenSubmission('sub-1', { reason: 'Mạng lỗi', newDueAt: pastIso() }, teacher),
       ).rejects.toThrowError(new BadRequestException('Hạn nộp mới phải ở tương lai'));
+
+      await expect(
+        service.reopenSubmission(
+          'sub-1',
+          { reason: 'Mạng lỗi', newDueAt: '2027-12-01T10:00:00' },
+          teacher,
+        ),
+      ).rejects.toThrowError(
+        new BadRequestException('Hạn nộp mới phải bao gồm múi giờ chuẩn ISO-8601'),
+      );
 
       prisma.tx.submission.findUnique.mockResolvedValueOnce(null as never);
       await expect(
@@ -713,6 +862,7 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
           autoSubmitted: false,
           elapsedSeconds: 0,
           remainingSeconds: 1500,
+          dueAtOverride: new Date(newDueAt),
           answers: [{ answerPayload: { selectedOptionIds: ['a'] } }],
           reopenLogs: [],
         },
@@ -724,10 +874,7 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
         teacher,
       );
 
-      expect(prisma.tx.classAssignment.update).toHaveBeenCalledWith({
-        where: { id: 'assign-1' },
-        data: { dueAt: new Date(newDueAt) },
-      });
+      expect(prisma.tx.classAssignment.update).not.toHaveBeenCalled();
       expect(prisma.tx.submissionReopenLog.create).toHaveBeenCalledWith({
         data: {
           submissionId: 'sub-1',
@@ -748,6 +895,7 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
           gradingStatus: GradingStatus.NONE,
           elapsedSeconds: 0,
           remainingSeconds: 1500,
+          dueAtOverride: new Date(newDueAt),
         },
       });
       expect(prisma.tx.submissionAnswer.createMany).toHaveBeenCalledWith({
@@ -767,10 +915,107 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
       expect(prisma.tx.systemAuditLog.create).toHaveBeenCalled();
       expect(row.attemptNumber).toBe(2);
       expect(row.status).toBe(SubmissionStatus.IN_PROGRESS);
+      expect(row.dueAtOverride).toBe(new Date(newDueAt).toISOString());
       expect(row.canReopen).toBe(false);
       expect(row.reopenCount).toBe(1);
       expect(row.supersededAttempts).toHaveLength(1);
       expect(row.supersededAttempts[0]?.reopenReason).toBe('Học viên mất kết nối');
+    });
+
+    it('rejects historical teacher on reopenSubmission and preserves existing dueAtOverride when newDueAt is omitted', async () => {
+      const prisma = makeMockPrisma();
+      const service = new AssignmentDeliveryService(prisma as never, accessPolicy);
+      const existingOverride = new Date(Date.now() + 72 * 3_600_000);
+
+      prisma.tx.class.findUnique.mockResolvedValueOnce({
+        id: 'cls-1',
+        code: 'HSK1-A',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        status: ClassStatus.ACTIVE,
+        course: { name: 'HSK 1' },
+        teacherHistory: [{ teacherId: 'teacher-2' }],
+      } as never);
+      prisma.tx.submission.findUnique.mockResolvedValueOnce({
+        id: 'sub-2',
+        classAssignmentId: 'assign-1',
+        studentId: 's-1',
+        attemptNumber: 2,
+        status: SubmissionStatus.SUBMITTED_WAITING,
+        dueAtOverride: existingOverride,
+        answers: [],
+        student: { id: 's-1', fullName: 'An', email: 'an@webedu.vn' },
+        classAssignment: {
+          id: 'assign-1',
+          classId: 'cls-1',
+          dueAt: new Date(Date.now() - 10_000),
+          effectiveDurationMinutes: null,
+          assessment: { questions: [{ id: 'q-1' }] },
+        },
+      } as never);
+
+      await expect(
+        service.reopenSubmission('sub-2', { reason: 'Mở lại lần 3' }, otherTeacher),
+      ).rejects.toThrow(ForbiddenException);
+
+      prisma.tx.class.findUnique.mockResolvedValueOnce({
+        id: 'cls-1',
+        code: 'HSK1-A',
+        teacherId: 'teacher-1',
+        courseId: 'course-1',
+        status: ClassStatus.ACTIVE,
+        course: { name: 'HSK 1' },
+        teacherHistory: [],
+      } as never);
+      prisma.tx.submission.findUnique.mockResolvedValueOnce({
+        id: 'sub-2',
+        classAssignmentId: 'assign-1',
+        studentId: 's-1',
+        attemptNumber: 2,
+        status: SubmissionStatus.SUBMITTED_WAITING,
+        dueAtOverride: existingOverride,
+        answers: [],
+        student: { id: 's-1', fullName: 'An', email: 'an@webedu.vn' },
+        classAssignment: {
+          id: 'assign-1',
+          classId: 'cls-1',
+          dueAt: new Date(Date.now() - 10_000),
+          effectiveDurationMinutes: null,
+          assessment: { questions: [{ id: 'q-1' }] },
+        },
+      } as never);
+      prisma.tx.submission.aggregate.mockResolvedValueOnce({
+        _max: { attemptNumber: 2 },
+      } as never);
+      prisma.tx.submission.create.mockResolvedValueOnce({
+        id: 'sub-3',
+        attemptNumber: 3,
+      } as never);
+      prisma.tx.submission.findMany.mockResolvedValueOnce([
+        {
+          id: 'sub-3',
+          attemptNumber: 3,
+          status: SubmissionStatus.IN_PROGRESS,
+          startedAt: new Date('2026-11-14T12:00:00.000Z'),
+          lastSavedAt: new Date('2026-11-14T12:00:00.000Z'),
+          submittedAt: null,
+          autoSubmitted: false,
+          elapsedSeconds: 0,
+          remainingSeconds: null,
+          dueAtOverride: existingOverride,
+          answers: [],
+          reopenLogs: [],
+        },
+      ] as never);
+
+      const row = await service.reopenSubmission('sub-2', { reason: 'Mở lại lần 3' }, teacher);
+      expect(prisma.tx.submission.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          attemptNumber: 3,
+          dueAtOverride: existingOverride,
+        }),
+      });
+      expect(row.dueAtOverride).toBe(existingOverride.toISOString());
     });
   });
 });

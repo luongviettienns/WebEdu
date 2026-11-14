@@ -66,6 +66,7 @@ export interface StudentSubmissionRowInput {
   status: SubmissionStatus;
   elapsedSeconds: number;
   remainingSeconds: number | null;
+  dueAtOverride?: Date | null;
   lastSavedAt: Date;
   submittedAt: Date | null;
   autoSubmitted: boolean;
@@ -90,6 +91,7 @@ export interface TrackerActiveSubmissionInput {
   autoSubmitted: boolean;
   elapsedSeconds: number;
   remainingSeconds: number | null;
+  dueAtOverride?: Date | null;
   answers?: ReadonlyArray<{ answerPayload: unknown }>;
 }
 
@@ -100,13 +102,14 @@ export interface SupersededAttemptWithLogsInput {
   reopenLogs: ReadonlyArray<{ reason: string; reopenedAt: Date }>;
 }
 
-export function getDisplayStatusLabel(status: AssignmentDisplayStatus): string {
-  return DISPLAY_STATUS_LABELS[status];
-}
+export const resolveEffectiveDueAt = (assignmentDueAt: Date, dueAtOverride?: Date | null): Date =>
+  dueAtOverride ?? assignmentDueAt;
 
-export function countNonEmptyAnswers(answers: ReadonlyArray<{ answerPayload: unknown }>): number {
-  return answers.filter((answer) => isAnswerNonEmpty(answer.answerPayload)).length;
-}
+export const getDisplayStatusLabel = (status: AssignmentDisplayStatus): string =>
+  DISPLAY_STATUS_LABELS[status];
+
+export const countNonEmptyAnswers = (answers: ReadonlyArray<{ answerPayload: unknown }>): number =>
+  answers.filter((answer) => isAnswerNonEmpty(answer.answerPayload)).length;
 
 function summarizeQuestions(questions?: ReadonlyArray<{ points: number }>): {
   questionCount: number;
@@ -152,9 +155,10 @@ export function toStudentAssignmentListItemDto(
 ): StudentAssignmentListItemDto {
   const { questionCount, totalPoints } = summarizeQuestions(assignmentRow.assessment.questions);
   const status: AssignmentDisplayStatus = submissionRow?.status ?? 'NOT_STARTED';
+  const effectiveDueAt = resolveEffectiveDueAt(assignmentRow.dueAt, submissionRow?.dueAtOverride);
   const isOverdue =
     (status === 'NOT_STARTED' || status === SubmissionStatus.IN_PROGRESS) &&
-    now.getTime() > assignmentRow.dueAt.getTime();
+    now.getTime() > effectiveDueAt.getTime();
   const canViewScores = submissionRow !== null && SCORE_VISIBLE_STATUSES.has(submissionRow.status);
 
   return {
@@ -166,7 +170,7 @@ export function toStudentAssignmentListItemDto(
     classCode: assignmentRow.class.code,
     className: assignmentRow.class.course?.name ?? assignmentRow.class.code,
     assignedAt: assignmentRow.assignedAt.toISOString(),
-    dueAt: assignmentRow.dueAt.toISOString(),
+    dueAt: effectiveDueAt.toISOString(),
     effectiveDurationMinutes: assignmentRow.effectiveDurationMinutes,
     instructions: assignmentRow.instructions,
     questionCount,
@@ -228,6 +232,7 @@ export function toTeacherTrackerStudentRowDto(
     autoSubmitted: activeSubmission?.autoSubmitted ?? false,
     elapsedSeconds: activeSubmission?.elapsedSeconds ?? 0,
     remainingSeconds: activeSubmission?.remainingSeconds ?? null,
+    dueAtOverride: activeSubmission?.dueAtOverride ? activeSubmission.dueAtOverride.toISOString() : null,
     canReopen: activeSubmission !== null && REOPENABLE_STATUSES.has(activeSubmission.status),
     reopenCount: totalReopenLogs > 0 ? totalReopenLogs : supersededWithLogs.length,
     supersededAttempts: supersededWithLogs.map(mapSupersededAttempt),
