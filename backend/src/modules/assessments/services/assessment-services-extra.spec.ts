@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException, StreamableFile } from '@nestjs/common';
 import { AssessmentStatus, AssessmentType, MediaKind, QuestionType, Role } from '@prisma/client';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuestionSchemaPolicy } from '../policies/question-schema.policy.js';
 import { AssessmentCrudService } from './assessment-crud.service.js';
+import { AssessmentMediaAccessService } from './assessment-media-access.service.js';
 import { persistMediaBytes, readStoredFile } from './document-extract.js';
 import { QuestionCrudService } from './question-crud.service.js';
 
@@ -206,5 +207,143 @@ describe('Assessment & Question services extended coverage', () => {
     await expect(svc.reorder('asm-1', { questionIds: [audioId, audioId] }, owner)).rejects.toThrow(BadRequestException);
     prisma.tx.question.findMany.mockResolvedValueOnce([{ id: audioId }] as never);
     await expect(svc.reorder('asm-1', { questionIds: [imgId] }, owner)).rejects.toThrow(NotFoundException);
+  });
+
+  it('includes _count.classAssignments in list & getDetail and maps assignedClassCount', async () => {
+    const prisma = makeFullPrisma();
+    prisma.assessment.findMany.mockResolvedValueOnce([
+      { ...baseRow, questions: [{ points: 2 }], _count: { classAssignments: 4 } },
+    ] as never);
+    prisma.assessment.findUnique.mockResolvedValueOnce({
+      ...baseRow,
+      _count: { classAssignments: 2 },
+    } as never);
+
+    const svc = new AssessmentCrudService(prisma as never, schemaPolicy);
+    const listed = await svc.list({}, owner);
+    expect(listed.items[0]?.assignedClassCount).toBe(4);
+    expect(prisma.assessment.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          _count: { select: { classAssignments: true } },
+        }),
+      }),
+    );
+
+    const detail = await svc.getDetail('asm-1', owner);
+    expect(detail.assignedClassCount).toBe(2);
+    expect(prisma.assessment.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          _count: { select: { classAssignments: true } },
+        }),
+      }),
+    );
+  });
+
+  describe('AssessmentMediaAccessService.streamVerifiedAsset', () => {
+    const assetId = '11111111-1111-1111-1111-111111111111';
+
+    async function readStreamBytes(file: StreamableFile): Promise<Buffer> {
+      const chunks: Buffer[] = [];
+      for await (const chunk of file.getStream()) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+      }
+      return Buffer.concat(chunks);
+    }
+
+    it('throws NotFoundException when mediaAsset does not exist', async () => {
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce(null as never);
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      await expect(mediaAccess.streamVerifiedAsset('asm-1', assetId)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when asset belongs to another assessment', async () => {
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: 'asm-other',
+        mime: 'image/png',
+        storageKey: 'uploads/media/pic.png',
+      } as never);
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      await expect(mediaAccess.streamVerifiedAsset('asm-1', assetId)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when legacy asset (assessmentId=null) is not referenced by assessment questions', async () => {
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: null,
+        mime: 'image/png',
+        storageKey: 'uploads/media/pic.png',
+      } as never);
+      prisma.question.findMany.mockResolvedValueOnce([{ payload: { mediaId: '22222222-2222-2222-2222-222222222222' } }] as never);
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      await expect(mediaAccess.streamVerifiedAsset('asm-1', assetId)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when file bytes are missing on disk', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'webedu-media-missing-'));
+      dirs.push(dir);
+      process.env.UPLOAD_DIR = dir;
+
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: 'asm-1',
+        mime: 'image/png',
+        storageKey: 'uploads/media/missing.png',
+      } as never);
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      await expect(mediaAccess.streamVerifiedAsset('asm-1', assetId)).rejects.toThrow(NotFoundException);
+    });
+
+    it('returns StreamableFile with verified bytes and inline headers when asset.assessmentId matches', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'webedu-media-ok-'));
+      dirs.push(dir);
+      process.env.UPLOAD_DIR = dir;
+
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02]);
+      const storageKey = await persistMediaBytes(png, 'image/png');
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: 'asm-1',
+        mime: 'image/png',
+        storageKey,
+      } as never);
+
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      const file = await mediaAccess.streamVerifiedAsset('asm-1', assetId);
+      expect(file).toBeInstanceOf(StreamableFile);
+      expect(file.getHeaders().type).toBe('image/png');
+      expect(String(file.getHeaders().disposition)).toContain('inline;');
+      expect(await readStreamBytes(file)).toEqual(png);
+    });
+
+    it('returns StreamableFile for legacy asset (assessmentId=null) referenced in question payload', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'webedu-media-legacy-'));
+      dirs.push(dir);
+      process.env.UPLOAD_DIR = dir;
+
+      const mp3 = Buffer.from('ID3-audio-payload');
+      const storageKey = await persistMediaBytes(mp3, 'audio/mpeg');
+      const prisma = makeFullPrisma();
+      prisma.mediaAsset.findUnique.mockResolvedValueOnce({
+        id: assetId,
+        assessmentId: null,
+        mime: 'audio/mpeg',
+        storageKey,
+      } as never);
+      prisma.question.findMany.mockResolvedValueOnce([{ payload: { mediaId: assetId } }] as never);
+
+      const mediaAccess = new AssessmentMediaAccessService(prisma as never);
+      const file = await mediaAccess.streamVerifiedAsset('asm-1', assetId);
+      expect(file).toBeInstanceOf(StreamableFile);
+      expect(file.getHeaders().type).toBe('audio/mpeg');
+      expect(await readStreamBytes(file)).toEqual(mp3);
+    });
   });
 });

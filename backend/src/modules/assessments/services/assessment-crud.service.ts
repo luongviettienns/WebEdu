@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   StreamableFile,
 } from '@nestjs/common';
 import { AssessmentStatus, MediaKind, Prisma } from '@prisma/client';
@@ -19,14 +20,13 @@ import { QuestionSchemaPolicy } from '../policies/question-schema.policy.js';
 import { assertSafeUpload } from '../policies/media-upload.policy.js';
 import {
   cloneAssessmentFiles,
-  mimeFromFilename,
   persistMediaBytes,
-  readStoredFile,
   unlinkStoredFile,
 } from './document-extract.js';
-import { collectPayloadMediaIds, remapPayloadMediaIds } from '../policies/payload-media.util.js';
+import { remapPayloadMediaIds } from '../policies/payload-media.util.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
 import { toTeacherAssessmentDto } from '../mappers/assessment.mapper.js';
+import { AssessmentMediaAccessService } from './assessment-media-access.service.js';
 import type { AssessmentListResult, TeacherAssessmentDto } from '../assessments.types.js';
 import type {
   CreateAssessmentDto,
@@ -35,14 +35,22 @@ import type {
 } from '../dto/assessments.dto.js';
 
 const QUESTIONS_ORDERED = { orderBy: { position: 'asc' as const } };
-const WITH_AUTHOR = { createdBy: { select: { fullName: true } } };
+const WITH_AUTHOR = {
+  createdBy: { select: { fullName: true } },
+  _count: { select: { classAssignments: true } },
+};
 
 @Injectable()
 export class AssessmentCrudService {
+  private readonly mediaAccess: AssessmentMediaAccessService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly schemaPolicy: QuestionSchemaPolicy,
-  ) {}
+    @Optional() mediaAccess?: AssessmentMediaAccessService,
+  ) {
+    this.mediaAccess = mediaAccess ?? new AssessmentMediaAccessService(prisma);
+  }
 
   async create(dto: CreateAssessmentDto, actorId: string): Promise<TeacherAssessmentDto> {
     const title = dto.title.trim();
@@ -285,44 +293,13 @@ export class AssessmentCrudService {
     if (!row.originalStorageKey || !row.originalFileName) {
       throw new NotFoundException('Không có file gốc để tải lại');
     }
-    return this.streamKey(row.originalStorageKey, row.originalFileName, true);
+    return this.mediaAccess.streamStoredFile(row.originalStorageKey, row.originalFileName, true);
   }
 
   async streamMedia(assessmentId: string, mediaId: string, actor: AssessmentActor): Promise<StreamableFile> {
     const assessment = await this.prisma.assessment.findUnique({ where: { id: assessmentId } });
     assertCanViewAssessment(actor, assessment);
-    const asset = await this.prisma.mediaAsset.findUnique({ where: { id: mediaId } });
-    if (!asset) throw new NotFoundException('Không tìm thấy file đính kèm');
-    if (asset.assessmentId && asset.assessmentId !== assessmentId) {
-      throw new NotFoundException('Không tìm thấy file đính kèm');
-    }
-    if (!asset.assessmentId) {
-      const questions = await this.prisma.question.findMany({
-        where: { assessmentId },
-        select: { payload: true },
-      });
-      if (!questions.some((q) => collectPayloadMediaIds(q.payload).includes(mediaId))) {
-        throw new NotFoundException('Không tìm thấy file đính kèm');
-      }
-    }
-    return this.streamKey(asset.storageKey, asset.storageKey.split('/').pop() ?? 'media', false, asset.mime);
-  }
-
-  private async streamKey(
-    storageKey: string,
-    filename: string,
-    asDownload: boolean,
-    mimeOverride?: string,
-  ): Promise<StreamableFile> {
-    const bytes = await readStoredFile(storageKey);
-    if (!bytes) throw new NotFoundException('Không tìm thấy file đính kèm');
-    const safe = filename.replace(/[\r\n"]/g, '_');
-    const ascii = safe.replace(/[^\x20-\x7E]/g, '_');
-    const kind = asDownload ? 'attachment' : 'inline';
-    return new StreamableFile(bytes, {
-      type: mimeOverride || mimeFromFilename(filename),
-      disposition: `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(safe)}`,
-    });
+    return this.mediaAccess.streamVerifiedAsset(assessmentId, mediaId);
   }
 
   private assertPublishableEssay(type: string, payload: unknown): void {

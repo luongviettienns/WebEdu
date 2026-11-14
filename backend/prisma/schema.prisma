@@ -107,6 +107,22 @@ enum MediaKind {
   IMAGE
 }
 
+enum SubmissionStatus {
+  IN_PROGRESS
+  SUBMITTED_WAITING
+  AUTO_GRADED_PENDING_REVIEW
+  GRADED
+  RETURNED
+  SUPERSEDED
+}
+
+enum GradingStatus {
+  NONE
+  PENDING_AI
+  AI_DRAFT_READY
+  GRADED
+}
+
 model User {
   id                  String     @id @default(uuid())
   email               String     @unique @db.VarChar(255)
@@ -140,6 +156,10 @@ model User {
   studentAttendanceAudits   AttendanceAuditLog[]     @relation("AttendanceAuditStudent")
   actedAttendanceAudits     AttendanceAuditLog[]     @relation("AttendanceAuditActor")
   authoredAssessments       Assessment[]             @relation("AssessmentAuthor")
+  assignedClassAssignments  ClassAssignment[]        @relation("AssignmentAssigner")
+  studentSubmissions        Submission[]             @relation("StudentSubmissions")
+  gradedSubmissions         Submission[]             @relation("GradedSubmissions")
+  reopenedSubmissions       SubmissionReopenLog[]    @relation("SubmissionReopener")
 
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -296,6 +316,7 @@ model Class {
   sessions          LessonSession[]
   sessionChangeLogs SessionChangeLog[]
   attendanceRecords AttendanceRecord[]
+  classAssignments  ClassAssignment[]
 
   @@index([teacherId, status])
   @@index([courseId])
@@ -388,6 +409,7 @@ model LessonSession {
   changeLogs         SessionChangeLog[]
   attendanceRecords  AttendanceRecord[]
   attendanceAudits   AttendanceAuditLog[]
+  classAssignments   ClassAssignment[]
 
   @@index([classId, sessionDate, startTime])
   @@index([sessionDate, status])
@@ -489,8 +511,9 @@ model Assessment {
 
   course    Course     @relation(fields: [courseId], references: [id], onDelete: Restrict)
   createdBy   User         @relation("AssessmentAuthor", fields: [createdById], references: [id], onDelete: Restrict)
-  questions   Question[]
-  mediaAssets MediaAsset[]
+  questions        Question[]
+  mediaAssets      MediaAsset[]
+  classAssignments ClassAssignment[]
 
   @@index([courseId, status])
   @@index([createdById])
@@ -509,8 +532,9 @@ model Question {
   createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  assessment Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
-  media      QuestionMedia[]
+  assessment        Assessment         @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  media             QuestionMedia[]
+  submissionAnswers SubmissionAnswer[]
 
   @@unique([assessmentId, position])
   @@index([assessmentId])
@@ -543,4 +567,98 @@ model QuestionMedia {
 
   @@id([questionId, mediaAssetId])
   @@map("question_media")
+}
+
+model ClassAssignment {
+  id                       String         @id @default(uuid())
+  assessmentId             String         @map("assessment_id")
+  classId                  String         @map("class_id")
+  sessionId                String?        @map("session_id")
+  assignedById             String         @map("assigned_by_id")
+  assignedAt               DateTime       @default(now()) @map("assigned_at") @db.Timestamptz(3)
+  dueAt                    DateTime       @map("due_at") @db.Timestamptz(3)
+  effectiveDurationMinutes Int?           @map("effective_duration_minutes")
+  instructions             String?        @db.Text
+  createdAt                DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  assessment  Assessment     @relation(fields: [assessmentId], references: [id], onDelete: Restrict)
+  class       Class          @relation(fields: [classId], references: [id], onDelete: Restrict)
+  session     LessonSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  assignedBy  User           @relation("AssignmentAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+  submissions Submission[]
+
+  @@index([classId, dueAt])
+  @@index([assessmentId])
+  @@index([sessionId])
+  @@map("class_assignments")
+}
+
+model Submission {
+  id                String           @id @default(uuid())
+  classAssignmentId String           @map("class_assignment_id")
+  studentId         String           @map("student_id")
+  attemptNumber     Int              @default(1) @map("attempt_number")
+  status            SubmissionStatus @default(IN_PROGRESS)
+  gradingStatus     GradingStatus    @default(NONE) @map("grading_status")
+  startedAt         DateTime         @default(now()) @map("started_at") @db.Timestamptz(3)
+  lastSavedAt       DateTime         @default(now()) @map("last_saved_at") @db.Timestamptz(3)
+  lastSyncedAt      DateTime         @default(now()) @map("last_synced_at") @db.Timestamptz(3)
+  elapsedSeconds    Int              @default(0) @map("elapsed_seconds")
+  remainingSeconds  Int?             @map("remaining_seconds")
+  submittedAt       DateTime?        @map("submitted_at") @db.Timestamptz(3)
+  autoSubmitted     Boolean          @default(false) @map("auto_submitted")
+  autoScore         Float?           @map("auto_score")
+  totalScore        Float?           @map("total_score")
+  teacherFeedback   String?          @map("teacher_feedback") @db.Text
+  gradedAt          DateTime?        @map("graded_at") @db.Timestamptz(3)
+  gradedById        String?          @map("graded_by_id")
+  returnedAt        DateTime?        @map("returned_at") @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  classAssignment ClassAssignment       @relation(fields: [classAssignmentId], references: [id], onDelete: Restrict)
+  student         User                  @relation("StudentSubmissions", fields: [studentId], references: [id], onDelete: Restrict)
+  gradedBy        User?                 @relation("GradedSubmissions", fields: [gradedById], references: [id], onDelete: SetNull)
+  answers         SubmissionAnswer[]
+  reopenLogs      SubmissionReopenLog[]
+
+  @@unique([classAssignmentId, studentId, attemptNumber])
+  @@index([studentId, status])
+  @@index([classAssignmentId, status])
+  @@map("submissions")
+}
+
+model SubmissionAnswer {
+  id             String   @id @default(uuid())
+  submissionId   String   @map("submission_id")
+  questionId     String   @map("question_id")
+  answerPayload  Json     @map("answer_payload")
+  audioPlayCount Int      @default(0) @map("audio_play_count")
+  isCorrect      Boolean? @map("is_correct")
+  earnedPoints   Float?   @map("earned_points")
+  aiFeedback     String?  @map("ai_feedback") @db.Text
+  teacherComment String?  @map("teacher_comment") @db.Text
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, questionId])
+  @@index([submissionId])
+  @@map("submission_answers")
+}
+
+model SubmissionReopenLog {
+  id           String   @id @default(uuid())
+  submissionId String   @map("submission_id")
+  reopenedById String   @map("reopened_by_id")
+  reason       String   @db.Text
+  reopenedAt   DateTime @default(now()) @map("reopened_at") @db.Timestamptz(3)
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reopenedBy User       @relation("SubmissionReopener", fields: [reopenedById], references: [id], onDelete: Restrict)
+
+  @@index([submissionId])
+  @@map("submission_reopen_logs")
 }

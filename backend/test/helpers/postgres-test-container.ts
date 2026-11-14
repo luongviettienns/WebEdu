@@ -186,6 +186,14 @@ function createSafeTruncateFn(
 
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
+        "submission_reopen_logs",
+        "submission_answers",
+        "submissions",
+        "class_assignments",
+        "question_media",
+        "questions",
+        "media_assets",
+        "assessments",
         "system_audit_logs",
         "class_teacher_assignments",
         "enrollments",

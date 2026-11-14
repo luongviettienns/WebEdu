@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 5: Module 06 (Phần 1) — Ngân hàng Câu hỏi & Import Đề Word/PDF (`FUNC-039..050`) — ĐÃ QUA CỔNG TEST TRÊN NHÁNH `feature/phase-05-question-bank-and-import`, CHƯA MERGE `develop`** *(Đang mở các hạng mục fix/follow-up từ kiểm toán `#6` & `#7`, chi tiết tại [`docs/TECH_DEBT_AND_SECURITY_BACKLOG.md`](./docs/TECH_DEBT_AND_SECURITY_BACKLOG.md))*
+* **Giai đoạn hiện tại**: **Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`) — ĐANG TRIỂN KHAI TRÊN NHÁNH `feature/phase-06-assignment-delivery-and-submission`** *(Phase 5 đã merge `develop` tại `59b2038`; mọi hạng mục TECH_DEBT/SEC backlog đã `DONE`)*
 ---
 
 ## 🎨 Hạng Mục Đặc Biệt: Đại Tu UI/UX Chuẩn 100% Prototype Á Đông & Dọn Dẹp Chức Năng Thừa *(HOÀN THÀNH — 100% PASS)*
@@ -229,8 +229,8 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Xác minh Toàn Nhánh Lần Đầu Đạt 100% Không Flake**: `node scripts/check-loc.js` **175 files PASS**; Backend `tsc` PASS, `oxlint` **0 warnings/0 errors** (`180` files), `nest build` PASS, Unit **37/37 files — 301/301 PASS** (`21.84s`), Coverage **301/301 PASS** (`90.34% Stmts / 81.89% Branch / 91.01% Funcs / 91.25% Lines`, `23.39s`), PG integration **1/1 — 16/16 PASS** (`24.99s`), HTTP E2E **8/8 files — 46/46 PASS** (`108.36s`); Frontend `tsc` PASS, `eslint` PASS, `next build` (**24 entries / 21 `page.tsx` + `ƒ Proxy`**) PASS, Playwright **8 spec files — 74/74 PASS** (`37` Desktop + `37` Mobile Chromium, `2.5m`).
 
 ### Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`)
-- [ ] Lập Sub-Plan `docs/plans/phase-06-assignment-delivery-and-submission.md` & chốt `ASSIGN-02..03`.
-- [ ] **Slice 6.1**: Schema `ClassAssignment`, `Submission`, `SubmissionAnswer` (chống nộp trùng).
+- [x] Lập Sub-Plan `docs/plans/phase-06-assignment-delivery-and-submission.md` & chốt `ASSIGN-02..03` (`DEC-034`, `DEC-035`).
+- [x] **Slice 6.1**: Schema `ClassAssignment`, `Submission`, `SubmissionAnswer`, `SubmissionReopenLog` (chống nộp trùng) & `assignedClassCount`.
 - [ ] **Slice 6.2**: Giao bài cho lớp (`FUNC-051`) & Danh sách bài được giao (`FUNC-052`).
 - [ ] **Slice 6.3**: Lưu nháp đang làm (`FUNC-053`), Nộp bài chính thức 1 lượt & GV mở lại lượt nộp (`FUNC-054`).
 - [ ] **Slice 6.4**: Giao diện Học viên làm bài tương tác & Xem bài nộp (Cleanup #14).
