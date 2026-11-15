@@ -21,6 +21,10 @@ import {
 import type { DbClient } from '../policies/assignment-access.policy.js';
 import type { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import { isRecord } from '../policies/submission-payload.util.js';
+import {
+  evaluateQuestionAnswer,
+  summarizeSubmissionAutoGrade,
+} from '../../grading/policies/auto-grading.policy.js';
 
 export const AUDIO_LISTEN_WINDOW_MS = 2 * 60 * 1000;
 export const MAX_AUTOSAVE_ELAPSED_STEP_SECONDS = 120;
@@ -111,8 +115,9 @@ export async function validateAndUpsertAnswers(
   questions: ReadonlyArray<QuestionRecord>,
   existingAnswers: ReadonlyArray<{ questionId: string; audioPlayCount: number }>,
   items: ReadonlyArray<AutosaveAnswerItemDto>,
-): Promise<void> {
-  if (items.length === 0) return;
+): Promise<Map<string, StudentAnswerPayload>> {
+  const normalizedMap = new Map<string, StudentAnswerPayload>();
+  if (items.length === 0) return normalizedMap;
   if (items.length > questions.length) {
     throw new BadRequestException('Số lượng câu trả lời vượt quá số câu hỏi của bài');
   }
@@ -124,6 +129,8 @@ export async function validateAndUpsertAnswers(
     questionId: string;
     normalizedPayload: Prisma.InputJsonValue;
     nextAudioPlayCount: number;
+    isCorrect: boolean | null;
+    earnedPoints: number | null;
   }> = [];
 
   for (const item of items) {
@@ -148,27 +155,34 @@ export async function validateAndUpsertAnswers(
       currentAudio,
       normalizedRequestedAudio,
     );
+    const grade = evaluateQuestionAnswer(question, normalizedPayload);
     audioCountMap.set(item.questionId, nextAudioPlayCount);
+    normalizedMap.set(item.questionId, normalizedPayload);
     validated.push({
       questionId: item.questionId,
       normalizedPayload: normalizedPayload as Prisma.InputJsonValue,
       nextAudioPlayCount,
+      isCorrect: grade.isCorrect,
+      earnedPoints: grade.earnedPoints,
     });
   }
 
   const now = new Date();
   const rows = validated.map(
     (entry) =>
-      Prisma.sql`(${randomUUID()}, ${submissionId}, ${entry.questionId}, ${JSON.stringify(entry.normalizedPayload)}::jsonb, ${entry.nextAudioPlayCount}::int, ${now})`,
+      Prisma.sql`(${randomUUID()}, ${submissionId}, ${entry.questionId}, ${JSON.stringify(entry.normalizedPayload)}::jsonb, ${entry.nextAudioPlayCount}::int, ${entry.isCorrect}::boolean, ${entry.earnedPoints}::double precision, ${now})`,
   );
   await tx.$executeRaw`
-    INSERT INTO "submission_answers" ("id", "submission_id", "question_id", "answer_payload", "audio_play_count", "updated_at")
+    INSERT INTO "submission_answers" ("id", "submission_id", "question_id", "answer_payload", "audio_play_count", "is_correct", "earned_points", "updated_at")
     VALUES ${Prisma.join(rows)}
     ON CONFLICT ("submission_id", "question_id") DO UPDATE SET
       "answer_payload" = EXCLUDED."answer_payload",
       "audio_play_count" = GREATEST("submission_answers"."audio_play_count", EXCLUDED."audio_play_count"),
+      "is_correct" = EXCLUDED."is_correct",
+      "earned_points" = EXCLUDED."earned_points",
       "updated_at" = EXCLUDED."updated_at"
   `;
+  return normalizedMap;
 }
 
 export async function loadAssignmentForSession(
@@ -245,10 +259,28 @@ export async function createInitialSubmission(
   });
 }
 
+export function computeMergedAutoScore(
+  questions: ReadonlyArray<QuestionRecord>,
+  existingAnswers: ReadonlyArray<{ questionId: string; answerPayload: unknown }>,
+  incomingAnswers?: ReadonlyMap<string, StudentAnswerPayload>,
+): number {
+  const answerMap = new Map<string, unknown>();
+  for (const ans of existingAnswers) {
+    answerMap.set(ans.questionId, ans.answerPayload);
+  }
+  if (incomingAnswers) {
+    for (const [questionId, payload] of incomingAnswers) {
+      answerMap.set(questionId, payload);
+    }
+  }
+  return summarizeSubmissionAutoGrade(questions, answerMap).autoScore;
+}
+
 export async function autoSubmitExpiredSubmission(
   tx: Prisma.TransactionClient,
   submissionId: string,
   now: Date,
+  autoScore?: number,
 ) {
   return tx.submission.update({
     where: { id: submissionId },
@@ -258,6 +290,7 @@ export async function autoSubmitExpiredSubmission(
       submittedAt: now,
       lastSavedAt: now,
       lastSyncedAt: now,
+      ...(autoScore !== undefined ? { autoScore } : {}),
     },
     include: { answers: { orderBy: { updatedAt: 'asc' } } },
   });
@@ -280,12 +313,17 @@ export async function applySubmissionTickAndPersist(
 ): Promise<StudentExamSessionDto> {
   const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
   if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
-    const updated = await autoSubmitExpiredSubmission(tx, submission.id, now);
+    const expiredAutoScore = computeMergedAutoScore(
+      assignment.assessment.questions,
+      submission.answers,
+    );
+    const updated = await autoSubmitExpiredSubmission(tx, submission.id, now, expiredAutoScore);
     return buildStudentExamSessionDto(answerPolicy, assignment, updated, now, actorId);
   }
 
+  let normalizedIncoming: Map<string, StudentAnswerPayload> | undefined;
   if (params.answers?.length) {
-    await validateAndUpsertAnswers(
+    normalizedIncoming = await validateAndUpsertAnswers(
       tx,
       answerPolicy,
       submission.id,
@@ -304,6 +342,13 @@ export async function applySubmissionTickAndPersist(
   const expired = isExpired(now, effectiveDueAt, timers.remainingSeconds, SUBMIT_GRACE_MS);
   const shouldSubmit = params.forceSubmit || expired;
   const autoSubmitted = Boolean(params.clientAutoSubmitted) || expired;
+  const autoScore = shouldSubmit
+    ? computeMergedAutoScore(
+        assignment.assessment.questions,
+        submission.answers,
+        normalizedIncoming,
+      )
+    : undefined;
 
   const updated = await tx.submission.update({
     where: { id: submission.id },
@@ -317,6 +362,7 @@ export async function applySubmissionTickAndPersist(
             status: SubmissionStatus.SUBMITTED_WAITING,
             autoSubmitted,
             submittedAt: now,
+            autoScore,
           }
         : {}),
     },
@@ -340,7 +386,8 @@ export async function recoverSessionAfterUniqueConflict(
     const now = new Date();
     const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, existing.dueAtOverride);
     if (isExpired(now, effectiveDueAt, existing.remainingSeconds, SUBMIT_GRACE_MS)) {
-      existing = await autoSubmitExpiredSubmission(tx, existing.id, now);
+      const autoScore = computeMergedAutoScore(assignment.assessment.questions, existing.answers);
+      existing = await autoSubmitExpiredSubmission(tx, existing.id, now, autoScore);
     }
     return buildStudentExamSessionDto(answerPolicy, assignment, existing, now, studentId);
   });

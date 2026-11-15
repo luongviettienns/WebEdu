@@ -4,6 +4,7 @@ import React from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { type AuthUserDto } from '@/features/auth/api/auth.api';
+import { AiGradingConfigSection } from '@/features/system-settings/components/AiGradingConfigSection';
 import { AuditLogsSection } from '@/features/system-settings/components/AuditLogsSection';
 import { BrandConfigSection } from '@/features/system-settings/components/BrandConfigSection';
 import { SystemUsersSection } from '@/features/system-settings/components/SystemUsersSection';
@@ -63,6 +64,11 @@ function SuperadminSettingsContent({
         centerLogoBase64={s.centerLogoBase64}
         onCenterNameChange={s.setCenterName}
         onCenterLogoChange={s.setCenterLogoBase64}
+        onAuthError={onAuthError}
+        onConfigSaved={s.refreshAuditLogs}
+      />
+
+      <AiGradingConfigSection
         onAuthError={onAuthError}
         onConfigSaved={s.refreshAuditLogs}
       />

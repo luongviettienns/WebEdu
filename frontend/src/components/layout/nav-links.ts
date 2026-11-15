@@ -105,6 +105,16 @@ function appendStudentAndAccountGroups(
   ];
 }
 
+export function getUserInitials(fullName?: string | null): string {
+  if (!fullName || !fullName.trim()) return 'TD';
+  return fullName
+    .trim()
+    .split(/\s+/)
+    .slice(-2)
+    .map((p) => p[0]?.toUpperCase() ?? '')
+    .join('');
+}
+
 export function getGroupedNavLinks(
   role: Role | undefined,
   assignedRoles: readonly Role[] | undefined,
@@ -142,7 +152,7 @@ export function getGroupedNavLinks(
               includeSuperadmin: false,
               includeAdminOnly: true,
               includeAssessments: true,
-              includeTeacherPersonal: hasTeacherRole,
+              includeTeacherPersonal: false,
             }),
           },
         ],
@@ -164,6 +174,27 @@ export function getGroupedNavLinks(
     default:
       return appendStudentAndAccountGroups([], true);
   }
+}
+
+export function resolveActiveRoleView(
+  pathname: string,
+  effectiveRole: Role | undefined,
+  roles: readonly Role[] | undefined,
+  preferredRoleView: 'ADMIN' | 'TEACHER',
+): Role | undefined {
+  const hasAdminTeacherSwitch = Boolean(
+    roles?.includes('ADMIN') && roles?.includes('TEACHER') && effectiveRole !== 'SUPERADMIN',
+  );
+  if (!hasAdminTeacherSwitch) {
+    return effectiveRole;
+  }
+  if (pathname.startsWith('/teacher/classes') || pathname.startsWith('/teacher/schedules')) {
+    return 'TEACHER';
+  }
+  if (pathname.startsWith('/admin')) {
+    return 'ADMIN';
+  }
+  return preferredRoleView;
 }
 
 export function getNavLinks(

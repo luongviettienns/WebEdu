@@ -27,6 +27,7 @@ import {
   applySubmissionTickAndPersist,
   autoSubmitExpiredSubmission,
   buildStudentExamSessionDto,
+  computeMergedAutoScore,
   createInitialSubmission,
   isExpired,
   isPrismaUniqueError,
@@ -117,7 +118,11 @@ export class StudentSubmissionService {
         } else {
           const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
           if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
-            submission = await autoSubmitExpiredSubmission(tx, submission.id, now);
+            const autoScore = computeMergedAutoScore(
+              assignment.assessment.questions,
+              submission.answers,
+            );
+            submission = await autoSubmitExpiredSubmission(tx, submission.id, now, autoScore);
           }
         }
 

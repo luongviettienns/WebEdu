@@ -85,6 +85,45 @@ export interface ListAuditLogsParams {
   action?: string;
 }
 
+export type AiGradingProvider = 'OPENAI' | 'GEMINI' | 'CUSTOM';
+
+export interface AiGradingConfigResponse {
+  enabled: boolean;
+  provider: AiGradingProvider;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  maskedApiKey: string | null;
+  timeoutMs: number;
+  updatedAt: string | null;
+}
+
+export interface UpdateAiGradingConfigPayload {
+  enabled: boolean;
+  provider: AiGradingProvider;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+  clearApiKey?: boolean;
+  timeoutMs?: number;
+}
+
+export interface TestAiGradingConnectionPayload {
+  provider: AiGradingProvider;
+  baseUrl?: string;
+  model?: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}
+
+export interface TestAiGradingConnectionResult {
+  ok: boolean;
+  provider: AiGradingProvider;
+  model: string;
+  latencyMs: number;
+  message: string;
+}
+
 // ============================================================================
 // Superadmin System Settings APIs (/system-settings/*)
 // ============================================================================
@@ -185,4 +224,35 @@ export async function listAuditLogs(
     method: 'GET',
     signal: options?.signal,
   });
+}
+
+export async function getAiGradingConfig(
+  options?: RequestOptions,
+): Promise<AiGradingConfigResponse> {
+  return fetchApi<AiGradingConfigResponse>('/system-settings/ai-grading', {
+    method: 'GET',
+    signal: options?.signal,
+    cache: 'no-store',
+  });
+}
+
+export async function updateAiGradingConfig(
+  payload: UpdateAiGradingConfigPayload,
+): Promise<AiGradingConfigResponse> {
+  return fetchApi<AiGradingConfigResponse>('/system-settings/ai-grading', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function testAiGradingConnection(
+  payload: TestAiGradingConnectionPayload,
+): Promise<TestAiGradingConnectionResult> {
+  return fetchApi<TestAiGradingConnectionResult>(
+    '/system-settings/ai-grading/test',
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
 }

@@ -20,6 +20,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [preferredRoleView, setPreferredRoleView] = useState<'ADMIN' | 'TEACHER'>('ADMIN');
   const loggingOutRef = useRef(false);
 
   useEffect(() => {
@@ -73,7 +74,19 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   );
 
   const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
+  const hasAdminTeacherSwitch = Boolean(
+    hasAdminRole && user?.roles?.includes('TEACHER') && user?.effectiveRole !== 'SUPERADMIN',
+  );
   const pendingCount = usePendingEnrollmentCount(hasAdminRole);
+
+  const handleSwitchRoleView = useCallback(
+    (nextRole: 'ADMIN' | 'TEACHER') => {
+      setPreferredRoleView(nextRole);
+      setMobileMenuOpen(false);
+      router.push(nextRole === 'ADMIN' ? '/admin/classes' : '/teacher/classes');
+    },
+    [router],
+  );
 
   if (loading) {
     return (
@@ -104,7 +117,12 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[var(--paper)]">
       {/* 252px Desktop Sidebar */}
-      <PortalSidebar user={user} pendingCount={pendingCount} />
+      <PortalSidebar
+        user={user}
+        pendingCount={pendingCount}
+        preferredRoleView={preferredRoleView}
+        onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
+      />
 
       {/* Mobile Off-canvas Drawer */}
       <MobileNavDrawer
@@ -112,11 +130,17 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         onClose={() => setMobileMenuOpen(false)}
         user={user}
         pendingCount={pendingCount}
+        preferredRoleView={preferredRoleView}
+        onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
       />
 
       {/* Right Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
-        <PortalTopbar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+        <PortalTopbar
+          user={user}
+          preferredRoleView={preferredRoleView}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+        />
         <main className="flex-1 p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
           {children}
         </main>

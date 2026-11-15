@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { AiGradingConfigService } from './services/ai-grading-config.service.js';
 import { SystemConfigService } from './services/system-config.service.js';
 import { SystemUsersService } from './services/system-users.service.js';
 import { UserRoleStatusService } from './services/user-role-status.service.js';
@@ -20,6 +21,8 @@ import {
   CreateSystemUserDto,
   ListAuditLogsQueryDto,
   ListSystemUsersQueryDto,
+  TestAiGradingConnectionDto,
+  UpdateAiGradingConfigDto,
   UpdateSystemConfigDto,
   UpdateUserRolesStatusDto,
 } from './dto/system-settings.dto.js';
@@ -34,6 +37,7 @@ export class SystemSettingsController {
     private readonly systemUsersService: SystemUsersService,
     private readonly userRoleStatusService: UserRoleStatusService,
     private readonly systemConfigService: SystemConfigService,
+    private readonly aiGradingConfigService: AiGradingConfigService,
   ) {}
 
   @Get('users')
@@ -90,5 +94,30 @@ export class SystemSettingsController {
   @ApiOperation({ summary: 'Danh sách nhật ký vận hành hệ thống' })
   async listAuditLogs(@Query() query: ListAuditLogsQueryDto) {
     return this.systemConfigService.listAuditLogs(query);
+  }
+
+  @Get('ai-grading')
+  @Roles(Role.SUPERADMIN)
+  @ApiOperation({ summary: 'Lấy cấu hình AI gợi ý chấm bài tự luận (Superadmin)' })
+  async getAiGradingConfig() {
+    return this.aiGradingConfigService.getAiGradingConfig();
+  }
+
+  @Put('ai-grading')
+  @Roles(Role.SUPERADMIN)
+  @ApiOperation({ summary: 'Cập nhật cấu hình AI đa provider (Superadmin)' })
+  async updateAiGradingConfig(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateAiGradingConfigDto,
+  ) {
+    return this.aiGradingConfigService.updateAiGradingConfig(user, dto);
+  }
+
+  @Post('ai-grading/test')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.SUPERADMIN)
+  @ApiOperation({ summary: 'Kiểm tra kết nối tới nhà cung cấp AI (Superadmin)' })
+  async testAiGradingConnection(@Body() dto: TestAiGradingConnectionDto) {
+    return this.aiGradingConfigService.testConnection(dto);
   }
 }

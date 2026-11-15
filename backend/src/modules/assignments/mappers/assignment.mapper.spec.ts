@@ -157,6 +157,7 @@ describe('assignment.mapper', () => {
       for (const doneStatus of [
         SubmissionStatus.SUBMITTED_WAITING,
         SubmissionStatus.AUTO_GRADED_PENDING_REVIEW,
+        SubmissionStatus.GRADED,
       ]) {
         const sub = toStudentAssignmentListItemDto(
           assignmentRow,
@@ -171,7 +172,7 @@ describe('assignment.mapper', () => {
             autoSubmitted: false,
             autoScore: 5,
             totalScore: 5,
-            teacherFeedback: 'Hidden until graded',
+            teacherFeedback: 'Hidden until published (RETURNED)',
           },
           2,
           afterDue,
@@ -182,30 +183,28 @@ describe('assignment.mapper', () => {
         expect(sub.teacherFeedback).toBeNull();
       }
 
-      for (const releasedStatus of [SubmissionStatus.GRADED, SubmissionStatus.RETURNED]) {
-        const graded = toStudentAssignmentListItemDto(
-          assignmentRow,
-          {
-            id: 'sub-3',
-            attemptNumber: 1,
-            status: releasedStatus,
-            elapsedSeconds: 300,
-            remainingSeconds: 1500,
-            lastSavedAt: new Date('2026-11-14T10:05:00.000Z'),
-            submittedAt: new Date('2026-11-14T10:05:00.000Z'),
-            autoSubmitted: false,
-            autoScore: 4,
-            totalScore: 4.5,
-            teacherFeedback: 'Rất tốt',
-          },
-          2,
-          afterDue,
-        );
-        expect(graded.isOverdue).toBe(false);
-        expect(graded.autoScore).toBe(4);
-        expect(graded.totalScore).toBe(4.5);
-        expect(graded.teacherFeedback).toBe('Rất tốt');
-      }
+      const returned = toStudentAssignmentListItemDto(
+        assignmentRow,
+        {
+          id: 'sub-3',
+          attemptNumber: 1,
+          status: SubmissionStatus.RETURNED,
+          elapsedSeconds: 300,
+          remainingSeconds: 1500,
+          lastSavedAt: new Date('2026-11-14T10:05:00.000Z'),
+          submittedAt: new Date('2026-11-14T10:05:00.000Z'),
+          autoSubmitted: false,
+          autoScore: 4,
+          totalScore: 4.5,
+          teacherFeedback: 'Rất tốt',
+        },
+        2,
+        afterDue,
+      );
+      expect(returned.isOverdue).toBe(false);
+      expect(returned.autoScore).toBe(4);
+      expect(returned.totalScore).toBe(4.5);
+      expect(returned.teacherFeedback).toBe('Rất tốt');
     });
 
     it('uses dueAtOverride for student dueAt and isOverdue calculations', () => {
@@ -418,73 +417,76 @@ describe('assignment.mapper', () => {
       },
     };
 
-    it('masks autoScore, totalScore, and teacherFeedback as null for AUTO_GRADED_PENDING_REVIEW and exposes them for GRADED & RETURNED', () => {
+    it('masks autoScore, totalScore, and teacherFeedback as null for AUTO_GRADED_PENDING_REVIEW and GRADED, and exposes them only for RETURNED', () => {
       const now = new Date('2026-11-16T08:00:00.000Z');
       const overrideDue = new Date('2026-11-20T12:00:00.000Z');
-      const pendingDto = buildStudentExamSessionDto(
-        answerPolicy,
-        baseAssignment,
-        {
-          id: 'sub-pending',
-          studentId: 'stu-1',
-          attemptNumber: 2,
-          status: SubmissionStatus.AUTO_GRADED_PENDING_REVIEW,
-          elapsedSeconds: 300,
-          remainingSeconds: 1500,
-          startedAt: new Date('2026-11-16T07:00:00.000Z'),
-          lastSavedAt: new Date('2026-11-16T07:05:00.000Z'),
-          lastSyncedAt: new Date('2026-11-16T07:05:00.000Z'),
-          submittedAt: new Date('2026-11-16T07:05:00.000Z'),
-          autoSubmitted: false,
-          autoScore: 5,
-          totalScore: 5,
-          teacherFeedback: 'Internal draft note',
-          dueAtOverride: overrideDue,
-          answers: [],
-        },
-        now,
-        'stu-1',
-      );
-
-      expect(pendingDto.assignment.autoScore).toBeNull();
-      expect(pendingDto.assignment.totalScore).toBeNull();
-      expect(pendingDto.assignment.teacherFeedback).toBeNull();
-      expect(pendingDto.assignment.dueAt).toBe(overrideDue.toISOString());
-      expect(pendingDto.submission.dueAtOverride).toBe(overrideDue.toISOString());
-      expect('reopenReason' in pendingDto.submission).toBe(false);
-      expect('autoScore' in pendingDto.submission).toBe(false);
-      expect('totalScore' in pendingDto.submission).toBe(false);
-      expect('teacherFeedback' in pendingDto.submission).toBe(false);
-
-      for (const released of [SubmissionStatus.GRADED, SubmissionStatus.RETURNED]) {
-        const releasedDto = buildStudentExamSessionDto(
+      for (const hiddenStatus of [
+        SubmissionStatus.AUTO_GRADED_PENDING_REVIEW,
+        SubmissionStatus.GRADED,
+      ]) {
+        const hiddenDto = buildStudentExamSessionDto(
           answerPolicy,
           baseAssignment,
           {
-            id: `sub-${released}`,
+            id: `sub-${hiddenStatus}`,
             studentId: 'stu-1',
-            attemptNumber: 1,
-            status: released,
+            attemptNumber: 2,
+            status: hiddenStatus,
             elapsedSeconds: 300,
             remainingSeconds: 1500,
-            startedAt: new Date('2026-11-14T07:00:00.000Z'),
-            lastSavedAt: new Date('2026-11-14T07:05:00.000Z'),
-            lastSyncedAt: new Date('2026-11-14T07:05:00.000Z'),
-            submittedAt: new Date('2026-11-14T07:05:00.000Z'),
+            startedAt: new Date('2026-11-16T07:00:00.000Z'),
+            lastSavedAt: new Date('2026-11-16T07:05:00.000Z'),
+            lastSyncedAt: new Date('2026-11-16T07:05:00.000Z'),
+            submittedAt: new Date('2026-11-16T07:05:00.000Z'),
             autoSubmitted: false,
-            autoScore: 4,
-            totalScore: 4.5,
-            teacherFeedback: 'Rất tốt',
-            dueAtOverride: null,
+            autoScore: 5,
+            totalScore: 5,
+            teacherFeedback: 'Internal draft note',
+            dueAtOverride: overrideDue,
             answers: [],
           },
           now,
           'stu-1',
         );
-        expect(releasedDto.assignment.autoScore).toBe(4);
-        expect(releasedDto.assignment.totalScore).toBe(4.5);
-        expect(releasedDto.assignment.teacherFeedback).toBe('Rất tốt');
+
+        expect(hiddenDto.assignment.autoScore).toBeNull();
+        expect(hiddenDto.assignment.totalScore).toBeNull();
+        expect(hiddenDto.assignment.teacherFeedback).toBeNull();
+        expect(hiddenDto.assignment.dueAt).toBe(overrideDue.toISOString());
+        expect(hiddenDto.submission.dueAtOverride).toBe(overrideDue.toISOString());
+        expect('reopenReason' in hiddenDto.submission).toBe(false);
+        expect('autoScore' in hiddenDto.submission).toBe(false);
+        expect('totalScore' in hiddenDto.submission).toBe(false);
+        expect('teacherFeedback' in hiddenDto.submission).toBe(false);
       }
+
+      const releasedDto = buildStudentExamSessionDto(
+        answerPolicy,
+        baseAssignment,
+        {
+          id: 'sub-RETURNED',
+          studentId: 'stu-1',
+          attemptNumber: 1,
+          status: SubmissionStatus.RETURNED,
+          elapsedSeconds: 300,
+          remainingSeconds: 1500,
+          startedAt: new Date('2026-11-14T07:00:00.000Z'),
+          lastSavedAt: new Date('2026-11-14T07:05:00.000Z'),
+          lastSyncedAt: new Date('2026-11-14T07:05:00.000Z'),
+          submittedAt: new Date('2026-11-14T07:05:00.000Z'),
+          autoSubmitted: false,
+          autoScore: 4,
+          totalScore: 4.5,
+          teacherFeedback: 'Rất tốt',
+          dueAtOverride: null,
+          answers: [],
+        },
+        now,
+        'stu-1',
+      );
+      expect(releasedDto.assignment.autoScore).toBe(4);
+      expect(releasedDto.assignment.totalScore).toBe(4.5);
+      expect(releasedDto.assignment.teacherFeedback).toBe('Rất tốt');
     });
   });
 });

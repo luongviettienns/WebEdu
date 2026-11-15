@@ -1,19 +1,34 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import React from 'react';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { SidebarBrand } from './SidebarBrand';
 import { SidebarNav } from './SidebarNav';
 import { SidebarFooter } from './SidebarFooter';
-import { getGroupedNavLinks } from './nav-links';
+import { getGroupedNavLinks, resolveActiveRoleView } from './nav-links';
 
 interface PortalSidebarProps {
   user: AuthUserDto | null;
   pendingCount: number;
+  preferredRoleView?: 'ADMIN' | 'TEACHER';
+  onSwitchRoleView?: (role: 'ADMIN' | 'TEACHER') => void;
 }
 
-export function PortalSidebar({ user, pendingCount }: PortalSidebarProps) {
-  const groups = getGroupedNavLinks(user?.effectiveRole, user?.roles, pendingCount);
+export function PortalSidebar({
+  user,
+  pendingCount,
+  preferredRoleView = 'ADMIN',
+  onSwitchRoleView,
+}: PortalSidebarProps) {
+  const pathname = usePathname() ?? '';
+  const activeRoleView = resolveActiveRoleView(
+    pathname,
+    user?.effectiveRole,
+    user?.roles,
+    preferredRoleView,
+  );
+  const groups = getGroupedNavLinks(activeRoleView, user?.roles, pendingCount);
 
   return (
     <aside
@@ -22,7 +37,11 @@ export function PortalSidebar({ user, pendingCount }: PortalSidebarProps) {
     >
       <SidebarBrand />
       <SidebarNav groups={groups} />
-      <SidebarFooter user={user} />
+      <SidebarFooter
+        user={user}
+        activeRoleView={activeRoleView}
+        onSwitchRoleView={onSwitchRoleView}
+      />
     </aside>
   );
 }

@@ -3,13 +3,20 @@
 import { useRouter } from 'next/navigation';
 import React, { useState } from 'react';
 import { logoutUser, type AuthUserDto } from '@/features/auth/api/auth.api';
-import { ROLE_LABELS } from '@/types/user';
+import { ROLE_LABELS, type Role } from '@/types/user';
+import { getUserInitials } from './nav-links';
 
 interface SidebarFooterProps {
   user: AuthUserDto | null;
+  activeRoleView?: Role;
+  onSwitchRoleView?: (role: 'ADMIN' | 'TEACHER') => void;
 }
 
-export function SidebarFooter({ user }: SidebarFooterProps) {
+export function SidebarFooter({
+  user,
+  activeRoleView,
+  onSwitchRoleView,
+}: SidebarFooterProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -23,18 +30,52 @@ export function SidebarFooter({ user }: SidebarFooterProps) {
     }
   };
 
-  const initials = user?.fullName
-    ? user.fullName
-        .trim()
-        .split(/\s+/)
-        .slice(-2)
-        .map((p) => p[0]?.toUpperCase() ?? '')
-        .join('')
-    : 'TD';
+  const initials = getUserInitials(user?.fullName);
+  const hasAdminTeacherSwitch = Boolean(
+    user?.roles?.includes('ADMIN') && user?.roles?.includes('TEACHER'),
+  );
+  const currentRoleView = activeRoleView ?? user?.effectiveRole;
 
   return (
     <div className="mt-auto pt-2 border-t border-[var(--line)] px-2 pb-3">
       <div className="fret" aria-hidden="true" />
+
+      {hasAdminTeacherSwitch && onSwitchRoleView ? (
+        <div className="mb-2 space-y-1">
+          <div className="px-1 text-[11px] font-semibold text-[var(--ink-3)]">
+            Vai trò đang dùng
+          </div>
+          <div
+            role="group"
+            aria-label="Chuyển góc nhìn vai trò"
+            className="grid grid-cols-2 rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-0.5"
+          >
+            {(
+              [
+                ['ADMIN', 'Admin'],
+                ['TEACHER', 'Giáo viên'],
+              ] as const
+            ).map(([roleKey, label]) => {
+              const active = currentRoleView === roleKey;
+              return (
+                <button
+                  key={roleKey}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onSwitchRoleView(roleKey)}
+                  className={`rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
+                    active
+                      ? 'bg-white text-[var(--ink)] shadow-2xs'
+                      : 'text-[var(--ink-2)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       {user ? (
         <div className="flex items-center gap-2.5 p-1.5 rounded-lg bg-[var(--surface-2)] border border-[var(--line)]">
@@ -46,7 +87,9 @@ export function SidebarFooter({ user }: SidebarFooterProps) {
               {user.fullName}
             </div>
             <div className="text-[11px] text-[var(--ink-3)] truncate">
-              {ROLE_LABELS[user.effectiveRole] ?? user.effectiveRole}
+              {hasAdminTeacherSwitch
+                ? 'Admin · Giáo viên'
+                : ROLE_LABELS[user.effectiveRole] ?? user.effectiveRole}
             </div>
           </div>
           <button

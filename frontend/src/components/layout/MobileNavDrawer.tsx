@@ -1,21 +1,38 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import React, { useEffect } from 'react';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { SidebarBrand } from './SidebarBrand';
 import { SidebarNav } from './SidebarNav';
 import { SidebarFooter } from './SidebarFooter';
-import { getGroupedNavLinks } from './nav-links';
+import { getGroupedNavLinks, resolveActiveRoleView } from './nav-links';
 
 interface MobileNavDrawerProps {
   open: boolean;
   onClose: () => void;
   user: AuthUserDto | null;
   pendingCount: number;
+  preferredRoleView?: 'ADMIN' | 'TEACHER';
+  onSwitchRoleView?: (role: 'ADMIN' | 'TEACHER') => void;
 }
 
-export function MobileNavDrawer({ open, onClose, user, pendingCount }: MobileNavDrawerProps) {
-  const groups = getGroupedNavLinks(user?.effectiveRole, user?.roles, pendingCount);
+export function MobileNavDrawer({
+  open,
+  onClose,
+  user,
+  pendingCount,
+  preferredRoleView = 'ADMIN',
+  onSwitchRoleView,
+}: MobileNavDrawerProps) {
+  const pathname = usePathname() ?? '';
+  const activeRoleView = resolveActiveRoleView(
+    pathname,
+    user?.effectiveRole,
+    user?.roles,
+    preferredRoleView,
+  );
+  const groups = getGroupedNavLinks(activeRoleView, user?.roles, pendingCount);
 
   useEffect(() => {
     if (open) {
@@ -70,7 +87,11 @@ export function MobileNavDrawer({ open, onClose, user, pendingCount }: MobileNav
         </div>
 
         <SidebarNav groups={groups} onItemClick={onClose} />
-        <SidebarFooter user={user} />
+        <SidebarFooter
+          user={user}
+          activeRoleView={activeRoleView}
+          onSwitchRoleView={onSwitchRoleView}
+        />
       </div>
     </div>
   );

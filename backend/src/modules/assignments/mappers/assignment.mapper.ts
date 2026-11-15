@@ -27,7 +27,6 @@ const REOPENABLE_STATUSES = new Set<SubmissionStatus>([
 ]);
 
 const SCORE_VISIBLE_STATUSES = new Set<SubmissionStatus>([
-  SubmissionStatus.GRADED,
   SubmissionStatus.RETURNED,
 ]);
 
