@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useRef, type RefObject } from 'react';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -28,20 +28,12 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
   );
 }
 
-/**
- * Hộp thoại dùng chung: role=dialog + aria-modal, bẫy focus (Tab/Shift+Tab),
- * đóng bằng Escape, trả focus về phần tử đã mở hộp thoại và khóa cuộn nền.
- */
-export function BaseDialog({
-  eyebrow,
-  title,
-  onClose,
+export function useDialogFocus(
+  panelRef: RefObject<HTMLElement | null>,
+  onClose: () => void,
+  open: boolean,
   busy = false,
-  maxWidthClass = 'max-w-lg',
-  children,
-}: BaseDialogProps) {
-  const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
+) {
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(busy);
 
@@ -51,6 +43,7 @@ export function BaseDialog({
   }, [onClose, busy]);
 
   useEffect(() => {
+    if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     const previousOverflow = document.body.style.overflow;
@@ -98,7 +91,25 @@ export function BaseDialog({
         previouslyFocused.focus();
       }
     };
-  }, []);
+  }, [open, panelRef]);
+
+}
+
+/**
+ * Hộp thoại dùng chung: role=dialog + aria-modal, bẫy focus (Tab/Shift+Tab),
+ * đóng bằng Escape, trả focus về phần tử đã mở hộp thoại và khóa cuộn nền.
+ */
+export function BaseDialog({
+  eyebrow,
+  title,
+  onClose,
+  busy = false,
+  maxWidthClass = 'max-w-lg',
+  children,
+}: BaseDialogProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(panelRef, onClose, true, busy);
 
   return (
     <div

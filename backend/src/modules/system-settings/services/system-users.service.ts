@@ -20,6 +20,7 @@ import {
   normalizeEmail,
 } from '../../../common/utils/contact-validation.util.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
+import { requireStudentRoleDate } from './student-role-date.util.js';
 import { buildUserSearchFilter } from '../../../common/utils/user-search.util.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type {
@@ -60,6 +61,7 @@ export class SystemUsersService {
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         where,
+        include: { studentProfile: { select: { userId: true } } },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -67,7 +69,7 @@ export class SystemUsersService {
       this.prisma.user.count({ where }),
     ]);
 
-    return { items: users.map(toSystemUserDto), total, page, limit };
+    return { items: users.map((user) => toSystemUserDto(user)), total, page, limit };
   }
 
   async createSystemUser(
@@ -98,6 +100,7 @@ export class SystemUsersService {
       );
     }
 
+    const dateOfBirth = uniqueRoles.includes(Role.STUDENT) ? requireStudentRoleDate(dto.dateOfBirth) : null;
     const duplicate = await this.prisma.user.findFirst({
       where: { OR: [{ email }, { phone }] },
     });
@@ -136,12 +139,8 @@ export class SystemUsersService {
           });
         }
 
-        if (uniqueRoles.includes(Role.STUDENT)) {
-          await tx.studentProfile.upsert({
-            where: { userId: user.id },
-            update: {},
-            create: { userId: user.id, dateOfBirth: new Date('2000-01-01') },
-          });
+        if (dateOfBirth) {
+          await tx.studentProfile.create({ data: { userId: user.id, dateOfBirth } });
         }
 
         await writeAuditLog(tx, actor, {
@@ -154,7 +153,7 @@ export class SystemUsersService {
         return user;
       });
 
-      return toSystemUserDto(created);
+      return toSystemUserDto(created, dateOfBirth !== null);
     } catch (err: unknown) {
       rethrowDuplicateContactConflict(err);
     }

@@ -49,6 +49,12 @@ describe('document-import.parser (Task 5.3 TDD)', () => {
     expect(images[0]?.mime).toBe('image/png');
   });
 
+  it('requires review when any labeled correct option does not exist', () => {
+    const [question] = parseImportedQuestions('1. Chọn đáp án đúng\nA. 你好\nB. 谢谢\nĐáp án: A, D');
+    expect(question?.needsReview).toBe(true);
+    expect(question?.payload).toMatchObject({ correctOptionIds: [] });
+  });
+
   it('accepts 1. numbering, inline A/B/C, skips headers, and maps answer text', () => {
     const parsed = parseImportedQuestions(`
 CHÚC CÁC BẠN LÀM BÀI TỐT!

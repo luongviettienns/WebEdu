@@ -23,8 +23,14 @@ async function loginThroughUi(
 const CURRENT_YEAR = new Date().getFullYear();
 const DOB_ADULT = `${CURRENT_YEAR - 22}-06-15`;
 const DOB_TEEN_14 = `${CURRENT_YEAR - 14}-05-20`;
+const INSPECTOR_URL = `http://127.0.0.1:${process.env.QA_MAIL_INSPECTOR_PORT || 4026}`;
 
 test.describe('Phase 2 Edge Cases & Form Ergonomics Verification', () => {
+  test.beforeAll(async ({ request }) => {
+    const response = await request.post(`${INSPECTOR_URL}/reset-rate-limits`);
+    expect(response.ok()).toBeTruthy();
+  });
+
   test('EC-1: Form Ergonomics — Compact 2-column layout fits viewport above the fold & watermark is scholarly jade', async ({
     page,
   }, testInfo) => {

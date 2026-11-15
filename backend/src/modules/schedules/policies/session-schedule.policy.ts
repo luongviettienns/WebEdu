@@ -151,11 +151,18 @@ export async function insertMakeupSessionInsideTx(
     sessionDate: Date;
     startTime: string;
     endTime: string;
-    class: { teacherId: string };
+    class: { teacherId: string; totalSessions: number };
   },
   slot: { sessionDate: string; startTime: string; endTime: string; topic?: string },
   customReason?: string,
 ): Promise<{ createdId: string; teacherWarning: string | null }> {
+  const activeCount = await tx.lessonSession.count({
+    where: { classId: cancelledTarget.classId, status: { not: SessionStatus.CANCELLED } },
+  });
+  if (activeCount >= cancelledTarget.class.totalSessions) {
+    throw new BadRequestException('Lớp đã đủ tổng số buổi học dự kiến');
+  }
+
   const mDate = parseSessionCalendarDateOrThrow(slot.sessionDate, 'Ngày học bù');
   const { startTime, endTime } = assertValidTimeRange(slot.startTime, slot.endTime);
 

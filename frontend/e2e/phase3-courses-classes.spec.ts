@@ -76,6 +76,27 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await reseedQaDatabase();
   });
 
+  test('opens mobile navigation with focus and shares the portal session request', async ({ page }) => {
+    await loginThroughUi(page, 'admin@webedu.vn');
+    await page.setViewportSize({ width: 390, height: 780 });
+    let sessionRequests = 0;
+    page.on('request', (req) => {
+      if (req.method() === 'GET' && new URL(req.url()).pathname === '/api/v1/auth/me') sessionRequests++;
+    });
+    await page.goto('/admin/courses');
+    await expect(page.getByRole('heading', { name: 'Quản lý danh mục khóa học HSK' })).toBeVisible();
+    expect(sessionRequests).toBe(1);
+    const opener = page.getByRole('button', { name: 'Mở menu' });
+    await opener.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('dialog', { name: 'Menu điều hướng di động' });
+    await expect(menu).toBeVisible();
+    await expect(menu.locator(':focus')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+
   test('P3-E2E-1: HSK Courses CRUD, filter-empty clear, deactivate ConfirmDialog & reactivate', async ({
     page,
   }) => {
@@ -409,12 +430,14 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
       // Promote teacher.lan -> dual-role ['ADMIN', 'TEACHER'] and seed a class owned by teacher.idle
       const usersRes = await apiCtx.get('system-settings/users?search=teacher.lan@webedu.vn');
       expect(usersRes.ok()).toBeTruthy();
-      const usersJson = (await usersRes.json()) as { items: Array<{ id: string; email: string }> };
+      const usersJson = (await usersRes.json()) as {
+        items: Array<{ id: string; email: string; revision: number }>;
+      };
       const lanUser = usersJson.items.find((u) => u.email === 'teacher.lan@webedu.vn');
       expect(lanUser).toBeTruthy();
 
       const updateRoleRes = await apiCtx.patch(`system-settings/users/${lanUser!.id}/roles`, {
-        data: { roles: ['ADMIN', 'TEACHER'], status: 'ACTIVE' },
+        data: { roles: ['ADMIN', 'TEACHER'], status: 'ACTIVE', expectedRevision: lanUser!.revision },
       });
       expect(updateRoleRes.ok()).toBeTruthy();
     } finally {

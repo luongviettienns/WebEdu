@@ -1,13 +1,17 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, SessionChangeAction, SessionStatus, SessionType } from '@prisma/client';
+import { addDays } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
-import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
+import { formatIsoDateUtc, resolveVnToday, VN_TIMEZONE } from '../../../common/utils/timezone.util.js';
 import {
   formatScheduleText,
   generateRecurringSessionDates,
   normalizeScheduleDays,
 } from '../../classes/policies/class-schedule.util.js';
 import { hasTimeRangeOverlap } from '../policies/session-schedule.policy.js';
+
+const RULE_REPLACEMENT_REASON = 'Thay thế theo lịch định kỳ mới';
 
 export interface ClassScheduleRuleSnapshot {
   startDate: Date;
@@ -72,8 +76,8 @@ export class SessionGeneratorService {
   }
 
   /**
-   * Regenerates only untouched `REGULAR` `SCHEDULED` sessions when recurring schedule rules change,
-   * preserving `COMPLETED`, `CANCELLED`, `MANUAL`, `MAKEUP`, and `isRescheduled` sessions.
+   * Replaces eligible future sessions after a recurring rule change.
+   * Retains past sessions and cancels linked replacements so their records stay accessible.
    */
   async reconcileRecurringSessionsAfterRuleUpdate(
     tx: Prisma.TransactionClient,
@@ -84,6 +88,7 @@ export class SessionGeneratorService {
       previousRule: ClassScheduleRuleSnapshot;
       nextRule: Omit<ClassScheduleRuleSnapshot, 'expectedEndDate'>;
       reason?: string;
+      now?: Date;
     },
   ): Promise<{ expectedEndDate: Date | null; regeneratedCount: number }> {
     const { classId, classCode, previousRule, nextRule } = params;
@@ -105,26 +110,52 @@ export class SessionGeneratorService {
         endTime: true,
         isRescheduled: true,
         isMakeup: true,
+        cancelReason: true,
+        makeupReplacement: { select: { id: true } },
+        _count: { select: {
+          changeLogs: true, classAssignments: true, attendanceRecords: true, attendanceAudits: true,
+        } },
       },
     });
 
-    const removableIds = existingSessions
-      .filter(
-        (s) =>
-          s.type === SessionType.REGULAR &&
-          s.status === SessionStatus.SCHEDULED &&
-          !s.isRescheduled &&
-          !s.isMakeup,
-      )
-      .map((s) => s.id);
-
+    const now = params.now ?? new Date();
+    const today = resolveVnToday(now);
+    const localTime = formatInTimeZone(now, VN_TIMEZONE, 'HH:mm');
+    const replaceable = existingSessions.filter((session) =>
+      (session.sessionDate > today ||
+        (session.sessionDate.getTime() === today.getTime() && session.startTime > localTime)) &&
+      session.type === SessionType.REGULAR &&
+      session.status === SessionStatus.SCHEDULED &&
+      !session.isRescheduled && !session.isMakeup &&
+      !session._count.attendanceRecords && !session._count.attendanceAudits &&
+      !session.makeupReplacement,
+    );
+    const retired = replaceable.filter((session) =>
+      session._count.changeLogs > 0 || session._count.classAssignments > 0,
+    );
+    const retiredIds = new Set(retired.map(({ id }) => id));
+    const removableIds = replaceable.filter(({ id }) => !retiredIds.has(id)).map(({ id }) => id);
     if (removableIds.length > 0) {
-      await tx.lessonSession.deleteMany({
-        where: { id: { in: removableIds } },
+      await tx.lessonSession.deleteMany({ where: { id: { in: removableIds } } });
+    }
+    if (retired.length > 0) {
+      await tx.lessonSession.updateMany({
+        where: { id: { in: [...retiredIds] } },
+        data: { status: SessionStatus.CANCELLED, sessionNumber: null,
+          cancelReason: RULE_REPLACEMENT_REASON, cancelledById: actor.id, cancelledAt: now },
+      });
+      await tx.sessionChangeLog.createMany({
+        data: retired.map((session) => ({
+          classId, sessionId: session.id, action: SessionChangeAction.CANCEL,
+          actorId: actor.id, actorName: actor.fullName, previousDate: session.sessionDate,
+          previousStartTime: session.startTime, previousEndTime: session.endTime,
+          reason: RULE_REPLACEMENT_REASON,
+        })),
       });
     }
 
-    const preserved = existingSessions.filter((s) => !removableIds.includes(s.id));
+    const replacedIds = new Set(replaceable.map(({ id }) => id));
+    const preserved = existingSessions.filter((session) => !replacedIds.has(session.id));
     const preservedActive = preserved.filter((s) => s.status !== SessionStatus.CANCELLED);
 
     if (nextRule.totalSessions < preservedActive.length) {
@@ -135,14 +166,17 @@ export class SessionGeneratorService {
 
     const needed = nextRule.totalSessions - preservedActive.length;
     if (needed > 0) {
-      const candidateStartDate = this.resolveGenerationStartDate(nextRule.startDate, preservedActive);
+      const firstFutureDay = nextRule.scheduleStartTime > localTime ? today : addDays(today, 1);
+      const candidateStartDate = this.resolveGenerationStartDate(
+        nextRule.startDate < firstFutureDay ? firstFutureDay : nextRule.startDate, preservedActive,
+      );
       const dates = this.pickNonOverlappingDates(
         candidateStartDate,
         nextRule.scheduleDays,
         nextRule.scheduleStartTime,
         nextRule.scheduleEndTime,
         needed,
-        preservedActive,
+        preserved,
       );
 
       await tx.lessonSession.createMany({
@@ -275,11 +309,14 @@ export class SessionGeneratorService {
     startTime: string,
     endTime: string,
     needed: number,
-    preservedActive: ReadonlyArray<{ sessionDate: Date; startTime: string; endTime: string }>,
+    preserved: ReadonlyArray<{ sessionDate: Date; startTime: string; endTime: string; status: SessionStatus; cancelReason: string | null }>,
   ): Date[] {
     const excludedYmds = new Set<string>();
-    for (const s of preservedActive) {
-      if (hasTimeRangeOverlap(startTime, endTime, s.startTime, s.endTime)) {
+    for (const s of preserved) {
+      const blocksDate = s.status === SessionStatus.CANCELLED
+        ? s.cancelReason !== RULE_REPLACEMENT_REASON
+        : hasTimeRangeOverlap(startTime, endTime, s.startTime, s.endTime);
+      if (blocksDate) {
         excludedYmds.add(formatIsoDateUtc(s.sessionDate));
       }
     }

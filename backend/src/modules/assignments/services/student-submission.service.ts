@@ -163,6 +163,9 @@ export class StudentSubmissionService {
       if (!submission) {
         throw new NotFoundException('Chưa bắt đầu làm bài');
       }
+      if (dto.submissionId ? dto.submissionId !== submission.id : submission.attemptNumber > 1) {
+        throw new ConflictException('Lượt làm bài đã thay đổi. Vui lòng tải lại bài tập');
+      }
       if (submission.status !== SubmissionStatus.IN_PROGRESS) {
         throw new ConflictException('Bài tập đã được nộp, không thể lưu nháp');
       }
@@ -204,6 +207,9 @@ export class StudentSubmissionService {
       const submission = await lockAndFindActiveSubmission(tx, assignmentId, actor.id);
       if (!submission) {
         throw new NotFoundException('Chưa bắt đầu làm bài');
+      }
+      if (dto.submissionId ? dto.submissionId !== submission.id : submission.attemptNumber > 1) {
+        throw new ConflictException('Lượt làm bài đã thay đổi. Vui lòng tải lại bài tập');
       }
       if (submission.status !== SubmissionStatus.IN_PROGRESS) {
         throw new ConflictException('Bài tập đã được nộp');
@@ -267,6 +273,7 @@ export class StudentSubmissionService {
     assignmentId: string,
     mediaId: string,
     actor: AuthenticatedUser,
+    questionId?: string,
   ): Promise<StreamableFile> {
     const assignment = await loadAssignmentForMediaStream(this.prisma, assignmentId);
     const viewer = await this.accessPolicy.resolveClassAssignmentViewer(
@@ -282,6 +289,7 @@ export class StudentSubmissionService {
         actor.id,
         assignment.assessment?.questions ?? [],
         mediaId,
+        questionId,
       );
     }
     return this.mediaAccess.streamStoredFile(

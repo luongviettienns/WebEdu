@@ -585,8 +585,8 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       $queryRaw: vi.fn(
         async (strings: TemplateStringsArray, ...values: unknown[]) => {
           const sql = strings.join('?');
-          if (sql.includes('"users"') && typeof values[0] === 'string') {
-            lockedUserIdsOrder.push(values[0]);
+          if (sql.includes('"users"') && values[0]) {
+            lockedUserIdsOrder.push(...(typeof values[0] === 'string' ? [values[0]] : [...(values[0] as { values: string[] }).values].sort()));
           }
           return [{ id: values[0] }];
         },
@@ -671,20 +671,16 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
         ),
       },
       enrollment: {
-        findMany: vi.fn(
-          async ({
-            where,
-          }: {
-            where: { classId: string; status: EnrollmentStatus };
-          }) => {
-            return enrollmentsStore
-              .filter(
-                (e) =>
-                  e.classId === where.classId && e.status === where.status,
-              )
-              .map((e) => ({ ...e }));
-          },
-        ),
+        findMany: vi.fn(async ({ where }: {
+          where: { classId?: string; status?: EnrollmentStatus; studentId?: { in: string[] };
+            OR?: Array<{ status?: EnrollmentStatus; classId?: { not: string } }> };
+        }) => enrollmentsStore.filter((row) =>
+          (!where.classId || row.classId === where.classId) &&
+          (!where.status || row.status === where.status) &&
+          (!where.studentId || where.studentId.in.includes(row.studentId)) &&
+          (!where.OR || where.OR.some((item) => item.status === row.status ||
+            (item.classId && item.classId.not !== row.classId))),
+        ).map((row) => ({ ...row }))),
         findFirst: vi.fn(
           async ({
             where,
@@ -740,12 +736,12 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
             where,
             data,
           }: {
-            where: { classId: string; status: EnrollmentStatus };
+            where: { classId?: string; status?: EnrollmentStatus; id?: { in: string[] } };
             data: { status: EnrollmentStatus; leftDate: Date | null };
           }) => {
             let count = 0;
             for (const e of enrollmentsStore) {
-              if (e.classId === where.classId && e.status === where.status) {
+              if ((where.id ? where.id.in.includes(e.id) : e.classId === where.classId && e.status === where.status)) {
                 e.status = data.status;
                 e.leftDate = data.leftDate;
                 count += 1;
@@ -1038,14 +1034,14 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
             orderBy,
           }: {
             where?: { classId?: string; status?: { not?: SessionStatus } };
-            orderBy?: Array<Record<string, 'asc' | 'desc'>>;
+            orderBy?: Array<Record<string, 'asc' | 'desc'>> | { sessionDate?: 'asc' | 'desc' };
           } = {}) => {
             const list = sessionsStore.filter(
               (s) =>
                 (!where?.classId || s.classId === where.classId) &&
-                (!where?.status?.not || s.status !== where.status.not),
+                (typeof where?.status === 'string' ? s.status === where.status : !where?.status?.not || s.status !== where.status.not),
             );
-            if (orderBy?.some((o) => o.sessionDate === 'desc')) {
+            if ((Array.isArray(orderBy) ? orderBy.some((o) => o.sessionDate === 'desc') : orderBy?.sessionDate === 'desc')) {
               list.sort(
                 (a, b) =>
                   (b.sessionDate?.getTime() ?? 0) -

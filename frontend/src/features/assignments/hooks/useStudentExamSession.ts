@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuestionType } from '@/features/assessments/api/assessments.api';
 import {
   autosaveAssignment,
-  getMySubmittedAssignment,
   submitAssignment,
   type StudentAnswerPayload,
   type StudentExamSessionDto,
@@ -80,13 +79,19 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     [syncSnapshotState],
   );
 
-  const loadSubmittedFallback = useCallback(
-    async (signal?: AbortSignal) => {
-      const submitted = await getMySubmittedAssignment(assignmentId, { signal });
-      if (!signal?.aborted) applySession(submitted, 'review');
-    },
-    [assignmentId, applySession],
-  );
+  const reloadAfterConflict = useCallback(async (expectedId: string) => {
+    try {
+      const { dto, nextMode } = await fetchExamEntrySession(assignmentId, mode);
+      if (snapshotRef.current.session?.submission.id !== expectedId) return;
+      resetDirty();
+      setCurrentIndex(0);
+      setFlaggedIds({});
+      applySession(dto, nextMode);
+    } catch (error) {
+      setActionError(extractErrorMessage(error, 'Vui lòng tải lại bài tập'));
+      setSaveState('dirty');
+    }
+  }, [assignmentId, mode, applySession, resetDirty]);
 
   const submitNow = useCallback(
     async (autoSubmitted = false) => {
@@ -111,7 +116,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
         applySession(result, 'review');
       } catch (err) {
         if (err instanceof ApiClientError && err.status === 409) {
-          await loadSubmittedFallback().catch(() => undefined);
+          await reloadAfterConflict(snap.session.submission.id);
           return;
         }
         setActionError(extractErrorMessage(err, 'Không thể nộp bài lúc này. Vui lòng thử lại.'));
@@ -120,7 +125,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
         setSubmitting(false);
       }
     },
-    [assignmentId, applySession, clearPendingTimers, loadSubmittedFallback, resetDirty],
+    [assignmentId, applySession, clearPendingTimers, reloadAfterConflict, resetDirty],
   );
 
   const flushAutosave = useCallback(async () => {
@@ -147,7 +152,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       if (updated.submission.remainingSeconds === 0) void submitNow(true);
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 409) {
-        await loadSubmittedFallback().catch(() => undefined);
+        await reloadAfterConflict(snap.session.submission.id);
         return;
       }
       if (err instanceof ApiClientError) {
@@ -157,7 +162,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       }
       setSaveState('offline');
     }
-  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, loadSubmittedFallback, resetDirty, submitNow, syncSnapshotState]);
+  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, reloadAfterConflict, resetDirty, submitNow, syncSnapshotState]);
 
   useEffect(() => {
     if (!assignmentId) return;
@@ -204,8 +209,9 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   const handleOffline = useCallback(() => { setIsOffline(true); setSaveState('offline'); }, []);
   const handleVisibilityChange = useCallback((hidden: boolean) => { if (!hidden) syncCountdownAndFlush(); }, [syncCountdownAndFlush]);
   const handleRemoteSubmit = useCallback(() => {
-    if (snapshotRef.current.viewMode === 'taking') void loadSubmittedFallback().catch(() => undefined);
-  }, [loadSubmittedFallback]);
+    const { session: current, viewMode: currentMode } = snapshotRef.current;
+    if (currentMode === 'taking' && current) void reloadAfterConflict(current.submission.id);
+  }, [reloadAfterConflict]);
   const handleAdoptDraft = useCallback((incoming: ExamLocalDraft) => {
     const adopted = sanitizeAdoptedLocalDraft(incoming, snapshotRef.current);
     if (!adopted) return;

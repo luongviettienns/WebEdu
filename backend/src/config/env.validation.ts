@@ -97,5 +97,11 @@ export function validateEnv(config: Record<string, unknown>): EnvironmentVariabl
   if (errors.length > 0) {
     throw new Error(`Environment validation failed:\n${errors.toString()}`);
   }
+  if (
+    validatedConfig.NODE_ENV === Environment.Production &&
+    validatedConfig.JWT_SECRET.trim() === 'replace_this_with_a_secure_random_key_min_32_characters'
+  ) {
+    throw new Error('JWT_SECRET must be replaced with a randomly generated secret in production');
+  }
   return validatedConfig;
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useRef } from 'react';
+import { useDialogFocus } from '@/features/common/components/BaseDialog';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { SidebarBrand } from './SidebarBrand';
 import { SidebarNav } from './SidebarNav';
@@ -17,16 +18,8 @@ interface MobileNavDrawerProps {
 export function MobileNavDrawer({ open, onClose, user, pendingCount }: MobileNavDrawerProps) {
   const groups = getGroupedNavLinks(user?.effectiveRole, user?.roles, pendingCount);
 
-  useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [open]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(panelRef, onClose, open);
 
   if (!open) return null;
 
@@ -42,6 +35,8 @@ export function MobileNavDrawer({ open, onClose, user, pendingCount }: MobileNav
       {/* Drawer Body */}
       <div
         className="relative w-[280px] max-w-[85vw] h-full bg-[var(--surface)] shadow-2xl flex flex-col z-10 animate-in slide-in-from-left duration-200"
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Menu điều hướng di động"
@@ -55,6 +50,7 @@ export function MobileNavDrawer({ open, onClose, user, pendingCount }: MobileNav
             onClick={onClose}
             className="p-2 text-[var(--ink-3)] hover:text-[var(--ink)] focus:outline-none"
             aria-label="Đóng menu"
+            data-dialog-close
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"

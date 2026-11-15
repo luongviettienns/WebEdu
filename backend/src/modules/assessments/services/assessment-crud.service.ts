@@ -23,7 +23,7 @@ import {
   persistMediaBytes,
   unlinkStoredFile,
 } from './document-extract.js';
-import { remapPayloadMediaIds } from '../policies/payload-media.util.js';
+import { collectPayloadMediaIds, remapPayloadMediaIds } from '../policies/payload-media.util.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
 import { toTeacherAssessmentDto } from '../mappers/assessment.mapper.js';
 import { AssessmentMediaAccessService } from './assessment-media-access.service.js';
@@ -165,13 +165,25 @@ export class AssessmentCrudService {
       include: { questions: QUESTIONS_ORDERED },
     });
     assertCanViewAssessment(actor, source);
-    const sourceAssets = await this.prisma.mediaAsset.findMany({ where: { assessmentId: id }, orderBy: { createdAt: 'asc' } });
+    const referencedIds = [...new Set(source.questions.flatMap((q) => collectPayloadMediaIds(q.payload)))];
+    const sourceAssets = await this.prisma.mediaAsset.findMany({
+      where: { OR: [{ assessmentId: id }, { assessmentId: null, id: { in: referencedIds } }] },
+      orderBy: { createdAt: 'asc' },
+    });
     const { copiedKeys, originalKey, clonedAssets } = await cloneAssessmentFiles(source.originalStorageKey, sourceAssets);
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "assessments" WHERE id = ${id} FOR SHARE`;
         const fresh = await tx.assessment.findUnique({ where: { id }, include: { questions: QUESTIONS_ORDERED } });
         assertCanViewAssessment(actor, fresh);
+        const clonedIds = new Set(clonedAssets.map(({ asset }) => asset.id));
+        if (
+          fresh.originalStorageKey !== source.originalStorageKey ||
+          (fresh.originalStorageKey && !originalKey) ||
+          fresh.questions.some((q) => collectPayloadMediaIds(q.payload).some((mediaId) => !clonedIds.has(mediaId)))
+        ) {
+          throw new ConflictException('Không thể sao chép đầy đủ tệp của đề. Vui lòng kiểm tra tệp và thử lại');
+        }
         const copy = await tx.assessment.create({
           data: {
             title: `${fresh.title} (bản sao)`,

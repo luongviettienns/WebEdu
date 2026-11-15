@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AttendanceStatus, SessionStatus } from '@prisma/client';
+import { AttendanceStatus, type Prisma, SessionStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { SessionAttendanceSheetDto } from '../attendance.types.js';
@@ -20,9 +20,6 @@ export class AttendanceCrudService {
     sessionId: string,
     dto: SaveSessionAttendanceDto,
   ): Promise<SessionAttendanceSheetDto> {
-    if (dto.records.length > 200) {
-      throw new BadRequestException('Danh sách điểm danh tối đa 200 học viên mỗi lần lưu');
-    }
     const now = new Date();
     const trimmedReason = dto.reason?.trim() || '';
 
@@ -114,20 +111,19 @@ export class AttendanceCrudService {
         isAdminOverride: boolean;
       }> = [];
 
+      const newRecords: Prisma.AttendanceRecordCreateManyInput[] = [];
       for (const entry of dto.records) {
         const nextNote = entry.note?.trim() || null;
         const existing = existingMap.get(entry.studentId);
         if (!existing) {
-          await tx.attendanceRecord.create({
-            data: {
-              sessionId,
-              classId: session.classId,
-              studentId: entry.studentId,
-              status: entry.status,
-              note: nextNote,
-              markedById: actor.id,
-              markedAt: now,
-            },
+          newRecords.push({
+            sessionId,
+            classId: session.classId,
+            studentId: entry.studentId,
+            status: entry.status,
+            note: nextNote,
+            markedById: actor.id,
+            markedAt: now,
           });
           continue;
         }
@@ -161,6 +157,7 @@ export class AttendanceCrudService {
         });
       }
 
+      if (newRecords.length > 0) await tx.attendanceRecord.createMany({ data: newRecords });
       if (auditEntries.length > 0) {
         await tx.attendanceAuditLog.createMany({ data: auditEntries });
       }

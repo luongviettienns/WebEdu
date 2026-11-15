@@ -4,7 +4,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client';
+import { ClassStatus, EnrollmentStatus, Prisma, Role, SessionStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
@@ -63,8 +63,27 @@ export class ClassLifecycleService {
 
       const activeEnrollments = await tx.enrollment.findMany({
         where: { classId, status: EnrollmentStatus.ACTIVE },
-        select: { id: true, studentId: true },
+        select: { studentId: true, enrolledDate: true },
       });
+      const [latestCompletedSession, openTeacherAssignment] = await Promise.all([
+        tx.lessonSession.findFirst({
+          where: { classId, status: SessionStatus.COMPLETED },
+          orderBy: { sessionDate: 'desc' },
+          select: { sessionDate: true },
+        }),
+        tx.classTeacherAssignment.findFirst({
+          where: { classId, assignedTo: null },
+          orderBy: { assignedFrom: 'desc' },
+          select: { assignedFrom: true },
+        }),
+      ]);
+      if (
+        activeEnrollments.some(({ enrolledDate }) => enrolledDate > actualEndDate) ||
+        (latestCompletedSession && latestCompletedSession.sessionDate > actualEndDate) ||
+        (openTeacherAssignment && openTeacherAssignment.assignedFrom > actualEndDate)
+      ) {
+        throw new BadRequestException('Ngày kết thúc không được trước buổi đã hoàn thành, ngày ghi danh hoặc ngày bàn giao giáo viên');
+      }
 
       const sortedStudentIds = Array.from(
         new Set(activeEnrollments.map((e) => e.studentId)),
@@ -74,9 +93,7 @@ export class ClassLifecycleService {
         new Set([targetClass.teacherId, ...sortedStudentIds]),
       ).sort((a, b) => a.localeCompare(b));
 
-      for (const uid of userIdsToLock) {
-        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${uid} FOR UPDATE`;
-      }
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id IN (${Prisma.join(userIdsToLock)}) ORDER BY id ASC FOR UPDATE`;
 
       await tx.enrollment.updateMany({
         where: { classId, status: EnrollmentStatus.ACTIVE },
@@ -179,27 +196,19 @@ export class ClassLifecycleService {
         );
       }
 
-      const completedEnrollments = await tx.enrollment.findMany({
+      const sortedCompleted = await tx.enrollment.findMany({
         where: { classId, status: EnrollmentStatus.COMPLETED },
+        orderBy: [{ studentId: 'asc' }, { enrolledDate: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
       });
-      const sortedCompleted = [...completedEnrollments].sort((a, b) =>
-        a.studentId.localeCompare(b.studentId),
-      );
-
-      const userIdsToLock = Array.from(
-        new Set([
-          targetClass.teacherId,
-          ...sortedCompleted.map((enr) => enr.studentId),
-        ]),
-      ).sort((a, b) => a.localeCompare(b));
-
-      for (const uid of userIdsToLock) {
-        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${uid} FOR UPDATE`;
-      }
-
-      const lockedTeacher = await tx.user.findUnique({
-        where: { id: targetClass.teacherId },
+      const studentIds = [...new Set(sortedCompleted.map(({ studentId }) => studentId))];
+      const userIdsToLock = [...new Set([targetClass.teacherId, ...studentIds])];
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id IN (${Prisma.join(userIdsToLock)}) ORDER BY id ASC FOR UPDATE`;
+      const users = await tx.user.findMany({
+        where: { id: { in: userIdsToLock } },
+        select: { id: true, roles: true, status: true },
       });
+      const userMap = new Map(users.map((user) => [user.id, user]));
+      const lockedTeacher = userMap.get(targetClass.teacherId);
       if (
         !lockedTeacher ||
         !lockedTeacher.roles.includes(Role.TEACHER) ||
@@ -210,54 +219,60 @@ export class ClassLifecycleService {
         );
       }
 
-      let restoredStudentsCount = 0;
-      for (const enr of sortedCompleted) {
-        const completedAtClassClose =
-          !targetClass.actualEndDate ||
-          (enr.leftDate !== null &&
-            enr.leftDate.getTime() === targetClass.actualEndDate.getTime());
+      const relatedEnrollments = await tx.enrollment.findMany({
+        where: {
+          studentId: { in: studentIds },
+          OR: [{ status: EnrollmentStatus.ACTIVE }, { classId: { not: classId } }],
+        },
+        select: { studentId: true, classId: true, status: true, enrolledDate: true, createdAt: true },
+      });
+      const blockedStudents = new Set<string>();
+      const latestOtherEnrollment = new Map<string, Date>();
+      for (const row of relatedEnrollments) {
+        if (row.status === EnrollmentStatus.ACTIVE ||
+          (row.classId !== classId && row.createdAt > targetClass.closedAt)) {
+          blockedStudents.add(row.studentId);
+        }
+        const previous = latestOtherEnrollment.get(row.studentId);
+        if (row.classId !== classId && (!previous || row.enrolledDate > previous)) {
+          latestOtherEnrollment.set(row.studentId, row.enrolledDate);
+        }
+      }
 
-        const studentUser = await tx.user.findUnique({ where: { id: enr.studentId } });
-        const otherActiveEnrollment = await tx.enrollment.findFirst({
-          where: { studentId: enr.studentId, status: EnrollmentStatus.ACTIVE },
-        });
-        const closeDate = targetClass.actualEndDate ?? enr.enrolledDate;
-        const newerOtherEnrollment = await tx.enrollment.findFirst({
-          where: {
-            studentId: enr.studentId,
-            classId: { not: classId },
-            OR: [
-              { createdAt: { gt: targetClass.closedAt } },
-              { enrolledDate: { gt: closeDate } },
-            ],
-          },
-        });
+      const restored = new Map<string, (typeof sortedCompleted)[number]>();
+      for (const enrollment of sortedCompleted) {
+        const user = userMap.get(enrollment.studentId);
+        const latestElsewhere = latestOtherEnrollment.get(enrollment.studentId);
+        const end = targetClass.actualEndDate;
+        if (restored.has(enrollment.studentId) || blockedStudents.has(enrollment.studentId) ||
+          (end && enrollment.leftDate?.getTime() !== end.getTime()) ||
+          (latestElsewhere && latestElsewhere > (end ?? enrollment.enrolledDate)) ||
+          !user?.roles.includes(Role.STUDENT) || user.status === UserStatus.INACTIVE) continue;
+        restored.set(enrollment.studentId, enrollment);
+      }
 
-        if (
-          completedAtClassClose &&
-          studentUser &&
-          studentUser.roles.includes(Role.STUDENT) &&
-          studentUser.status !== UserStatus.INACTIVE &&
-          !otherActiveEnrollment &&
-          !newerOtherEnrollment
-        ) {
-          await tx.enrollment.update({
-            where: { id: enr.id },
-            data: { status: EnrollmentStatus.ACTIVE, leftDate: null },
-          });
-          await tx.user.update({
-            where: { id: enr.studentId },
-            data: { status: UserStatus.ACTIVE },
-          });
+      const restoredStudentsCount = restored.size;
+      if (restoredStudentsCount > 0) {
+        await tx.enrollment.updateMany({
+          where: { id: { in: [...restored.values()].map(({ id }) => id) } },
+          data: { status: EnrollmentStatus.ACTIVE, leftDate: null },
+        });
+        await tx.user.updateMany({
+          where: { id: { in: [...restored.keys()] } },
+          data: { status: UserStatus.ACTIVE },
+        });
+        const byDate = new Map<number, string[]>();
+        for (const enrollment of restored.values()) {
+          const date = enrollment.enrolledDate.getTime();
+          const ids = byDate.get(date) ?? [];
+          ids.push(enrollment.studentId);
+          byDate.set(date, ids);
+        }
+        for (const [date, ids] of byDate) {
           await tx.studentProfile.updateMany({
-            where: { userId: enr.studentId },
-            data: {
-              currentClassId: classId,
-              assignedClass: targetClass.code,
-              enrolledAt: enr.enrolledDate,
-            },
+            where: { userId: { in: ids } },
+            data: { currentClassId: classId, assignedClass: targetClass.code, enrolledAt: new Date(date) },
           });
-          restoredStudentsCount += 1;
         }
       }
 

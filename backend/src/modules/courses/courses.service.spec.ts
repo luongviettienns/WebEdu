@@ -331,6 +331,18 @@ describe('CoursesService — HSK Course Catalog Management', () => {
     );
   });
 
+  it('preserves disjoint fields when two PATCH requests read the same version', async () => {
+    const course = await service.createCourse(adminActor, {
+      code: 'HSK-9', name: 'Tên cũ', level: CourseLevel.HSK1, defaultSessions: 20,
+    });
+    await Promise.all([
+      service.updateCourse(adminActor, course.id, { name: 'Tên mới' }),
+      service.updateCourse(adminActor, course.id, { defaultSessions: 30 }),
+    ]);
+    const { items } = await service.listCourses();
+    expect(items).toContainEqual(expect.objectContaining({ id: course.id, name: 'Tên mới', defaultSessions: 30 }));
+  });
+
   it('validates course code format and defaultSessions bounds (1..200)', async () => {
     await expect(
       service.createCourse(adminActor, {

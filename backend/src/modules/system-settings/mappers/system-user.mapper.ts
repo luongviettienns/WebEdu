@@ -10,6 +10,8 @@ export interface SystemUserItemDto {
   effectiveRole: Role;
   status: UserStatus;
   createdAt: string;
+  revision: number;
+  hasStudentProfile: boolean;
 }
 
 export function toSystemUserDto(user: {
@@ -20,7 +22,9 @@ export function toSystemUserDto(user: {
   roles: Role[];
   status: UserStatus;
   createdAt: Date;
-}): SystemUserItemDto {
+  tokenVersion: number;
+  studentProfile?: { userId: string } | null;
+}, hasStudentProfile = Boolean(user.studentProfile)): SystemUserItemDto {
   return {
     id: user.id,
     fullName: user.fullName,
@@ -30,5 +34,7 @@ export function toSystemUserDto(user: {
     effectiveRole: getHighestRole(user.roles),
     status: user.status,
     createdAt: user.createdAt.toISOString(),
+    revision: user.tokenVersion,
+    hasStudentProfile,
   };
 }

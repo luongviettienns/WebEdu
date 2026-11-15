@@ -63,7 +63,7 @@ export function resolveCorrectIds(
       .toLowerCase()
       .split('')
       .filter((ch, i, arr) => arr.indexOf(ch) === i);
-    return ids.filter((id) => options.some((o) => o.id === id));
+    return ids.every((id) => options.some((o) => o.id === id)) ? ids : [];
   }
   const exact = options.filter((o) => o.text.trim() === answerRaw.trim()).map((o) => o.id);
   if (exact.length > 0) return exact;

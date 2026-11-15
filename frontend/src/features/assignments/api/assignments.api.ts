@@ -197,12 +197,14 @@ export interface AutosaveAnswerItemPayload {
 }
 
 export interface AutosavePayload {
+  submissionId?: string;
   answers: AutosaveAnswerItemPayload[];
   elapsedSeconds: number;
   remainingSeconds?: number | null;
 }
 
 export interface SubmitPayload {
+  submissionId?: string;
   answers?: AutosaveAnswerItemPayload[];
   elapsedSeconds?: number;
   remainingSeconds?: number | null;
@@ -382,6 +384,7 @@ export async function getMySubmittedAssignment(
   );
 }
 
-export function getAssignmentMediaUrl(assignmentId: string, mediaId: string): string {
-  return `${API_BASE_URL}/assignments/${encodeURIComponent(assignmentId)}/media/${encodeURIComponent(mediaId)}`;
+export function getAssignmentMediaUrl(assignmentId: string, mediaId: string, questionId?: string): string {
+  const questionQuery = questionId ? "?questionId=" + encodeURIComponent(questionId) : "";
+  return `${API_BASE_URL}/assignments/${encodeURIComponent(assignmentId)}/media/${encodeURIComponent(mediaId)}${questionQuery}`;
 }

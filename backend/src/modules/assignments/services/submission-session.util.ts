@@ -430,12 +430,20 @@ export async function recordListeningStreamQuota(
   studentId: string,
   listeningQuestions: ReadonlyArray<{ id: string; payload: unknown }>,
   mediaId: string,
+  questionId?: string,
   now: Date = new Date(),
 ): Promise<void> {
   const matchingQuestions = listeningQuestions.filter(
     (q) => isRecord(q.payload) && q.payload.mediaId === mediaId,
   );
-  if (matchingQuestions.length === 0) return;
+  if (!questionId && matchingQuestions.length === 0) return;
+  if (!questionId && matchingQuestions.length > 1) {
+    throw new BadRequestException('Vui lòng chọn câu hỏi cần nghe');
+  }
+  const question = questionId
+    ? matchingQuestions.find((candidate) => candidate.id === questionId)
+    : matchingQuestions[0];
+  if (!question) throw new NotFoundException('Tệp nghe không thuộc câu hỏi này');
 
   await prisma.$transaction(async (tx) => {
     const submission = await lockAndFindActiveSubmission(tx, assignmentId, studentId);
@@ -444,9 +452,7 @@ export async function recordListeningStreamQuota(
     }
     if (submission.status !== SubmissionStatus.IN_PROGRESS) return;
 
-    for (const q of matchingQuestions) {
-      await consumeQuestionListeningQuota(tx, submission, q, now);
-    }
+    await consumeQuestionListeningQuota(tx, submission, question, now);
   });
 }
 

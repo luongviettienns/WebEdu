@@ -1,9 +1,6 @@
-import { execFileSync, spawn } from 'node:child_process';
-import crypto from 'node:crypto';
-import fs from 'node:fs';
+import { spawn } from 'node:child_process';
 import http from 'node:http';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
@@ -16,48 +13,11 @@ import {
   UserStatus,
 } from '@prisma/client';
 import { seedInitialClassSessions } from '../../prisma/seed-sessions.util.mjs';
+import { assertSafeTestDatabaseUrl, startIsolatedPostgresTestDb } from '../helpers/postgres-test-container.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
-
-function resolvePostgresBinDir() {
-  const candidates = [
-    process.env.PG_BIN_DIR,
-    'D:\\PostgresSQL\\bin',
-    'C:\\Program Files\\PostgreSQL\\18\\bin',
-    'C:\\Program Files\\PostgreSQL\\17\\bin',
-    'C:\\Program Files\\PostgreSQL\\16\\bin',
-    '/usr/lib/postgresql/16/bin',
-    '/usr/bin',
-    '/usr/local/bin',
-  ].filter(Boolean);
-
-  const exeExt = process.platform === 'win32' ? '.exe' : '';
-  for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, `pg_ctl${exeExt}`))) {
-      return dir;
-    }
-  }
-  return '';
-}
-
-function pgBin(binDir, tool) {
-  const exeExt = process.platform === 'win32' ? '.exe' : '';
-  return binDir ? path.join(binDir, `${tool}${exeExt}`) : `${tool}${exeExt}`;
-}
-
-function findFreePort() {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => {
-      const addr = srv.address();
-      const port = addr && typeof addr === 'object' ? addr.port : 55433;
-      srv.close(() => resolve(port));
-    });
-  });
-}
 
 function decodeQuotedPrintable(input) {
   const unwrapped = input.replace(/=\r?\n/g, '');
@@ -194,6 +154,7 @@ async function startQaSmtpAndInspector(smtpPort, inspectorPort, databaseUrl) {
       return;
     }
     if (req.method === 'POST' && reqUrl.pathname === '/reset-rate-limits') {
+      assertSafeTestDatabaseUrl(databaseUrl);
       const prisma = new PrismaClient({
         datasources: { db: { url: databaseUrl } },
       });
@@ -232,12 +193,11 @@ async function startQaSmtpAndInspector(smtpPort, inspectorPort, databaseUrl) {
 }
 
 async function seedQaFixtures(databaseUrl) {
-  const prisma = new PrismaClient({
+  assertSafeTestDatabaseUrl(databaseUrl);
+  const client = new PrismaClient({
     datasources: { db: { url: databaseUrl } },
   });
-  await prisma.$connect();
-
-  try {
+  await client.$transaction(async (prisma) => {
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
         "submission_reopen_logs",
@@ -489,94 +449,14 @@ async function seedQaFixtures(databaseUrl) {
         metadata: { note: 'Khởi tạo dữ liệu kiểm thử trình duyệt Phase 2' },
       },
     });
-  } finally {
-    await prisma.$disconnect();
-  }
+  }, { timeout: 30_000 }).finally(() => client.$disconnect());
 }
 
 async function main() {
-  const externalDbUrl = process.env.TEST_DATABASE_URL?.trim();
-  const binDir = resolvePostgresBinDir();
-  const cleanPgEnv = { ...process.env, LC_ALL: 'C', PGUSER: 'postgres' };
-
-  let databaseUrl = externalDbUrl ?? '';
-  let clusterRoot = '';
-  let dataDir = '';
-
-  const stopPgCluster = () => {
-    if (!dataDir) return;
-    try {
-      execFileSync(
-        pgBin(binDir, 'pg_ctl'),
-        ['-D', dataDir, '-m', 'immediate', '-w', 'stop'],
-        { env: cleanPgEnv, stdio: 'ignore' },
-      );
-    } catch {
-      // Ignore
-    }
-    try {
-      fs.rmSync(clusterRoot, { recursive: true, force: true });
-    } catch {
-      // Ignore
-    }
-    dataDir = '';
-  };
+  process.env.NODE_ENV ||= 'test';
+  const { databaseUrl, stop } = await startIsolatedPostgresTestDb();
 
   try {
-    if (!databaseUrl) {
-      const pgPort = await findFreePort();
-      clusterRoot = path.join(
-        os.tmpdir(),
-        `webedu-pg-qa-${crypto.randomUUID().slice(0, 8)}`,
-      );
-      dataDir = path.join(clusterRoot, 'data');
-      const logFile = path.join(clusterRoot, 'postgres.log');
-      fs.mkdirSync(clusterRoot, { recursive: true });
-
-      execFileSync(
-        pgBin(binDir, 'initdb'),
-        ['-D', dataDir, '-U', 'postgres', '-A', 'trust', '-E', 'UTF8', '--no-locale'],
-        { env: cleanPgEnv, stdio: 'pipe' },
-      );
-
-      fs.appendFileSync(
-        path.join(dataDir, 'postgresql.conf'),
-        [
-          '',
-          "listen_addresses = '127.0.0.1'",
-          `port = ${pgPort}`,
-          'fsync = off',
-          'synchronous_commit = off',
-          'full_page_writes = off',
-          'max_connections = 100',
-          "timezone = 'Asia/Ho_Chi_Minh'",
-          '',
-        ].join('\n'),
-        'utf8',
-      );
-
-      execFileSync(
-        pgBin(binDir, 'pg_ctl'),
-        ['-D', dataDir, '-l', logFile, '-w', 'start'],
-        { env: cleanPgEnv, stdio: 'ignore' },
-      );
-
-      execFileSync(
-        pgBin(binDir, 'createdb'),
-        ['-h', '127.0.0.1', '-p', String(pgPort), '-U', 'postgres', 'webedu_test'],
-        { env: cleanPgEnv, stdio: 'pipe' },
-      );
-
-      databaseUrl = `postgresql://postgres@127.0.0.1:${pgPort}/webedu_test?schema=public`;
-    }
-
-    const prismaCliJs = path.join(BACKEND_ROOT, 'node_modules', 'prisma', 'build', 'index.js');
-    execFileSync(process.execPath, [prismaCliJs, 'migrate', 'deploy'], {
-      cwd: BACKEND_ROOT,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      stdio: 'pipe',
-    });
-
     await seedQaFixtures(databaseUrl);
 
     const smtpPort = Number(process.env.QA_SMTP_PORT || 4025);
@@ -610,7 +490,7 @@ async function main() {
         backendChild.kill('SIGTERM');
       }
       await mailServers.stop();
-      stopPgCluster();
+      await stop();
     };
 
     process.on('SIGINT', async () => {
@@ -626,7 +506,7 @@ async function main() {
       process.exit(code ?? 0);
     });
   } catch (err) {
-    stopPgCluster();
+    await stop();
     throw err;
   }
 }

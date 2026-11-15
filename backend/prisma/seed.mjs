@@ -7,18 +7,20 @@ import {
   EnrollmentStatus,
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { existsSync } from 'node:fs';
+import { assertSafeTestDatabaseUrl } from '../test/helpers/postgres-test-container.ts';
 import { seedInitialClassSessions } from './seed-sessions.util.mjs';
 
-const prisma = new PrismaClient();
+const envFile = new URL('../.env', import.meta.url);
+if (existsSync(envFile)) process.loadEnvFile(envFile);
+const databaseUrl = process.env.DATABASE_URL;
+assertSafeTestDatabaseUrl(databaseUrl, process.env, true);
+const prisma = new PrismaClient({ datasourceUrl: databaseUrl });
 
-async function main() {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Seed script is disabled in production to protect data integrity.');
-  }
-
+async function main(tx) {
   console.log('--- Khởi tạo dữ liệu hệ thống Trung Tâm TD Hán Ngữ ---');
 
-  await prisma.$executeRawUnsafe(`
+  await tx.$executeRawUnsafe(`
     TRUNCATE TABLE
       "submission_reopen_logs",
       "submission_answers",
@@ -48,7 +50,7 @@ async function main() {
   const passwordHash = await bcrypt.hash('Password@123', 10);
 
   // 1. Superadmin
-  await prisma.user.create({
+  await tx.user.create({
     data: {
       email: 'superadmin@webedu.vn',
       phone: '0909000001',
@@ -60,7 +62,7 @@ async function main() {
   });
 
   // 2. Admin Đào tạo
-  const adminUser = await prisma.user.create({
+  const adminUser = await tx.user.create({
     data: {
       email: 'admin@webedu.vn',
       phone: '0909000003',
@@ -72,7 +74,7 @@ async function main() {
   });
 
   // 3. Giảng viên
-  const teacherLan = await prisma.user.create({
+  const teacherLan = await tx.user.create({
     data: {
       email: 'teacher.lan@webedu.vn',
       phone: '0909000004',
@@ -82,7 +84,7 @@ async function main() {
       status: UserStatus.ACTIVE,
     },
   });
-  await prisma.teacherProfile.create({
+  await tx.teacherProfile.create({
     data: {
       userId: teacherLan.id,
       notes: 'Giảng viên HSK 1-4',
@@ -91,7 +93,7 @@ async function main() {
   });
 
   // 4. Khóa học HSK
-  const courseHsk1 = await prisma.course.create({
+  const courseHsk1 = await tx.course.create({
     data: {
       code: 'HSK1',
       name: 'Tiếng Trung HSK 1 — 汉语水平考试一级 (Hànzì)',
@@ -102,7 +104,7 @@ async function main() {
     },
   });
 
-  const courseHsk2 = await prisma.course.create({
+  const courseHsk2 = await tx.course.create({
     data: {
       code: 'HSK2',
       name: 'Tiếng Trung HSK 2 — 初级汉语口语 (Chūjí Hànyǔ)',
@@ -113,7 +115,7 @@ async function main() {
     },
   });
 
-  await prisma.course.create({
+  await tx.course.create({
     data: {
       code: 'HSK3',
       name: 'Tiếng Trung HSK 3 — 中级汉语综合 (Zhōngjí Hànyǔ)',
@@ -124,7 +126,7 @@ async function main() {
     },
   });
 
-  await prisma.course.create({
+  await tx.course.create({
     data: {
       code: 'HSK4',
       name: 'Tiếng Trung HSK 4 — 中高级汉语进阶 (Zhōnggāojí Hànyǔ)',
@@ -135,7 +137,7 @@ async function main() {
     },
   });
 
-  await prisma.course.create({
+  await tx.course.create({
     data: {
       code: 'GT-CB',
       name: 'Giao Tiếp Tiếng Trung Cơ Bản — 基础汉语会话',
@@ -147,7 +149,7 @@ async function main() {
   });
 
   // 5. Lớp học
-  const classHsk1 = await prisma.class.create({
+  const classHsk1 = await tx.class.create({
     data: {
       code: 'HSK1-K26-01',
       courseId: courseHsk1.id,
@@ -157,7 +159,7 @@ async function main() {
     },
   });
 
-  const classHsk2 = await prisma.class.create({
+  const classHsk2 = await tx.class.create({
     data: {
       code: 'HSK2-K26-01',
       courseId: courseHsk2.id,
@@ -167,10 +169,10 @@ async function main() {
     },
   });
 
-  await seedInitialClassSessions(prisma, classHsk1, adminUser);
-  await seedInitialClassSessions(prisma, classHsk2, adminUser);
+  await seedInitialClassSessions(tx, classHsk1, adminUser);
+  await seedInitialClassSessions(tx, classHsk2, adminUser);
 
-  await prisma.classTeacherAssignment.createMany({
+  await tx.classTeacherAssignment.createMany({
     data: [
       {
         classId: classHsk1.id,
@@ -190,7 +192,7 @@ async function main() {
   });
 
   // 6. Học viên đang học (HSK2)
-  const activeStudent = await prisma.user.create({
+  const activeStudent = await tx.user.create({
     data: {
       email: 'active.student@webedu.vn',
       phone: '0909000007',
@@ -200,7 +202,7 @@ async function main() {
       status: UserStatus.ACTIVE,
     },
   });
-  await prisma.studentProfile.create({
+  await tx.studentProfile.create({
     data: {
       userId: activeStudent.id,
       dateOfBirth: new Date('2003-08-20T00:00:00.000Z'),
@@ -210,7 +212,7 @@ async function main() {
       internalNotes: 'Học viên chăm chỉ, mục tiêu thi HSK3 cuối năm',
     },
   });
-  await prisma.enrollment.create({
+  await tx.enrollment.create({
     data: {
       studentId: activeStudent.id,
       classId: classHsk2.id,
@@ -220,7 +222,7 @@ async function main() {
   });
 
   // 7. Học viên chờ xếp lớp
-  const pendingTeen = await prisma.user.create({
+  const pendingTeen = await tx.user.create({
     data: {
       email: 'pending.student@webedu.vn',
       phone: '0909100001',
@@ -230,7 +232,7 @@ async function main() {
       status: UserStatus.PENDING_CLASS,
     },
   });
-  const pendingProfile = await prisma.studentProfile.create({
+  const pendingProfile = await tx.studentProfile.create({
     data: {
       userId: pendingTeen.id,
       dateOfBirth: new Date('2012-05-15T00:00:00.000Z'),
@@ -238,7 +240,7 @@ async function main() {
       internalNotes: 'Học viên 14 tuổi, phụ huynh đã xác nhận đồng ý.',
     },
   });
-  await prisma.guardianConsent.create({
+  await tx.guardianConsent.create({
     data: {
       studentProfileId: pendingProfile.id,
       guardianEmail: 'phuhuynh.chau@example.com',
@@ -251,7 +253,7 @@ async function main() {
   });
 
   // 8. Cấu hình hệ thống chính thức
-  await prisma.systemSetting.upsert({
+  await tx.systemSetting.upsert({
     where: { key: 'CENTER_NAME' },
     update: { value: 'Trung Tâm TD Hán Ngữ' },
     create: {
@@ -264,7 +266,7 @@ async function main() {
   console.log('✅ Đã khởi tạo thành công dữ liệu chính thức Trung Tâm TD Hán Ngữ!');
 }
 
-main()
+prisma.$transaction(main, { timeout: 30_000 })
   .catch((err) => {
     console.error('Lỗi khi khởi tạo dữ liệu:', err);
     process.exit(1);

@@ -67,6 +67,10 @@ export class AutosaveAnswerItemDto {
 }
 
 export class AutosaveSubmissionDto {
+  @IsOptional()
+  @IsUUID()
+  submissionId?: string;
+
   @IsArray()
   @ArrayMaxSize(200)
   @ValidateNested({ each: true })
@@ -84,6 +88,10 @@ export class AutosaveSubmissionDto {
 }
 
 export class SubmitSubmissionDto {
+  @IsOptional()
+  @IsUUID()
+  submissionId?: string;
+
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(200)

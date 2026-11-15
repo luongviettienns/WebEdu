@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
@@ -37,6 +37,7 @@ import {
   resolveVnCalendarDateForDb,
 } from '../src/common/utils/timezone.util.js';
 import type { AuthenticatedUser } from '../src/common/auth/auth.types.js';
+import { assertRateLimitNotExceeded } from '../src/common/auth/auth-rate-limit.util.js';
 import {
   startIsolatedPostgresTestDb,
   type IsolatedPostgresHarness,
@@ -67,6 +68,25 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
   let teachersService: TeachersService;
   let profileService: ProfileService;
   let systemSettingsService: SystemSettingsServicesHandle;
+
+  it('starts a new login IP window even when requests continue without a full minute of inactivity', async () => {
+    const options = {
+      key: 'login:ip:192.0.2.10', maxPoints: 2, windowMs: 60_000,
+      blockDurationMs: 900_000, fixedWindow: true,
+    };
+    const windowStart = Date.now();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      for (const elapsedMs of [0, 30_000, 61_000, 75_000]) {
+        vi.setSystemTime(windowStart + elapsedMs);
+        await assertRateLimitNotExceeded(prisma, options);
+      }
+      vi.setSystemTime(windowStart + 90_000);
+      await expect(assertRateLimitNotExceeded(prisma, options)).rejects.toMatchObject({ status: 429 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   async function bootNestModule(): Promise<TestingModule> {
     const { AppModule } = await import('../src/app.module.js');

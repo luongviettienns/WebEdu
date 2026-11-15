@@ -16,6 +16,8 @@ export interface SystemUserDto {
   effectiveRole?: Role;
   status: UserStatus;
   createdAt?: string;
+  revision: number;
+  hasStudentProfile: boolean;
 }
 
 export interface CreateSystemUserPayload {
@@ -23,11 +25,14 @@ export interface CreateSystemUserPayload {
   email: string;
   phone: string;
   initialPassword: string;
+  dateOfBirth?: string;
   roles: Role[];
   status?: UserStatus;
 }
 
 export interface UpdateSystemUserRolesPayload {
+  expectedRevision: number;
+  dateOfBirth?: string;
   roles?: Role[];
   status?: UserStatus;
 }

@@ -405,7 +405,7 @@ describe('Phase 2 Full Domain Workflows (e2e — Real PostgreSQL FUNC-006..012)'
       .patch(`/api/v1/system-settings/users/${dualUserId}/roles`)
       .set('Cookie', saSession.cookiePair)
       .set('Origin', 'http://localhost:3000')
-      .send({ roles: [Role.ADMIN] })
+      .send({ expectedRevision: 0, roles: [Role.ADMIN] })
       .expect(200);
 
     await request(harness.app.getHttpServer())

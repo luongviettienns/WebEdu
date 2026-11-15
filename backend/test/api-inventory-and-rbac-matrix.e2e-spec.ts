@@ -752,7 +752,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     await request(server)
       .patch(`/api/v1/system-settings/users/${studentPending.id}/roles`)
       .set('Authorization', `Bearer ${saToken}`)
-      .send({ status: UserStatus.INACTIVE })
+      .send({ expectedRevision: 0, status: UserStatus.INACTIVE })
       .expect(200);
 
     // INACTIVE account immediately receives 403 Forbidden in JwtAuthGuard

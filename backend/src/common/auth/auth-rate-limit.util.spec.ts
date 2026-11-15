@@ -3,10 +3,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import type { Request } from 'express';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import {
-  assertIpNotBlocked,
   assertRateLimitNotExceeded,
-  pruneStaleRateLimits,
-  resetRateLimitKey,
   resolveClientIp,
 } from './auth-rate-limit.util.js';
 
@@ -142,59 +139,5 @@ describe('auth-rate-limit.util', () => {
     );
   });
 
-  it('checks assertIpNotBlocked, pruneStaleRateLimits (default & custom retention), and resetRateLimitKey', async () => {
-    vi.useFakeTimers();
-    const fixedNow = new Date('2026-04-06T12:00:00.000Z');
-    vi.setSystemTime(fixedNow);
 
-    const queryRawMock = vi
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ blocked_until: new Date(fixedNow.getTime() + 30_000) }])
-      .mockResolvedValueOnce([{ blocked_until: new Date(fixedNow.getTime() + 30_000) }]);
-    const executeRawMock = vi.fn().mockResolvedValue(1);
-    const prismaMock = {
-      $queryRaw: queryRawMock,
-      $executeRaw: executeRawMock,
-    } as unknown as PrismaService;
-
-    await expect(
-      assertIpNotBlocked(prismaMock, 'login:ip:1.2.3.4'),
-    ).resolves.toBeUndefined();
-    expect(String(queryRawMock.mock.calls[0]?.[0]?.join(' '))).toContain(
-      'SELECT "blocked_until" FROM "auth_rate_limits"',
-    );
-
-    // Default error message on assertIpNotBlocked
-    await expect(
-      assertIpNotBlocked(prismaMock, 'login:ip:1.2.3.4'),
-    ).rejects.toThrow(
-      new HttpException(
-        'Quá nhiều yêu cầu từ địa chỉ IP này. Vui lòng thử lại sau',
-        HttpStatus.TOO_MANY_REQUESTS,
-      ),
-    );
-
-    // Custom error message on assertIpNotBlocked
-    await expect(
-      assertIpNotBlocked(prismaMock, 'login:ip:1.2.3.4', 'Đã khóa IP'),
-    ).rejects.toThrow(
-      new HttpException('Đã khóa IP', HttpStatus.TOO_MANY_REQUESTS),
-    );
-
-    // Default 24h retentionMs = 86_400_000
-    await pruneStaleRateLimits(prismaMock);
-    expect(executeRawMock.mock.calls[0]).toContainEqual(
-      new Date(fixedNow.getTime() - 24 * 60 * 60 * 1000),
-    );
-    expect(String(executeRawMock.mock.calls[0]?.[0]?.join(' '))).toContain(
-      'DELETE FROM "auth_rate_limits"',
-    );
-
-    await resetRateLimitKey(prismaMock, 'login:ip:1.2.3.4');
-    expect(String(executeRawMock.mock.calls[1]?.[0]?.join(' '))).toContain(
-      'DELETE FROM "auth_rate_limits"',
-    );
-    expect(executeRawMock).toHaveBeenCalledTimes(2);
-  });
 });

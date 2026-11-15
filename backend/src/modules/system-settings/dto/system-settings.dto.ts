@@ -1,4 +1,4 @@
-import { IsArray, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role, UserStatus } from '@prisma/client';
 
@@ -48,6 +48,11 @@ export class CreateSystemUserDto {
   @MaxLength(72)
   initialPassword!: string;
 
+  @ApiPropertyOptional({ example: '1990-01-02' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateOfBirth?: string;
+
   @ApiProperty({ enum: Role, isArray: true, example: [Role.ADMIN] })
   @IsArray()
   @IsEnum(Role, { each: true })
@@ -60,6 +65,16 @@ export class CreateSystemUserDto {
 }
 
 export class UpdateUserRolesStatusDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  expectedRevision?: number;
+
+  @ApiPropertyOptional({ example: '1990-01-02' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateOfBirth?: string;
+
   @ApiPropertyOptional({ enum: Role, isArray: true })
   @IsOptional()
   @IsArray()

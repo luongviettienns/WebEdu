@@ -39,6 +39,8 @@ cd frontend
 npm run dev
 ```
 
+Lệnh `npm run seed` đặt lại toàn bộ dữ liệu demo. Dùng một DB cục bộ có tên chứa `test` hoặc `qa` với `NODE_ENV=test`. Để seed DB cục bộ `webedu` từ cấu hình mẫu, đặt `NODE_ENV=development` và `ALLOW_TEST_DB_TRUNCATE=true` cho lần chạy đó. Browser QA mặc định tạo PostgreSQL tạm khi không có `TEST_DATABASE_URL`.
+
 ## 🧪 Lệnh kiểm thử & kiểm soát chất lượng
 
 ```bash

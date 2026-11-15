@@ -97,8 +97,8 @@ describe('AssignmentsController', () => {
     await ctrl.getMySubmittedView(student, 'assign-1');
     expect(submissions.getMySubmittedView).toHaveBeenCalledWith('assign-1', student);
 
-    await expect(ctrl.streamMedia(student, 'assign-1', 'm-1')).resolves.toBe('stream');
-    expect(submissions.streamAssignmentMedia).toHaveBeenCalledWith('assign-1', 'm-1', student);
+    await expect(ctrl.streamMedia(student, 'assign-1', 'm-1', 'question-1')).resolves.toBe('stream');
+    expect(submissions.streamAssignmentMedia).toHaveBeenCalledWith('assign-1', 'm-1', student, 'question-1');
 
     await ctrl.reopenSubmission(teacher, 'sub-1', { reason: 'Mạng lag' });
     expect(delivery.reopenSubmission).toHaveBeenCalledWith(
