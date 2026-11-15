@@ -66,6 +66,7 @@ export function ImportUploadPane({
   const [type, setType] = useState<AssessmentType>('HOMEWORK');
   const [courseId, setCourseId] = useState('');
   const [duration, setDuration] = useState('');
+  const [docFile, setDocFile] = useState<File | null>(null);
   const [extras, setExtras] = useState<File[]>([]);
   const [step, setStep] = useState<Step>('idle');
   const [error, setError] = useState('');
@@ -75,6 +76,25 @@ export function ImportUploadPane({
 
   const selectedCourseId = courseId || courses[0]?.id || '';
   const stepIdx = step === 'up' ? 0 : step === 'parse' ? 1 : step === 'done' ? 2 : -1;
+  const busy = step === 'up' || step === 'parse';
+
+  const pickDoc = (file: File | undefined) => {
+    if (!file) return;
+    const ext = getFileExtension(file.name);
+    if ((ext !== 'docx' && ext !== 'pdf') || file.size === 0 || file.size > MAX_DOC_BYTES) {
+      setError('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
+      setStep('err');
+      setDocFile(null);
+      setFileName(file.name);
+      return;
+    }
+    setError('');
+    setStep('idle');
+    setDocFile(file);
+    setFileName(file.name);
+    setSummary('');
+    setAssessmentId('');
+  };
 
   const appendExtras = (files: FileList | null) => {
     const list = Array.from(files ?? []);
@@ -91,17 +111,14 @@ export function ImportUploadPane({
     if (accepted.length > 0) setExtras((curr) => [...curr, ...accepted]);
   };
 
-  const runImport = async (file: File) => {
+  const runImport = async () => {
+    if (!docFile) {
+      setError('Chọn file đề Word hoặc PDF trước');
+      return;
+    }
     setError('');
     setAssessmentId('');
     setSummary('');
-    const ext = getFileExtension(file.name);
-    if ((ext !== 'docx' && ext !== 'pdf') || file.size === 0 || file.size > MAX_DOC_BYTES) {
-      setError('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
-      setStep('err');
-      setFileName(file.name);
-      return;
-    }
     if (!selectedCourseId) {
       setError('Khóa HSK là bắt buộc');
       return;
@@ -110,7 +127,6 @@ export function ImportUploadPane({
     if (!parsedDuration.valid) {
       setError(parsedDuration.error!);
       setStep('err');
-      setFileName(file.name);
       return;
     }
     for (const extra of extras) {
@@ -118,15 +134,13 @@ export function ImportUploadPane({
       if (extraError) {
         setError(extraError);
         setStep('err');
-        setFileName(file.name);
         return;
       }
     }
-    setFileName(file.name);
     setStep('up');
     try {
       setStep('parse');
-      const result = await importAssessment(file, {
+      const result = await importAssessment(docFile, {
         courseId: selectedCourseId,
         type,
         title: title.trim() || undefined,
@@ -151,7 +165,12 @@ export function ImportUploadPane({
       <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
         ← Danh sách đề
       </button>
-      <h2 className="text-lg font-bold">Tải đề Word/PDF</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-bold">Tải đề Word/PDF</h2>
+        <a href="/templates/mau-de-import.docx" download className="text-sm font-semibold text-[var(--blue)]">
+          Tải file mẫu Word
+        </a>
+      </div>
       {error ? (
         <div role="alert" className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] px-4 py-3 text-sm text-[var(--red-ink)]">
           {error}
@@ -176,8 +195,7 @@ export function ImportUploadPane({
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
-            const file = e.dataTransfer.files[0];
-            if (file) void runImport(file);
+            pickDoc(e.dataTransfer.files[0]);
           }}
         >
           <input
@@ -186,14 +204,44 @@ export function ImportUploadPane({
             className="hidden"
             aria-label="Tải đề Word hoặc PDF"
             onChange={(e) => {
-              const file = e.target.files?.[0];
+              pickDoc(e.target.files?.[0]);
               e.target.value = '';
-              if (file) void runImport(file);
             }}
           />
-          <b>Kéo thả file vào đây hoặc bấm để chọn</b>
-          <span className="text-xs text-[var(--ink-3)]">.docx, .pdf · tối đa 20MB · lưu file gốc để đối chiếu</span>
+          <b>{docFile ? docFile.name : 'Kéo thả file vào đây hoặc bấm để chọn'}</b>
+          <span className="text-xs text-[var(--ink-3)]">Dùng file mẫu Word · tối đa 20MB</span>
+          <span className="max-w-xl text-xs text-[var(--ink-3)]">
+            Năm dạng chữ trong mẫu. Audio/ảnh thêm bên dưới, gắn lúc kiểm tra đề. Khẩu ngữ không import.
+          </span>
         </label>
+        <div className="md:col-span-2 space-y-2">
+          <div className="text-sm font-medium">Audio / hình ảnh (tuỳ chọn)</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={audioRef} type="file" accept=".mp3,.m4a,.wav" className="hidden" aria-label="Thêm audio" multiple
+              onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
+            <input ref={imageRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" aria-label="Thêm hình" multiple
+              onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
+            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => audioRef.current?.click()}>Thêm audio</button>
+            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => imageRef.current?.click()}>Thêm hình</button>
+          </div>
+          {extras.length > 0 ? (
+            <ul className="flex flex-wrap gap-2 text-xs text-[var(--ink-2)]">
+              {extras.map((f, i) => (
+                <li key={`${f.name}-${i}`}>
+                  <button type="button" className="rounded-full border border-[var(--line-2)] bg-white px-2.5 py-1"
+                    onClick={() => setExtras((curr) => curr.filter((_, j) => j !== i))} aria-label={`Gỡ ${f.name}`}>
+                    {f.name} ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+        <button type="button" disabled={!docFile || !selectedCourseId || busy}
+          className="md:col-span-2 w-fit rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={() => void runImport()}>
+          Tải đề lên
+        </button>
         {step !== 'idle' ? (
           <div className="md:col-span-2 space-y-2 rounded-lg border border-[var(--line)] p-3">
             <div className="text-sm font-medium">{fileName}</div>
@@ -240,19 +288,6 @@ export function ImportUploadPane({
             ) : null}
           </div>
         ) : null}
-        <div className="md:col-span-2 space-y-2">
-          <div className="text-sm font-medium">Audio / hình ảnh đính kèm riêng</div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input ref={audioRef} type="file" accept=".mp3,.m4a,.wav" className="hidden" aria-label="Thêm audio" multiple
-              onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
-            <input ref={imageRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" aria-label="Thêm hình" multiple
-              onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
-            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => audioRef.current?.click()}>Thêm audio</button>
-            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => imageRef.current?.click()}>Thêm hình</button>
-            <span className="text-xs text-[var(--ink-3)]">Nếu không nhúng trong file đề</span>
-          </div>
-          {extras.length > 0 ? <p className="text-xs text-[var(--ink-3)]">{extras.map((f) => f.name).join(', ')}</p> : null}
-        </div>
       </div>
     </div>
   );

@@ -63,11 +63,11 @@ const checks = [
     ),
   },
   {
-    label: 'Backend Controllers / Policies / Mappers',
+    label: 'Backend Controllers / Policies / Mappers / Parsers',
     maxLoc: BACKEND_MODULE_PART_MAX_LOC,
     files: scanDir(
       path.join(ROOT, 'backend', 'src'),
-      (p) => /\.(controller|policy|mapper)\.ts$/.test(p) && !isTestFile(p),
+      (p) => /\.(controller|policy|mapper|parser)\.ts$/.test(p) && !isTestFile(p),
     ),
   },
   {
