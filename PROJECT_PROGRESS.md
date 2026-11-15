@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`) — HOÀN THÀNH & QUA CỔNG TEST** *(Nhánh `feature/phase-06-assignment-delivery-and-submission`; Phase 5 đã merge `develop` tại `59b2038`; chuẩn bị sang Phase 7: Chấm điểm tự động & thủ công)*
+* **Giai đoạn hiện tại**: **Phase 6: Module 06 (Phần 2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt (`FUNC-051..054`) — HOÀN THÀNH & ĐÃ MERGE `develop`** *(Nhánh `feature/phase-06-assignment-delivery-and-submission` đã tích hợp vào `develop` sau khi vượt qua 100% cổng kiểm thử & re-audit; sẵn sàng sang Phase 7: Chấm điểm tự động & thủ công)*
 ---
 
 ## 🎨 Hạng Mục Đặc Biệt: Đại Tu UI/UX Chuẩn 100% Prototype Á Đông & Dọn Dẹp Chức Năng Thừa *(HOÀN THÀNH — 100% PASS)*
@@ -244,6 +244,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
     - `node scripts/check-loc.js`: **PASS** (`197` files checked across `6` categories); `git grep` non-test hygiene scan: **0 matches**.
     - **Backend**: `tsc --noEmit` **PASS**, `oxlint --type-aware` **0 warnings / 0 errors** (`202` files), `nest build` **PASS**; Unit (`npm run test:cov`) **44/44 files — 450/450 tests PASS** (`91.85%` Stmts / `83.81%` Branch / `92.19%` Funcs / `92.72%` Lines); PostgreSQL Integration (`test:integration`) **1/1 file — 16/16 tests PASS**; E2E (`test:e2e`) **9/9 files — 56/56 tests PASS** (gồm **9/9** kịch bản trong `phase06-assignments-submissions.e2e-spec.ts` và **7/7** trong `phase3-courses-classes.e2e-spec.ts`).
     - **Frontend**: `tsc --noEmit` **PASS**, `eslint` **PASS**, `next build` **PASS** (`26/26` static pages + `ƒ Proxy`), Unit (`playwright.unit.config.ts`) **14/14 tests PASS**, Playwright E2E (`npm run test:e2e`) **9/9 spec files — 78/78 PASS** (`2.6m`: `39` `desktop-chromium` + `39` `mobile-chromium` kèm Axe WCAG; đã đồng bộ `P3-E2E-2` với rule chặn trùng lịch Dev #5).
+- [x] **Merge Phase 6 vào `develop`**: Tích hợp nhánh `feature/phase-06-assignment-delivery-and-submission` vào `develop` qua merge commit `merge: integrate feature/phase-06-assignment-delivery-and-submission into develop` sau khi vượt qua 100% cổng Backend (450/450 unit, 16/16 PG integration, 56/56 HTTP E2E), Frontend (14/14 unit, 78/78 Playwright E2E trên 9 spec files) và Whole-Branch Final Re-Audit.
 
 ### Phase 7: Module 07 — Chấm điểm Rule-based, Tự luận & Công bố 2 bước (`FUNC-056`, `FUNC-058..064`)
 - [ ] Lập Sub-Plan `docs/plans/phase-07-grading-and-publication.md` & chốt `GRADE-01..02`.
