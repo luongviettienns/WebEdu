@@ -3,12 +3,16 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Role, UserStatus, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from './auth.types.js';
 import {
+  RetryWithSuperadminLocksError,
+  type SuperadminTransactionRunner,
   assertActorMayModifyAccount,
   assertAnotherActiveSuperadminRemains,
   assertSuperadminNotSelfDeactivating,
   isLeavingActiveSuperadmin,
+  lockAndLoadUserWithSuperadminCheck,
   lockTargetUser,
   lockUserAndActiveSuperadmins,
+  runWithSuperadminLockRetry,
 } from './superadmin-protection.policy.js';
 
 describe('superadmin-protection.policy (FUNC-013, SEC-07)', () => {
@@ -147,5 +151,60 @@ describe('superadmin-protection.policy (FUNC-013, SEC-07)', () => {
     expect(() =>
       assertAnotherActiveSuperadminRemains('sa-1', [{ id: 'sa-1' }, { id: 'sa-2' }]),
     ).toThrow(BadRequestException);
+  });
+
+  it('runWithSuperadminLockRetry retries once with forceSuperadminLocks=true only on RetryWithSuperadminLocksError', async () => {
+    const fakeTx = {} as Prisma.TransactionClient;
+    const prisma: SuperadminTransactionRunner = {
+      $transaction: (cb) => cb(fakeTx),
+    };
+    const txSpy = vi.spyOn(prisma, '$transaction');
+
+    const flags: boolean[] = [];
+    const res = await runWithSuperadminLockRetry(prisma, async (_tx, force) => {
+      flags.push(force);
+      if (!force) throw new RetryWithSuperadminLocksError();
+      return 'ok';
+    });
+    expect(res).toBe('ok');
+    expect(flags).toEqual([false, true]);
+    expect(txSpy).toHaveBeenCalledTimes(2);
+
+    txSpy.mockClear();
+    await expect(
+      runWithSuperadminLockRetry(prisma, async () => {
+        throw new BadRequestException('other error');
+      }),
+    ).rejects.toThrowError(new BadRequestException('other error'));
+    expect(txSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('lockAndLoadUserWithSuperadminCheck throws RetryWithSuperadminLocksError when promoted concurrently before lock', async () => {
+    const queryRawMock = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'u-1', roles: [Role.TEACHER], status: UserStatus.ACTIVE }]);
+    const findUniqueMock = vi
+      .fn()
+      .mockResolvedValueOnce({ roles: [Role.TEACHER], status: UserStatus.ACTIVE });
+    const tx = {
+      $queryRaw: queryRawMock,
+      user: { findUnique: findUniqueMock },
+    } as unknown as Prisma.TransactionClient;
+
+    await expect(
+      lockAndLoadUserWithSuperadminCheck(tx, {
+        actor: superadminActor,
+        targetUserId: 'u-1',
+        requiredRole: Role.TEACHER,
+        notFoundMessage: 'Không tìm thấy giáo viên',
+        requestedStatus: UserStatus.INACTIVE,
+        forceSuperadminLocks: false,
+        loadLockedUser: async () => ({
+          roles: [Role.TEACHER, Role.SUPERADMIN],
+          status: UserStatus.ACTIVE,
+        }),
+      }),
+    ).rejects.toThrowError(RetryWithSuperadminLocksError);
+    expect(queryRawMock).toHaveBeenCalledTimes(1);
   });
 });

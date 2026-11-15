@@ -81,6 +81,7 @@ function createStudentStudyGroup(): NavGroup {
     items: [
       { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
       { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
+      { href: '/student/assignments', label: 'Bài tập & Đề thi', han: '作业' },
     ],
   };
 }

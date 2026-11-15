@@ -1,4 +1,6 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import {
   AttendanceStatus,
   ClassStatus,
@@ -11,6 +13,7 @@ import {
 import { vi } from 'vitest';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
+import { SaveSessionAttendanceDto } from '../dto/attendance.dto.js';
 import { AttendancePolicy } from '../policies/attendance.policy.js';
 import { AttendanceCrudService } from './attendance-crud.service.js';
 import { AttendanceQueryService } from './attendance-query.service.js';
@@ -356,5 +359,30 @@ describe('AttendanceCrudService & AttendanceQueryService (TDD Slice 4.3-4.4)', (
       'stu-1:sess-1',
       'stu-2:sess-1',
     ]);
+  });
+
+  it('rejects saving > 200 attendance records at both DTO validation and service level', async () => {
+    const overLimitRecords = Array.from({ length: 201 }, (_, idx) => ({
+      studentId: `00000000-0000-4000-8000-${String(idx).padStart(12, '0')}`,
+      status: AttendanceStatus.PRESENT,
+    }));
+
+    const dto = plainToInstance(SaveSessionAttendanceDto, {
+      records: overLimitRecords,
+    });
+    const errors = await validate(dto);
+    const messages = errors.flatMap((err) => Object.values(err.constraints ?? {}));
+    expect(messages).toContain('Danh sách điểm danh tối đa 200 học viên mỗi lần lưu');
+
+    await expect(
+      crudService.saveSessionAttendance(teacherActor, 'sess-1', {
+        records: overLimitRecords,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException('Danh sách điểm danh tối đa 200 học viên mỗi lần lưu'),
+    );
+    expect(
+      mockPrisma.$transaction as ReturnType<typeof vi.fn>,
+    ).not.toHaveBeenCalled();
   });
 });

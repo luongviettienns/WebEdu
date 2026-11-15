@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { ClassStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { hashPassword } from '../../common/auth/password-hash.util.js';
@@ -17,13 +16,8 @@ import {
 import { resolvePagination } from '../../common/utils/pagination.util.js';
 import { buildUserSearchFilter } from '../../common/utils/user-search.util.js';
 import {
-  assertActorMayModifyAccount,
-  assertAnotherActiveSuperadminRemains,
-  assertSuperadminNotSelfDeactivating,
-  isLeavingActiveSuperadmin,
-  lockTargetUser,
-  lockUserAndActiveSuperadmins,
-  type LockedUserRow,
+  lockAndLoadUserWithSuperadminCheck,
+  runWithSuperadminLockRetry,
 } from '../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import type {
@@ -160,67 +154,25 @@ export class TeachersService {
     assertValidContactFields(dto);
 
     try {
-      const updated = await this.prisma.$transaction(async (tx) => {
-        // Determine locking strategy without acquiring out-of-order locks
-        const preliminary = await tx.user.findUnique({
-          where: { id: teacherId },
-          select: { roles: true, status: true },
-        });
-        if (!preliminary || !preliminary.roles.includes(Role.TEACHER)) {
-          throw new NotFoundException('Không tìm thấy giáo viên');
-        }
+      const updated = await runWithSuperadminLockRetry(
+        this.prisma,
+        async (tx, forceSuperadminLocks) => {
+          const { targetUser, nextStatus } =
+            await lockAndLoadUserWithSuperadminCheck(tx, {
+              actor,
+              targetUserId: teacherId,
+              requiredRole: Role.TEACHER,
+              notFoundMessage: 'Không tìm thấy giáo viên',
+              requestedStatus: dto.status,
+              forceSuperadminLocks,
+              loadLockedUser: () =>
+                tx.user.findUnique({
+                  where: { id: teacherId },
+                  include: { teacherProfile: true },
+                }),
+            });
 
-        // Check actor permissions before locking or evaluating pool state
-        assertActorMayModifyAccount(actor, preliminary.roles);
-
-        const nextStatus = dto.status ?? preliminary.status;
-
-        // Superadmin may not self-deactivate
-        assertSuperadminNotSelfDeactivating(
-          actor,
-          { id: teacherId, roles: preliminary.roles },
-          nextStatus,
-        );
-
-        const leavingSuperadmin = isLeavingActiveSuperadmin(
-          preliminary.roles,
-          nextStatus,
-        );
-
-        let lockedSuperadmins: LockedUserRow[] | undefined;
-        if (leavingSuperadmin) {
-          // Lock all active superadmins in canonical ORDER BY id ASC to avoid 40P01 deadlocks
-          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, teacherId);
-          assertAnotherActiveSuperadminRemains(teacherId, lockedSuperadmins);
-        } else {
-          // Normal teacher update: lock only the target user row to avoid global contention
-          await lockTargetUser(tx, teacherId);
-        }
-
-        const targetUser = await tx.user.findUnique({
-          where: { id: teacherId },
-          include: { teacherProfile: true },
-        });
-        if (!targetUser || !targetUser.roles.includes(Role.TEACHER)) {
-          throw new NotFoundException('Không tìm thấy giáo viên');
-        }
-
-        // Re-check actor permissions on freshly locked target roles to eliminate race window (F1)
-        assertActorMayModifyAccount(actor, targetUser.roles);
-        assertSuperadminNotSelfDeactivating(
-          actor,
-          { id: teacherId, roles: targetUser.roles },
-          nextStatus,
-        );
-        if (
-          isLeavingActiveSuperadmin(targetUser.roles, nextStatus) &&
-          !leavingSuperadmin
-        ) {
-          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, teacherId);
-          assertAnotherActiveSuperadminRemains(teacherId, lockedSuperadmins);
-        }
-
-        const nextFullName =
+          const nextFullName =
           dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
         const nextEmail =
           dto.email !== undefined ? normalizeEmail(dto.email) : targetUser.email;

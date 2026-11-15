@@ -231,6 +231,11 @@ test.describe('Phase 3 Browser QA — Courses, Classes, Enrollments, Multi-Role 
     await editDialog.locator('#teacher-assigned-from').fill(getTodayVnIso());
     await editDialog.locator('#teacher-change-reason').fill('Bàn giao ca tối sang cô Lan');
     await editDialog.getByRole('button', { name: 'Lưu thay đổi' }).click();
+    await expect(editDialog.getByRole('alert')).toContainText(/lịch dạy trùng giờ tại lớp HSK[12]-K26-01/i);
+
+    await editDialog.locator('#class-start-time').fill('20:00');
+    await editDialog.locator('#class-end-time').fill('21:30');
+    await editDialog.getByRole('button', { name: 'Lưu thay đổi' }).click();
     await expect(editDialog).toHaveCount(0);
 
     await expect(page.getByTestId('teacher-history')).toContainText('Vương Quốc Tuấn');

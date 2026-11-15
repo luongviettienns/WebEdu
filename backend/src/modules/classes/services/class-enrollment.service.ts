@@ -22,6 +22,9 @@ export class ClassEnrollmentService {
     if (uniqueIds.length === 0) {
       throw new BadRequestException('Danh sách học viên cần thêm vào lớp không được để trống');
     }
+    if (uniqueIds.length > 100) {
+      throw new BadRequestException('Mỗi lần chỉ có thể thêm tối đa 100 học viên vào lớp');
+    }
 
     const enrolledDate = resolveVnCalendarDateForDb(dto.enrolledDate);
     if (!enrolledDate) throw new BadRequestException('Ngày vào lớp không hợp lệ');

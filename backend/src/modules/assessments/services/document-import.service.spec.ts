@@ -1,7 +1,10 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, HttpStatus } from '@nestjs/common';
 import { AssessmentType } from '@prisma/client';
 import { vi } from 'vitest';
-import { DocumentImportService } from './document-import.service.js';
+import {
+  DocumentImportService,
+  MAX_CONCURRENT_EXTRACTS,
+} from './document-import.service.js';
 
 function minimalDocx(): Buffer {
   const local = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
@@ -272,5 +275,47 @@ describe('DocumentImportService (Task 5.3 TDD)', () => {
     });
     expect(prisma.tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.tx.assessment.create).not.toHaveBeenCalled();
+  });
+
+  it('caps concurrent document extractions at MAX_CONCURRENT_EXTRACTS (2) with 429 and releases slots in finally', async () => {
+    expect(MAX_CONCURRENT_EXTRACTS).toBe(2);
+
+    const prisma = makePrisma();
+    const service = new DocumentImportService(prisma as never);
+    let releaseExtracts!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseExtracts = resolve;
+    });
+
+    service.extractors = {
+      extractDocx: vi.fn(async () => {
+        await gate;
+        return { text: THREE_QUESTIONS, images: [] };
+      }),
+      extractPdf: vi.fn(),
+      persistBytes: vi.fn(async () => 'uploads/media/orig.docx'),
+    };
+
+    const first = service.importFile('teacher-1', 'd1.docx', DOCX, dto);
+    const second = service.importFile('teacher-1', 'd2.docx', DOCX, dto);
+
+    // Wait a microtask so both imports reach extractDocx and hold both active slots
+    await Promise.resolve();
+
+    await expect(
+      service.importFile('teacher-1', 'd3.docx', DOCX, dto),
+    ).rejects.toMatchObject({
+      status: HttpStatus.TOO_MANY_REQUESTS,
+      message:
+        'Hệ thống đang xử lý tối đa số lượng file đề cùng lúc, vui lòng thử lại sau ít giây',
+    });
+
+    releaseExtracts();
+    await Promise.all([first, second]);
+
+    // Slot released after completion -> subsequent import succeeds
+    await expect(
+      service.importFile('teacher-1', 'd4.docx', DOCX, dto),
+    ).resolves.toMatchObject({ assessmentId: 'asm-imp-1' });
   });
 });

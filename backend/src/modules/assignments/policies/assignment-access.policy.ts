@@ -1,0 +1,159 @@
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { AssessmentStatus, ClassStatus, EnrollmentStatus, Prisma, Role } from '@prisma/client';
+import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
+import type { PrismaService } from '../../../common/prisma/prisma.service.js';
+
+export type DbClient = Prisma.TransactionClient | PrismaService;
+export type AssignmentActor = Pick<AuthenticatedUser, 'id' | 'roles'>;
+
+export interface AssessmentVisibilityRow {
+  id: string;
+  createdById: string;
+  status: AssessmentStatus;
+}
+
+export interface ClassAccessRecord {
+  id: string;
+  code: string;
+  teacherId: string;
+  courseId: string;
+  status: ClassStatus;
+  course: { name: string };
+}
+
+export type ClassAssignmentViewerResolution =
+  | { role: 'ADMIN'; cls: ClassAccessRecord }
+  | { role: 'TEACHER'; cls: ClassAccessRecord }
+  | { role: 'STUDENT'; cls: ClassAccessRecord };
+
+@Injectable()
+export class AssignmentAccessPolicy {
+  async loadClassForAccess(db: DbClient, classId: string): Promise<ClassAccessRecord> {
+    const cls = await db.class.findUnique({
+      where: { id: classId },
+      select: {
+        id: true,
+        code: true,
+        teacherId: true,
+        courseId: true,
+        status: true,
+        course: { select: { name: true } },
+      },
+    });
+    if (!cls) {
+      throw new NotFoundException('Không tìm thấy lớp học');
+    }
+    return cls;
+  }
+
+  async assertTeacherOrAdminCanAccessClass(
+    db: DbClient,
+    actor: AssignmentActor,
+    classId: string,
+  ): Promise<ClassAccessRecord> {
+    return this.assertCurrentTeacherOrAdmin(
+      db,
+      actor,
+      classId,
+      'Bạn không có quyền thao tác bài tập của lớp này',
+    );
+  }
+
+  async assertTeacherOrAdminCanReadClass(
+    db: DbClient,
+    actor: AssignmentActor,
+    classId: string,
+  ): Promise<ClassAccessRecord> {
+    return this.assertCurrentTeacherOrAdmin(
+      db,
+      actor,
+      classId,
+      'Bạn không có quyền xem bài tập của lớp này',
+    );
+  }
+
+  async assertStudentEnrolledInClass(
+    db: DbClient,
+    studentId: string,
+    classId: string,
+  ): Promise<void> {
+    const enrolled = await this.hasActiveOrCompletedEnrollment(db, studentId, classId);
+    if (!enrolled) {
+      throw new ForbiddenException('Bạn không có quyền truy cập bài tập của lớp này');
+    }
+  }
+
+  async resolveClassAssignmentViewer(
+    db: DbClient,
+    actor: AssignmentActor,
+    classId: string,
+  ): Promise<ClassAssignmentViewerResolution> {
+    const cls = await this.loadClassForAccess(db, classId);
+    if (actor.roles.includes(Role.ADMIN)) {
+      return { role: 'ADMIN', cls };
+    }
+    if (this.isCurrentClassTeacher(actor, cls)) {
+      return { role: 'TEACHER', cls };
+    }
+    if (
+      actor.roles.includes(Role.STUDENT) &&
+      (await this.hasActiveOrCompletedEnrollment(db, actor.id, classId))
+    ) {
+      return { role: 'STUDENT', cls };
+    }
+    throw new ForbiddenException('Bạn không có quyền xem bài tập của lớp này');
+  }
+
+  /** Ensures ADMIN sees all papers and TEACHER sees own drafts or PUBLISHED papers without leaking foreign drafts. */
+  assertCanViewAssessment<T extends AssessmentVisibilityRow>(
+    actor: AssignmentActor,
+    assessment: T | null,
+  ): T {
+    if (!assessment) {
+      throw new NotFoundException('Không tìm thấy đề');
+    }
+    if (actor.roles.includes(Role.ADMIN)) {
+      return assessment;
+    }
+    if (
+      actor.roles.includes(Role.TEACHER) &&
+      (actor.id === assessment.createdById || assessment.status === AssessmentStatus.PUBLISHED)
+    ) {
+      return assessment;
+    }
+    throw new NotFoundException('Không tìm thấy đề');
+  }
+
+  private async assertCurrentTeacherOrAdmin(
+    db: DbClient,
+    actor: AssignmentActor,
+    classId: string,
+    forbiddenMessage: string,
+  ): Promise<ClassAccessRecord> {
+    const cls = await this.loadClassForAccess(db, classId);
+    if (actor.roles.includes(Role.ADMIN) || this.isCurrentClassTeacher(actor, cls)) {
+      return cls;
+    }
+    throw new ForbiddenException(forbiddenMessage);
+  }
+
+  private isCurrentClassTeacher(actor: AssignmentActor, cls: ClassAccessRecord): boolean {
+    return actor.roles.includes(Role.TEACHER) && cls.teacherId === actor.id;
+  }
+
+  private async hasActiveOrCompletedEnrollment(
+    db: DbClient,
+    studentId: string,
+    classId: string,
+  ): Promise<boolean> {
+    const enrollment = await db.enrollment.findFirst({
+      where: {
+        classId,
+        studentId,
+        status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
+      },
+      select: { id: true },
+    });
+    return enrollment !== null;
+  }
+}

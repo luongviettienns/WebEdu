@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import { SystemConfigService } from './services/system-config.service.js';
 import { SystemUsersService } from './services/system-users.service.js';
@@ -133,7 +137,26 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
     };
 
     mockPrisma = {
-      $queryRaw: vi.fn().mockResolvedValue([]),
+      $queryRaw: vi.fn(
+        async (strings: TemplateStringsArray, ...values: unknown[]) => {
+          const sql = strings.join('?');
+          const targetId = typeof values[0] === 'string' ? values[0] : '';
+          if (sql.includes('FROM "users"')) {
+            const locksSuperadmins = sql.includes('SUPERADMIN');
+            return Array.from(usersStore.values())
+              .filter(
+                (u) =>
+                  u.id === targetId ||
+                  (locksSuperadmins &&
+                    u.roles.includes(Role.SUPERADMIN) &&
+                    u.status === UserStatus.ACTIVE),
+              )
+              .sort((a, b) => a.id.localeCompare(b.id))
+              .map((u) => ({ id: u.id, roles: u.roles, status: u.status }));
+          }
+          return [];
+        },
+      ),
       user: {
         findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
           return usersStore.get(where.id) ?? null;
@@ -586,5 +609,156 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
       limit: 10,
     });
     expect(allWithBlankAction.total).toBe(2);
+  });
+
+  it('enforces shared superadmin-protection policy across system-users & user-role-status', async () => {
+    const nonSuperadminActor: AuthenticatedUser = {
+      id: 'admin-actor',
+      email: 'admin.actor@webedu.vn',
+      fullName: 'Regular Admin',
+      phone: '0999000099',
+      roles: [Role.ADMIN],
+      effectiveRole: Role.ADMIN,
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+    };
+
+    await expect(
+      service.createSystemUser(nonSuperadminActor, {
+        fullName: 'Unauthorized Create',
+        phone: '0988777666',
+        email: 'unauth.create@webedu.vn',
+        initialPassword: 'Password@123',
+        roles: [Role.ADMIN],
+      }),
+    ).rejects.toThrowError(ForbiddenException);
+
+    // createSystemUser locks active superadmins and validates minimum 1 active superadmin
+    const queryRawMock = mockPrisma.$queryRaw as ReturnType<typeof vi.fn>;
+    queryRawMock.mockResolvedValueOnce([]);
+    await expect(
+      service.createSystemUser(superadminA, {
+        fullName: 'Should Fail Without Superadmin',
+        phone: '0988777665',
+        email: 'no.sa@webedu.vn',
+        initialPassword: 'Password@123',
+        roles: [Role.ADMIN],
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động',
+      ),
+    );
+    expect(queryRawMock).toHaveBeenCalled();
+
+    // Demoting the last OTHER active Superadmin uses canonical message from assertAnotherActiveSuperadminRemains
+    queryRawMock.mockResolvedValueOnce([
+      { id: 'sa-2', roles: [Role.SUPERADMIN], status: UserStatus.ACTIVE },
+    ]);
+    await expect(
+      service.updateUserRolesAndStatus(superadminA, 'sa-2', {
+        status: UserStatus.INACTIVE,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động',
+      ),
+    );
+  });
+
+  it('avoids intra-transaction lock upgrades by rolling back and retrying in fresh transaction when target becomes SUPERADMIN after lockTargetUser', async () => {
+    usersStore.set('target-toctou', {
+      id: 'target-toctou',
+      email: 'toctou.target@webedu.vn',
+      phone: '0999111222',
+      fullName: 'TOCTOU Target',
+      roles: [Role.TEACHER],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const txSqlPerAttempt: string[][] = [];
+    const origTx = mockPrisma.$transaction as ReturnType<typeof vi.fn>;
+    const origFindUnique = (
+      mockPrisma.user as { findUnique: ReturnType<typeof vi.fn> }
+    ).findUnique;
+    const origQueryRaw = mockPrisma.$queryRaw as ReturnType<typeof vi.fn>;
+
+    let activeAttemptIdx = -1;
+    origTx.mockImplementation(
+      async (cb: (tx: Record<string, unknown>) => Promise<unknown>) => {
+        activeAttemptIdx += 1;
+        txSqlPerAttempt[activeAttemptIdx] = [];
+        return cb(mockPrisma);
+      },
+    );
+
+    origQueryRaw.mockImplementation(
+      async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        const sql = strings.join('?');
+        if (activeAttemptIdx >= 0) {
+          txSqlPerAttempt[activeAttemptIdx]!.push(sql);
+        }
+        const targetId = typeof values[0] === 'string' ? values[0] : '';
+        if (sql.includes('FROM "users"')) {
+          const locksSuperadmins = sql.includes('SUPERADMIN');
+          return Array.from(usersStore.values())
+            .filter(
+              (u) =>
+                u.id === targetId ||
+                (locksSuperadmins &&
+                  u.roles.includes(Role.SUPERADMIN) &&
+                  u.status === UserStatus.ACTIVE),
+            )
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map((u) => ({ id: u.id, roles: u.roles, status: u.status }));
+        }
+        return [];
+      },
+    );
+
+    let findCount = 0;
+    origFindUnique.mockImplementation(
+      async ({ where }: { where: { id: string } }) => {
+        findCount += 1;
+        // Call #1: preliminary check sees TEACHER (fast path -> lockTargetUser)
+        // Call #2: freshActor check -> sa-1
+        // Call #3: targetUser after lockTargetUser -> concurrently promoted to SUPERADMIN!
+        if (where.id === 'target-toctou' && findCount >= 3) {
+          usersStore.get('target-toctou')!.roles = [Role.SUPERADMIN];
+        }
+        return usersStore.get(where.id) ?? null;
+      },
+    );
+
+    const updated = await service.updateUserRolesAndStatus(
+      superadminA,
+      'target-toctou',
+      { roles: [Role.ADMIN] },
+    );
+
+    expect(updated.roles).toEqual([Role.ADMIN]);
+    expect(txSqlPerAttempt).toHaveLength(2);
+    // Tx 1 acquired only single-row lock and NEVER upgraded to lockUserAndActiveSuperadmins
+    expect(txSqlPerAttempt[0]).toHaveLength(1);
+    expect(txSqlPerAttempt[0]![0]).not.toContain('SUPERADMIN');
+    // Tx 2 started directly with canonical ascending lockUserAndActiveSuperadmins
+    expect(txSqlPerAttempt[1]).toHaveLength(1);
+    expect(txSqlPerAttempt[1]![0]).toContain('SUPERADMIN');
+  });
+
+  it('re-verifies freshActor inside createSystemUser transaction after acquiring locks', async () => {
+    usersStore.get('sa-1')!.tokenVersion = 1;
+    await expect(
+      service.createSystemUser(superadminA, {
+        fullName: 'Stale Token Create',
+        phone: '0988777664',
+        email: 'stale.actor@webedu.vn',
+        initialPassword: 'Password@123',
+        roles: [Role.ADMIN],
+      }),
+    ).rejects.toThrowError(UnauthorizedException);
   });
 });

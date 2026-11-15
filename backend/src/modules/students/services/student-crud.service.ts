@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
@@ -17,13 +16,8 @@ import {
   formatIsoDateUtc,
 } from '../../../common/utils/timezone.util.js';
 import {
-  assertActorMayModifyAccount,
-  assertAnotherActiveSuperadminRemains,
-  assertSuperadminNotSelfDeactivating,
-  isLeavingActiveSuperadmin,
-  lockTargetUser,
-  lockUserAndActiveSuperadmins,
-  type LockedUserRow,
+  lockAndLoadUserWithSuperadminCheck,
+  runWithSuperadminLockRetry,
 } from '../../../common/auth/superadmin-protection.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { UpdateStudentDto } from '../dto/students.dto.js';
@@ -68,65 +62,25 @@ export class StudentCrudService {
     const candidateDob = this.parseCandidateDob(dto.dateOfBirth);
 
     try {
-      await this.prisma.$transaction(async (tx) => {
-        // Determine locking strategy without acquiring out-of-order locks
-        const preliminary = await tx.user.findUnique({
-          where: { id: studentId },
-          select: { roles: true, status: true },
-        });
-        if (!preliminary || !preliminary.roles.includes(Role.STUDENT)) {
-          throw new NotFoundException('Không tìm thấy học viên');
-        }
+      await runWithSuperadminLockRetry(
+        this.prisma,
+        async (tx, forceSuperadminLocks) => {
+          const { targetUser, nextStatus } =
+            await lockAndLoadUserWithSuperadminCheck(tx, {
+              actor,
+              targetUserId: studentId,
+              requiredRole: Role.STUDENT,
+              notFoundMessage: 'Không tìm thấy học viên',
+              requestedStatus: dto.status,
+              forceSuperadminLocks,
+              loadLockedUser: () =>
+                tx.user.findUnique({
+                  where: { id: studentId },
+                  include: { studentProfile: { include: { consent: true } } },
+                }),
+            });
 
-        // Check actor permissions before locking or evaluating pool state
-        assertActorMayModifyAccount(actor, preliminary.roles);
-
-        const nextStatus = dto.status ?? preliminary.status;
-
-        // Superadmin may not self-deactivate
-        assertSuperadminNotSelfDeactivating(
-          actor,
-          { id: studentId, roles: preliminary.roles },
-          nextStatus,
-        );
-
-        const leavingSuperadmin = isLeavingActiveSuperadmin(
-          preliminary.roles,
-          nextStatus,
-        );
-
-        let lockedSuperadmins: LockedUserRow[] | undefined;
-        if (leavingSuperadmin) {
-          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, studentId);
-          assertAnotherActiveSuperadminRemains(studentId, lockedSuperadmins);
-        } else {
-          await lockTargetUser(tx, studentId);
-        }
-
-        const targetUser = await tx.user.findUnique({
-          where: { id: studentId },
-          include: { studentProfile: { include: { consent: true } } },
-        });
-        if (!targetUser || !targetUser.roles.includes(Role.STUDENT)) {
-          throw new NotFoundException('Không tìm thấy học viên');
-        }
-
-        // Re-check actor permissions on freshly locked target roles to eliminate race window (F1)
-        assertActorMayModifyAccount(actor, targetUser.roles);
-        assertSuperadminNotSelfDeactivating(
-          actor,
-          { id: studentId, roles: targetUser.roles },
-          nextStatus,
-        );
-        if (
-          isLeavingActiveSuperadmin(targetUser.roles, nextStatus) &&
-          !leavingSuperadmin
-        ) {
-          lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, studentId);
-          assertAnotherActiveSuperadminRemains(studentId, lockedSuperadmins);
-        }
-
-        const nextFullName =
+          const nextFullName =
           dto.fullName !== undefined ? dto.fullName.trim() : targetUser.fullName;
         const nextEmail =
           dto.email !== undefined ? normalizeEmail(dto.email) : targetUser.email;

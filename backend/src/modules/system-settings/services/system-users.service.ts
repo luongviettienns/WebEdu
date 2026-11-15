@@ -5,6 +5,12 @@ import {
 } from '@nestjs/common';
 import { Prisma, Role, UserStatus } from '@prisma/client';
 import { hashPassword } from '../../../common/auth/password-hash.util.js';
+import {
+  assertActorMayModifyAccount,
+  assertAnotherActiveSuperadminRemains,
+  assertFreshActiveSuperadminActorInTx,
+  lockUserAndActiveSuperadmins,
+} from '../../../common/auth/superadmin-protection.policy.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { rethrowDuplicateContactConflict } from '../../../common/utils/prisma-error.util.js';
@@ -85,6 +91,7 @@ export class SystemUsersService {
     }
 
     const uniqueRoles = Array.from(new Set(dto.roles));
+    assertActorMayModifyAccount(actor, uniqueRoles);
     if (uniqueRoles.length === 1 && uniqueRoles[0] === Role.STUDENT) {
       throw new BadRequestException(
         'Tài khoản Học viên phải được tạo qua luồng Đăng ký học viên để kiểm tra độ tuổi và đồng ý phụ huynh',
@@ -102,6 +109,14 @@ export class SystemUsersService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        const lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, actor.id);
+        await assertFreshActiveSuperadminActorInTx(
+          tx,
+          actor,
+          'Chỉ Quản trị tối cao (Superadmin) mới có quyền phân quyền hoặc tạo tài khoản hệ thống',
+        );
+        assertAnotherActiveSuperadminRemains('__create_system_user__', lockedSuperadmins);
+
         const user = await tx.user.create({
           data: {
             fullName,

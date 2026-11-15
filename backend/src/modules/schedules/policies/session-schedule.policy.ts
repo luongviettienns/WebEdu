@@ -21,7 +21,7 @@ export function getWeekdayVnLabel(dateUtc: Date): string {
 }
 
 /**
- * Computes `displayStatus` per `DEC-009` and `04-lich-buoi-hoc.md`:
+ * Computes `displayStatus` from session status and Vietnam calendar date:
  * cancelled -> `CANCELLED`, attended -> `COMPLETED`, past -> `MISSED_ATTENDANCE`,
  * today -> `TODAY`, future -> `SCHEDULED`.
  */

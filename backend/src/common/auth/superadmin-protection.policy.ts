@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Role, UserStatus, type Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from './auth.types.js';
 
@@ -111,4 +116,121 @@ export function assertAnotherActiveSuperadminRemains(
       'Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động',
     );
   }
+}
+
+/**
+ * Re-verifies inside an active transaction (after row locks are acquired) that
+ * the acting Superadmin is still ACTIVE, holds `SUPERADMIN`, and matches `tokenVersion`.
+ */
+export async function assertFreshActiveSuperadminActorInTx(
+  tx: Prisma.TransactionClient,
+  actor: Pick<AuthenticatedUser, 'id' | 'tokenVersion'>,
+  forbiddenMessage: string,
+): Promise<void> {
+  const freshActor = await tx.user.findUnique({
+    where: { id: actor.id },
+    select: { id: true, roles: true, status: true, tokenVersion: true },
+  });
+  if (
+    !freshActor ||
+    freshActor.status !== UserStatus.ACTIVE ||
+    !freshActor.roles.includes(Role.SUPERADMIN)
+  ) {
+    throw new ForbiddenException(forbiddenMessage);
+  }
+  if (freshActor.tokenVersion !== actor.tokenVersion) {
+    throw new UnauthorizedException(
+      'Phiên đăng nhập đã hết hiệu lực, vui lòng đăng nhập lại',
+    );
+  }
+}
+
+/** Thrown inside a fast-path tx on concurrent SUPERADMIN promotion to retry with canonical locks. */
+export class RetryWithSuperadminLocksError extends Error {
+  constructor() {
+    super('Retry transaction with canonical superadmin locks');
+    this.name = 'RetryWithSuperadminLocksError';
+  }
+}
+
+export interface SuperadminTransactionRunner {
+  $transaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T>;
+}
+
+/** Runs a tx with fast-path locking first, retrying once with `forceSuperadminLocks = true`. */
+export async function runWithSuperadminLockRetry<T>(
+  prisma: SuperadminTransactionRunner,
+  executeTx: (tx: Prisma.TransactionClient, forceSuperadminLocks: boolean) => Promise<T>,
+): Promise<T> {
+  try {
+    return await prisma.$transaction((tx) => executeTx(tx, false));
+  } catch (err: unknown) {
+    if (err instanceof RetryWithSuperadminLocksError) {
+      return prisma.$transaction((tx) => executeTx(tx, true));
+    }
+    throw err;
+  }
+}
+
+export interface LockAndLoadUserParams<TUser> {
+  actor: AuthenticatedUser;
+  targetUserId: string;
+  requiredRole: Role;
+  notFoundMessage: string;
+  requestedStatus: UserStatus | undefined;
+  forceSuperadminLocks: boolean;
+  loadLockedUser: () => Promise<TUser | null>;
+}
+
+/**
+ * Acquires row locks without intra-tx lock upgrades, reloads via `loadLockedUser`,
+ * verifies actor/self-deactivation/last-Superadmin invariants, or triggers retry.
+ */
+export async function lockAndLoadUserWithSuperadminCheck<
+  TUser extends { roles: Role[]; status: UserStatus },
+>(
+  tx: Prisma.TransactionClient,
+  params: LockAndLoadUserParams<TUser>,
+): Promise<{ targetUser: TUser; nextStatus: UserStatus }> {
+  const { actor, targetUserId, requiredRole, notFoundMessage, requestedStatus, forceSuperadminLocks } =
+    params;
+
+  const preliminary = await tx.user.findUnique({
+    where: { id: targetUserId },
+    select: { roles: true, status: true },
+  });
+  if (!preliminary || !preliminary.roles.includes(requiredRole)) {
+    throw new NotFoundException(notFoundMessage);
+  }
+
+  assertActorMayModifyAccount(actor, preliminary.roles);
+  const prelimNextStatus = requestedStatus ?? preliminary.status;
+  assertSuperadminNotSelfDeactivating(actor, { id: targetUserId, roles: preliminary.roles }, prelimNextStatus);
+
+  const shouldLockSuperadmins =
+    forceSuperadminLocks || isLeavingActiveSuperadmin(preliminary.roles, prelimNextStatus);
+  const lockedSuperadmins = shouldLockSuperadmins
+    ? await lockUserAndActiveSuperadmins(tx, targetUserId)
+    : undefined;
+  if (!shouldLockSuperadmins) {
+    await lockTargetUser(tx, targetUserId);
+  }
+
+  const targetUser = await params.loadLockedUser();
+  if (!targetUser || !targetUser.roles.includes(requiredRole)) {
+    throw new NotFoundException(notFoundMessage);
+  }
+
+  const nextStatus = requestedStatus ?? targetUser.status;
+  assertActorMayModifyAccount(actor, targetUser.roles);
+  assertSuperadminNotSelfDeactivating(actor, { id: targetUserId, roles: targetUser.roles }, nextStatus);
+
+  if (isLeavingActiveSuperadmin(targetUser.roles, nextStatus)) {
+    if (!lockedSuperadmins) {
+      throw new RetryWithSuperadminLocksError();
+    }
+    assertAnotherActiveSuperadminRemains(targetUserId, lockedSuperadmins);
+  }
+
+  return { targetUser, nextStatus };
 }

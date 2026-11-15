@@ -169,24 +169,8 @@ export async function verifyEmailVerificationCodeOrThrow(
 
   const updated = updatedRows[0];
   if (!updated) {
-    const latest = await prisma.emailVerification.findFirst({
-      where: { email: normalizedEmail },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (
-      latest &&
-      latest.verifiedAt === null &&
-      latest.expiresAt.getTime() > now.getTime() &&
-      latest.attempts >= MAX_OTP_ATTEMPTS
-    ) {
-      throw new BadRequestException(
-        'Bạn đã nhập sai mã xác thực quá nhiều lần. Vui lòng yêu cầu mã mới',
-      );
-    }
-
     throw new BadRequestException(
-      'Mã xác thực không tồn tại hoặc đã hết hạn. Vui lòng yêu cầu mã mới',
+      'Mã xác thực không tồn tại, đã hết hạn hoặc đã nhập sai quá số lần cho phép. Vui lòng yêu cầu mã mới',
     );
   }
 

@@ -12,7 +12,7 @@ import type { StudentAttendanceMetricsDto } from '../attendance.types.js';
 @Injectable()
 export class AttendancePolicy {
   /**
-   * Computes student attendance metrics in a class per `DEC-033` (`ATT-01a`) & `05-diem-danh.md`:
+   * Computes student attendance metrics in a class:
    * - Separates `absentCount` (`ABSENT`) and `excusedCount` (`EXCUSED`) for UI columns.
    * - `isAt30PercentWarning`: integer cross-multiplication `(absentCount + excusedCount) * 100 >= totalSessions * 30`.
    * - `attendanceRatePercent`: `Math.round((presentCount / markedSessionsCount) * 100)` or `null` when unmarked.
@@ -74,7 +74,7 @@ export class AttendancePolicy {
   }
 
   /**
-   * Enforces `DEC-026`, `DEC-030`, `DEC-032` for saving/editing session attendance.
+   * Enforces role, class status, session status, and teacher edit-window rules for saving/editing session attendance.
    * Returns whether this mutation counts as a post-deadline Admin override.
    */
   resolveSaveAuthorization(

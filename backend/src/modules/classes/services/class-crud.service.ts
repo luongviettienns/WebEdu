@@ -22,6 +22,7 @@ import {
   assertValidActiveTeacherInDb,
   findTeacherScheduleConflictWarning,
   getClassMutabilityCountsInTx,
+  resolveUpdateClassScheduleConflictInTx,
   resolveUpdatedClassSchedule,
 } from '../policies/class-session-lifecycle.util.js';
 import {
@@ -187,19 +188,6 @@ export class ClassCrudService {
           await assertStartDateMutableInTx(tx, classId);
         }
 
-        const scheduleWarning = await findTeacherScheduleConflictWarning(
-          tx,
-          nextTeacherId,
-          {
-            scheduleDays: nextScheduleDays,
-            scheduleStartTime: nextStartTime,
-            scheduleEndTime: nextEndTime,
-            startDate: nextStartDate,
-            endDate: nextExpectedEndDate,
-          },
-          classId,
-        );
-
         const reason = dto.teacherChangeReason?.trim() || 'Thay đổi giáo viên phụ trách lớp';
         if (teacherChanged && assignedFromDate) {
           await tx.classTeacherAssignment.updateMany({
@@ -253,6 +241,18 @@ export class ClassCrudService {
           },
         );
         cls.expectedEndDate = reconciled.expectedEndDate;
+
+        const scheduleWarning = await resolveUpdateClassScheduleConflictInTx(tx, {
+          classId,
+          nextTeacherId,
+          teacherChanged,
+          assignedFromDate,
+          scheduleDays: nextScheduleDays,
+          scheduleStartTime: nextStartTime,
+          scheduleEndTime: nextEndTime,
+          nextStartDate,
+          effectiveEndDate: reconciled.expectedEndDate ?? nextExpectedEndDate,
+        });
 
         if (nextCode !== existing.code) {
           await tx.studentProfile.updateMany({

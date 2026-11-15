@@ -23,13 +23,39 @@ export interface HealthCheckResponse {
   timestamp: string;
 }
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = 'webedu_access_token';
+const EXAM_DRAFT_STORAGE_PREFIX = 'webedu_exam_draft_';
+
+function purgeStorageKeys(storage: Storage, includeExamDrafts: boolean): void {
+  storage.removeItem(LEGACY_ACCESS_TOKEN_STORAGE_KEY);
+  if (!includeExamDrafts) {
+    return;
+  }
+  for (let i = storage.length - 1; i >= 0; i -= 1) {
+    const key = storage.key(i);
+    if (key && key.startsWith(EXAM_DRAFT_STORAGE_PREFIX)) {
+      storage.removeItem(key);
+    }
+  }
+}
+
+function purgeLegacyAccessTokensOnly(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    purgeStorageKeys(window.localStorage, false);
+    purgeStorageKeys(window.sessionStorage, false);
+  } catch {
+    // Bỏ qua nếu trình duyệt hạn chế quyền truy cập Storage
+  }
+}
 
 /**
- * Xóa triệt để mọi khóa token cũ nếu từng tồn tại trong Web Storage.
+ * Xóa triệt để mọi khóa token cũ và bản nháp bài thi cục bộ khi đăng nhập/đăng xuất/hết phiên.
  * Phiên xác thực trình duyệt sử dụng duy nhất Cookie HttpOnly (SameSite=Lax),
  * không bao giờ lưu trữ JWT trong localStorage, sessionStorage hay biến JS.
  */
@@ -38,8 +64,8 @@ export function purgeLegacyWebStorageTokens(): void {
     return;
   }
   try {
-    window.localStorage.removeItem(LEGACY_ACCESS_TOKEN_STORAGE_KEY);
-    window.sessionStorage.removeItem(LEGACY_ACCESS_TOKEN_STORAGE_KEY);
+    purgeStorageKeys(window.localStorage, true);
+    purgeStorageKeys(window.sessionStorage, true);
   } catch {
     // Bỏ qua nếu trình duyệt hạn chế quyền truy cập Storage
   }
@@ -91,7 +117,7 @@ export async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
-  purgeLegacyWebStorageTokens();
+  purgeLegacyAccessTokensOnly();
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
 
   const defaultHeaders: Record<string, string> = {

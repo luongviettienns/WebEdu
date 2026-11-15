@@ -2,6 +2,12 @@
 
 import Link from 'next/link';
 import React from 'react';
+import { ASSESSMENT_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
+import {
+  getAssignmentStatusTone,
+  isSubmittedAssignmentStatus,
+  type StudentAssignmentListItemDto,
+} from '@/features/assignments/api/assignments.api';
 import type { StudentMyAttendance } from '@/features/attendance/api/attendance.api';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
@@ -15,7 +21,7 @@ import {
   PendingClassNotice,
 } from '@/features/students/components/StudentOverviewNotices';
 import type { StudentItemDto } from '../api/students.api';
-import { formatDateDdMmYyyy } from '@/lib/utils/date';
+import { formatDateDdMmYyyy, formatDateTimeVn } from '@/lib/utils/date';
 
 export {
   AdminAccessNotice,
@@ -30,6 +36,7 @@ interface StudentOverviewCardsProps {
   assignedClass: string | null;
   enrolledAt: string | null;
   myAttendance?: StudentMyAttendance | null;
+  myAssignments?: StudentAssignmentListItemDto[];
 }
 
 export function ActiveStudentClassSection({
@@ -38,7 +45,9 @@ export function ActiveStudentClassSection({
   assignedClass,
   enrolledAt,
   myAttendance = null,
+  myAssignments = [],
 }: StudentOverviewCardsProps) {
+  const pendingAssignments = myAssignments.filter((item) => !isSubmittedAssignmentStatus(item.status));
   const pastClasses = studentDetail?.pastClasses ?? [];
   const classHistory = studentDetail?.classHistory ?? [];
 
@@ -182,30 +191,72 @@ export function ActiveStudentClassSection({
           </div>
         </div>
 
-        {/* Card 2: Bài cần làm (Phase 6 placeholder) */}
+        {/* Card 2: Bài cần làm */}
         <div className="rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs">
           <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-[var(--ink)]">
                 Bài cần làm
               </h2>
-              <span className="rounded bg-[var(--amber-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--amber)]">
-                0 bài
+              <span className="num rounded bg-[var(--amber-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--amber)]">
+                {pendingAssignments.length} bài
               </span>
             </div>
-            <span className="text-xs font-medium text-[var(--ink-3)]">
-              Mở ở Phase 6
-            </span>
+            <Link
+              href="/student/assignments"
+              className="text-xs font-semibold text-[var(--blue)] hover:underline"
+            >
+              Xem tất cả
+            </Link>
           </div>
-          <div className="py-8 text-center">
-            <p className="text-sm text-[var(--ink-2)] font-medium">
-              Không còn bài nào cần làm.
-            </p>
-            <p className="mt-1 text-xs text-[var(--ink-3)]">
-              Bài tập về nhà (BTVN) và đề kiểm tra HSK sẽ được giao tại đây
-              khi mở module Giao bài &amp; Đề thi (Phase 6).
-            </p>
-          </div>
+          {pendingAssignments.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm text-[var(--ink-2)] font-medium">
+                Không còn bài nào cần làm.
+              </p>
+              <p className="mt-1 text-xs text-[var(--ink-3)]">
+                Bài tập về nhà (BTVN) và đề kiểm tra HSK mới được giao sẽ xuất hiện tại đây.
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--line)]">
+              {pendingAssignments.slice(0, 3).map((item) => (
+                <li
+                  key={item.assignmentId}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3.5"
+                >
+                  <div className="min-w-0 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusTag tone={getAssignmentStatusTone(item.status)} size="sm">
+                        {item.displayStatusLabel}
+                      </StatusTag>
+                      <span className="text-xs font-semibold text-[var(--ink-2)]">
+                        {ASSESSMENT_TYPE_LABELS[item.assessmentType]} · {item.classCode}
+                      </span>
+                    </div>
+                    <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                      {item.assessmentTitle}
+                    </p>
+                    <p className="num text-xs text-[var(--ink-3)]">
+                      Hạn nộp: {formatDateTimeVn(item.dueAt)}
+                    </p>
+                  </div>
+                  {item.isOverdue ? (
+                    <span className="rounded-md bg-[var(--surface-2)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-3)]">
+                      Đã quá hạn
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/student/assignments/${item.assignmentId}`}
+                      className="shrink-0 rounded-lg bg-[var(--red)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--red-ink)]"
+                    >
+                      {item.status === 'IN_PROGRESS' ? 'Tiếp tục làm bài' : 'Làm bài'}
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Card 5: Lịch sử các lớp đã học */}

@@ -116,4 +116,30 @@ describe('Phase 5 policies and mapper coverage', () => {
     expect(dto.questionCount).toBe(0);
     expect(dto.questions).toEqual([]);
   });
+
+  it('maps _count.classAssignments to assignedClassCount and defaults to 0 when omitted', () => {
+    const base = {
+      id: 'a-2',
+      title: 'Đề giao lớp',
+      description: 'Mô tả',
+      type: AssessmentType.HOMEWORK,
+      courseId: 'c-1',
+      durationMinutes: 30,
+      status: AssessmentStatus.PUBLISHED,
+      isLocked: true,
+      originalFileName: null,
+      createdById: 'u-1',
+      updatedAt: new Date('2026-11-14T10:00:00.000Z'),
+      createdBy: { fullName: 'Cô Lan' },
+    };
+
+    const withCount = toTeacherAssessmentDto({
+      ...base,
+      _count: { classAssignments: 3 },
+    });
+    expect(withCount.assignedClassCount).toBe(3);
+
+    const withoutCount = toTeacherAssessmentDto(base);
+    expect(withoutCount.assignedClassCount).toBe(0);
+  });
 });

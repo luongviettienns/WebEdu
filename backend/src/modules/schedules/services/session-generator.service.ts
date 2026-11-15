@@ -22,7 +22,7 @@ export interface ClassScheduleRuleSnapshot {
 export class SessionGeneratorService {
   /**
    * Generates `1..totalSessions` `REGULAR` `SCHEDULED` sessions inside the caller's transaction
-   * when a class is created (`FUNC-026`, `FUNC-027`).
+   * when a class is created.
    */
   async generateInitialSessionsForClass(
     tx: Prisma.TransactionClient,
@@ -73,7 +73,7 @@ export class SessionGeneratorService {
 
   /**
    * Regenerates only untouched `REGULAR` `SCHEDULED` sessions when recurring schedule rules change,
-   * preserving `COMPLETED`, `CANCELLED`, `MANUAL`, `MAKEUP`, and `isRescheduled` sessions (`FUNC-027`).
+   * preserving `COMPLETED`, `CANCELLED`, `MANUAL`, `MAKEUP`, and `isRescheduled` sessions.
    */
   async reconcileRecurringSessionsAfterRuleUpdate(
     tx: Prisma.TransactionClient,
@@ -195,7 +195,7 @@ export class SessionGeneratorService {
   /**
    * Atomically renumbers all non-cancelled sessions `1..N` (`sessionDate ASC, startTime ASC, createdAt ASC`)
    * without violating partial unique index `lesson_sessions_class_active_num_unique`,
-   * then syncs `classes.expected_end_date` to the final active session date (`DEC-031`).
+   * then syncs `classes.expected_end_date` to the final active session date.
    */
   async renumberActiveSessionsAndSyncExpectedEndDate(
     tx: Prisma.TransactionClient,

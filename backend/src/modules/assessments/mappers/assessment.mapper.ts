@@ -23,6 +23,7 @@ type AssessmentRow = {
   createdById: string;
   updatedAt: Date;
   createdBy?: { fullName: string } | null;
+  _count?: { classAssignments: number };
   questions?: QuestionRow[];
 };
 
@@ -50,7 +51,7 @@ export function toTeacherAssessmentDto(a: AssessmentRow): TeacherAssessmentDto {
     status: a.status,
     isLocked: a.isLocked,
     originalFileName: a.originalFileName ?? null,
-    assignedClassCount: 0,
+    assignedClassCount: a._count?.classAssignments ?? 0,
     totalPoints: questions.reduce((sum, q) => sum + q.points, 0),
     questionCount: questions.length,
     createdById: a.createdById,
