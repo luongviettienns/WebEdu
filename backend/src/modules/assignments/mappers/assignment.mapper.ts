@@ -1,5 +1,5 @@
 import { AssessmentType, SubmissionStatus } from '@prisma/client';
-import { hasLegacyOffStepScores, sumQuestionMaxScore } from '../../grading/policies/answer-normalizer.policy.js';
+import { sumQuestionMaxScore } from '../../grading/policies/answer-normalizer.policy.js';
 import type {
   AssignmentDisplayStatus,
   ClassAssignmentStatsDto,
@@ -104,7 +104,6 @@ export const countNonEmptyAnswers = (answers: ReadonlyArray<{ answerPayload: unk
 
 function summarizeQuestions(
   questions?: ReadonlyArray<{ points: number }>,
-  preserveLegacyScale = false,
 ): {
   questionCount: number;
   totalPoints: number;
@@ -112,7 +111,7 @@ function summarizeQuestions(
   const list = questions ?? [];
   return {
     questionCount: list.length,
-    totalPoints: sumQuestionMaxScore(list, preserveLegacyScale),
+    totalPoints: sumQuestionMaxScore(list),
   };
 }
 
@@ -151,11 +150,7 @@ export function toStudentAssignmentListItemDto(
   now: Date = new Date(),
 ): StudentAssignmentListItemDto {
   const canViewScores = submissionRow !== null && SCORE_VISIBLE_STATUSES.has(submissionRow.status);
-  const preserveLegacyScale = canViewScores && hasLegacyOffStepScores(submissionRow);
-  const { questionCount, totalPoints } = summarizeQuestions(
-    assignmentRow.assessment.questions,
-    preserveLegacyScale,
-  );
+  const { questionCount, totalPoints } = summarizeQuestions(assignmentRow.assessment.questions);
   const status: AssignmentDisplayStatus = submissionRow?.status ?? 'NOT_STARTED';
   const effectiveDueAt = resolveEffectiveDueAt(assignmentRow.dueAt, submissionRow?.dueAtOverride);
   const isOverdue =

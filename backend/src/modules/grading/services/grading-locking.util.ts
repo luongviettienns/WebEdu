@@ -1,7 +1,5 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { QuestionForGrading } from '../grading.types.js';
-import { isObjectiveQuestion } from '../policies/grading-workflow.policy.js';
 
 export function assertNoDuplicateQuestionIds(
   answers: ReadonlyArray<{ questionId: string }>,
@@ -126,36 +124,28 @@ export async function lockAssignmentSubmissionsOrderedTx(
 
 export async function zeroOutSubmissionAnswersTx(
   tx: Prisma.TransactionClient,
-  submissionId: string,
-  questions: ReadonlyArray<Pick<QuestionForGrading, 'id' | 'type' | 'points' | 'payload'>>,
+  submissionIds: readonly string[],
+  questions: ReadonlyArray<{ id: string }>,
 ): Promise<void> {
-  for (const question of questions) {
-    const isObjective = isObjectiveQuestion(question);
-    const isCorrectValue = isObjective ? false : null;
-    await tx.submissionAnswer.upsert({
-      where: {
-        submissionId_questionId: {
-          submissionId,
-          questionId: question.id,
-        },
-      },
-      create: {
-        submissionId,
-        questionId: question.id,
-        answerPayload: {} as Prisma.InputJsonValue,
-        isCorrect: isCorrectValue,
-        earnedPoints: 0,
-        aiSuggestedPoints: null,
-        aiFeedback: null,
-        teacherEdited: true,
-      },
-      update: {
-        isCorrect: isCorrectValue,
-        earnedPoints: 0,
-        aiSuggestedPoints: null,
-        aiFeedback: null,
-        teacherEdited: true,
-      },
-    });
-  }
+  if (submissionIds.length === 0 || questions.length === 0) return;
+  const grade = {
+    earnedPoints: 0,
+    isCorrect: null,
+    aiSuggestedPoints: null,
+    aiFeedback: null,
+    teacherEdited: true,
+  };
+  await tx.submissionAnswer.updateMany({
+    where: {
+      submissionId: { in: [...submissionIds] },
+      questionId: { in: questions.map(({ id }) => id) },
+    },
+    data: grade,
+  });
+  await tx.submissionAnswer.createMany({
+    data: submissionIds.flatMap((submissionId) =>
+      questions.map(({ id: questionId }) => ({ submissionId, questionId, answerPayload: {}, ...grade })),
+    ),
+    skipDuplicates: true,
+  });
 }

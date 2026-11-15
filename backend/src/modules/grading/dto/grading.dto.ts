@@ -91,7 +91,6 @@ export class ManualGradeAnswerItemDto {
   @Transform(parseStrictNumberInput)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
-  @Max(1000)
   previousEarnedPoints?: number | null;
 
   @ApiPropertyOptional({ description: 'Áp dụng nhanh điểm gợi ý AI hiện có của câu hỏi' })
@@ -201,7 +200,6 @@ export class AdjustGradeAnswerItemDto {
   @Transform(parseStrictNumberInput)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
-  @Max(1000)
   previousEarnedPoints?: number | null;
 
   @ApiPropertyOptional({ maxLength: 2000, nullable: true })

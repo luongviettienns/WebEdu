@@ -260,58 +260,45 @@ export class GradingTrackerService {
         }
       }
 
-      const submissionIds: string[] = [];
+      const grade = {
+        status: SubmissionStatus.GRADED,
+        gradingStatus: GradingStatus.GRADED,
+        autoScore: 0,
+        totalScore: 0,
+        gradedAt: now,
+        gradedById: actor.id,
+        teacherFeedback: reason,
+      };
+      const idByStudent = new Map<string, string>();
+      const missingStudents: string[] = [];
       for (const studentId of targetStudentIds) {
-        const active = activeByStudent.get(studentId) ?? null;
-        let savedId: string;
-
-        if (active) {
-          const updated = await tx.submission.update({
-            where: { id: active.id },
-            data: {
-              status: SubmissionStatus.GRADED,
-              gradingStatus: GradingStatus.GRADED,
-              autoScore: 0,
-              totalScore: 0,
-              gradedAt: now,
-              gradedById: actor.id,
-              teacherFeedback: reason,
-            },
-            select: { id: true },
-          });
-          savedId = updated.id;
-        } else {
-          const created = await tx.submission.create({
-            data: {
-              classAssignmentId: assignmentId,
-              studentId,
-              attemptNumber: (maxAttemptByStudent.get(studentId) ?? 0) + 1,
-              status: SubmissionStatus.GRADED,
-              gradingStatus: GradingStatus.GRADED,
-              autoScore: 0,
-              totalScore: 0,
-              gradedAt: now,
-              gradedById: actor.id,
-              teacherFeedback: reason,
-            },
-            select: { id: true },
-          });
-          savedId = created.id;
-        }
-
-        await zeroOutSubmissionAnswersTx(tx, savedId, assignment.assessment?.questions ?? []);
-        submissionIds.push(savedId);
-        await tx.gradeAuditLog.create({
-          data: {
-            submissionId: savedId,
-            answerId: null,
-            actorId: actor.id,
-            oldScore: 0,
-            newScore: 0,
-            reason,
-          },
-        });
+        const active = activeByStudent.get(studentId);
+        if (active) idByStudent.set(studentId, active.id);
+        else missingStudents.push(studentId);
       }
+      if (idByStudent.size > 0) {
+        await tx.submission.updateMany({ where: { id: { in: [...idByStudent.values()] } }, data: grade });
+      }
+      if (missingStudents.length > 0) {
+        const created = await tx.submission.createManyAndReturn({
+          data: missingStudents.map((studentId) => ({
+            classAssignmentId: assignmentId,
+            studentId,
+            attemptNumber: (maxAttemptByStudent.get(studentId) ?? 0) + 1,
+            ...grade,
+          })),
+          select: { id: true, studentId: true },
+        });
+        for (const { studentId, id } of created) idByStudent.set(studentId, id);
+      }
+
+      const submissionIds = targetStudentIds.map((studentId) => idByStudent.get(studentId)!);
+      await zeroOutSubmissionAnswersTx(tx, submissionIds, assignment.assessment.questions);
+      await tx.gradeAuditLog.createMany({
+        data: submissionIds.map((submissionId) => ({
+          submissionId, answerId: null, actorId: actor.id, oldScore: 0, newScore: 0, reason,
+        })),
+      });
 
       await writeAuditLog(tx, actor, {
         action: 'OVERDUE_ZERO_RECORDED',

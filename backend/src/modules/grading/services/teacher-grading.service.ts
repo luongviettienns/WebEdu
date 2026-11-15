@@ -23,11 +23,7 @@ import {
   toGradingTrackerAssignmentDto,
   toTeacherGradingQuestionDetail,
 } from '../mappers/grading-result.mapper.js';
-import {
-  clampScoreToQuarter,
-  hasLegacyOffStepScores,
-  normalizeQuestionPoints,
-} from '../policies/answer-normalizer.policy.js';
+import { clampScoreToQuarter } from '../policies/answer-normalizer.policy.js';
 import {
   assertValidQuestionScore,
   computeSubmissionScoreSummary,
@@ -120,9 +116,6 @@ export class TeacherGradingService {
     const effectiveDueAt = resolveEffectiveDueAt(submission.classAssignment.dueAt, submission.dueAtOverride);
     const isLateSubmission =
       submission.submittedAt !== null && submission.submittedAt.getTime() > effectiveDueAt.getTime();
-    const preserveLegacyScale =
-      CONFIRMED_OR_PUBLISHED_STATUSES.has(submission.status) && hasLegacyOffStepScores(submission);
-
     return {
       submission: {
         id: submission.id,
@@ -145,9 +138,9 @@ export class TeacherGradingService {
         hasSubjectiveQuestions: scoreSummary.hasSubjectiveQuestions,
         ungradedSubjectiveCount: scoreSummary.ungradedSubjectiveCount,
       },
-      assignment: toGradingTrackerAssignmentDto(submission.classAssignment, preserveLegacyScale),
+      assignment: toGradingTrackerAssignmentDto(submission.classAssignment),
       student: submission.student,
-      questions: questions.map((q) => toTeacherGradingQuestionDetail(q, answerByQuestion.get(q.id), preserveLegacyScale)),
+      questions: questions.map((q) => toTeacherGradingQuestionDetail(q, answerByQuestion.get(q.id))),
       auditLogs: submission.gradeAuditLogs.map(toGradeAuditLogItemDto),
       navigation: resolveNavNeighbors(siblingSubs.map((s) => s.id), submission.id),
     };
@@ -218,7 +211,7 @@ export class TeacherGradingService {
           previousTeacherComment: item.previousTeacherComment,
         });
 
-        const effectiveMaxPoints = normalizeQuestionPoints(question.points);
+        const effectiveMaxPoints = question.points;
         let nextPoints: number | undefined;
 
         if (item.applyAiSuggestion === true) {

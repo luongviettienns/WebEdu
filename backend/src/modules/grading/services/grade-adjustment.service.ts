@@ -10,7 +10,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import type { AdjustGradeSubmissionDto } from '../dto/grading.dto.js';
 import type { AdjustGradeResultDto } from '../grading.types.js';
-import { normalizeQuestionPoints } from '../policies/answer-normalizer.policy.js';
 import {
   assertValidQuestionScore,
   computeSubmissionScoreSummary,
@@ -141,7 +140,7 @@ export class GradeAdjustmentService {
         if (item.earnedPoints !== undefined) {
           const newPoints = assertValidQuestionScore(
             item.earnedPoints,
-            normalizeQuestionPoints(question.points),
+            question.points,
             question.position,
           );
           const oldPoints = existingPoints ?? 0;

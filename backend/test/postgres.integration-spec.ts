@@ -88,6 +88,19 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     }
   });
 
+  it('atomically blocks the 16th and later failure when one IP sends requests concurrently', async () => {
+    const options = {
+      key: 'login:failures:ip:192.0.2.10', maxPoints: 15, windowMs: 60_000,
+      blockDurationMs: 900_000, fixedWindow: true,
+    };
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, () => assertRateLimitNotExceeded(prisma, options)),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(15);
+    const failures = results.filter((result) => result.status === 'rejected');
+    expect(failures.map(({ reason }) => reason.status)).toEqual([429, 429, 429, 429, 429]);
+  });
+
   async function bootNestModule(): Promise<TestingModule> {
     const { AppModule } = await import('../src/app.module.js');
     const mod = await Test.createTestingModule({

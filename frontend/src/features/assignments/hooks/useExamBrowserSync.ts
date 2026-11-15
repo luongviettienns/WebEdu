@@ -1,57 +1,64 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuestionType } from '@/features/assessments/api/assessments.api';
 import {
   getDraftStorageKey,
   MAX_CLOCK_SKEW_MS,
   parseIncomingDraftUpdate,
-  type ExamLocalDraft,
+  sanitizeAdoptedLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
+import type { ExamSnapshotLike } from '@/features/assignments/utils/exam-session-transport';
 
 export interface UseExamBrowserSyncOptions {
   submissionId: string | undefined;
   studentId: string | undefined;
   lastDraftUpdatedAtRef: React.MutableRefObject<number>;
-  onOnline: () => void;
+  snapshotRef: React.RefObject<ExamSnapshotLike>;
+  onResume: () => void;
   onOffline: () => void;
-  onVisibilityChange: (hidden: boolean) => void;
-  onRemoteSubmit: () => void;
-  onAdoptDraft: (draft: ExamLocalDraft) => void;
+  onRemoteSubmit: (submissionId: string) => void;
+  onAdoptDraft: (snapshot: ExamSnapshotLike) => void;
 }
 
 export function useExamBrowserSync({
   submissionId,
   studentId,
   lastDraftUpdatedAtRef,
-  onOnline,
+  snapshotRef,
+  onResume,
   onOffline,
-  onVisibilityChange,
   onRemoteSubmit,
   onAdoptDraft,
 }: UseExamBrowserSyncOptions) {
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
   useEffect(() => {
-    const handleVisibility = () => onVisibilityChange(document.hidden);
+    const handleOnline = () => { setIsOffline(false); onResume(); };
+    const handleOffline = () => { setIsOffline(true); onOffline(); };
+    const handleVisibility = () => { if (!document.hidden) onResume(); };
     const handleStorage = (event: StorageEvent) => {
       if (!submissionId || !studentId || event.key !== getDraftStorageKey(submissionId, studentId)) return;
       if (event.newValue === null) {
-        onRemoteSubmit();
+        onRemoteSubmit(submissionId);
         return;
       }
       const parsed = parseIncomingDraftUpdate(event.newValue, lastDraftUpdatedAtRef.current);
       if (parsed) {
         lastDraftUpdatedAtRef.current = Math.min(parsed.updatedAtMs, Date.now() + MAX_CLOCK_SKEW_MS);
-        onAdoptDraft(parsed);
+        const adopted = sanitizeAdoptedLocalDraft(parsed, snapshotRef.current);
+        if (!adopted) return;
+        lastDraftUpdatedAtRef.current = Math.max(lastDraftUpdatedAtRef.current, adopted.updatedAtMs);
+        onAdoptDraft(adopted.snapshot);
       }
     };
 
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
     document.addEventListener('visibilitychange', handleVisibility);
     window.addEventListener('storage', handleStorage);
     return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('storage', handleStorage);
     };
@@ -59,12 +66,13 @@ export function useExamBrowserSync({
     submissionId,
     studentId,
     lastDraftUpdatedAtRef,
-    onOnline,
+    snapshotRef,
+    onResume,
     onOffline,
-    onVisibilityChange,
     onRemoteSubmit,
     onAdoptDraft,
   ]);
+  return isOffline;
 }
 
 /** Ticks countdown every second while active and online (wall-clock anchored); auto-submits once at zero. */

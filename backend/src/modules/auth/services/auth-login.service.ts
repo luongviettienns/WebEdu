@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { UserStatus } from '@prisma/client';
 import type { AuthUserDto } from '../../../common/auth/auth.types.js';
-import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
+import { assertRateLimitNotBlocked, assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
 import { comparePassword } from '../../../common/auth/password-hash.util.js';
 import { IDLE_TIMEOUT_MS } from '../../../common/guards/jwt-auth.guard.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
@@ -17,6 +17,8 @@ import { AuthSessionService } from './auth-session.service.js';
 export const DUMMY_PASSWORD_HASH = '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iK8O';
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const IP_WINDOW_MS = 60_000;
+const IP_FAILURE_MESSAGE = 'Quá nhiều lần đăng nhập từ địa chỉ IP này. Vui lòng thử lại sau 15 phút';
 
 @Injectable()
 export class AuthLoginService {
@@ -39,14 +41,16 @@ export class AuthLoginService {
       throw new BadRequestException('Vui lòng đăng nhập bằng địa chỉ email hợp lệ');
     }
     const password = dto.password ?? '';
-    if (clientIp && clientIp !== 'unknown') {
+    const failureKey = clientIp && clientIp !== 'unknown' ? `login:failures:ip:${clientIp}` : undefined;
+    if (failureKey) {
+      await assertRateLimitNotBlocked(this.prisma, failureKey, IP_FAILURE_MESSAGE);
       await assertRateLimitNotExceeded(this.prisma, {
-        key: `login:ip:${clientIp}`,
-        maxPoints: 15,
-        windowMs: 60_000,
+        key: `login:attempts:ip:${clientIp}`,
+        // Allow a classroom to sign in together while bounding the pre-bcrypt burst.
+        maxPoints: 120,
+        windowMs: IP_WINDOW_MS,
         fixedWindow: true,
-        blockDurationMs: LOCKOUT_DURATION_MS,
-        errorMessage: 'Quá nhiều lần đăng nhập từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+        blockDurationMs: IP_WINDOW_MS,
       });
     }
 
@@ -57,6 +61,7 @@ export class AuthLoginService {
 
     if (!initialUser) {
       await comparePassword(password, DUMMY_PASSWORD_HASH);
+      await this.recordIpFailure(failureKey);
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
@@ -83,14 +88,14 @@ export class AuthLoginService {
 
       const txNow = new Date();
 
-      if (freshUser.lockedUntil && freshUser.lockedUntil.getTime() > txNow.getTime()) {
-        return { kind: 'LOCKED_15M' as const };
-      }
-
       const effectivePasswordValid =
         freshUser.passwordHash === initialUser.passwordHash
           ? isPasswordValid
           : await comparePassword(password, freshUser.passwordHash);
+
+      if (freshUser.lockedUntil && freshUser.lockedUntil.getTime() > txNow.getTime()) {
+        return { kind: 'LOCKED_15M' as const, invalidPassword: !effectivePasswordValid };
+      }
 
       if (!effectivePasswordValid) {
         const isExpiredLock =
@@ -111,7 +116,7 @@ export class AuthLoginService {
         });
 
         return shouldLock
-          ? { kind: 'LOCKED_15M' as const }
+          ? { kind: 'LOCKED_15M' as const, invalidPassword: true }
           : { kind: 'INVALID_CREDENTIALS' as const };
       }
 
@@ -148,12 +153,14 @@ export class AuthLoginService {
     });
 
     if (txOutcome.kind === 'LOCKED_15M') {
+      if (txOutcome.invalidPassword) await this.recordIpFailure(failureKey);
       throw new ForbiddenException(
         'Tài khoản tạm khóa 15 phút do nhập sai mật khẩu quá 5 lần',
       );
     }
 
     if (txOutcome.kind === 'INVALID_CREDENTIALS') {
+      await this.recordIpFailure(failureKey);
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác');
     }
 
@@ -165,5 +172,17 @@ export class AuthLoginService {
       txOutcome.updatedUser,
       dto.rememberMe === true,
     );
+  }
+
+  private async recordIpFailure(key: string | undefined): Promise<void> {
+    if (!key) return;
+    await assertRateLimitNotExceeded(this.prisma, {
+      key,
+      maxPoints: 15,
+      windowMs: IP_WINDOW_MS,
+      fixedWindow: true,
+      blockDurationMs: LOCKOUT_DURATION_MS,
+      errorMessage: IP_FAILURE_MESSAGE,
+    });
   }
 }

@@ -17,7 +17,7 @@ const INLINE_OPTION_RE = /(?:\(([A-D])\)|([A-D])\s*[.)、．:：])\s*/gi;
 const ANSWER_RE = /^(?:đáp\s*án(?:\s*(?:đúng|mẫu))?|answer|答案)\s*[:：]\s*(.+)$/i;
 const ANSWER_KEY_HEADER_RE = /^(?:đáp\s*án(?:\s*(?:đúng|mẫu))?|keys?|答案)\s*$/i;
 const TYPE_RE = /^(?:loại|type|dạng)\s*[:：]\s*(.+)$/i;
-const POINTS_RE = /^(?:điểm|points?)\s*[:：]\s*(\d+)$/i;
+const POINTS_RE = /^(?:điểm|points?)\s*[:：]\s*(.*)$/i;
 const TOKENS_RE = /^(?:tokens?|mảnh(?:\s*từ)?)\s*[:：]\s*(.+)$/i;
 const AUDIO_RE = /^(?:audio|file nghe)\s*[:：]\s*(.+)$/i;
 const IMAGE_RE = /^(?:ảnh|hình(?:\s*ảnh)?|image|file ảnh)\s*[:：]\s*(.+)$/i;
@@ -158,7 +158,10 @@ function applyMetaLine(current: ImportDraft, line: string): boolean {
   }
   const pointsMatch = line.match(POINTS_RE);
   if (pointsMatch) {
-    current.points = Math.max(1, Number(pointsMatch[1]));
+    const rawPoints = pointsMatch[1]?.trim() ?? '';
+    current.points = /^\d+(?:[.,]\d+)?$/.test(rawPoints)
+      ? Number(rawPoints.replace(',', '.'))
+      : Number.NaN;
     return true;
   }
   const tokensMatch = line.match(TOKENS_RE);

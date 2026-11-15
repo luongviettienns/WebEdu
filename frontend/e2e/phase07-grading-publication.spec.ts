@@ -122,6 +122,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
   test('Full Grading Flow: Submit -> Grade Essay -> Confirm (Zero-Leak) -> Publish -> Overdue Zero -> Adjust + AuditLog -> Student Review', async ({
     page,
   }) => {
+    test.setTimeout(90_000);
     const { pageErrors } = attachGuards(page);
 
     // 1. Admin enrolls a 2nd active student into HSK2-K26-01 so we can verify DEC-038 overdue handling
@@ -203,7 +204,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     });
     expect(pubRes.ok()).toBeTruthy();
 
-    const dueAtMs = Date.now() + 6000;
+    const dueAtMs = Date.now() + 20_000;
     const assignRes = await page.request.post(`${API_BASE_URL}/assessments/${assessment.id}/assign`, {
       headers: { Origin: origin },
       data: { classIds: [hsk2Class!.id], dueAt: toVnOffsetIso(new Date(dueAtMs)) },
@@ -215,14 +216,17 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     // 3. Student 1 (Phạm Gia Huy) starts & submits before dueAt expires
     await logoutViaApi(page);
     await loginThroughUi(page, 'active.student@webedu.vn');
-    await page.request.post(`${API_BASE_URL}/assignments/${assignmentId}/submissions/start`, {
+    const startRes = await page.request.post(`${API_BASE_URL}/assignments/${assignmentId}/submissions/start`, {
       headers: { Origin: origin },
     });
+    expect(startRes.ok(), `Student start failed: ${startRes.status()}`).toBeTruthy();
+    const started = (await startRes.json()) as { submission: { id: string } };
     const submitRes = await page.request.post(
       `${API_BASE_URL}/assignments/${assignmentId}/submissions/submit`,
       {
         headers: { Origin: origin },
         data: {
+          submissionId: started.submission.id,
           answers: [
             { questionId: q1.id, answerPayload: { selectedOptionIds: ['a'] } },
             { questionId: q2.id, answerPayload: { text: '我周末喜欢去图书馆看中文书。' } },
@@ -236,10 +240,6 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await page.goto(`/student/assignments/${assignmentId}?mode=review`);
     await expect(page.getByText('Bài đã nộp, đang chờ giáo viên chấm')).toBeVisible();
     await expect(page.getByText('Điểm tổng kết')).toHaveCount(0);
-
-    // Wait past dueAt so Student 2 becomes OVERDUE_NOT_SUBMITTED
-    const waitMs = Math.max(0, dueAtMs - Date.now() + 500);
-    if (waitMs > 0) await page.waitForTimeout(waitMs);
 
     // 4. Teacher opens Grading Workspace -> grades essay (5.5) -> Step 1 Confirm (GRADED)
     await logoutViaApi(page);
@@ -285,6 +285,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await expect(page.getByText('Điểm tổng kết')).toHaveCount(0);
 
     // 6. Teacher Step 2 Publish (RETURNED) + Explicit Overdue 0đ (DEC-038) + Adjust Grade with GradeAuditLog
+    await expect.poll(Date.now, { timeout: 25_000 }).toBeGreaterThan(dueAtMs);
     await logoutViaApi(page);
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
     await page.goto(`/teacher/assignments/${assignmentId}/grading`);

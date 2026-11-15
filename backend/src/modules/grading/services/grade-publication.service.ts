@@ -13,7 +13,6 @@ import type {
   ConfirmGradeResultDto,
   PublishGradesResultDto,
 } from '../grading.types.js';
-import { roundToQuarter } from '../policies/answer-normalizer.policy.js';
 import {
   computeSubmissionScoreSummary,
   CONFIRMED_OR_PUBLISHED_STATUSES,
@@ -320,7 +319,7 @@ export class GradePublicationService {
       return { confirmed: false };
     }
 
-    const totalScore = roundToQuarter(summary.totalScore ?? 0);
+    const totalScore = summary.totalScore ?? 0;
     await tx.submission.update({
       where: { id: submissionId },
       data: {

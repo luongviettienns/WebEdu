@@ -213,5 +213,12 @@ describe('GradingController (Slices 7.1–7.4)', () => {
       }),
     );
     expect(validAdjustErrors).toHaveLength(0);
+    const legacyAdjustErrors = await validate(
+      plainToInstance(AdjustGradeSubmissionDto, {
+        reason: 'Sửa điểm đề nhập cũ',
+        answers: [{ questionId: '11111111-1111-4111-8111-111111111111', earnedPoints: 1, previousEarnedPoints: 1001 }],
+      }),
+    );
+    expect(legacyAdjustErrors).toHaveLength(0);
   });
 });

@@ -10,8 +10,7 @@ import {
   clampScoreToQuarter,
   matchesNormalizedBlank,
   matchesNormalizedOrdering,
-  normalizeQuestionPoints,
-  roundToQuarter,
+  roundGradeTotal,
 } from './answer-normalizer.policy.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,7 +39,7 @@ export function evaluateQuestionAnswer(
 ): EvaluatedQuestionGrade {
   const payload = isRecord(question.payload) ? question.payload : {};
   const answer = isRecord(answerPayload) ? answerPayload : {};
-  const maxPoints = normalizeQuestionPoints(question.points);
+  const maxPoints = question.points;
 
   switch (question.type) {
     case QuestionType.SINGLE_CHOICE:
@@ -78,7 +77,7 @@ export function summarizeSubmissionAutoGrade(
   }
 
   return {
-    autoScore: roundToQuarter(rawAutoScore),
+    autoScore: roundGradeTotal(rawAutoScore),
     hasSubjectiveQuestions,
     questionResults,
   };
@@ -98,7 +97,7 @@ function gradeSingleChoice(
     questionId,
     isObjective: true,
     isCorrect,
-    earnedPoints: isCorrect ? clampScoreToQuarter(maxPoints, maxPoints) : 0,
+    earnedPoints: isCorrect ? maxPoints : 0,
   };
 }
 
@@ -130,8 +129,8 @@ function gradeMultipleChoice(
   }
 
   const rawPoints = ((correctSelected - wrongSelected) * maxPoints) / correctIds.length;
-  const earnedPoints = clampScoreToQuarter(rawPoints, maxPoints);
   const isCorrect = correctSelected === correctIds.length && wrongSelected === 0;
+  const earnedPoints = isCorrect ? maxPoints : clampScoreToQuarter(rawPoints, maxPoints);
 
   return {
     questionId,
@@ -156,7 +155,7 @@ function gradeFillBlank(
     questionId,
     isObjective: true,
     isCorrect,
-    earnedPoints: isCorrect ? clampScoreToQuarter(maxPoints, maxPoints) : 0,
+    earnedPoints: isCorrect ? maxPoints : 0,
   };
 }
 
@@ -179,7 +178,7 @@ function gradeOrdering(
     questionId,
     isObjective: true,
     isCorrect,
-    earnedPoints: isCorrect ? clampScoreToQuarter(maxPoints, maxPoints) : 0,
+    earnedPoints: isCorrect ? maxPoints : 0,
   };
 }
 

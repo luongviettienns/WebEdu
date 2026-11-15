@@ -166,6 +166,7 @@ describe('AiGradingConfigService, AES-256-GCM & SSRF Guard (Slice 7.2 — DEC-03
       expect(okRes).toEqual({ status: 200, bodyText: '{"ok":true}' });
       const opts = capturedOptions[1]!;
       expect(opts.servername).toBe('api.openai.com');
+      expect(opts.agent).toBe(false);
       expect((opts.headers as Record<string, string>).Host).toBe('api.openai.com');
       const pinnedCb = vi.fn();
       (opts.lookup as (h: string, o: unknown, cb: typeof pinnedCb) => void)(
@@ -180,8 +181,11 @@ describe('AiGradingConfigService, AES-256-GCM & SSRF Guard (Slice 7.2 — DEC-03
   describe('AiGradingConfigService lifecycle', () => {
     function makePrismaMock() {
       const store = new Map<string, { key: string; value: string; updatedAt: Date }>();
+      const findUnique = vi.fn(async ({ where }: { where: { key: string } }) => store.get(where.key) ?? null);
       const tx = {
+        $queryRaw: vi.fn(async () => []),
         systemSetting: {
+          findUnique,
           upsert: vi.fn(async (args: { where: { key: string }; create: { key: string; value: string }; update: { value: string } }) => {
             const row = {
               key: args.where.key,
@@ -201,7 +205,7 @@ describe('AiGradingConfigService, AES-256-GCM & SSRF Guard (Slice 7.2 — DEC-03
         tx,
         $transaction: vi.fn(async (cb: (client: typeof tx) => Promise<unknown>) => cb(tx)),
         systemSetting: {
-          findUnique: vi.fn(async ({ where }: { where: { key: string } }) => store.get(where.key) ?? null),
+          findUnique,
           findMany: vi.fn(async ({ where }: { where: { key: { in: string[] } } }) =>
             where.key.in.map((k) => store.get(k)).filter(Boolean),
           ),
@@ -367,6 +371,23 @@ describe('AiGradingConfigService, AES-256-GCM & SSRF Guard (Slice 7.2 — DEC-03
       });
       expect(cleared.hasApiKey).toBe(false);
       expect(cleared.maskedApiKey).toBeNull();
+    });
+
+    it('reads the key after taking the config lock so another write cannot restore a cleared key', async () => {
+      const prisma = makePrismaMock();
+      const service = new AiGradingConfigService(prisma as never);
+      const actor = makeSuperadmin();
+      await service.updateAiGradingConfig(actor, { enabled: true, provider: 'OPENAI', apiKey: 'old-key' });
+      prisma.tx.$queryRaw.mockImplementationOnce(async () => {
+        const row = prisma.store.get(SETTING_KEY_AI_GRADING_CONFIG)!;
+        row.value = JSON.stringify({ ...JSON.parse(row.value), enabled: false, encryptedApiKey: null });
+        return [];
+      });
+
+      await expect(service.updateAiGradingConfig(actor, {
+        enabled: true, provider: 'OPENAI', model: 'different-model',
+      })).rejects.toThrow(BadRequestException);
+      expect(await service.getAiGradingConfig()).toMatchObject({ enabled: false, hasApiKey: false });
     });
 
     it('Issue #3 & #7: normalizes legacy Gemini /v1beta/openai URL, omits temperature for OpenAI, and validates synthetic grading response', async () => {

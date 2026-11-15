@@ -30,8 +30,8 @@ export function AiGradingConfigSection({
             3. Cấu hình AI Gợi ý Chấm Tự luận (FUNC-057)
           </h2>
           <p className="text-xs text-[var(--ink-2)]">
-            Cấu hình động nhà cung cấp AI (OpenAI, Google Gemini hoặc Provider chuẩn OpenAI). API Key
-            được mã hóa và không gửi dữ liệu định danh học viên (Zero-PII).
+            API Key được mã hóa. Chỉ dùng AI với bài đã khử định danh. Bộ lọc che một số dữ liệu
+            nhận diện được và yêu cầu chấm tay khi phát hiện nội dung chưa thể khử định danh.
           </p>
         </div>
         <span

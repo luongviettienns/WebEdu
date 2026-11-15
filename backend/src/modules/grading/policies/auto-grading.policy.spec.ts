@@ -6,6 +6,7 @@ import {
   matchesNormalizedOrdering,
   normalizeAnswerText,
   roundToQuarter,
+  sumQuestionMaxScore,
 } from './answer-normalizer.policy.js';
 import {
   AutoGradingPolicy,
@@ -27,14 +28,26 @@ describe('answer-normalizer.policy & auto-grading.policy (Slice 7.1 — DEC-037)
       expect(roundToQuarter(1.38)).toBe(1.5);
     });
 
-    it('clamps score strictly to [0, normalizeQuestionPoints(maxPoints)] rounded to 0.25', () => {
+    it('rounds scores to 0.25 without exceeding the question maximum', () => {
       expect(clampScoreToQuarter(-3, 5)).toBe(0);
       expect(clampScoreToQuarter(12, 5)).toBe(5);
       expect(clampScoreToQuarter(2.38, 5)).toBe(2.5);
       expect(clampScoreToQuarter(2, 0)).toBe(0);
-      expect(clampScoreToQuarter(0.9, 0.9)).toBe(1);
-      expect(clampScoreToQuarter(1.4, 1.4)).toBe(1.5);
+      expect(clampScoreToQuarter(0.9, 0.9)).toBe(0.75);
+      expect(clampScoreToQuarter(1.4, 1.4)).toBe(1.25);
     });
+  });
+
+  it('keeps historical question maxima and full credit after the assessment scale was frozen', () => {
+    const questions = [
+      { id: 'q-1', type: QuestionType.SINGLE_CHOICE, points: 0.33, payload: { correctOptionIds: ['a'] } },
+      { id: 'q-2', type: QuestionType.SINGLE_CHOICE, points: 0.4, payload: { correctOptionIds: ['a'] } },
+    ];
+    const answers = new Map(questions.map(({ id }) => [id, { selectedOptionIds: ['a'] }]));
+    const result = summarizeSubmissionAutoGrade(questions, answers);
+    expect(result.questionResults.map(({ earnedPoints }) => earnedPoints)).toEqual([0.33, 0.4]);
+    expect(result.autoScore).toBe(0.73);
+    expect(sumQuestionMaxScore(questions)).toBe(0.73);
   });
 
   describe('normalizeAnswerText', () => {

@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, GatewayTimeoutException } from '@nestjs/common';
 import type * as https from 'node:https';
 import type {
   AiConnectionTestResultDto,
@@ -8,7 +8,7 @@ import type {
   AiResolvedRuntimeConfig,
 } from '../grading.types.js';
 import { sanitizeAndVerifyEssayDraftInput } from '../policies/ai-pii-guard.policy.js';
-import { clampScoreToQuarter, normalizeQuestionPoints } from '../policies/answer-normalizer.policy.js';
+import { clampScoreToQuarter } from '../policies/answer-normalizer.policy.js';
 import {
   type DnsLookupAllFn,
   sendSafeAiHttpsRequest,
@@ -28,7 +28,16 @@ export const DEFAULT_AI_MODELS: Record<AiProviderType, string> = {
 };
 
 export const DEFAULT_AI_TIMEOUT_MS = 15_000;
+export const AI_REQUEST_BUDGET_MS = 25_000;
 export const MAX_AI_FEEDBACK_LENGTH = 2000;
+
+export function requireAiRequestTime(deadline: number): number {
+  const remainingMs = deadline - Date.now();
+  if (remainingMs < 1000) {
+    throw new GatewayTimeoutException('Đã hết thời gian xử lý AI. Vui lòng thử lại, gợi ý từng câu hoặc chấm tay.');
+  }
+  return remainingMs;
+}
 
 export const SAMPLE_GRADING_TEST_INPUT: AiEssayGradingInput = {
   prompt: 'Viết một câu tiếng Trung nói về sở thích đọc sách.',
@@ -161,7 +170,7 @@ export function parseAndClampAiGradingJson(
   }
 
   return {
-    suggestedPoints: clampScoreToQuarter(record.suggestedPoints, normalizeQuestionPoints(maxPoints)),
+    suggestedPoints: clampScoreToQuarter(record.suggestedPoints, maxPoints),
     feedback: trimmedFeedback,
   };
 }
@@ -174,8 +183,9 @@ function extractResponseContent(provider: AiProviderType, body: unknown): string
     const firstCandidate = candidates[0] as { content?: { parts?: unknown } } | null;
     const parts = firstCandidate?.content?.parts;
     if (!Array.isArray(parts) || parts.length === 0) return '';
-    const text = (parts[0] as { text?: unknown } | null)?.text;
-    return typeof text === 'string' ? text : '';
+    return (parts as Array<{ text?: unknown; thought?: boolean } | null>)
+      .map((part) => part?.thought !== true && typeof part?.text === 'string' ? part.text : '')
+      .join('');
   }
   const choices = (body as { choices?: unknown }).choices;
   if (!Array.isArray(choices) || choices.length === 0) return '';

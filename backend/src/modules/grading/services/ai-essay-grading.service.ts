@@ -15,7 +15,7 @@ import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import { AiGradingConfigService } from '../../system-settings/services/ai-grading-config.service.js';
-import { callAiProviderForEssayDraft } from '../adapters/ai-provider.adapter.js';
+import { AI_REQUEST_BUDGET_MS, callAiProviderForEssayDraft, requireAiRequestTime } from '../adapters/ai-provider.adapter.js';
 import type { AiGradeSubmissionDto, AiSuggestBatchGradeDto } from '../dto/grading.dto.js';
 import type {
   AiBatchSuggestGradeItemDto,
@@ -23,7 +23,6 @@ import type {
   AiEssaySuggestionItemDto,
   AiGradeSubmissionResultDto,
 } from '../grading.types.js';
-import { normalizeQuestionPoints } from '../policies/answer-normalizer.policy.js';
 import { GRADEABLE_ACTIVE_STATUSES } from '../policies/grading-workflow.policy.js';
 import {
   lockClassRowForSubmissionTx,
@@ -31,11 +30,6 @@ import {
 } from './grading-locking.util.js';
 
 const MAX_BATCH_AI_SUBMISSIONS = 20;
-
-const NON_SUGGESTABLE_STATUSES = new Set<SubmissionStatus>([
-  SubmissionStatus.IN_PROGRESS,
-  SubmissionStatus.SUPERSEDED,
-]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -53,18 +47,27 @@ export class AiEssayGradingService {
     private readonly aiConfigService: AiGradingConfigService,
   ) {}
 
+  private async loadEnabledAiConfig() {
+    const config = await this.aiConfigService.getResolvedAiRuntimeConfig();
+    if (!config.enabled || !config.apiKey.trim()) {
+      throw new BadRequestException('Tính năng gợi ý chấm AI chưa được bật hoặc chưa cấu hình API Key');
+    }
+    return config;
+  }
+
   async suggestEssayGradesForSubmission(
     submissionId: string,
     actor: AuthenticatedUser,
     dto?: AiGradeSubmissionDto,
     fetchImpl?: typeof fetch,
+    onlyMissing = false,
+    deadline = Date.now() + AI_REQUEST_BUDGET_MS,
   ): Promise<AiGradeSubmissionResultDto> {
     const submission = await this.prisma.submission.findUnique({
       where: { id: submissionId },
       select: {
         id: true,
         status: true,
-        gradingStatus: true,
         student: { select: { fullName: true } },
         classAssignment: {
           select: {
@@ -80,7 +83,7 @@ export class AiEssayGradingService {
             },
           },
         },
-        answers: { select: { questionId: true, answerPayload: true } },
+        answers: { select: { questionId: true, answerPayload: true, aiSuggestedPoints: true } },
       },
     });
     if (!submission) throw new NotFoundException('Không tìm thấy bài nộp');
@@ -91,7 +94,7 @@ export class AiEssayGradingService {
       submission.classAssignment.classId,
     );
 
-    if (NON_SUGGESTABLE_STATUSES.has(submission.status)) {
+    if (submission.status === SubmissionStatus.IN_PROGRESS || submission.status === SubmissionStatus.SUPERSEDED) {
       throw new BadRequestException('Chỉ có thể gọi AI gợi ý chấm cho bài đã nộp');
     }
     if (!GRADEABLE_ACTIVE_STATUSES.has(submission.status)) {
@@ -112,24 +115,18 @@ export class AiEssayGradingService {
       throw new BadRequestException('Bài nộp không có câu tự luận để AI gợi ý');
     }
 
-    const runtimeConfig = await this.aiConfigService.getResolvedAiRuntimeConfig();
-    if (!runtimeConfig.enabled || !runtimeConfig.apiKey.trim()) {
-      throw new BadRequestException(
-        'Tính năng gợi ý chấm AI chưa được bật hoặc chưa cấu hình API Key',
-      );
-    }
+    const runtimeConfig = await this.loadEnabledAiConfig();
 
-    const answerMap = new Map(submission.answers.map((a) => [a.questionId, a.answerPayload]));
-    const forbiddenNames = submission.student?.fullName?.trim()
-      ? [submission.student.fullName.trim()]
-      : undefined;
-    const transportOptions =
-      fetchImpl || forbiddenNames ? { fetchImpl, forbiddenNames } : undefined;
+    const answerMap = new Map(submission.answers.map((answer) => [answer.questionId, answer]));
+    const studentName = submission.student?.fullName?.trim();
+    const transportOptions = { fetchImpl, forbiddenNames: studentName ? [studentName] : undefined };
 
     const suggestions: AiEssaySuggestionItemDto[] = [];
     for (const question of targetQuestions) {
-      const effectiveMaxPoints = normalizeQuestionPoints(question.points);
-      const answerObj = answerMap.get(question.id);
+      const answer = answerMap.get(question.id);
+      if (onlyMissing && answer?.aiSuggestedPoints != null) continue;
+      const effectiveMaxPoints = question.points;
+      const answerObj = answer?.answerPayload;
       const studentAnswer =
         isRecord(answerObj) && typeof answerObj.text === 'string' ? answerObj.text.trim() : '';
 
@@ -145,8 +142,9 @@ export class AiEssayGradingService {
       }
 
       const qPayload = isRecord(question.payload) ? question.payload : {};
+      const timeoutMs = Math.min(runtimeConfig.timeoutMs, requireAiRequestTime(deadline));
       const draft = await callAiProviderForEssayDraft(
-        runtimeConfig,
+        { ...runtimeConfig, timeoutMs },
         {
           prompt: question.prompt,
           maxPoints: effectiveMaxPoints,
@@ -155,7 +153,10 @@ export class AiEssayGradingService {
           studentAnswer,
         },
         transportOptions,
-      );
+      ).catch((error: unknown) => {
+        requireAiRequestTime(deadline);
+        throw error;
+      });
 
       suggestions.push({
         questionId: question.id,
@@ -166,13 +167,12 @@ export class AiEssayGradingService {
       });
     }
 
-    const nextGradingStatus = GradingStatus.AI_DRAFT_READY;
-    await this.prisma.$transaction(async (tx) => {
+    const saved = await this.prisma.$transaction(async (tx) => {
       await lockClassRowForSubmissionTx(tx, submission.id);
       await lockSubmissionRowsTx(tx, [submission.id]);
       const latestSubmission = await tx.submission.findUnique({
         where: { id: submission.id },
-        select: { id: true, status: true, classAssignment: { select: { classId: true } } },
+        select: { status: true, gradingStatus: true, classAssignment: { select: { classId: true } } },
       });
       if (!latestSubmission) {
         throw new NotFoundException('Không tìm thấy bài nộp');
@@ -188,7 +188,21 @@ export class AiEssayGradingService {
         );
       }
 
-      for (const item of suggestions) {
+      const existingDrafts = onlyMissing && suggestions.length ? await tx.submissionAnswer.findMany({
+        where: {
+          submissionId: submission.id,
+          questionId: { in: suggestions.map((item) => item.questionId) },
+          aiSuggestedPoints: { not: null },
+        },
+        select: { questionId: true },
+      }) : [];
+      const existingIds = new Set(existingDrafts.map(({ questionId }) => questionId));
+      const toSave = suggestions.filter(({ questionId }) => !existingIds.has(questionId));
+      if (toSave.length === 0) {
+        return { gradingStatus: latestSubmission.gradingStatus, suggestions: toSave };
+      }
+
+      for (const item of toSave) {
         await tx.submissionAnswer.upsert({
           where: {
             submissionId_questionId: { submissionId: submission.id, questionId: item.questionId },
@@ -206,7 +220,7 @@ export class AiEssayGradingService {
 
       await tx.submission.update({
         where: { id: submission.id },
-        data: { gradingStatus: nextGradingStatus },
+        data: { gradingStatus: GradingStatus.AI_DRAFT_READY },
       });
       await writeAuditLog(tx, actor, {
         action: 'SUBMISSION_AI_SUGGESTED',
@@ -215,17 +229,17 @@ export class AiEssayGradingService {
         metadata: {
           provider: runtimeConfig.provider,
           model: runtimeConfig.model,
-          suggestedCount: suggestions.length,
+          suggestedCount: toSave.length,
         },
       });
+      return { gradingStatus: GradingStatus.AI_DRAFT_READY, suggestions: toSave };
     });
 
     return {
       submissionId: submission.id,
-      gradingStatus: nextGradingStatus,
       provider: runtimeConfig.provider,
       model: runtimeConfig.model,
-      suggestions,
+      ...saved,
     };
   }
 
@@ -235,6 +249,7 @@ export class AiEssayGradingService {
     actor: AuthenticatedUser,
     fetchImpl?: typeof fetch,
   ): Promise<AiBatchSuggestGradeResultDto> {
+    const deadline = Date.now() + AI_REQUEST_BUDGET_MS;
     const assignment = await this.prisma.classAssignment.findUnique({
       where: { id: assignmentId },
       select: {
@@ -262,10 +277,7 @@ export class AiEssayGradingService {
       throw new NotFoundException('Không tìm thấy câu tự luận cần gợi ý chấm');
     }
 
-    const runtimeConfig = await this.aiConfigService.getResolvedAiRuntimeConfig();
-    if (!runtimeConfig.enabled || !runtimeConfig.apiKey.trim()) {
-      throw new BadRequestException('Tính năng gợi ý chấm AI chưa được bật hoặc chưa cấu hình API Key');
-    }
+    await this.loadEnabledAiConfig();
 
     const requestedIds = [...new Set(dto?.submissionIds ?? [])];
     if (requestedIds.length > MAX_BATCH_AI_SUBMISSIONS) {
@@ -284,25 +296,18 @@ export class AiEssayGradingService {
     } else {
       const targetQuestionIds = dto?.questionId ? [dto.questionId] : essayIds;
       const candidateSubmissions = await this.prisma.submission.findMany({
-        where: { classAssignmentId: assignmentId, status: { in: [...GRADEABLE_ACTIVE_STATUSES] } },
-        orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          gradingStatus: true,
-          answers: {
-            where: { questionId: { in: targetQuestionIds }, aiSuggestedPoints: { not: null } },
-            select: { questionId: true },
-          },
+        where: {
+          classAssignmentId: assignmentId,
+          status: { in: [...GRADEABLE_ACTIVE_STATUSES] },
+          OR: targetQuestionIds.map((questionId) => ({
+            answers: { none: { questionId, aiSuggestedPoints: { not: null } } },
+          })),
         },
+        orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
+        take: MAX_BATCH_AI_SUBMISSIONS,
+        select: { id: true },
       });
-      targetIds = candidateSubmissions
-        .filter((s) =>
-          Array.isArray(s.answers)
-            ? s.answers.length < targetQuestionIds.length
-            : s.gradingStatus !== GradingStatus.AI_DRAFT_READY,
-        )
-        .slice(0, MAX_BATCH_AI_SUBMISSIONS)
-        .map((s) => s.id);
+      targetIds = candidateSubmissions.map((s) => s.id);
     }
 
     const results: AiBatchSuggestGradeItemDto[] = [];
@@ -313,11 +318,14 @@ export class AiEssayGradingService {
       }
 
       try {
+        requireAiRequestTime(deadline);
         const res = await this.suggestEssayGradesForSubmission(
           submissionId,
           actor,
           dto?.questionId ? { questionId: dto.questionId } : undefined,
           fetchImpl,
+          requestedIds.length === 0,
+          deadline,
         );
         results.push({ submissionId, ok: true, gradingStatus: res.gradingStatus, suggestedCount: res.suggestions.length });
       } catch (err) {

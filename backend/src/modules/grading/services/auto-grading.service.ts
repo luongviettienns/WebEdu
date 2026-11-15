@@ -14,6 +14,7 @@ import {
   CONFIRMED_OR_PUBLISHED_STATUSES,
   ensureObjectiveAnswersScoredTx,
 } from '../policies/grading-workflow.policy.js';
+import { lockClassRowForSubmissionTx } from './grading-locking.util.js';
 
 const NON_GRADABLE_SUBMISSION_STATUSES = new Set<SubmissionStatus>([
   SubmissionStatus.IN_PROGRESS,
@@ -32,6 +33,7 @@ export class AutoGradingService {
     actor?: AuthenticatedUser,
   ): Promise<AutoGradeSubmissionResultDto> {
     return this.prisma.$transaction(async (tx) => {
+      await lockClassRowForSubmissionTx(tx, submissionId);
       await tx.$queryRaw`SELECT id FROM "submissions" WHERE id = ${submissionId} FOR UPDATE`;
       const submission = await tx.submission.findUnique({
         where: { id: submissionId },

@@ -95,7 +95,7 @@ function LoginFormContent() {
         <div className="w-full max-w-[420px]">
           {/* Mobile-only Branding Header */}
           <div className="lg:hidden flex flex-col items-center text-center mb-4">
-            <Link href="/" className="flex items-center gap-2 mb-2">
+            <Link href="/" aria-label={`Trang chủ ${centerName}`} className="flex items-center gap-2 mb-2">
               {centerLogo ? (
                 <Image
                   src={centerLogo}

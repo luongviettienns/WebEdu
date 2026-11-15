@@ -41,6 +41,7 @@ Phase 7 hoàn thiện vòng đời sau khi học viên nộp bài từ Phase 6 (
    - **Kích hoạt theo yêu cầu (`On-Demand`) & Zero-PII:**
      - Tuyệt đối không chạy AI lúc học viên nộp bài. Chỉ chạy khi Giáo viên hoặc Admin bấm nút `"Gợi ý chấm bằng AI"` cho 1 bài hoặc theo lô bài nộp chưa chấm.
      - Chỉ xử lý câu loại `ESSAY` (`prompt`, `points`, `sampleAnswer`, `rubric`, `studentAnswer`). Không gửi `studentId`, `fullName`, `email`, `phone`, `className` hay bất kỳ PII nào lên LLM.
+     - Chỉ dùng AI với nội dung đã khử định danh. Bộ lọc tự động chặn hoặc che các mẫu nhận diện được, như email, số điện thoại, ngày sinh có nhãn và tên học viên trùng hồ sơ. Văn bản tự do có thể chứa thông tin định danh ngoài những mẫu này. Giáo viên cần chấm tay khi nội dung có chi tiết định danh.
      - Kết quả AI parse JSON có validate schema: `aiSuggestedPoints` được `clamp(0, points)` và làm tròn bước `0.25`; lưu cùng `aiFeedback` vào `SubmissionAnswer` và cập nhật `Submission.gradingStatus = AI_DRAFT_READY`. Nếu lỗi mạng/provider/timeout/thiếu cấu hình, hệ thống không làm gián đoạn luồng chấm thủ công và báo thông điệp fallback rõ ràng cho GV.
 
 4. **Quy Trình 2 Bước, Bài Quá Hạn & Kiểm Toán Sửa Điểm (`FUNC-059..062`, `FUNC-064`, `DEC-038`):**

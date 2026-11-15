@@ -10,57 +10,12 @@ export function roundToQuarter(value: number): number {
   return Object.is(rounded, -0) ? 0 : rounded;
 }
 
-export function isQuarterStepValue(value: number): boolean {
-  if (!Number.isFinite(value)) return false;
-  return Math.abs(value * 4 - Math.round(value * 4)) < 1e-6;
+export function roundGradeTotal(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
-export function normalizeQuestionPoints(maxPoints: number): number {
-  if (!Number.isFinite(maxPoints) || maxPoints <= 0) return 0;
-  return Math.max(0.25, roundToQuarter(maxPoints));
-}
-
-export function hasLegacyOffStepScores(submission: {
-  totalScore?: number | null;
-  autoScore?: number | null;
-  answers?: ReadonlyArray<{ earnedPoints: number | null }>;
-}): boolean {
-  if (
-    submission.totalScore !== undefined &&
-    submission.totalScore !== null &&
-    !isQuarterStepValue(submission.totalScore)
-  ) {
-    return true;
-  }
-  if (
-    submission.autoScore !== undefined &&
-    submission.autoScore !== null &&
-    !isQuarterStepValue(submission.autoScore)
-  ) {
-    return true;
-  }
-  return (submission.answers ?? []).some(
-    (ans) => ans.earnedPoints !== null && !isQuarterStepValue(ans.earnedPoints),
-  );
-}
-
-export function resolveEffectiveQuestionPoints(
-  rawPoints: number,
-  preserveLegacyScale = false,
-): number {
-  if (!Number.isFinite(rawPoints) || rawPoints <= 0) return 0;
-  return preserveLegacyScale ? rawPoints : normalizeQuestionPoints(rawPoints);
-}
-
-export function sumQuestionMaxScore(
-  questions: ReadonlyArray<{ points: number }>,
-  preserveLegacyScale = false,
-): number {
-  const sum = questions.reduce(
-    (acc, q) => acc + resolveEffectiveQuestionPoints(q.points, preserveLegacyScale),
-    0,
-  );
-  return preserveLegacyScale ? Math.round(sum * 100) / 100 : roundToQuarter(sum);
+export function sumQuestionMaxScore(questions: ReadonlyArray<{ points: number }>): number {
+  return roundGradeTotal(questions.reduce((sum, question) => sum + question.points, 0));
 }
 
 export function floorToQuarter(maxPoints: number): number {
@@ -70,7 +25,7 @@ export function floorToQuarter(maxPoints: number): number {
 }
 
 export function clampScoreToQuarter(value: number, maxPoints: number): number {
-  const cap = normalizeQuestionPoints(maxPoints);
+  const cap = floorToQuarter(maxPoints);
   if (cap <= 0 || !Number.isFinite(value)) return 0;
   const clamped = Math.max(0, Math.min(cap, value));
   return Math.min(cap, roundToQuarter(clamped));

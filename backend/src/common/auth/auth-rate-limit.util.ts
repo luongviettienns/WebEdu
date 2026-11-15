@@ -26,6 +26,18 @@ export function resolveClientIp(req: Request): string {
   return ip.slice(0, 64);
 }
 
+export async function assertRateLimitNotBlocked(
+  prisma: PrismaService,
+  key: string,
+  errorMessage: string,
+): Promise<void> {
+  const rows = await prisma.$queryRaw<Array<{ blocked_until: Date }>>`
+    SELECT "blocked_until" FROM "auth_rate_limits"
+    WHERE "key" = ${key} AND "blocked_until" > ${new Date()}
+  `;
+  if (rows.length > 0) throw new HttpException(errorMessage, HttpStatus.TOO_MANY_REQUESTS);
+}
+
 /**
  * Multi-instance safe rate limiter powered by PostgreSQL atomic upsert.
  * Enforces sliding/fixed window and block duration across any number of app instances.

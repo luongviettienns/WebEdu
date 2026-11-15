@@ -13,10 +13,7 @@ import {
   useExamBrowserSync,
   useExamCountdown,
 } from '@/features/assignments/hooks/useExamBrowserSync';
-import {
-  clearLocalDraft, findFirstPartialOrderingIndex, formatSavedTimeHmS,
-  sanitizeAdoptedLocalDraft, type ExamLocalDraft,
-} from '@/features/assignments/utils/exam-draft';
+import { clearLocalDraft, findFirstPartialOrderingIndex, formatSavedTimeHmS } from '@/features/assignments/utils/exam-draft';
 import {
   buildResolvedSessionSnapshot,
   buildSubmitRequestBody,
@@ -42,17 +39,16 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   const [audioPlayCounts, setAudioPlayCounts] = useState<Record<string, number>>({});
   const [flaggedIds, setFlaggedIds] = useState<Record<string, boolean>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [saveState, setSaveState] = useState<ExamSaveState>('idle');
   const [lastSavedText, setLastSavedText] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [actionError, setActionError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' && !navigator.onLine);
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const submitting = session?.submission.id === submittingId;
 
   const snapshotRef = useRef<ExamSnapshotLike>(INITIAL_SESSION_SNAPSHOT);
-  const submittingRef = useRef(false);
+  const submittingRef = useRef<{ submissionId: string } | null>(null);
   const lastDraftUpdatedAtRef = useRef(0);
   const { clearTimers: clearPendingTimers, resetDirty, markDirty, beginFlush, completeFlush, scheduleForType, hasPendingChanges } =
     useAutosaveScheduler();
@@ -62,7 +58,6 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     setSession(next.session);
     setAnswers(next.answers);
     setAudioPlayCounts(next.audioPlayCounts);
-    setElapsedSeconds(next.elapsedSeconds);
     setRemainingSeconds(next.remainingSeconds);
   }, []);
 
@@ -79,24 +74,33 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     [syncSnapshotState],
   );
 
+  const isCurrentAttempt = useCallback((submissionId: string) => {
+    const current = snapshotRef.current;
+    return current.viewMode === 'taking' && current.session?.submission.id === submissionId;
+  }, []);
+
   const reloadAfterConflict = useCallback(async (expectedId: string) => {
+    if (!isCurrentAttempt(expectedId)) return;
     try {
       const { dto, nextMode } = await fetchExamEntrySession(assignmentId, mode);
-      if (snapshotRef.current.session?.submission.id !== expectedId) return;
+      if (!isCurrentAttempt(expectedId)) return;
       resetDirty();
       setCurrentIndex(0);
       setFlaggedIds({});
       applySession(dto, nextMode);
     } catch (error) {
+      if (!isCurrentAttempt(expectedId)) return;
       setActionError(extractErrorMessage(error, 'Vui lòng tải lại bài tập'));
       setSaveState('dirty');
     }
-  }, [assignmentId, mode, applySession, resetDirty]);
+  }, [assignmentId, mode, applySession, isCurrentAttempt, resetDirty]);
 
   const submitNow = useCallback(
     async (autoSubmitted = false) => {
       const snap = snapshotRef.current;
-      if (submittingRef.current || !snap.session || snap.viewMode !== 'taking') return;
+      if (!snap.session || snap.viewMode !== 'taking') return;
+      const submissionId = snap.session.submission.id;
+      if (submittingRef.current?.submissionId === submissionId) return;
       if (!autoSubmitted) {
         const partialIdx = findFirstPartialOrderingIndex(snap.session.questions, snap.answers);
         if (partialIdx >= 0) {
@@ -105,38 +109,46 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
           return;
         }
       }
-      submittingRef.current = true;
-      setSubmitting(true);
+      const request = { submissionId };
+      submittingRef.current = request;
+      setSubmittingId(submissionId);
       setActionError('');
       clearPendingTimers();
       try {
         const result = await submitAssignment(assignmentId, buildSubmitRequestBody(snap, autoSubmitted));
+        if (!isCurrentAttempt(submissionId)) return;
         resetDirty();
         clearLocalDraft(result.submission.id, result.submission.studentId);
         applySession(result, 'review');
       } catch (err) {
+        if (!isCurrentAttempt(submissionId)) return;
         if (err instanceof ApiClientError && err.status === 409) {
-          await reloadAfterConflict(snap.session.submission.id);
+          await reloadAfterConflict(submissionId);
           return;
         }
         setActionError(extractErrorMessage(err, 'Không thể nộp bài lúc này. Vui lòng thử lại.'));
       } finally {
-        submittingRef.current = false;
-        setSubmitting(false);
+        if (submittingRef.current === request) {
+          submittingRef.current = null;
+          setSubmittingId(null);
+        }
       }
     },
-    [assignmentId, applySession, clearPendingTimers, reloadAfterConflict, resetDirty],
+    [assignmentId, applySession, clearPendingTimers, isCurrentAttempt, reloadAfterConflict, resetDirty],
   );
 
   const flushAutosave = useCallback(async () => {
     clearPendingTimers();
     const snap = snapshotRef.current;
-    if (!snap.session || snap.viewMode !== 'taking' || submittingRef.current) return;
+    if (!snap.session || snap.viewMode !== 'taking') return;
+    const submissionId = snap.session.submission.id;
+    if (submittingRef.current?.submissionId === submissionId) return;
     const seqAtStart = beginFlush();
     setSaveState('saving');
     setActionError('');
     try {
       const updated = await autosaveAssignment(assignmentId, buildSyncPayload(snap));
+      if (!isCurrentAttempt(submissionId)) return;
       if (updated.submission.status !== 'IN_PROGRESS') {
         resetDirty();
         applySession(updated, 'review');
@@ -151,8 +163,9 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       }
       if (updated.submission.remainingSeconds === 0) void submitNow(true);
     } catch (err) {
+      if (!isCurrentAttempt(submissionId)) return;
       if (err instanceof ApiClientError && err.status === 409) {
-        await reloadAfterConflict(snap.session.submission.id);
+        await reloadAfterConflict(submissionId);
         return;
       }
       if (err instanceof ApiClientError) {
@@ -162,14 +175,14 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       }
       setSaveState('offline');
     }
-  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, reloadAfterConflict, resetDirty, submitNow, syncSnapshotState]);
+  }, [assignmentId, applySession, beginFlush, clearPendingTimers, completeFlush, isCurrentAttempt, reloadAfterConflict, resetDirty, submitNow, syncSnapshotState]);
 
   useEffect(() => {
     if (!assignmentId) return;
     const controller = new AbortController();
-    submittingRef.current = false;
     resetDirty();
     void (async () => {
+      setSubmittingId(null);
       setViewMode('loading');
       setErrorMessage('');
       try {
@@ -185,6 +198,8 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     return () => {
       controller.abort();
       clearPendingTimers();
+      submittingRef.current = null;
+      snapshotRef.current = INITIAL_SESSION_SNAPSHOT;
     };
   }, [assignmentId, mode, applySession, clearPendingTimers, flushAutosave, resetDirty]);
 
@@ -192,7 +207,6 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     const ticked = tickCountdownSnapshot(snapshotRef.current);
     if (!ticked) return null;
     snapshotRef.current = ticked.nextSnap;
-    setElapsedSeconds(ticked.nextSnap.elapsedSeconds);
     setRemainingSeconds(ticked.nextRemaining);
     return ticked.nextRemaining;
   }, []);
@@ -205,29 +219,16 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     void flushAutosave();
   }, [flushAutosave, submitNow, syncSnapshotState]);
 
-  const handleOnline = useCallback(() => { setIsOffline(false); syncCountdownAndFlush(); }, [syncCountdownAndFlush]);
-  const handleOffline = useCallback(() => { setIsOffline(true); setSaveState('offline'); }, []);
-  const handleVisibilityChange = useCallback((hidden: boolean) => { if (!hidden) syncCountdownAndFlush(); }, [syncCountdownAndFlush]);
-  const handleRemoteSubmit = useCallback(() => {
-    const { session: current, viewMode: currentMode } = snapshotRef.current;
-    if (currentMode === 'taking' && current) void reloadAfterConflict(current.submission.id);
-  }, [reloadAfterConflict]);
-  const handleAdoptDraft = useCallback((incoming: ExamLocalDraft) => {
-    const adopted = sanitizeAdoptedLocalDraft(incoming, snapshotRef.current);
-    if (!adopted) return;
-    lastDraftUpdatedAtRef.current = Math.max(lastDraftUpdatedAtRef.current, adopted.updatedAtMs);
-    syncSnapshotState(adopted.snapshot);
-  }, [syncSnapshotState]);
-
-  useExamBrowserSync({
+  const handleOffline = useCallback(() => setSaveState('offline'), []);
+  const isOffline = useExamBrowserSync({
     submissionId: session?.submission.id,
     studentId: session?.submission.studentId,
     lastDraftUpdatedAtRef,
-    onOnline: handleOnline,
+    snapshotRef,
+    onResume: syncCountdownAndFlush,
     onOffline: handleOffline,
-    onVisibilityChange: handleVisibilityChange,
-    onRemoteSubmit: handleRemoteSubmit,
-    onAdoptDraft: handleAdoptDraft,
+    onRemoteSubmit: reloadAfterConflict,
+    onAdoptDraft: syncSnapshotState,
   });
 
   const handleCountdownExpire = useCallback(() => void submitNow(true), [submitNow]);
@@ -290,7 +291,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
 
   return {
     viewMode, session, answers, audioPlayCounts, flaggedIds, currentIndex,
-    elapsedSeconds, remainingSeconds, saveState, lastSavedText, errorMessage, actionError,
+    remainingSeconds, saveState, lastSavedText, errorMessage, actionError,
     submitting, isOffline, selectQuestion, toggleFlag, updateAnswer, recordAudioPlay,
     saveDraftNow: flushAutosave, submitNow,
   };

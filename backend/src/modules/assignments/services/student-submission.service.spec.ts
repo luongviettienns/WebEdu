@@ -1594,7 +1594,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(finalTickRes.submission.autoSubmitted).toBe(true);
     });
 
-    it('Issue #9: persists per-question objective scores on both manual submit and expired auto-submit (capping 0.9pt to 0.75)', async () => {
+    it('awards the exact legacy objective maximum on manual submit and expired auto-submit', async () => {
       const { prisma, tx, service } = makeMockDeps();
       const dueAt = new Date(Date.now() + 600_000);
       prisma.classAssignment.findUnique.mockResolvedValue(
@@ -1651,16 +1651,15 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { submissionId_questionId: { submissionId: 'sub-obj-1', questionId: 'q-1' } },
-          update: { isCorrect: true, earnedPoints: 1 },
+          update: { isCorrect: true, earnedPoints: 0.9 },
         }),
       );
       expect(tx.submission.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ autoScore: 1 }),
+          data: expect.objectContaining({ autoScore: 0.9 }),
         }),
       );
 
-      // Expired autosave (remainingSeconds === 0) also persists capped objective score (0.75)
       tx.submissionAnswer.upsert.mockClear();
       tx.submissionAnswer.findMany.mockResolvedValueOnce(savedAnswers as never);
       const expiredSub = { ...activeSub, id: 'sub-obj-2', remainingSeconds: 0 };
@@ -1680,7 +1679,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { submissionId_questionId: { submissionId: 'sub-obj-2', questionId: 'q-1' } },
-          update: { isCorrect: true, earnedPoints: 1 },
+          update: { isCorrect: true, earnedPoints: 0.9 },
         }),
       );
     });

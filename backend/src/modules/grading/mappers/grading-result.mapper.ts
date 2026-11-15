@@ -14,10 +14,7 @@ import type {
   StudentPublishedQuestionResultDto,
   TeacherGradingQuestionDetailDto,
 } from '../grading.types.js';
-import {
-  resolveEffectiveQuestionPoints,
-  sumQuestionMaxScore,
-} from '../policies/answer-normalizer.policy.js';
+import { sumQuestionMaxScore } from '../policies/answer-normalizer.policy.js';
 import {
   computeSubmissionScoreSummary,
   isObjectiveQuestion,
@@ -62,7 +59,6 @@ export interface TrackerSubmissionInput {
 
 export function toGradingTrackerAssignmentDto(
   row: TrackerAssignmentInput,
-  preserveLegacyScale = false,
 ): GradingTrackerAssignmentDto {
   const questions = row.assessment.questions;
   return {
@@ -74,7 +70,7 @@ export function toGradingTrackerAssignmentDto(
     classCode: row.class.code,
     className: row.class.course?.name ?? row.class.code,
     dueAt: row.dueAt.toISOString(),
-    totalPoints: sumQuestionMaxScore(questions, preserveLegacyScale),
+    totalPoints: sumQuestionMaxScore(questions),
     questionCount: questions.length,
     hasSubjectiveQuestions: questions.some((q) => !isObjectiveQuestion(q)),
   };
@@ -134,7 +130,6 @@ export function toGradingTrackerStudentRow(
 export function toTeacherGradingQuestionDetail(
   question: QuestionForGrading,
   answer?: TrackerSubmissionAnswerInput,
-  preserveLegacyScale = false,
 ): TeacherGradingQuestionDetailDto {
   const payload = isRecord(question.payload) ? question.payload : {};
   return {
@@ -142,7 +137,7 @@ export function toTeacherGradingQuestionDetail(
     position: question.position,
     type: question.type,
     prompt: question.prompt,
-    points: resolveEffectiveQuestionPoints(question.points, preserveLegacyScale),
+    points: question.points,
     isObjective: isObjectiveQuestion(question),
     questionPayload: payload,
     studentAnswer: {
@@ -165,7 +160,6 @@ export function toPublishedStudentQuestionResult(
     TrackerSubmissionAnswerInput,
     'answerPayload' | 'isCorrect' | 'earnedPoints' | 'teacherComment'
   >,
-  preserveLegacyScale = false,
 ): StudentPublishedQuestionResultDto {
   const objective = isObjectiveQuestion(question);
   const payload = isRecord(question.payload) ? question.payload : {};
@@ -179,7 +173,7 @@ export function toPublishedStudentQuestionResult(
     position: question.position,
     type: question.type,
     prompt: question.prompt,
-    points: resolveEffectiveQuestionPoints(question.points, preserveLegacyScale),
+    points: question.points,
     isObjective: objective,
     studentAnswer: {
       answerPayload: isRecord(answer?.answerPayload) ? answer.answerPayload : {},

@@ -279,7 +279,6 @@ export async function sendSafeAiHttpsRequest(
 
   const requestFn = options.requestImpl ?? https.request;
   const port = parsed.port ? Number.parseInt(parsed.port, 10) : 443;
-  const hostHeader = parsed.port ? `${bareHost}:${parsed.port}` : bareHost;
   const requestPath = `${parsed.pathname}${parsed.search}`;
 
   return new Promise<{ status: number; bodyText: string }>((resolve, reject) => {
@@ -321,10 +320,12 @@ export async function sendSafeAiHttpsRequest(
         port,
         path: requestPath,
         method: options.method,
-        servername: bareHost,
+        servername: isIP(bareHost) ? '' : bareHost,
+        // Each request must use the newly validated DNS results.
+        agent: false,
         headers: {
           ...options.headers,
-          Host: hostHeader,
+          Host: parsed.host,
         },
         lookup: pinnedLookup,
       },

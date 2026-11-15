@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
-import { normalizeQuestionPoints } from '../../grading/policies/answer-normalizer.policy.js';
 import type {
   SanitizedOptionDto,
   SanitizedQuestionDto,
@@ -45,7 +44,7 @@ export class SubmissionAnswerPolicy {
       position: question.position,
       type: question.type,
       prompt: question.prompt,
-      points: normalizeQuestionPoints(question.points),
+      points: question.points,
     };
     switch (question.type) {
       case QuestionType.SINGLE_CHOICE:

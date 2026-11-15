@@ -5,7 +5,7 @@ import type {
   GradingTrackerStudentRowDto,
   QuestionForGrading,
 } from '../grading.types.js';
-import { roundToQuarter } from './answer-normalizer.policy.js';
+import { roundGradeTotal, roundToQuarter } from './answer-normalizer.policy.js';
 import { evaluateQuestionAnswer, summarizeSubmissionAutoGrade } from './auto-grading.policy.js';
 
 export interface StoredAnswerForGrading {
@@ -78,7 +78,7 @@ export function computeSubmissionScoreSummary(
 
   const allQuestionsGraded = gradedCount === questions.length;
   return {
-    totalScore: gradedCount > 0 ? roundToQuarter(rawSum) : questions.length === 0 ? 0 : null,
+    totalScore: gradedCount > 0 ? roundGradeTotal(rawSum) : questions.length === 0 ? 0 : null,
     allQuestionsGraded,
     ungradedSubjectiveCount,
     hasSubjectiveQuestions,
@@ -123,6 +123,7 @@ export async function ensureObjectiveAnswersScoredTx(
     const earnedPoints = evaluated.earnedPoints ?? 0;
     effectiveObjectiveScore += earnedPoints;
     earnedByQuestionId.set(evaluated.questionId, earnedPoints);
+    if (existing?.earnedPoints === earnedPoints && existing.isCorrect === evaluated.isCorrect) continue;
 
     await tx.submissionAnswer.upsert({
       where: {
@@ -146,7 +147,7 @@ export async function ensureObjectiveAnswersScoredTx(
   }
 
   return {
-    autoScore: roundToQuarter(effectiveObjectiveScore),
+    autoScore: roundGradeTotal(effectiveObjectiveScore),
     hasSubjectiveQuestions: summary.hasSubjectiveQuestions,
     gradedObjectiveCount,
     earnedByQuestionId,

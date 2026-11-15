@@ -55,7 +55,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
 
     expect(
       parseAndClampAiGradingJson('{"suggestedPoints": 0.9, "feedback": "Đủ ý"}', 0.9),
-    ).toEqual({ suggestedPoints: 1, feedback: 'Đủ ý' });
+    ).toEqual({ suggestedPoints: 0.75, feedback: 'Đủ ý' });
 
     expect(() =>
       parseAndClampAiGradingJson('{"suggestedPoints": null, "feedback": "OK"}', 5),
@@ -101,7 +101,11 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         new Response(
           JSON.stringify({
             candidates: [
-              { content: { parts: [{ text: '{"suggestedPoints": 3.5, "feedback": "Khá tốt"}' }] } },
+              { content: { parts: [
+                { thought: true, text: '{"suggestedPoints": 1, "feedback": "Internal reasoning"}' },
+                { text: '{"suggestedPoints": 3.5,' },
+                { text: ' "feedback": "Khá tốt"}' },
+              ] } },
             ],
           }),
           { status: 200 },
@@ -152,7 +156,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     ).rejects.toThrow(BadGatewayException);
   });
 
-  function setupService(runtimeConfig?: Partial<{ enabled: boolean; apiKey: string }>) {
+  function setupService(runtimeConfig?: Partial<{ enabled: boolean; apiKey: string; timeoutMs: number }>) {
     const tx = {
       $queryRaw: vi.fn(async () => []),
       class: {
@@ -161,7 +165,10 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
             (prisma.class.findUnique as (a?: unknown) => Promise<Record<string, unknown> | null>)(args),
         ),
       },
-      submissionAnswer: { upsert: vi.fn(async () => ({})) },
+      submissionAnswer: {
+        upsert: vi.fn(async () => ({})),
+        findMany: vi.fn(async () => []),
+      },
       submission: {
         findUnique: vi.fn(async (): Promise<{ id: string; status: SubmissionStatus }> => ({
           id: 'sub-1',
@@ -197,7 +204,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         baseUrl: 'https://api.openai.com/v1',
         model: 'gpt-6-luna',
         apiKey: runtimeConfig?.apiKey ?? 'sk-test-key-1234',
-        timeoutMs: 10_000,
+        timeoutMs: runtimeConfig?.timeoutMs ?? 10_000,
       })),
     } as unknown as AiGradingConfigService;
 
@@ -496,6 +503,95 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         },
       ],
     });
+  });
+
+  it('suggests only missing questions when selecting a submission for an implicit batch', async () => {
+    const { prisma, tx, service } = setupService();
+    const questions = ['q-1', 'q-2'].map((id) => ({
+      id, prompt: 'Viết câu về sách', points: 5, payload: {},
+    }));
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1', classId: 'cls-1', assessment: { questions },
+    });
+    prisma.submission.findMany.mockResolvedValueOnce([{ id: 'sub-1', answers: [{ questionId: 'q-1' }] }]);
+    prisma.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      status: SubmissionStatus.SUBMITTED_WAITING,
+      student: { fullName: 'Học viên OK' },
+      classAssignment: { classId: 'cls-1', assessment: { questions } },
+      answers: [
+        { questionId: 'q-1', answerPayload: { text: '我读书。' }, aiSuggestedPoints: 0 },
+        { questionId: 'q-2', answerPayload: { text: '我喜欢看书。' }, aiSuggestedPoints: null },
+      ],
+    });
+    const fetchMock = vi.fn(async () => Response.json({
+      choices: [{ message: { content: '{"suggestedPoints": 4.5, "feedback": "Tốt"}' } }],
+    }));
+
+    const result = await service.suggestEssayGradesForAssignmentBatch('assign-1', undefined, makeTeacher(), fetchMock);
+
+    expect(result.results).toEqual([{
+      submissionId: 'sub-1', ok: true, gradingStatus: GradingStatus.AI_DRAFT_READY, suggestedCount: 1,
+    }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(tx.submissionAnswer.upsert).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      where: { submissionId_questionId: { submissionId: 'sub-1', questionId: 'q-2' } },
+    }));
+  });
+
+  it('shares the provider deadline across a batch and reports later submissions for retry', async () => {
+    const { prisma, tx, service } = setupService({ timeoutMs: 25_000 });
+    const submissionIds = ['sub-1', 'sub-2', 'sub-3'];
+    const question = { id: 'q-1', prompt: 'Viết câu về sách', points: 5, payload: {} };
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1', classId: 'cls-1', assessment: { questions: [question] },
+    });
+    prisma.submission.findMany.mockResolvedValueOnce(submissionIds.map((id) => ({ id })));
+    for (const id of submissionIds) {
+      prisma.submission.findUnique.mockResolvedValueOnce({
+        id,
+        status: SubmissionStatus.SUBMITTED_WAITING,
+        classAssignment: { classId: 'cls-1', assessment: { questions: [question] } },
+        answers: [{ questionId: 'q-1', answerPayload: { text: '我喜欢看书。' } }],
+      });
+    }
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const timeouts = vi.spyOn(AbortSignal, 'timeout');
+    const fetchMock = vi.fn(async () => {
+      now = now === 0 ? 18_000 : 25_000;
+      return Response.json({ choices: [{ message: { content: '{"suggestedPoints": 4, "feedback": "Tốt"}' } }] });
+    });
+
+    try {
+      const batch = await service.suggestEssayGradesForAssignmentBatch('assign-1', { submissionIds }, makeTeacher(), fetchMock);
+      expect(batch).toMatchObject({ requestedCount: 3, succeededCount: 2, failedCount: 1 });
+      expect(batch.results[2]).toMatchObject({ submissionId: 'sub-3', ok: false, error: expect.stringContaining('thử lại') });
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(timeouts.mock.calls).toEqual([[25_000], [7_000]]);
+    } finally {
+      clock.mockRestore();
+      timeouts.mockRestore();
+    }
+  });
+
+  it('keeps AI scores at or below the stored maximum for legacy off-step question points', () => {
+    const response = '{"suggestedPoints": 1, "feedback": "Tốt"}';
+    expect(parseAndClampAiGradingJson(response, 0.4).suggestedPoints).toBe(0.25);
+    expect(parseAndClampAiGradingJson(response, 0.1).suggestedPoints).toBe(0);
+  });
+
+  it('requires manual grading for a Chinese date of birth or a known name inside a sentence', () => {
+    const input = {
+      prompt: 'Viết đoạn văn', maxPoints: 5, sampleAnswer: null, rubric: null,
+    };
+    expect(() => sanitizeAndVerifyEssayDraftInput({
+      ...input, studentAnswer: '我的生日是2008年5月17日。',
+    })).toThrow(ZeroPiiManualGradingRequiredException);
+    expect(() => sanitizeAndVerifyEssayDraftInput({
+      ...input, studentAnswer: '我和李华去上学。',
+    }, ['李华'])).toThrow(ZeroPiiManualGradingRequiredException);
   });
 
   it('Issue #1 & #12: blocks Vietnamese name/address PII, scrubs Unicode emails, and enforces feedback length bound', () => {

@@ -23,6 +23,17 @@ C. 明天
 `;
 
 describe('document-import.parser (Task 5.3 TDD)', () => {
+  it.each([
+    ['1,25', 1.25, false],
+    ['1000', 1000, false],
+    ['1001', 1, true],
+    ['0.33', 1, true],
+    ['9'.repeat(309), 1, true],
+  ])('imports a points line of %s with the same bounds as question editing', (raw, points, needsReview) => {
+    const parsed = parseImportedQuestions(`Câu 1. 你好吗？\nA. 我很好\nB. 再见\nĐáp án: A\nĐiểm: ${raw}`);
+    expect(parsed).toEqual([expect.objectContaining({ prompt: '你好吗？', points, needsReview })]);
+  });
+
   it('parses three single-choice questions and flags missing answers', () => {
     const parsed = parseImportedQuestions(FIXTURE);
     expect(parsed).toHaveLength(3);

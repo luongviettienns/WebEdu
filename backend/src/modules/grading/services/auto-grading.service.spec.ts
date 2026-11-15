@@ -111,6 +111,10 @@ describe('AutoGradingService (Slice 7.1)', () => {
     });
 
     const res = await service.gradeSubmission('sub-1', makeTeacher());
+    const lockedTables = tx.$queryRaw.mock.calls.map((args) =>
+      (args as unknown as [TemplateStringsArray])[0].join('').match(/FROM "(\w+)"/)?.[1],
+    );
+    expect(lockedTables).toEqual(['classes', 'submissions']);
     expect(res).toEqual({
       submissionId: 'sub-1',
       status: SubmissionStatus.AUTO_GRADED_PENDING_REVIEW,
@@ -212,7 +216,7 @@ describe('AutoGradingService (Slice 7.1)', () => {
     );
   });
 
-  it('Issue #8 & #9: blocks auto-grade on GRADED/RETURNED (409) and caps 0.9pt objective question at 0.75', async () => {
+  it('blocks auto-grading finalized grades and awards the original maximum for a correct legacy question', async () => {
     const { tx, service } = setupMocks();
     for (const lockedStatus of [SubmissionStatus.GRADED, SubmissionStatus.RETURNED]) {
       tx.submission.findUnique.mockResolvedValueOnce({
@@ -259,7 +263,7 @@ describe('AutoGradingService (Slice 7.1)', () => {
       ],
     });
     const res = await service.gradeSubmission('sub-cap', makeTeacher());
-    expect(res.autoScore).toBe(1);
-    expect(res.totalScore).toBe(1);
+    expect(res.autoScore).toBe(0.9);
+    expect(res.totalScore).toBe(0.9);
   });
 });

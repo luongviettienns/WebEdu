@@ -178,6 +178,39 @@ describe('GradeAdjustmentService (Slice 7.4 — FUNC-061, FUNC-064)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('totals existing legacy points alongside an edited quarter-step score without rounding either away', async () => {
+    const { prisma, service } = setupMocks();
+    prisma.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-legacy',
+      status: SubmissionStatus.RETURNED,
+      totalScore: 0.33,
+      teacherFeedback: null,
+      classAssignment: {
+        classId: 'cls-1',
+        assessment: {
+          questions: [
+            { id: 'q-1', position: 1, type: QuestionType.ESSAY, points: 0.33, payload: {} },
+            { id: 'q-2', position: 2, type: QuestionType.ESSAY, points: 0.4, payload: {} },
+          ],
+        },
+      },
+      answers: [
+        { id: 'ans-1', questionId: 'q-1', earnedPoints: 0.33 },
+        { id: 'ans-2', questionId: 'q-2', earnedPoints: 0 },
+      ],
+    });
+    prisma.submissionAnswer.findMany.mockResolvedValueOnce([
+      { questionId: 'q-1', earnedPoints: 0.33 },
+      { questionId: 'q-2', earnedPoints: 0.25 },
+    ]);
+    const result = await service.adjustConfirmedOrPublishedGrade(
+      'sub-legacy',
+      { reason: 'Chấm phúc khảo', answers: [{ questionId: 'q-2', earnedPoints: 0.25 }] },
+      makeActor('teacher-1', Role.TEACHER),
+    );
+    expect(result.totalScore).toBe(0.58);
+  });
+
   it('Issue #5: rejects duplicate questionId (400 with 0 audit), blocks stale concurrent edits (409), keeps ungraded null & preserves totalScore on comment-only edit', async () => {
     const { prisma, service } = setupMocks();
 

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
@@ -154,42 +155,42 @@ export class AiGradingConfigService {
     const safeBaseUrl = resolveProviderBaseUrl(dto.provider, dto.baseUrl);
     const model = resolveProviderModel(dto.provider, dto.model);
 
-    const existingRow = await this.prisma.systemSetting.findUnique({
-      where: { key: SETTING_KEY_AI_GRADING_CONFIG },
-    });
-    const existing = parseStoredConfig(existingRow?.value, existingRow?.updatedAt);
-    const targetMatches = hasMatchingStoredKeyTarget(existing, dto.provider, safeBaseUrl);
-
-    let nextEncryptedKey: string | null;
-    if (dto.clearApiKey === true) {
-      nextEncryptedKey = null;
-    } else if (!isMaskedApiKeyPlaceholder(dto.apiKey)) {
-      nextEncryptedKey = encryptAiSecret(dto.apiKey!.trim());
-    } else {
-      nextEncryptedKey = targetMatches ? existing.encryptedApiKey : null;
-    }
-
-    if (dto.enabled && !nextEncryptedKey) {
-      throw new BadRequestException(
-        targetMatches || !existing.encryptedApiKey
-          ? 'Vui lòng nhập API Key hợp lệ trước khi bật tính năng AI gợi ý chấm bài'
-          : 'Đã thay đổi Provider hoặc Base URL; vui lòng nhập API Key mới trước khi bật tính năng AI',
-      );
-    }
-
-    const timeoutMs = dto.timeoutMs ?? existing.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS;
-    const nowIso = new Date().toISOString();
-    const nextStored: StoredAiGradingConfig = {
-      enabled: dto.enabled,
-      provider: dto.provider,
-      baseUrl: safeBaseUrl,
-      model,
-      encryptedApiKey: nextEncryptedKey,
-      timeoutMs,
-      updatedAt: nowIso,
-    };
-
     await this.prisma.$transaction(async (tx) => {
+      // The settings row may not exist yet. Lock its logical key before reading it.
+      await tx.$queryRaw`SELECT true FROM pg_advisory_xact_lock(hashtextextended(${SETTING_KEY_AI_GRADING_CONFIG}, 0))`;
+      const existingRow = await tx.systemSetting.findUnique({
+        where: { key: SETTING_KEY_AI_GRADING_CONFIG },
+      });
+      const existing = parseStoredConfig(existingRow?.value, existingRow?.updatedAt);
+      const targetMatches = hasMatchingStoredKeyTarget(existing, dto.provider, safeBaseUrl);
+
+      let nextEncryptedKey: string | null;
+      if (dto.clearApiKey === true) {
+        nextEncryptedKey = null;
+      } else if (!isMaskedApiKeyPlaceholder(dto.apiKey)) {
+        nextEncryptedKey = encryptAiSecret(dto.apiKey!.trim());
+      } else {
+        nextEncryptedKey = targetMatches ? existing.encryptedApiKey : null;
+      }
+
+      if (dto.enabled && !nextEncryptedKey) {
+        throw new BadRequestException(
+          targetMatches || !existing.encryptedApiKey
+            ? 'Vui lòng nhập API Key hợp lệ trước khi bật tính năng AI gợi ý chấm bài'
+            : 'Đã thay đổi Provider hoặc Base URL; vui lòng nhập API Key mới trước khi bật tính năng AI',
+        );
+      }
+
+      const nextStored: StoredAiGradingConfig = {
+        enabled: dto.enabled,
+        provider: dto.provider,
+        baseUrl: safeBaseUrl,
+        model,
+        encryptedApiKey: nextEncryptedKey,
+        timeoutMs: dto.timeoutMs ?? existing.timeoutMs,
+        updatedAt: new Date().toISOString(),
+      };
+
       await tx.systemSetting.upsert({
         where: { key: SETTING_KEY_AI_GRADING_CONFIG },
         update: { value: JSON.stringify(nextStored) },
@@ -213,7 +214,7 @@ export class AiGradingConfigService {
           hasApiKey: Boolean(nextStored.encryptedApiKey),
         },
       });
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
 
     return this.getAiGradingConfig();
   }

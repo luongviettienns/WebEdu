@@ -6,10 +6,7 @@ import { getDisplayStatusLabel } from '../../assignments/mappers/assignment.mapp
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import type { StudentPublishedResultResponseDto } from '../grading.types.js';
 import { toPublishedStudentQuestionResult } from '../mappers/grading-result.mapper.js';
-import {
-  hasLegacyOffStepScores,
-  sumQuestionMaxScore,
-} from '../policies/answer-normalizer.policy.js';
+import { sumQuestionMaxScore } from '../policies/answer-normalizer.policy.js';
 
 @Injectable()
 export class PublishedGradesRepository {
@@ -116,11 +113,7 @@ export class PublishedGradesRepository {
     }
 
     const answerByQuestion = new Map(submission.answers.map((ans) => [ans.questionId, ans]));
-    const preserveLegacyScale = hasLegacyOffStepScores(submission);
-    const maxScore = sumQuestionMaxScore(
-      assignment.assessment.questions,
-      preserveLegacyScale,
-    );
+    const maxScore = sumQuestionMaxScore(assignment.assessment.questions);
 
     return {
       assignmentId: assignment.id,
@@ -144,7 +137,7 @@ export class PublishedGradesRepository {
         maxScore,
         teacherFeedback: submission.teacherFeedback,
         questions: assignment.assessment.questions.map((q) =>
-          toPublishedStudentQuestionResult(q, answerByQuestion.get(q.id), preserveLegacyScale),
+          toPublishedStudentQuestionResult(q, answerByQuestion.get(q.id)),
         ),
       },
     };

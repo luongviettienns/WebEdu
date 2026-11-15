@@ -44,11 +44,14 @@ describe('GradingTrackerService (Slice 7.3)', () => {
       enrollment: { findMany: vi.fn() },
       submission: {
         findMany: vi.fn(),
-        create: vi.fn(async () => ({ id: 'sub-zero-new' })),
-        update: vi.fn(async (args: { where: { id: string } }) => ({ id: args.where.id })),
+        createManyAndReturn: vi.fn(async () => [{ id: 'sub-zero-new', studentId: 'stu-not-started' }]),
+        updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      submissionAnswer: { upsert: vi.fn(async () => ({})) },
-      gradeAuditLog: { create: vi.fn(async () => ({})) },
+      submissionAnswer: {
+        createMany: vi.fn(async () => ({ count: 3 })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      gradeAuditLog: { createMany: vi.fn(async () => ({ count: 2 })) },
       systemAuditLog: { create: vi.fn(async () => ({})) },
       $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(),
@@ -247,16 +250,21 @@ describe('GradingTrackerService (Slice 7.3)', () => {
     expect(res.recordedCount).toBe(2);
     expect(res.recordedStudentIds).toEqual(['stu-not-started', 'stu-in-progress']);
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
-    expect(prisma.submission.create).toHaveBeenCalledTimes(1);
-    expect(prisma.submission.update).toHaveBeenCalledTimes(1);
-    // Issue #8: zeroes all per-question rows for BOTH created & in-progress autosaved submissions without overwriting answerPayload on update
-    expect(prisma.submissionAnswer.upsert).toHaveBeenCalledTimes(4);
-    for (const call of prisma.submissionAnswer.upsert.mock.calls) {
-      const arg = (call as unknown as [{ update: Record<string, unknown> }])[0];
-      expect(arg.update).toMatchObject({ earnedPoints: 0, teacherEdited: true });
-      expect('answerPayload' in arg.update).toBe(false);
-    }
-    expect(prisma.gradeAuditLog.create).toHaveBeenCalledTimes(2);
+    expect(prisma.submission.createManyAndReturn).toHaveBeenCalledTimes(1);
+    expect(prisma.submission.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.submissionAnswer.updateMany).toHaveBeenCalledExactlyOnceWith({
+      where: { submissionId: { in: ['sub-zero-new', 'sub-prog'] }, questionId: { in: ['q-1', 'q-2'] } },
+      data: { earnedPoints: 0, isCorrect: null, aiSuggestedPoints: null, aiFeedback: null, teacherEdited: true },
+    });
+    expect(prisma.submissionAnswer.createMany).toHaveBeenCalledExactlyOnceWith({
+      data: ['sub-zero-new', 'sub-prog'].flatMap((submissionId) =>
+        ['q-1', 'q-2'].map((questionId) => expect.objectContaining({
+          submissionId, questionId, answerPayload: {}, earnedPoints: 0,
+        })),
+      ),
+      skipDuplicates: true,
+    });
+    expect(prisma.gradeAuditLog.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.systemAuditLog.create).toHaveBeenCalledTimes(1);
 
     // Reject already submitted student (409)

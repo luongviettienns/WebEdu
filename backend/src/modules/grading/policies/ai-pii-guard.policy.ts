@@ -40,6 +40,13 @@ const UNVERIFIABLE_PII_PATTERNS: ReadonlyArray<{ label: string; regex: RegExp }>
     regex: CAPITALIZED_SELF_IDENT_RE,
   },
   {
+    label: 'ngày sinh cá nhân',
+    regex: new RegExp(
+      `(?:${UB_START}(?:ngày\\s+sinh|date\\s+of\\s+birth|born\\s+on)${UB_END}|出生日期|我的生日|我出生于)\\s*(?:là|is|是|[:：])?\\s*\\d`,
+      'iu',
+    ),
+  },
+  {
     label: 'địa chỉ cá nhân',
     regex: new RegExp(
       `(?:${UB_START}(?:địa\\s+chỉ(?:\\s+(?:nhà|riêng|thường\\s+trú|tạm\\s+trú|liên\\s+hệ|cư\\s+trú))?|(?:nhà|gia\\s+đình)\\s+(?:em|tôi|tớ|mình)\\s+(?:ở|tại)|(?:em|tôi|tớ|mình)\\s+(?:đang\\s+)?(?:ở|sống|trú|cư\\s+trú|tạm\\s+trú|thường\\s+trú|ngụ)\\s+(?:tại|ở)\\s+(?:\\d+|số|ngõ|ngách|hẻm|đường|phố|khu|xóm|thôn|ấp|phường|xã|quận|huyện|thị|tỉnh|thành\\s+phố|tại|nhà)|(?:số\\s+nhà|ngõ|ngách|hẻm)\\s+\\d+[\\p{L}\\d/-]*|(?:số\\s+\\d+(?:/\\d+)?|đầu\\s+đường)\\s+(?:đường|phố)\\s+[\\p{L}\\d\\s]{2,40}|(?:phường|xã|thị\\s+trấn|thôn|xóm|ấp|khu\\s+phố|tổ\\s+dân\\s+phố)\\s+[\\p{L}\\d\\s.]{1,35},?\\s*(?:quận|huyện|thị\\s+xã|thành\\s+phố|tp\\.?|tỉnh)|(?:quận|huyện|thị\\s+xã)\\s+[\\p{L}\\d\\s.]{1,30},?\\s*(?:thành\\s+phố|tp\\.?|tỉnh)|i\\s+(?:live|reside)\\s+at\\s+\\d+)${UB_END}|家庭住址|我的住址|联系地址|住在.{0,15}(?:路|街|巷|弄|号|小区|公寓|村)|(?:^|[\\n\\r;,])\\s*(?:địa\\s*chỉ|nơi\\s*ở|chỗ\\s*ở|address|home\\s*address|住址)\\s*[:：])`,
@@ -101,7 +108,8 @@ function assertNoUnverifiablePii(
           `${UB_START}${escapeRegExp(cleanName)}${UB_END}`,
           'iu',
         );
-        if (boundaryNameRe.test(normalized)) {
+        const containsHanName = /\p{Script=Han}/u.test(cleanName) && normalized.includes(cleanName);
+        if (containsHanName || boundaryNameRe.test(normalized)) {
           throw new ZeroPiiManualGradingRequiredException(`tên định danh ở trường ${fieldName}`);
         }
         const parts = cleanName.split(/\s+/).filter(Boolean);

@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 7: Chấm điểm Rule-based, AI Gợi ý Tự luận & Công bố 2 bước (`FUNC-056..064`) — Đã hoàn thành 100% (Slices 7.1–7.6 + Kiểm toán P1/P2 #1–#11 + Rà soát #1–#17) trên nhánh `feature/phase-07-grading-and-publication`** *(Đã hoàn tất tất cả Backend API, Frontend UI Superadmin AI Config `/superadmin/settings`, Teacher/Admin Grading & 2-Step Publication Workspace `/teacher/assignments/[assignmentId]/grading`, Student Published Result Zero-Leak View `/student/assignments/[id]`, cùng toàn bộ 11 hạng mục P1/P2 và 17 hạng mục rà soát trước khi chốt; Unit tests, Real-PostgreSQL E2E & Playwright E2E Desktop/Mobile đều PASS; sẵn sàng chuyển sang Phase 8)*
+* **Giai đoạn hiện tại**: **Phase 7 — Chấm điểm theo quy tắc, AI gợi ý chấm tự luận và công bố điểm hai bước (`FUNC-056..064`)**. Bản tích hợp gồm các bản sửa từ kiểm toán `develop` và rà soát Phase 7.
 ---
 
 ## 🎨 Hạng Mục Đặc Biệt: Đại Tu UI/UX Chuẩn 100% Prototype Á Đông & Dọn Dẹp Chức Năng Thừa *(HOÀN THÀNH — 100% PASS)*

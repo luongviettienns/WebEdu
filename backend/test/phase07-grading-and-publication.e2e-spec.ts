@@ -16,6 +16,7 @@ import {
   extractAuthCookie,
   type RealE2eAppHarness,
 } from './helpers/e2e-app-harness.js';
+import { SETTING_KEY_AI_GRADING_CONFIG } from '../src/modules/system-settings/system-settings.constants.js';
 
 const ORIGIN = 'http://localhost:3000';
 const PASSWORD = 'Password123';
@@ -430,6 +431,37 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
       .expect(200);
     expect((studentBResult.body as { isPublished: boolean; result: { totalScore: number } }).isPublished).toBe(true);
     expect((studentBResult.body as { result: { totalScore: number } }).result.totalScore).toBe(0);
+  });
+
+  it('prevents a queued model update from restoring a key cleared by another transaction', async () => {
+    const url = '/api/v1/system-settings/ai-grading';
+    await superadminClient.put(url)
+      .send({ enabled: true, provider: 'OPENAI', apiKey: 'sk-old-test-key' }).expect(200);
+
+    let queuedSave: Promise<request.Response> | undefined;
+    await harness.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT true FROM pg_advisory_xact_lock(hashtextextended(${SETTING_KEY_AI_GRADING_CONFIG}, 0))`;
+      queuedSave = superadminClient.put(url)
+        .send({ enabled: true, provider: 'OPENAI', model: 'another-model' })
+        .then((response) => response);
+      await expect.poll(async () => {
+        const [lock] = await tx.$queryRaw<Array<{ queued: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+          ) AS queued
+        `;
+        return lock?.queued;
+      }, { timeout: 2000 }).toBe(true);
+      const where = { key: SETTING_KEY_AI_GRADING_CONFIG };
+      const stored = await tx.systemSetting.findUniqueOrThrow({ where });
+      const value = JSON.stringify({ ...JSON.parse(stored.value), enabled: false, encryptedApiKey: null });
+      await tx.systemSetting.update({ where, data: { value } });
+    });
+
+    expect((await queuedSave)?.status).toBe(400);
+    const after = await superadminClient.get(url).expect(200);
+    expect(after.body).toMatchObject({ enabled: false, hasApiKey: false });
   });
 
   it('verifies P1/P2 audit fixes: key binding, SSRF/Zero-PII/batch-AI guards, concurrent confirm/publish locks, AdjustGrade 409/400, overdue-zero per-question & 0.25 step', async () => {
