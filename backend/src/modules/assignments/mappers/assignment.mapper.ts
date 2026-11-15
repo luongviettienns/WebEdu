@@ -1,4 +1,5 @@
 import { AssessmentType, SubmissionStatus } from '@prisma/client';
+import { hasLegacyOffStepScores, sumQuestionMaxScore } from '../../grading/policies/answer-normalizer.policy.js';
 import type {
   AssignmentDisplayStatus,
   ClassAssignmentStatsDto,
@@ -26,10 +27,7 @@ const REOPENABLE_STATUSES = new Set<SubmissionStatus>([
   SubmissionStatus.RETURNED,
 ]);
 
-const SCORE_VISIBLE_STATUSES = new Set<SubmissionStatus>([
-  SubmissionStatus.GRADED,
-  SubmissionStatus.RETURNED,
-]);
+const SCORE_VISIBLE_STATUSES = new Set<SubmissionStatus>([SubmissionStatus.RETURNED]);
 
 export interface StudentAssignmentRowInput {
   id: string;
@@ -39,15 +37,8 @@ export interface StudentAssignmentRowInput {
   dueAt: Date;
   effectiveDurationMinutes: number | null;
   instructions: string | null;
-  assessment: {
-    title: string;
-    type: AssessmentType;
-    questions?: ReadonlyArray<{ points: number }>;
-  };
-  class: {
-    code: string;
-    course?: { name: string } | null;
-  };
+  assessment: { title: string; type: AssessmentType; questions?: ReadonlyArray<{ points: number }> };
+  class: { code: string; course?: { name: string } | null };
 }
 
 export interface ClassAssignmentRowInput extends StudentAssignmentRowInput {
@@ -111,12 +102,18 @@ export const getDisplayStatusLabel = (status: AssignmentDisplayStatus): string =
 export const countNonEmptyAnswers = (answers: ReadonlyArray<{ answerPayload: unknown }>): number =>
   answers.filter((answer) => isAnswerNonEmpty(answer.answerPayload)).length;
 
-function summarizeQuestions(questions?: ReadonlyArray<{ points: number }>): {
+function summarizeQuestions(
+  questions?: ReadonlyArray<{ points: number }>,
+  preserveLegacyScale = false,
+): {
   questionCount: number;
   totalPoints: number;
 } {
   const list = questions ?? [];
-  return { questionCount: list.length, totalPoints: list.reduce((sum, q) => sum + q.points, 0) };
+  return {
+    questionCount: list.length,
+    totalPoints: sumQuestionMaxScore(list, preserveLegacyScale),
+  };
 }
 
 export function toClassAssignmentSummaryDto(
@@ -153,13 +150,17 @@ export function toStudentAssignmentListItemDto(
   answeredCount: number,
   now: Date = new Date(),
 ): StudentAssignmentListItemDto {
-  const { questionCount, totalPoints } = summarizeQuestions(assignmentRow.assessment.questions);
+  const canViewScores = submissionRow !== null && SCORE_VISIBLE_STATUSES.has(submissionRow.status);
+  const preserveLegacyScale = canViewScores && hasLegacyOffStepScores(submissionRow);
+  const { questionCount, totalPoints } = summarizeQuestions(
+    assignmentRow.assessment.questions,
+    preserveLegacyScale,
+  );
   const status: AssignmentDisplayStatus = submissionRow?.status ?? 'NOT_STARTED';
   const effectiveDueAt = resolveEffectiveDueAt(assignmentRow.dueAt, submissionRow?.dueAtOverride);
   const isOverdue =
     (status === 'NOT_STARTED' || status === SubmissionStatus.IN_PROGRESS) &&
     now.getTime() > effectiveDueAt.getTime();
-  const canViewScores = submissionRow !== null && SCORE_VISIBLE_STATUSES.has(submissionRow.status);
 
   return {
     assignmentId: assignmentRow.id,

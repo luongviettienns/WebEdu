@@ -106,7 +106,9 @@ function LoginFormContent() {
                   className="h-12 w-12 rounded-lg border border-[var(--line)] bg-white object-contain p-1 shadow-xs"
                 />
               ) : (
-                <div className="seal">TD</div>
+                <div className="seal" aria-hidden="true">
+                  汉
+                </div>
               )}
             </Link>
             <h1 className="text-xl font-bold tracking-tight text-[var(--ink)]">

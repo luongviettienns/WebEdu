@@ -1,8 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { AssessmentType, QuestionType, Role, UserStatus } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import { AssessmentsController } from './assessments.controller.js';
+import { CreateQuestionDto, UpdateQuestionDto } from './dto/assessments.dto.js';
 
 const teacher: AuthenticatedUser = {
   id: 'u-1',
@@ -81,5 +84,40 @@ describe('AssessmentsController unit coverage', () => {
     await ctrl.updateQuestion(teacher, 'a-1', 'q-1', { prompt: 'Mới' });
     await expect(ctrl.removeQuestion(teacher, 'a-1', 'q-1')).resolves.toEqual({ success: true });
     expect(questions.remove).toHaveBeenCalledWith('a-1', 'q-1', teacher);
+  });
+
+  it('Issue #9: enforces >= 0.25 and 0.25-step multiples on CreateQuestionDto and UpdateQuestionDto', async () => {
+    for (const badPoints of [0, 0.1, 0.9, 1.33]) {
+      const createErrs = await validate(
+        plainToInstance(CreateQuestionDto, {
+          type: QuestionType.ESSAY,
+          prompt: 'Viết câu',
+          payload: {},
+          points: badPoints,
+        }),
+      );
+      expect(createErrs.length, `CreateQuestionDto should reject points=${badPoints}`).toBeGreaterThan(0);
+
+      const updateErrs = await validate(
+        plainToInstance(UpdateQuestionDto, { points: badPoints }),
+      );
+      expect(updateErrs.length, `UpdateQuestionDto should reject points=${badPoints}`).toBeGreaterThan(0);
+    }
+
+    for (const goodPoints of [0.25, 0.5, 0.75, 1.25]) {
+      expect(
+        await validate(
+          plainToInstance(CreateQuestionDto, {
+            type: QuestionType.ESSAY,
+            prompt: 'Viết câu',
+            payload: {},
+            points: goodPoints,
+          }),
+        ),
+      ).toHaveLength(0);
+      expect(
+        await validate(plainToInstance(UpdateQuestionDto, { points: goodPoints })),
+      ).toHaveLength(0);
+    }
   });
 });

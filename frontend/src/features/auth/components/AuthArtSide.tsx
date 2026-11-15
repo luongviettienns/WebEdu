@@ -10,8 +10,8 @@ export function AuthArtSide() {
     >
       {/* Brand Header */}
       <Link href="/login" className="flex items-center gap-3 focus:outline-none z-10 group">
-        <div className="seal flex-none">
-          TD
+        <div className="seal flex-none" aria-hidden="true">
+          汉
         </div>
         <div>
           <div className="font-bold text-base tracking-tight text-[var(--ink)] leading-tight group-hover:text-[var(--red)] transition-colors">

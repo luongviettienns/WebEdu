@@ -22,7 +22,7 @@ export function SidebarBrand() {
           />
         ) : (
           <div className="seal flex-none" aria-hidden="true">
-            TD
+            汉
           </div>
         )}
         <div className="min-w-0 flex-1">
@@ -30,7 +30,7 @@ export function SidebarBrand() {
             {centerName}
           </div>
           <div className="text-[11.5px] text-[var(--ink-2)] truncate mt-0.5 font-normal">
-            Quản lý lớp học · <span className="font-han text-[12px]">汉语班级管理</span>
+            Quản lý lớp học · <span className="font-han text-[12px]">汉语中心</span>
           </div>
         </div>
       </Link>

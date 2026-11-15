@@ -206,7 +206,14 @@ export class AssignmentDeliveryService {
     const newDueAt = dto.newDueAt ? parseRequiredOffsetIsoDate(dto.newDueAt, 'Hạn nộp mới') : null;
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "submissions" WHERE id = ${submissionId} FOR UPDATE`;
+      await tx.$queryRaw`
+        SELECT id FROM "class_assignments"
+        WHERE id = (SELECT class_assignment_id FROM "submissions" WHERE id = ${submissionId})
+        FOR UPDATE
+      `;
+      await tx.$queryRaw`
+        SELECT id FROM "submissions" WHERE id = ${submissionId} ORDER BY id ASC FOR UPDATE
+      `;
       const submission = await tx.submission.findUnique({
         where: { id: submissionId },
         include: {

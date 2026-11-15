@@ -17,6 +17,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const { user } = session;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [preferredRoleView, setPreferredRoleView] = useState<'ADMIN' | 'TEACHER'>('ADMIN');
   const loggingOutRef = useRef(false);
 
   const executeLogout = useCallback(
@@ -48,27 +49,47 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   );
 
   const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
+  const hasAdminTeacherSwitch = Boolean(
+    hasAdminRole && user?.roles?.includes('TEACHER') && user?.effectiveRole !== 'SUPERADMIN',
+  );
   const pendingCount = usePendingEnrollmentCount(hasAdminRole);
+
+  const handleSwitchRoleView = useCallback(
+    (nextRole: 'ADMIN' | 'TEACHER') => {
+      setPreferredRoleView(nextRole);
+      setMobileMenuOpen(false);
+      router.push(nextRole === 'ADMIN' ? '/admin/classes' : '/teacher/classes');
+    },
+    [router],
+  );
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[var(--paper)]">
-      {/* 252px Desktop Sidebar */}
       <Suspense fallback={null}>
-        <PortalSidebar user={user} pendingCount={pendingCount} />
+        <PortalSidebar
+          user={user}
+          pendingCount={pendingCount}
+          preferredRoleView={preferredRoleView}
+          onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
+        />
+        <MobileNavDrawer
+          open={mobileMenuOpen}
+          onClose={() => setMobileMenuOpen(false)}
+          user={user}
+          pendingCount={pendingCount}
+          preferredRoleView={preferredRoleView}
+          onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
+        />
       </Suspense>
-
-      {/* Mobile Off-canvas Drawer */}
-      <MobileNavDrawer
-        open={mobileMenuOpen}
-        onClose={() => setMobileMenuOpen(false)}
-        user={user}
-        pendingCount={pendingCount}
-      />
 
       {/* Right Content Area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
         <Suspense fallback={null}>
-          <PortalTopbar onOpenMobileMenu={() => setMobileMenuOpen(true)} />
+          <PortalTopbar
+            user={user}
+            preferredRoleView={preferredRoleView}
+            onOpenMobileMenu={() => setMobileMenuOpen(true)}
+          />
         </Suspense>
         <main className="flex-1 p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
           <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>

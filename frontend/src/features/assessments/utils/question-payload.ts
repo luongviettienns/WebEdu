@@ -126,8 +126,13 @@ function validateDraftValues(draft: QuestionDraft): { prompt: string; points: nu
   const prompt = draft.prompt.trim();
   if (!prompt) throw new Error('Nội dung câu hỏi không được để trống');
   const points = Number(draft.points);
-  if (!Number.isFinite(points) || points <= 0 || points > 1000) {
-    throw new Error('Điểm câu hỏi phải lớn hơn 0 và tối đa 1000');
+  if (
+    !Number.isFinite(points) ||
+    points < 0.25 ||
+    points > 1000 ||
+    Math.abs(points * 4 - Math.round(points * 4)) >= 1e-6
+  ) {
+    throw new Error('Điểm câu hỏi phải từ 0.25 đến 1000 và chia hết cho 0.25');
   }
   return { prompt, points };
 }
@@ -225,4 +230,63 @@ export function withQuestionList<
     totalPoints: questions.reduce((sum, item) => sum + item.points, 0),
     needsReviewCount: questions.filter((item) => item.needsReview).length,
   };
+}
+
+type MediaQuestionLike = { id: string; type: string; prompt: string; points: number; payload: Record<string, unknown> };
+type MediaLibraryLike = { id: string; kind: string };
+
+function getMediaFieldKey(type: string): 'mediaId' | 'imageMediaId' | null {
+  if (type === 'LISTENING') return 'mediaId';
+  if (type === 'IMAGE_BASED') return 'imageMediaId';
+  return null;
+}
+
+export function canAutoMatchMediaSlots(
+  questions: ReadonlyArray<MediaQuestionLike>,
+  drafts: Record<string, QuestionDraft>,
+  library: ReadonlyArray<MediaLibraryLike>,
+): boolean {
+  const audioCount = library.filter((m) => m.kind === 'AUDIO').length;
+  const imageCount = library.filter((m) => m.kind === 'IMAGE').length;
+  return questions.some((q) => {
+    const key = getMediaFieldKey(q.type);
+    if (!key) return false;
+    const current = drafts[q.id] ?? draftFromQuestion(q);
+    const hasMedia = Boolean(String(current.payload[key] ?? '').trim());
+    if (hasMedia) return false;
+    return q.type === 'LISTENING' ? audioCount > 0 : imageCount > 0;
+  });
+}
+
+export function computeAutoMatchedMediaUpdates(
+  questions: ReadonlyArray<MediaQuestionLike>,
+  drafts: Record<string, QuestionDraft>,
+  library: ReadonlyArray<MediaLibraryLike>,
+): Array<{ id: string; draft: QuestionDraft }> {
+  const usedIds = new Set<string>();
+  for (const q of questions) {
+    const key = getMediaFieldKey(q.type);
+    if (!key) continue;
+    const val = String((drafts[q.id] ?? draftFromQuestion(q)).payload[key] ?? '').trim();
+    if (val) usedIds.add(val);
+  }
+  const freeAudios = library.filter((m) => m.kind === 'AUDIO' && !usedIds.has(m.id));
+  const freeImages = library.filter((m) => m.kind === 'IMAGE' && !usedIds.has(m.id));
+  let audioIdx = 0;
+  let imageIdx = 0;
+  const updates: Array<{ id: string; draft: QuestionDraft }> = [];
+
+  for (const q of questions) {
+    const key = getMediaFieldKey(q.type);
+    if (!key) continue;
+    const current = drafts[q.id] ?? draftFromQuestion(q);
+    if (String(current.payload[key] ?? '').trim()) continue;
+    const nextMedia = key === 'mediaId' ? freeAudios[audioIdx++] : freeImages[imageIdx++];
+    if (!nextMedia) continue;
+    updates.push({
+      id: q.id,
+      draft: { ...current, payload: { ...current.payload, [key]: nextMedia.id } },
+    });
+  }
+  return updates;
 }

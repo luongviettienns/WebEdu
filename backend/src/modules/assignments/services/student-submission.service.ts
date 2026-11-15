@@ -117,7 +117,7 @@ export class StudentSubmissionService {
         } else {
           const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
           if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
-            submission = await autoSubmitExpiredSubmission(tx, submission.id, now);
+            submission = await autoSubmitExpiredSubmission(tx, assignment, submission.id, now);
           }
         }
 

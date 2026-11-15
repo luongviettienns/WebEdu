@@ -6,6 +6,7 @@ import {
   type AttendanceStatus,
   type StudentMyAttendance,
 } from '@/features/attendance/api/attendance.api';
+import { StudentSessionsListTable } from '@/features/attendance/components/StudentSessionsListTable';
 import { BaseDialog } from '@/features/common/components/BaseDialog';
 import { formatShortDdMm, SessionStatusBadge } from '@/features/schedules/components/SessionStatusBadge';
 import { getMonthGridBounds } from '@/features/schedules/hooks/useCalendarSchedule';
@@ -233,6 +234,12 @@ export function StudentAttendanceView() {
           })}
         </div>
       </div>
+
+      <StudentSessionsListTable
+        sessions={data.sessions} isDetailModalOpen={Boolean(selectedSession)} onSelectSession={setSelectedSession}
+        vnToday={vnToday} teacherName={data.activeClass.teacherName} classCode={data.activeClass.classCode}
+        highlightedDate={selectedSession?.sessionDate ?? null} onJumpToMonth={(ym) => setMonthAnchor(ym)}
+      />
 
       {selectedSession ? (
         <BaseDialog

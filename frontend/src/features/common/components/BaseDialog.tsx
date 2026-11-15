@@ -28,11 +28,11 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
   );
 }
 
-export function useDialogFocus(
+export function useDialogFocusTrap(
   panelRef: RefObject<HTMLElement | null>,
   onClose: () => void,
-  open: boolean,
   busy = false,
+  active = true,
 ) {
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(busy);
@@ -43,7 +43,7 @@ export function useDialogFocus(
   }, [onClose, busy]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!active) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     const previousOverflow = document.body.style.overflow;
@@ -70,14 +70,14 @@ export function useDialogFocus(
       }
       const firstEl = focusable[0]!;
       const lastEl = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (event.shiftKey && (active === firstEl || active === panelRef.current)) {
+      const activeEl = document.activeElement;
+      if (event.shiftKey && (activeEl === firstEl || activeEl === panelRef.current)) {
         event.preventDefault();
         lastEl.focus();
-      } else if (!event.shiftKey && active === lastEl) {
+      } else if (!event.shiftKey && activeEl === lastEl) {
         event.preventDefault();
         firstEl.focus();
-      } else if (!panelRef.current.contains(active)) {
+      } else if (!panelRef.current.contains(activeEl)) {
         event.preventDefault();
         firstEl.focus();
       }
@@ -91,8 +91,7 @@ export function useDialogFocus(
         previouslyFocused.focus();
       }
     };
-  }, [open, panelRef]);
-
+  }, [panelRef, active]);
 }
 
 /**
@@ -109,7 +108,7 @@ export function BaseDialog({
 }: BaseDialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(panelRef, onClose, true, busy);
+  useDialogFocusTrap(panelRef, onClose, busy);
 
   return (
     <div

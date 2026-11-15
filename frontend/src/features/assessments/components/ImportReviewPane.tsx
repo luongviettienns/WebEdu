@@ -4,8 +4,13 @@ import React, { useEffect, useState } from 'react';
 import { downloadOriginal } from '@/features/assessments/api/assessments.api';
 import { AssessmentQuestionCard } from '@/features/assessments/components/AssessmentQuestionCard';
 import { NewQuestionComposer } from '@/features/assessments/components/NewQuestionComposer';
+import { OriginalPaperPreview } from '@/features/assessments/components/OriginalPaperPreview';
 import { useAssessmentWorkspace } from '@/features/assessments/hooks/useAssessments';
-import { draftFromQuestion } from '@/features/assessments/utils/question-payload';
+import {
+  canAutoMatchMediaSlots,
+  computeAutoMatchedMediaUpdates,
+  draftFromQuestion,
+} from '@/features/assessments/utils/question-payload';
 
 const FIELD =
   'w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
@@ -21,8 +26,30 @@ export function ImportReviewPane({
 }) {
   const ws = useAssessmentWorkspace(assessmentId, 'review');
   const [onlyReview, setOnlyReview] = useState(false);
+  const [reviewCursor, setReviewCursor] = useState(0);
+  const [autoMatchNotice, setAutoMatchNotice] = useState('');
   const [original, setOriginal] = useState<{ url: string; name: string; isPdf: boolean } | null>(null);
   const originalFileName = ws.detail?.originalFileName;
+
+  const needsReviewQuestions = ws.questions.filter((q) => q.needsReview);
+  const needsReviewCount = needsReviewQuestions.length;
+  const hasUnsavedChanges = Boolean(
+    ws.detail &&
+      (ws.title !== ws.detail.title ||
+        ws.description !== (ws.detail.description ?? '') ||
+        ws.durationMinutes !== (ws.detail.durationMinutes ? String(ws.detail.durationMinutes) : '') ||
+        Object.keys(ws.drafts).length > 0),
+  );
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     if (!originalFileName) return;
@@ -44,7 +71,38 @@ export function ImportReviewPane({
     };
   }, [assessmentId, originalFileName]);
 
+  const canAutoMatchMedia =
+    !ws.isLocked &&
+    !ws.preview &&
+    canAutoMatchMediaSlots(ws.questions, ws.drafts, ws.library);
+
+  const scrollToNextNeedsReview = () => {
+    if (needsReviewQuestions.length === 0) return;
+    const target = needsReviewQuestions[reviewCursor % needsReviewQuestions.length]!;
+    setReviewCursor((prev) => prev + 1);
+    document.getElementById(`question-card-${target.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const autoMatchExtraMedia = () => {
+    const updates = computeAutoMatchedMediaUpdates(ws.questions, ws.drafts, ws.library);
+    for (const item of updates) {
+      ws.setQuestionDraft(item.id, item.draft);
+    }
+    setAutoMatchNotice(
+      updates.length > 0
+        ? `Đã gợi ý ghép ${updates.length} file vào câu hỏi. Vui lòng nghe/xem lại rồi bấm "Lưu nháp" hoặc "Lưu & xác nhận".`
+        : 'Các câu Nghe/Hình đều đã được gắn media hoặc hết file mới chưa dùng.',
+    );
+  };
+
   const visibleQuestions = ws.questions.filter((q) => !onlyReview || q.needsReview);
+  const saveStateLabel = ws.saving
+    ? 'Đang lưu...'
+    : hasUnsavedChanges
+      ? '● Có thay đổi chưa lưu nháp'
+      : ws.saved
+        ? '✓ Đã lưu'
+        : '';
 
   return (
     <div className="space-y-4">
@@ -61,6 +119,57 @@ export function ImportReviewPane({
         <p role="status" className="text-sm font-medium text-[var(--jade)]">
           {ws.saved}
         </p>
+      ) : null}
+      {autoMatchNotice ? (
+        <div className="rounded-xl border border-[var(--blue)]/30 bg-[var(--blue-soft)] px-4 py-2.5 text-xs font-medium text-[var(--blue)]">
+          {autoMatchNotice}
+        </div>
+      ) : null}
+      {ws.detail && ws.questions.length > 0 ? (
+        <div className="sticky top-[62px] z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-2.5 shadow-xs backdrop-blur">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+            {needsReviewCount > 0 ? (
+              <>
+                <span className="text-[var(--amber)]">
+                  Còn {needsReviewCount}/{ws.questions.length} câu màu vàng cần kiểm tra trước khi Phát hành
+                </span>
+                <button
+                  type="button"
+                  onClick={scrollToNextNeedsReview}
+                  className="rounded-lg border border-[var(--amber)]/50 bg-[var(--amber-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--amber)] hover:bg-white"
+                >
+                  Tới câu cần kiểm tra tiếp theo ↓
+                </button>
+              </>
+            ) : (
+              <span className="text-[var(--jade)]">
+                ✓ Tất cả {ws.questions.length} câu hỏi đã khớp — bạn có thể bấm Phát hành đề.
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canAutoMatchMedia ? (
+              <button
+                type="button"
+                onClick={autoMatchExtraMedia}
+                className="rounded-lg border border-[var(--blue)]/40 bg-[var(--blue-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--blue)] hover:bg-white"
+              >
+                Tự gợi ý ghép file Nghe/Ảnh theo thứ tự
+              </button>
+            ) : null}
+            {saveStateLabel ? (
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                  hasUnsavedChanges
+                    ? 'bg-[var(--amber-soft)] text-[var(--amber)]'
+                    : 'bg-[var(--jade-soft)] text-[var(--jade)]'
+                }`}
+              >
+                {saveStateLabel}
+              </span>
+            ) : null}
+          </div>
+        </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <label className="flex items-center gap-2 text-sm">
@@ -120,24 +229,16 @@ export function ImportReviewPane({
           />
         </div>
       ) : null}
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-4 text-sm text-[var(--ink-2)]">
-          {original ? (
-            <div className="space-y-2">
-              <a href={original.url} download={original.name} className="font-semibold text-[var(--blue)]">
-                Tải file gốc ({original.name})
-              </a>
-              {original.isPdf ? (
-                <iframe title="Xem file gốc" src={original.url} className="h-[480px] w-full rounded-lg bg-white" />
-              ) : (
-                <p>File Word được giữ để đối chiếu. Tải xuống để mở trên máy.</p>
-              )}
-            </div>
-          ) : (
-            <p>File gốc được giữ để đối chiếu khi tải lên. Kiểm tra từng câu bên phải trước khi phát hành.</p>
-          )}
+      <div className="grid items-start gap-5 lg:grid-cols-12">
+        <div className="lg:col-span-5">
+          <OriginalPaperPreview
+            title={ws.title || ws.detail?.title || ''}
+            originalFileName={ws.detail?.originalFileName}
+            original={original}
+            questions={ws.questions}
+          />
         </div>
-        <div className="space-y-3">
+        <div className="space-y-3 lg:col-span-7">
           {visibleQuestions.map((q) => {
             const index = ws.questions.findIndex((item) => item.id === q.id);
             return (

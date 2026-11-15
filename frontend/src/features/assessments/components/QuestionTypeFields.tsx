@@ -108,7 +108,9 @@ export function QuestionTypeFields({
     const answers = asStrings(payload, 'acceptedAnswers');
     return hideAnswer ? null : (
       <div className="space-y-2">
-        <p className="text-xs text-[var(--ink-2)]">Mỗi dòng một đáp án. Có thể dán: 您好 | 你好</p>
+        <p className="text-xs text-[var(--ink-2)]">
+          Mỗi dòng 1 đáp án đúng, hoặc ngăn cách bằng dấu | (ví dụ: 您好 | 你好)
+        </p>
         <textarea
           className={FIELD}
           rows={3}
@@ -136,7 +138,9 @@ export function QuestionTypeFields({
     const tokens = asStrings(payload, 'tokens');
     return (
       <div className="space-y-2">
-        <p className="text-xs text-[var(--ink-2)]">Mỗi dòng một mảnh. Có thể dán: 我 / 姓 / 王</p>
+        <p className="text-xs text-[var(--ink-2)]">
+          Mỗi dòng 1 từ/cụm từ, hoặc ngăn cách bằng dấu / (ví dụ: 我 / 姓 / 王)
+        </p>
         <textarea
           className={FIELD}
           rows={3}

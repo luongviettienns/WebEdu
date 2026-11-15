@@ -15,8 +15,8 @@
   - Website marketing, landing page tuyển sinh, form thu thập lead.
   - Tài khoản phụ huynh riêng biệt (phụ huynh dùng chung luồng hỗ trợ đăng ký của học viên < 16 tuổi).
   - Thu học phí / thanh toán trực tuyến (`BR-02`).
-  - AI/LLM chấm bài tự luận mở (`FUNC-057` — Loại bỏ).
   - Nhập điểm bài kiểm tra trên giấy thủ công (`FUNC-076` — Loại bỏ).
+  - *(Lưu ý: `FUNC-057` — AI gợi ý chấm bài tự luận mở `on-demand` đa nhà cung cấp đã được khôi phục lại phạm vi Phase 7 theo `DEC-036` ngày 15/11/2026).*
   - Gửi thông báo nghiệp vụ qua Zalo / Email marketing (`DEC-015` — Chỉ làm thông báo In-App).
   - Tóm tắt buổi học (`SCOPE-01` — Không triển khai trừ khi có yêu cầu thay đổi).
 
@@ -32,7 +32,7 @@ flowchart TD
     P3 --> P4["Phase 4: Module 04 & 05 — Lịch học, Buổi học & Điểm danh\n(FUNC-026..032, FUNC-034..037)"]
     P3 --> P5["Phase 5: Module 06 (P1) — Ngân hàng Câu hỏi & Import Đề Word/PDF\n(FUNC-039..050)"]
     P5 --> P6["Phase 6: Module 06 (P2) — Giao bài, Làm bài, Autosave & Nộp bài 1 lượt\n(FUNC-051..054)"]
-    P6 --> P7["Phase 7: Module 07 — Chấm điểm Rule-based, Tự luận & Công bố 2 bước\n(FUNC-056, FUNC-058..064)"]
+    P6 --> P7["Phase 7: Module 07 — Chấm điểm Rule-based, AI Gợi ý Tự luận & Công bố 2 bước\n(FUNC-056..064)"]
     P4 --> P8["Phase 8: Module 08 & 09 — Kiểm tra Tổng kết & Theo dõi Tiến độ\n(FUNC-065, FUNC-068..075)"]
     P7 --> P8
     P4 --> P9["Phase 9: Module 10 & Hardening — Thông báo In-App, Dọn Prototype & E2E UAT\n(FUNC-080 + 16 Cleanup Items)"]
@@ -205,26 +205,26 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 ---
 
-### Phase 7: Module 07 — Chấm Điểm Tự Động, Chấm Tự Luận & Công Bố Điểm 2 Bước
-- **File Sub-Plan dự kiến:** `docs/plans/phase-07-grading-and-publication.md`
-- **Phạm vi Mã Chức Năng (8 FUNCs In-Scope + 1 Out-of-Scope):**
-  - `In-Scope (8)`: `FUNC-056` (Tự động chấm câu có đáp án xác định bằng thuật toán rule-based — `DEC-012`), `FUNC-058` (GV kiểm tra kết quả chấm và chấm câu tự luận), `FUNC-059` (GV xác nhận điểm — bước 1), `FUNC-060` (Công bố điểm sau khi xác nhận — bước 2 riêng biệt, `DEC-012`), `FUNC-061` (GV/Admin chỉnh sửa điểm — `DEC-013`), `FUNC-062` (Theo dõi danh sách học viên đã nộp / chưa nộp), `FUNC-063` (Học viên xem kết quả, nhận xét và đáp án sau khi bài đã `PUBLISHED` — `DEC-013`), `FUNC-064` (Lưu lịch sử chỉnh sửa điểm / Grade Audit Log — `DEC-013`).
-  - `Out-of-Scope (1)`: **`FUNC-057` (AI chấm sơ bộ bài mở — Loại bỏ hoàn toàn theo `PROJECT_CONTEXT.md`)**.
-- **Open Issues Gate cần chốt đầu Phase 7:**
-  - `GRADE-01` (`DEC-003`): Cách tính điểm câu nhiều đáp án (`Q47`), chuẩn hóa khoảng trắng/dấu câu cho câu điền từ và sắp xếp câu, thang điểm và quy tắc làm tròn.
-  - `GRADE-02`: Quy tắc xử lý bài quá hạn không nộp, quy trình sửa điểm sau khi đã `PUBLISHED` và quyền tái công bố.
+### Phase 7: Module 07 — Chấm Điểm Tự Động, AI Gợi Ý Tự Luận & Công Bố Điểm 2 Bước
+- **File Sub-Plan:** `docs/plans/phase-07-grading-and-publication.md`
+- **Phạm vi Mã Chức Năng (9 FUNCs In-Scope — `FUNC-057` đã khôi phục theo `DEC-036`):**
+  - `In-Scope (9)`: `FUNC-056` (Tự động chấm câu có đáp án xác định bằng thuật toán rule-based — `DEC-012`, `DEC-037`), `FUNC-057` (AI gợi ý chấm sơ bộ câu tự luận `ESSAY` theo kiến trúc đa provider động `OPENAI`/`GEMINI`/`CUSTOM`, kích hoạt `on-demand`, tuân thủ Zero-PII — khôi phục theo `DEC-036`), `FUNC-058` (GV kiểm tra kết quả chấm và chấm câu tự luận), `FUNC-059` (GV xác nhận điểm — bước 1: `GRADED`), `FUNC-060` (Công bố điểm sau khi xác nhận — bước 2 riêng biệt: `RETURNED`, `DEC-012`, `DEC-038`), `FUNC-061` (GV/Admin chỉnh sửa điểm sau xác nhận/công bố — `DEC-013`, `DEC-038`), `FUNC-062` (Theo dõi danh sách học viên đã nộp / quá hạn chưa nộp), `FUNC-063` (Học viên xem kết quả, nhận xét và đáp án sau khi bài đã `RETURNED` — `DEC-013`), `FUNC-064` (Lưu lịch sử chỉnh sửa điểm / `GradeAuditLog` — `DEC-013`, `DEC-038`).
+- **Open Issues Gate (Đã chốt):**
+  - `GRADE-01` (`DEC-036`, `DEC-037`): Nhiều đáp án dùng partial credit có trừ điểm chọn sai (`+P/K` / `-P/K`, sàn `0`, bước `0.25`); `FILL_BLANK` & `ORDERING` chuẩn hóa `NFKC` + trim + collapse space + bỏ dấu câu cuối (`pinyinSensitive` tùy câu); AI chỉ chạy `on-demand` cho `ESSAY` với Zero-PII & lưu nháp.
+  - `GRADE-02` (`DEC-038`): `"Công bố điểm"` chỉ công bố bài `GRADED`; quá hạn chưa nộp giữ nguyên trạng thái (có nút ghi `0 điểm` tường minh riêng); cả GV phụ trách hiện tại và Admin sửa điểm được sau công bố kèm `reason` bắt buộc vào `GradeAuditLog` và nhãn `"Đã cập nhật dd/mm/yyyy"`.
 - **Interfaces (`Consumes` / `Produces`):**
-  - **Consumes:** `Submission`, `SubmissionAnswer`, `Question` từ Phase 5 & Phase 6.
+  - **Consumes:** `Submission`, `SubmissionAnswer`, `Question`, `SystemSetting` từ Phase 1, 5 & 6.
   - **Produces:**
-    - Models: `GradeRecord`, `GradeAuditLog` (`actor_id`, `old_score`, `new_score`, `reason`, `created_at`).
+    - Models / Fields: `GradeAuditLog` (`submissionId`, `answerId?`, `actorId`, `oldScore`, `newScore`, `reason`, `createdAt`), `Submission.gradeUpdatedAt`, `SubmissionAnswer.aiSuggestedPoints`, `SubmissionAnswer.teacherEdited`, AI Config trong `SystemSetting` (`AES-256-GCM`).
     - Domain Events: `AssignmentScoresPublishedEvent` (dùng cho Notification ở Phase 9).
-    - Repository Gate: `PublishedGradesRepository` (cưỡng chế `status = 'PUBLISHED'` cho mọi truy vấn từ phía Học viên).
+    - Repository Gate: `PublishedGradesRepository` / service gate cưỡng chế `status = 'RETURNED'` (business status `PUBLISHED`) cho mọi truy vấn từ phía Học viên + tuyệt đối ẩn trường nháp AI.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 7:**
-  - [ ] **Task 7.1:** Xây dựng Rule-based Auto-Grading Engine (`FUNC-056`) cho câu 1 đáp án, nhiều đáp án, điền từ, sắp xếp câu (kèm bộ unit test đầy đủ các ca biên).
-  - [ ] **Task 7.2:** Xây dựng luồng Giáo viên chấm tự luận, nhập nhận xét (`FUNC-058`), bảng theo dõi Đã nộp / Chưa nộp (`FUNC-062`).
-  - [ ] **Task 7.3:** Triển khai State Machine 2 bước tách biệt: **Xác nhận điểm (`TEACHER_CONFIRMED` - `FUNC-059`) $\rightarrow$ Công bố điểm (`PUBLISHED` - `FUNC-060`)** + Cổng bảo mật Zero-Leak đảm bảo `FUNC-063` ẩn tuyệt đối điểm/đáp án khi chưa `PUBLISHED`.
-  - [ ] **Task 7.4:** Triển khai Chỉnh sửa điểm (`FUNC-061`) và Lịch sử chỉnh sửa điểm bắt buộc (`FUNC-064` — `GradeAuditLog`).
-  - [ ] **Task 7.5:** Giao diện Giáo viên chấm bài, xác nhận/công bố điểm và Giao diện Học viên xem kết quả sau công bố + Negative Security Test chống lộ điểm qua API.
+  - [ ] **Slice 7.1:** Rule-based Auto-Grading Engine (`FUNC-056`, `DEC-037`) cho 1 đáp án, nhiều đáp án partial credit, điền từ & sắp xếp chuẩn hóa `NFKC`, bước điểm `0.25`.
+  - [ ] **Slice 7.2:** Dynamic Multi-Provider AI Config (`OPENAI` / `GEMINI` / `CUSTOM`, `AES-256-GCM`, SSRF guard) & On-Demand AI Essay Grading Engine (`FUNC-057`, `DEC-036`, Zero-PII).
+  - [ ] **Slice 7.3:** Workspace GV chấm tự luận (`FUNC-058`) & Bảng theo dõi Đã nộp / Quá hạn chưa nộp + nút ghi `0 điểm` tường minh (`FUNC-062`, `DEC-038`).
+  - [ ] **Slice 7.4:** State Machine 2 bước (`GRADED` `FUNC-059` $\rightarrow$ `RETURNED` `FUNC-060`) + Cổng Zero-Leak cho Học viên (`FUNC-063`) + Chỉnh sửa điểm & `GradeAuditLog` (`FUNC-061`, `FUNC-064`, `DEC-038`).
+  - [ ] **Slice 7.5:** Giao diện Superadmin cấu hình AI đa provider (`/superadmin/settings`) & Giao diện Giáo viên chấm bài, gọi AI gợi ý, xác nhận và công bố điểm.
+  - [ ] **Slice 7.6:** Giao diện Học viên xem kết quả sau công bố, Negative Security Test chống lộ điểm/nháp AI & Verification Gate (`E2E`, `unit`, `check-loc`).
 
 ---
 
@@ -275,7 +275,7 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 | **04. Lịch & Buổi học (7)** | `FUNC-026..032` | **Phase 4** | Không auto 'Đã học' (`DEC-009`), buổi bù thay buổi hủy |
 | **05. Điểm danh (4)** | `FUNC-034..037` | **Phase 4** | 3 trạng thái, cảnh báo 30%, hạn sửa 2 ngày GMT+7 |
 | **06. Bài tập & Ngân hàng đề (16)** | `FUNC-039..050` (P5), `FUNC-051..054` (P6) | **Phase 5 & 6** | 7 dạng câu hỏi HSK, nộp chính thức 1 lượt (`DEC-011`) |
-| **07. Chấm điểm & AI (9)** | `FUNC-056`, `FUNC-058..064` (`FUNC-057` Loại) | **Phase 7** | 2 bước Xác nhận $\rightarrow$ Công bố; **Loại bỏ `FUNC-057`** |
+| **07. Chấm điểm & AI (9)** | `FUNC-056..064` (Khôi phục `FUNC-057`) | **Phase 7** | Rule-based + AI `on-demand` đa provider (`DEC-036..038`) + 2 bước Xác nhận $\rightarrow$ Công bố |
 | **08. Kiểm tra & Tổng kết (5)** | `FUNC-065`, `068..070` (`FUNC-076` Loại) | **Phase 8** | BTVN không vào tổng kết; **Loại bỏ `FUNC-076`** |
 | **09. Theo dõi tiến độ (5)** | `FUNC-071..075` | **Phase 8** | Tiến độ buổi, ngày kết thúc dự kiến, Zero-Leak GPA |
 | **10. Thông báo (1)** | `FUNC-080` | **Phase 9** | Chỉ In-App Notification (`DEC-015`) |

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import { ASSESSMENT_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
 import {
@@ -163,13 +164,21 @@ export function ClassAssignmentsTab({
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setTrackerAssignmentId(item.id)}
-                        className="rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--hover)]"
-                      >
-                        Theo dõi nộp bài
-                      </button>
+                      <div className="inline-flex flex-wrap justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setTrackerAssignmentId(item.id)}
+                          className="rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--hover)]"
+                        >
+                          Theo dõi nộp bài
+                        </button>
+                        <Link
+                          href={`/teacher/assignments/${item.id}/grading`}
+                          className="rounded-md bg-[var(--red)] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[var(--red-ink)]"
+                        >
+                          Chấm bài &amp; Công bố
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
