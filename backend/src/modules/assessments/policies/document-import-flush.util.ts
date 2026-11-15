@@ -1,5 +1,6 @@
 import { QuestionType } from '@prisma/client';
 import type { ParsedDraftQuestion } from './document-import.parser.js';
+import { isValidQuestionPoints } from './question-points.policy.js';
 
 export type ImportDraft = {
   sourceNumber: number;
@@ -63,7 +64,7 @@ export function resolveCorrectIds(
       .toLowerCase()
       .split('')
       .filter((ch, i, arr) => arr.indexOf(ch) === i);
-    return ids.filter((id) => options.some((o) => o.id === id));
+    return ids.every((id) => options.some((o) => o.id === id)) ? ids : [];
   }
   const exact = options.filter((o) => o.text.trim() === answerRaw.trim()).map((o) => o.id);
   if (exact.length > 0) return exact;
@@ -98,7 +99,8 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
   if (!prompt && draft.options.length === 0 && draft.tokens.length === 0 && !draft.answerRaw) return null;
   const type = inferType(draft);
   if (type === 'SKIP') return null;
-  const points = draft.points > 0 ? draft.points : 1;
+  const validPoints = isValidQuestionPoints(draft.points);
+  const points = validPoints ? draft.points : 1;
   const promptText = prompt || '(chưa có nội dung)';
   const missingPrompt = !prompt;
 
@@ -111,7 +113,7 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
       prompt: promptText,
       payload: { acceptedAnswers, pinyinSensitive: draft.pinyinSensitive === true },
       points,
-      needsReview: missingPrompt || acceptedAnswers.length === 0,
+      needsReview: !validPoints || missingPrompt || acceptedAnswers.length === 0,
     };
   }
   if (type === QuestionType.ORDERING) {
@@ -123,7 +125,7 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
       prompt: promptText,
       payload: { tokens, correctSentence },
       points,
-      needsReview: tokens.length < 2 || !correctSentence,
+      needsReview: !validPoints || tokens.length < 2 || !correctSentence,
     };
   }
   if (type === QuestionType.ESSAY) {
@@ -136,7 +138,7 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
       prompt: promptText,
       payload,
       points,
-      needsReview: missingPrompt || !sampleAnswer,
+      needsReview: !validPoints || missingPrompt || !sampleAnswer,
     };
   }
 
@@ -159,6 +161,6 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
     prompt: promptText,
     payload,
     points,
-    needsReview: missingPrompt || !optionCountOk || !hasAnswer || mediaMissing,
+    needsReview: !validPoints || missingPrompt || !optionCountOk || !hasAnswer || mediaMissing,
   };
 }

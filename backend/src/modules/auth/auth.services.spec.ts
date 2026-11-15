@@ -70,7 +70,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
   let consentsStore: Array<Record<string, unknown>>;
   let resetTokensStore: Map<
     string,
-    { id: string; userId: string; tokenHash: string; expiresAt: Date; usedAt: Date | null }
+    { id: string; userId: string; tokenHash: string; tokenVersion: number; expiresAt: Date; usedAt: Date | null }
   >;
   let emailRateLimitStore: Map<string, Date>;
   let emailVerificationsStore: Map<
@@ -210,6 +210,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           id: `prt-${resetTokensStore.size + 1}`,
           userId: data.userId as string,
           tokenHash: data.tokenHash as string,
+          tokenVersion: data.tokenVersion as number,
           expiresAt: data.expiresAt as Date,
           usedAt: null,
         };
@@ -264,7 +265,8 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         return { count };
       }),
       findUnique: vi.fn(async ({ where }: { where: { tokenHash: string } }) => {
-        return resetTokensStore.get(where.tokenHash) ?? null;
+        const token = resetTokensStore.get(where.tokenHash);
+        return token ? { ...token, user: usersStore.get(token.userId) } : null;
       }),
     };
 
@@ -436,7 +438,9 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
                   rec.blockedUntil = blockUntil;
                 }
               }
-              rec.lastAttemptAt = now;
+              const keepWindowStart = values.includes(true) && rec.blockedUntil === null &&
+                rec.lastAttemptAt.getTime() >= windowStart.getTime();
+              if (!keepWindowStart) rec.lastAttemptAt = now;
             }
             return [
               {
@@ -840,6 +844,33 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
   });
 
   describe('FUNC-003: Login, Anti-Timing & Atomic Commit-Before-Throw 5-Strike Lockout', () => {
+    it('lets students share an IP and checks the total attempt limit before bcrypt', async () => {
+      const password = 'CorrectPassword123';
+      const passwordHash = bcrypt.hashSync(password, 4);
+      const now = new Date();
+      const emails = Array.from({ length: 120 }, (_, index) => {
+        const id = `classmate-${index}`;
+        const email = `${id}@example.com`;
+        usersStore.set(id, {
+          id, email, passwordHash, fullName: 'Classmate', phone: '', roles: [Role.STUDENT],
+          status: UserStatus.ACTIVE, tokenVersion: 0, failedLoginAttempts: 0, lockedUntil: null,
+          lastLoginAt: null, lastActivityAt: null, createdAt: now, updatedAt: now,
+        });
+        return email;
+      });
+
+      const clientIp = '198.51.100.7';
+      const compare = vi.spyOn(bcrypt, 'compare');
+      try {
+        const sessions = await Promise.all(emails.map((email) => service.login({ email, password }, clientIp)));
+        expect(sessions.map(({ user }) => user.email)).toEqual(emails);
+        await expect(service.login({ email: emails[0]!, password }, clientIp)).rejects.toMatchObject({ status: 429 });
+        expect(compare).toHaveBeenCalledTimes(emails.length);
+      } finally {
+        compare.mockRestore();
+      }
+    });
+
     it('runs dummy bcrypt comparison against precomputed DUMMY_PASSWORD_HASH constant when user does not exist (SEC-05)', async () => {
       expect(DUMMY_PASSWORD_HASH).toBe(
         '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj4J/HS.iK8O',
@@ -1001,8 +1032,32 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
       expect(resetTokensStore.size).toBe(0);
     });
 
-    it('enforces IP rate limiting on repeated failed logins (FIX-03)', async () => {
+    it('rejects a reset link after the account changes its credential version', async () => {
+      await registerWithRealOtp({
+        fullName: 'Reset Link Owner',
+        dateOfBirth: '1997-03-04',
+        phone: '0908123489',
+        email: 'old-owner@example.com',
+        password: 'InitialPass@123',
+      });
+      await service.forgotPassword({ email: 'old-owner@example.com' });
+      const token = sentResetEmails.at(-1)!.rawToken;
+      const user = [...usersStore.values()].find((record) => record.email === 'old-owner@example.com')!;
+      user.email = 'new-owner@example.com';
+      user.tokenVersion++;
+      await expect(service.resetPassword({ token, newPassword: 'AttackerPass@123' }))
+        .rejects.toThrow('Link đã hết hạn');
+    });
+
+    it('counts failed logins by IP even when a successful login follows them (FIX-03)', async () => {
       const clientIp = '198.51.100.42';
+      const credentials = { email: 'valid-user@example.com', password: 'CorrectPassword123' };
+      await registerWithRealOtp({
+        ...credentials,
+        fullName: 'Học viên',
+        dateOfBirth: '2000-05-05',
+        phone: '0905557777',
+      });
 
       // Simulate 15 consecutive wrong passwords from the same IP
       for (let i = 0; i < 15; i++) {
@@ -1014,7 +1069,9 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         ).rejects.toThrowError(UnauthorizedException);
       }
 
-      // The 16th request from this IP must be blocked with 429 Too Many Requests
+      await expect(service.login(credentials, clientIp)).resolves.toHaveProperty('accessToken');
+
+      // The 16th failed request crosses the failure budget.
       await expect(
         service.login(
           { email: 'nonexistent@example.com', password: 'WrongPassword' },
@@ -1022,7 +1079,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         ),
       ).rejects.toThrowError(
         new HttpException(
-          'Quá nhiều lần đăng nhập không thành công từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
+          'Quá nhiều lần đăng nhập từ địa chỉ IP này. Vui lòng thử lại sau 15 phút',
           429,
         ),
       );

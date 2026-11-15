@@ -73,6 +73,16 @@ describe('validateEnv', () => {
     expect(prodWithSmtp.SMTP_HOST).toBe('smtp.webedu.vn');
   });
 
+  it('rejects the example JWT signing key in production', () => {
+    expect(() => validateEnv({
+      NODE_ENV: 'production',
+      DATABASE_URL: 'postgresql://localhost/webedu_test',
+      JWT_SECRET: 'replace_this_with_a_secure_random_key_min_32_characters',
+      CORS_ORIGIN: 'https://webedu.example',
+      SMTP_HOST: 'smtp.example',
+    })).toThrow(/JWT_SECRET/);
+  });
+
   it('requires CORS_ORIGIN in production environment without localhost fallback (FIX-07)', () => {
     const prodWithoutCors = {
       NODE_ENV: 'production',

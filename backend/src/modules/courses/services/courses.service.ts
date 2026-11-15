@@ -147,12 +147,12 @@ export class CoursesService {
         const course = await tx.course.update({
           where: { id },
           data: {
-            code: nextCode,
-            name: nextName,
-            level: nextLevel,
-            defaultSessions: nextDefaultSessions,
-            description: nextDescription,
-            isActive: nextIsActive,
+            ...(dto.code !== undefined ? { code: nextCode } : {}),
+            ...(dto.name !== undefined ? { name: nextName } : {}),
+            ...(dto.level != null ? { level: nextLevel } : {}),
+            ...(dto.defaultSessions !== undefined ? { defaultSessions: nextDefaultSessions } : {}),
+            ...(dto.description !== undefined ? { description: nextDescription } : {}),
+            ...(dto.isActive != null ? { isActive: nextIsActive } : {}),
           },
           include: COURSE_INCLUDE,
         });

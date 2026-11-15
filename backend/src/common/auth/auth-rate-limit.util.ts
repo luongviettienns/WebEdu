@@ -8,6 +8,7 @@ export interface RateLimitOptions {
   windowMs: number;
   blockDurationMs: number;
   errorMessage?: string;
+  fixedWindow?: boolean;
 }
 
 export interface RateLimitRecord {
@@ -25,6 +26,18 @@ export function resolveClientIp(req: Request): string {
   return ip.slice(0, 64);
 }
 
+export async function assertRateLimitNotBlocked(
+  prisma: PrismaService,
+  key: string,
+  errorMessage: string,
+): Promise<void> {
+  const rows = await prisma.$queryRaw<Array<{ blocked_until: Date }>>`
+    SELECT "blocked_until" FROM "auth_rate_limits"
+    WHERE "key" = ${key} AND "blocked_until" > ${new Date()}
+  `;
+  if (rows.length > 0) throw new HttpException(errorMessage, HttpStatus.TOO_MANY_REQUESTS);
+}
+
 /**
  * Multi-instance safe rate limiter powered by PostgreSQL atomic upsert.
  * Enforces sliding/fixed window and block duration across any number of app instances.
@@ -39,6 +52,7 @@ export async function assertRateLimitNotExceeded(
     windowMs,
     blockDurationMs,
     errorMessage = 'Quá nhiều yêu cầu từ địa chỉ IP này. Vui lòng thử lại sau',
+    fixedWindow = false,
   } = options;
 
   const now = new Date();
@@ -68,7 +82,12 @@ export async function assertRateLimitNotExceeded(
             THEN ${blockUntil}
           ELSE NULL
         END,
-        "last_attempt_at" = ${now}
+        "last_attempt_at" = CASE
+          WHEN ${fixedWindow} AND "auth_rate_limits"."blocked_until" IS NULL
+            AND "auth_rate_limits"."last_attempt_at" >= ${windowStart}
+            THEN "auth_rate_limits"."last_attempt_at"
+          ELSE ${now}
+        END
     RETURNING "key", "points", "last_attempt_at", "blocked_until"
   `;
 
@@ -80,57 +99,6 @@ export async function assertRateLimitNotExceeded(
   ) {
     throw new HttpException(errorMessage, HttpStatus.TOO_MANY_REQUESTS);
   }
-}
-
-/**
- * Fast read-check to reject requests immediately if the key is already blocked.
- */
-export async function assertIpNotBlocked(
-  prisma: PrismaService,
-  key: string,
-  errorMessage = 'Quá nhiều yêu cầu từ địa chỉ IP này. Vui lòng thử lại sau',
-): Promise<void> {
-  const now = new Date();
-  const rows = await prisma.$queryRaw<Array<{ blocked_until: Date | null }>>`
-    SELECT "blocked_until" FROM "auth_rate_limits"
-    WHERE "key" = ${key} AND "blocked_until" > ${now}
-    LIMIT 1
-  `;
-  if (rows.length > 0) {
-    throw new HttpException(errorMessage, HttpStatus.TOO_MANY_REQUESTS);
-  }
-}
-
-/**
- * Opportunistically prunes expired rate-limit records without holding long locks.
- */
-export async function pruneStaleRateLimits(
-  prisma: PrismaService,
-  retentionMs = 24 * 60 * 60 * 1000,
-): Promise<void> {
-  const cutoff = new Date(Date.now() - retentionMs);
-  await prisma.$executeRaw`
-    DELETE FROM "auth_rate_limits"
-    WHERE "key" IN (
-      SELECT "key" FROM "auth_rate_limits"
-      WHERE "last_attempt_at" < ${cutoff}
-        AND ("blocked_until" IS NULL OR "blocked_until" < CURRENT_TIMESTAMP)
-      LIMIT 500
-    )
-  `;
-}
-
-/**
- * Resets/clears the rate limit record for a key upon successful action (e.g. successful login).
- */
-export async function resetRateLimitKey(
-  prisma: PrismaService,
-  key: string,
-): Promise<void> {
-  await prisma.$executeRaw`
-    DELETE FROM "auth_rate_limits"
-    WHERE "key" = ${key}
-  `;
 }
 
 /**

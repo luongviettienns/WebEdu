@@ -26,10 +26,13 @@ export function EditUserRolesModal({
   onAuthError,
 }: EditUserRolesModalProps) {
   const isSelf = editingUser.id === currentUserId;
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [editRoles, setEditRoles] = useState<Role[]>([...editingUser.roles]);
   const [editStatus, setEditStatus] = useState<UserStatus>(editingUser.status);
   const [editUserError, setEditUserError] = useState<string>('');
   const [savingUser, setSavingUser] = useState<boolean>(false);
+
+  const needsStudentDate = editRoles.includes('STUDENT') && !editingUser.hasStudentProfile;
 
   const toggleRoleInList = (list: Role[], role: Role): Role[] => {
     if (list.includes(role)) {
@@ -66,9 +69,16 @@ export function EditUserRolesModal({
       return;
     }
 
+    if (needsStudentDate && !dateOfBirth) {
+      setEditUserError('Vui lòng nhập ngày sinh của học viên');
+      return;
+    }
+
     setSavingUser(true);
     try {
       await updateSystemUserRoles(editingUser.id, {
+        expectedRevision: editingUser.revision,
+        ...(needsStudentDate ? { dateOfBirth } : {}),
         ...(rolesChanged ? { roles: editRoles } : {}),
         ...(statusChanged ? { status: editStatus } : {}),
       });
@@ -154,6 +164,13 @@ export function EditUserRolesModal({
             </div>
           </div>
 
+          {needsStudentDate && (
+            <label className="block text-sm font-medium">
+              Ngày sinh học viên
+              <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-[var(--line)] px-3 py-2" />
+            </label>
+          )}
           <div className="space-y-1.5">
             <label
               htmlFor="edit-sys-status"

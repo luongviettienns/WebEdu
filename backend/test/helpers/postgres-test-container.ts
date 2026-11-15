@@ -35,6 +35,7 @@ export interface IsolatedPostgresHarness {
 export function assertSafeTestDatabaseUrl(
   databaseUrl: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
+  allowLocalDevelopmentSeed = false,
 ): void {
   const nodeEnv = (env.NODE_ENV ?? '').trim().toLowerCase();
   const explicitTestFlag = (env.ALLOW_TEST_DB_TRUNCATE ?? '').trim().toLowerCase() === 'true';
@@ -85,6 +86,9 @@ export function assertSafeTestDatabaseUrl(
   }
 
   const hostname = parsed.hostname.toLowerCase();
+  if (parsed.searchParams.has('host') || parsed.searchParams.has('dbname')) {
+    throw new Error('[TestDbSafetyGuard] Refusing a database URL with a target override');
+  }
   if (!ALLOWED_TEST_DB_HOSTS.has(hostname)) {
     throw new Error(
       `[TestDbSafetyGuard] Refusing destructive test DB operation on non-local host "${parsed.hostname}"`,
@@ -109,7 +113,9 @@ export function assertSafeTestDatabaseUrl(
     );
   }
 
-  if (!/(?:^|[_-])(test|qa)(?:$|[_-])/i.test(dbName)) {
+  const localDevelopmentSeed = allowLocalDevelopmentSeed && explicitTestFlag &&
+    nodeEnv === 'development' && dbName === 'webedu' && hostname !== 'postgres';
+  if (!localDevelopmentSeed && !/(?:^|[_-])(test|qa)(?:$|[_-])/i.test(dbName)) {
     throw new Error(
       `[TestDbSafetyGuard] Refusing destructive test DB operation: database "${dbName}" must explicitly include "test" or "qa" in its name`,
     );
@@ -186,6 +192,7 @@ function createSafeTruncateFn(
 
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
+        "grade_audit_logs",
         "submission_reopen_logs",
         "submission_answers",
         "submissions",

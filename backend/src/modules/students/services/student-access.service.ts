@@ -2,7 +2,6 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, Role, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
-import type { ClassLifecycleStatus } from '../students.types.js';
 
 /**
  * A teacher is authorized to view student learning records ONLY when:
@@ -152,38 +151,6 @@ export class StudentAccessService {
    *   + Lớp đã kết thúc (COMPLETED/ARCHIVED) mà GV vẫn là người phụ trách -> READ_ONLY.
    *   + GV đang dạy nhưng bị thay bằng GV khác (assignedTeacherId !== actor.id) -> 403 Forbidden.
    */
-  verifyClassLearningAccess(
-    actor: AuthenticatedUser,
-    classContext: {
-      classId: string;
-      assignedTeacherId: string;
-      classStatus: ClassLifecycleStatus;
-    },
-  ): { allowed: true; mode: LearningAccessMode } {
-    const isEditableLifecycle =
-      classContext.classStatus === 'UPCOMING' ||
-      classContext.classStatus === 'ACTIVE';
-    const mode: LearningAccessMode = isEditableLifecycle ? 'FULL' : 'READ_ONLY';
-
-    if (actor.roles.includes(Role.ADMIN)) {
-      return { allowed: true, mode };
-    }
-
-    if (actor.roles.includes(Role.TEACHER)) {
-      if (classContext.assignedTeacherId !== actor.id) {
-        throw new ForbiddenException(
-          'Giáo viên đã được thay thế không còn quyền truy cập lớp học này',
-        );
-      }
-      return {
-        allowed: true,
-        mode,
-      };
-    }
-
-    throw new ForbiddenException('Bạn không có quyền truy cập');
-  }
-
   private async hasTeacherStudentClassAssignment(
     teacherId: string,
     studentId: string,

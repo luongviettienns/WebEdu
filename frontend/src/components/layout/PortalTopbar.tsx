@@ -1,11 +1,21 @@
 'use client';
 
+import Link from 'next/link';
 import React from 'react';
 import { usePathname } from 'next/navigation';
+import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
+import { getUserInitials, resolveActiveRoleView } from './nav-links';
 
 interface PortalTopbarProps {
+  user?: AuthUserDto | null;
+  preferredRoleView?: 'ADMIN' | 'TEACHER';
   onOpenMobileMenu: () => void;
+}
+
+export interface BreadcrumbItem {
+  label: string;
+  href?: string;
 }
 
 const STATIC_ROUTE_LABELS: Record<string, string> = {
@@ -49,14 +59,43 @@ export function resolveRouteLabel(pathname: string): string {
   return 'Cổng thông tin';
 }
 
-export function PortalTopbar({ onOpenMobileMenu }: PortalTopbarProps) {
+/** Resolves a multi-level breadcrumb trail with clickable parent links where applicable. */
+export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  if (normalized === '/admin/students/pending') {
+    return [{ label: 'Quản lý học viên', href: '/admin/students' }, { label: 'Chờ xếp lớp' }];
+  }
+  if (/^\/admin\/classes\/[^/]+$/.test(normalized)) {
+    return [{ label: 'Quản lý lớp học', href: '/admin/classes' }, { label: 'Chi tiết lớp học' }];
+  }
+  if (/^\/teacher\/classes\/[^/]+$/.test(normalized)) {
+    return [{ label: 'Lớp học phụ trách', href: '/teacher/classes' }, { label: 'Chi tiết lớp học' }];
+  }
+  if (/^\/student\/assignments\/[^/]+$/.test(normalized)) {
+    return [{ label: 'Bài tập & Đề thi', href: '/student/assignments' }, { label: 'Làm bài & Bài nộp' }];
+  }
+  return [{ label: 'Hệ thống' }, { label: resolveRouteLabel(normalized) }];
+}
+
+export function PortalTopbar({ user, preferredRoleView = 'ADMIN', onOpenMobileMenu }: PortalTopbarProps) {
   const pathname = usePathname();
   const { centerName } = useBrandConfig();
-  const currentLabel = resolveRouteLabel(pathname ?? '');
+  const normalizedPath = pathname ?? '';
+  const crumbs = resolveBreadcrumbs(normalizedPath);
+  const parentHref = crumbs.length > 1 ? crumbs[0]?.href : undefined;
+  const hasAdminTeacherSwitch = Boolean(
+    user?.roles?.includes('ADMIN') && user?.roles?.includes('TEACHER') && user?.effectiveRole !== 'SUPERADMIN',
+  );
+  const activeRoleView = resolveActiveRoleView(
+    normalizedPath,
+    user?.effectiveRole,
+    user?.roles,
+    preferredRoleView,
+  );
 
   return (
-    <header className="sticky top-0 z-20 flex h-[57px] w-full items-center justify-between border-b border-[var(--line)] bg-[var(--surface)]/95 px-4 backdrop-blur sm:px-6">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-[57px] w-full items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--surface)]/95 px-4 backdrop-blur sm:px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         {/* Hamburger Mobile Trigger */}
         <button
           type="button"
@@ -76,19 +115,65 @@ export function PortalTopbar({ onOpenMobileMenu }: PortalTopbarProps) {
           </svg>
         </button>
 
+        {parentHref ? (
+          <Link
+            href={parentHref}
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md border border-[var(--line-2)] bg-white px-2 py-1 text-xs font-semibold text-[var(--ink-2)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)]"
+          >
+            ← Quay lại
+          </Link>
+        ) : null}
+
         {/* Breadcrumb Navigation */}
-        <div className="flex items-center gap-2 text-[13px] text-[var(--ink-3)] font-medium">
-          <span className="hidden sm:inline">Hệ thống</span>
-          <span className="hidden sm:inline text-[var(--line-2)]">/</span>
-          <span className="text-[var(--ink)] font-semibold">{currentLabel}</span>
-        </div>
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-[var(--ink-3)]">
+          {crumbs.map((crumb, idx) => {
+            const isLast = idx === crumbs.length - 1;
+            return (
+              <React.Fragment key={crumb.label}>
+                {idx > 0 ? (
+                  <span className="hidden sm:inline text-[var(--line-2)]" aria-hidden="true">
+                    /
+                  </span>
+                ) : null}
+                {isLast ? (
+                  <span className="truncate font-semibold text-[var(--ink)]">{crumb.label}</span>
+                ) : crumb.href ? (
+                  <Link
+                    href={crumb.href}
+                    className="hidden sm:inline truncate hover:text-[var(--ink)] transition-colors"
+                  >
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span className="hidden sm:inline">{crumb.label}</span>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </nav>
       </div>
 
-      {/* Center Branding Name */}
-      <div className="flex items-center gap-4">
-        <span className="text-xs font-semibold text-[var(--ink-2)] truncate max-w-[200px] sm:max-w-none">
+      {/* Role Context Badge, Center Branding Name & Profile Quick Avatar */}
+      <div className="flex shrink-0 items-center gap-2.5 sm:gap-3">
+        {hasAdminTeacherSwitch ? (
+          <span className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-[var(--line-2)] bg-[var(--surface-2)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--ink-2)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--red)]" aria-hidden="true" />
+            {activeRoleView === 'TEACHER' ? 'Đang xem: Giáo viên' : 'Đang xem: Quản lý Admin'}
+          </span>
+        ) : null}
+        <span className="text-xs font-semibold text-[var(--ink-2)] truncate max-w-[110px] sm:max-w-none">
           {centerName}
         </span>
+        {user ? (
+          <Link
+            href="/profile"
+            title="Hồ sơ cá nhân"
+            aria-label="Hồ sơ cá nhân"
+            className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-[var(--red)]/25 bg-[var(--red-soft)] text-xs font-bold text-[var(--red-ink)] transition-colors hover:bg-[var(--red)] hover:text-white"
+          >
+            {getUserInitials(user.fullName)}
+          </Link>
+        ) : null}
       </div>
     </header>
   );

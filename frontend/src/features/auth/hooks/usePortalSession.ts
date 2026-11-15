@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { PortalGuardStatus } from '@/features/auth/components/AccessDeniedState';
 import {
   AuthUserDto,
@@ -141,14 +141,39 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
   };
 }
 
-export function usePortalSession(
-  allowedRoles?: readonly Role[],
-): PortalSessionState<AuthUserDto> {
+export function usePortalIdentity(): PortalSessionState<AuthUserDto> {
   const fetchSessionUser = useCallback(
     (options?: RequestOptions) => getCurrentUser(options),
     [],
   );
-  return usePortalSessionBase(fetchSessionUser, allowedRoles);
+  return usePortalSessionBase(fetchSessionUser);
+}
+
+export const PortalSessionContext = createContext<PortalSessionState<AuthUserDto> | null>(null);
+
+export function usePortalSession(allowedRoles?: readonly Role[]): PortalSessionState<AuthUserDto> {
+  const session = useContext(PortalSessionContext);
+  const [deniedUser, setDeniedUser] = useState<AuthUserDto | null>(null);
+  const { user, handleApiAuthError: handleSessionError } = session ?? {};
+  const handleApiAuthError = useCallback((error: unknown) => {
+    if (!handleSessionError) return false;
+    if (isForbiddenError(error)) {
+      setDeniedUser(user ?? null);
+      return true;
+    }
+    return handleSessionError(error);
+  }, [handleSessionError, user]);
+
+  if (!session) throw new Error('Portal session provider is missing');
+  const forbidden = session.user && (
+    deniedUser === session.user ||
+    (allowedRoles?.length && !userHasAnyRole(session.user, allowedRoles))
+  );
+  return {
+    ...session,
+    status: session.status === 'authorized' && forbidden ? 'forbidden' : session.status,
+    handleApiAuthError,
+  };
 }
 
 export function useProfileSession(

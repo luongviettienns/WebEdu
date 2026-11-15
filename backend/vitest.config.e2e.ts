@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
-    include: ['test/**/*.e2e-spec.ts'],
+    include: ['test/**/*.e2e-spec.ts', 'test/rbac-phase3.audit-spec.ts'],
     setupFiles: ['reflect-metadata'],
     fileParallelism: false,
     testTimeout: 60_000,

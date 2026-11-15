@@ -23,7 +23,7 @@ describe('Phase 3 RBAC audit against disposable PostgreSQL', () => {
 
   function patchRoles(authorization: string, id: string, changes: object) {
     return api().patch('/api/v1/system-settings/users/' + id + '/roles')
-      .set('Authorization', authorization).send(changes);
+      .set('Authorization', authorization).send({ expectedRevision: 0, ...changes });
   }
 
   function loadUser(id: string) {
@@ -45,9 +45,6 @@ describe('Phase 3 RBAC audit against disposable PostgreSQL', () => {
   }
 
   beforeAll(async () => {
-    if (process.env.TEST_DATABASE_URL || process.env.DATABASE_URL) {
-      throw new Error('Clear TEST_DATABASE_URL and DATABASE_URL before running the RBAC audit');
-    }
     harness = await createRealE2eAppHarness();
     await harness.app.listen(0, '127.0.0.1');
     passwordHash = await bcrypt.hash(password, 4);
@@ -128,7 +125,7 @@ describe('Phase 3 RBAC audit against disposable PostgreSQL', () => {
     await harness.prisma.$transaction(async (tx) => {
       // The target sorts before s1 and s2 in the canonical lock order.
       await tx.$queryRaw`SELECT id FROM "users" WHERE id = 'admin' FOR UPDATE`;
-      pending = patchRoles(second, 'admin', { roles: [Role.ADMIN, Role.SUPERADMIN] })
+      pending = patchRoles(second, 'admin', { roles: [Role.ADMIN, Role.TEACHER] })
         .then(({ status }) => ({ status }));
       await waitForBlockedUserLock();
       await patchRoles(first, 's2', { roles: [Role.ADMIN] }).expect(200);
@@ -141,14 +138,13 @@ describe('Phase 3 RBAC audit against disposable PostgreSQL', () => {
     }).toEqual({ denied: true, roles: [Role.ADMIN] });
   });
 
-  it('prevents a stale second status form from restoring a removed Admin role', async () => {
+  it('prevents a stale second role form from restoring a removed Admin role', async () => {
     const [first, second] = await Promise.all([login('s1'), login('s2')]);
     const before = await loadUser('multi');
     await patchRoles(first, 'multi', { roles: [Role.TEACHER] }).expect(200);
-    // This matches the current UI, which submits both fields even for a status-only edit.
     await patchRoles(second, 'multi', {
-      roles: before.roles, status: UserStatus.INACTIVE,
-    });
+      expectedRevision: before.tokenVersion, roles: before.roles,
+    }).expect(409);
     expect((await loadUser('multi')).roles).toEqual([Role.TEACHER]);
   });
 
@@ -168,9 +164,13 @@ describe('Phase 3 RBAC audit against disposable PostgreSQL', () => {
   });
 
   it('preserves the student profile invariant when adding STUDENT to a staff account', async () => {
-    await patchRoles(await login('s1'), 'teacher', { roles: [Role.TEACHER, Role.STUDENT] });
+    const actor = await login('s1');
+    await patchRoles(actor, 'teacher', { roles: [Role.TEACHER, Role.STUDENT] }).expect(400);
+    await patchRoles(actor, 'teacher', { roles: [Role.TEACHER, Role.STUDENT], dateOfBirth: '2015-03-04' }).expect(400);
+    await patchRoles(actor, 'teacher', { roles: [Role.TEACHER, Role.STUDENT], dateOfBirth: '1997-03-04' }).expect(200);
     const account = await loadUser('teacher');
-    expect(account.roles.includes(Role.STUDENT) && account.studentProfile === null).toBe(false);
+    expect(account.roles).toContain(Role.STUDENT);
+    expect(account.studentProfile?.dateOfBirth.toISOString().slice(0, 10)).toBe('1997-03-04');
   });
 
   it('preserves the role-to-enrollment invariant when removing STUDENT', async () => {

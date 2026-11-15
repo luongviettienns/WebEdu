@@ -25,6 +25,8 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
   let findFirstMock: ReturnType<typeof vi.fn>;
   let classUpdateMock: ReturnType<typeof vi.fn>;
   let changeLogCreateMock: ReturnType<typeof vi.fn>;
+  let changeLogCreateManyMock: ReturnType<typeof vi.fn>;
+  let sessionUpdateManyMock: ReturnType<typeof vi.fn>;
   let queryRawMock: ReturnType<typeof vi.fn>;
   let executeRawMock: ReturnType<typeof vi.fn>;
   let tx: Prisma.TransactionClient;
@@ -37,6 +39,8 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
     findFirstMock = vi.fn().mockResolvedValue({ sessionDate: new Date('2026-11-16T00:00:00.000Z') });
     classUpdateMock = vi.fn().mockResolvedValue({});
     changeLogCreateMock = vi.fn().mockResolvedValue({});
+    changeLogCreateManyMock = vi.fn().mockResolvedValue({ count: 1 });
+    sessionUpdateManyMock = vi.fn().mockResolvedValue({ count: 1 });
     queryRawMock = vi.fn().mockResolvedValue([]);
     executeRawMock = vi.fn().mockResolvedValue(1);
 
@@ -48,9 +52,11 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
         deleteMany: deleteManyMock,
         findMany: findManyMock,
         findFirst: findFirstMock,
+        updateMany: sessionUpdateManyMock,
       },
       sessionChangeLog: {
         create: changeLogCreateMock,
+        createMany: changeLogCreateManyMock,
       },
       class: {
         update: classUpdateMock,
@@ -126,8 +132,37 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
     expect(changeLogCreateMock).not.toHaveBeenCalled();
   });
 
-  it('preserves COMPLETED/CANCELLED/RESCHEDULED sessions and deletes only untouched SCHEDULED regular sessions', async () => {
+  it('preserves history and holidays, cancels linked future sessions, and deletes untouched future sessions', async () => {
+    const regularSession = {
+      type: SessionType.REGULAR,
+      status: SessionStatus.SCHEDULED,
+      startTime: '18:00',
+      endTime: '19:30',
+      isRescheduled: false,
+      isMakeup: false,
+      cancelReason: null,
+      makeupReplacement: null,
+      _count: { attendanceRecords: 0, attendanceAudits: 0, classAssignments: 0, changeLogs: 0 },
+    };
     findManyMock.mockResolvedValue([
+      {
+        ...regularSession,
+        id: 'sess-past',
+        sessionDate: new Date('2026-11-03T00:00:00.000Z'),
+      },
+      {
+        ...regularSession,
+        id: 'sess-holiday',
+        status: SessionStatus.CANCELLED,
+        sessionDate: new Date('2026-11-05T00:00:00.000Z'),
+        cancelReason: 'Nghỉ lễ',
+      },
+      {
+        ...regularSession,
+        id: 'sess-linked',
+        sessionDate: new Date('2026-11-09T00:00:00.000Z'),
+        _count: { ...regularSession._count, classAssignments: 1, changeLogs: 1 },
+      },
       {
         id: 'sess-completed',
         type: SessionType.REGULAR,
@@ -137,6 +172,9 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
         endTime: '19:30',
         isRescheduled: false,
         isMakeup: false,
+        cancelReason: null,
+        makeupReplacement: null,
+        _count: { attendanceRecords: 0, attendanceAudits: 0, classAssignments: 0, changeLogs: 0 },
       },
       {
         id: 'sess-rescheduled',
@@ -147,6 +185,9 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
         endTime: '20:00',
         isRescheduled: true,
         isMakeup: false,
+        cancelReason: null,
+        makeupReplacement: null,
+        _count: { attendanceRecords: 0, attendanceAudits: 0, classAssignments: 0, changeLogs: 0 },
       },
       {
         id: 'sess-untouched',
@@ -157,12 +198,16 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
         endTime: '19:30',
         isRescheduled: false,
         isMakeup: false,
+        cancelReason: null,
+        makeupReplacement: null,
+        _count: { attendanceRecords: 0, attendanceAudits: 0, classAssignments: 0, changeLogs: 0 },
       },
     ]);
 
     const result = await service.reconcileRecurringSessionsAfterRuleUpdate(tx, makeAdminActor(), {
       classId: 'class-1',
       classCode: 'HSK1-K26-01',
+      now: new Date('2026-11-04T03:00:00Z'),
       previousRule: {
         startDate: new Date('2026-11-02T00:00:00.000Z'),
         scheduleDays: [1, 3, 5],
@@ -176,19 +221,25 @@ describe('SessionGeneratorService (TDD Slice 4.1)', () => {
         scheduleDays: [2, 4], // T3 - T5 (Nov 3, Nov 5, Nov 10, Nov 12...)
         scheduleStartTime: '18:30',
         scheduleEndTime: '20:00',
-        totalSessions: 4,
+        totalSessions: 5,
       },
     });
 
     expect(deleteManyMock).toHaveBeenCalledWith({
       where: { id: { in: ['sess-untouched'] } },
     });
-    expect(result.regeneratedCount).toBe(2); // 4 total - 2 preserved active = 2 needed
+    expect(sessionUpdateManyMock).toHaveBeenCalledWith({
+      where: { id: { in: ['sess-linked'] } },
+      data: expect.objectContaining({ status: SessionStatus.CANCELLED }),
+    });
+    expect(changeLogCreateManyMock).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ sessionId: 'sess-linked', action: SessionChangeAction.CANCEL })],
+    });
+    expect(result.regeneratedCount).toBe(2);
     const inserted = createManyMock.mock.calls[0]![0].data as Array<{ sessionDate: Date }>;
-    // After completed 2026-11-02 -> day after is 2026-11-03 (Tue), skips 2026-11-12 (already overlapped with rescheduled 18:30-20:00)
     expect(inserted.map((s) => s.sessionDate.toISOString().slice(0, 10))).toEqual([
-      '2026-11-03',
-      '2026-11-05',
+      '2026-11-10',
+      '2026-11-17',
     ]);
     expect(executeRawMock).toHaveBeenCalledTimes(2);
     expect(changeLogCreateMock).toHaveBeenCalledWith(

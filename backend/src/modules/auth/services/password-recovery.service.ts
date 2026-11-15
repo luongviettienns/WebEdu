@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import crypto from 'node:crypto';
+import { UserStatus } from '@prisma/client';
 import {
   acquireEmailCooldownOrThrow,
   assertRateLimitNotExceeded,
@@ -86,7 +87,7 @@ export class PasswordRecoveryService {
         where: { email: normalizedEmail },
       });
 
-      if (user) {
+      if (user && user.status !== UserStatus.INACTIVE) {
         const rawToken = crypto.randomBytes(32).toString('hex');
         const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
         const expiresAt = new Date(nowMs + RESET_TOKEN_TTL_MS);
@@ -95,6 +96,7 @@ export class PasswordRecoveryService {
           data: {
             userId: user.id,
             tokenHash,
+            tokenVersion: user.tokenVersion,
             expiresAt,
           },
         });
@@ -163,9 +165,12 @@ export class PasswordRecoveryService {
     // Verify token validity BEFORE spending CPU on bcrypt hashing to prevent public CPU DoS
     const existingToken = await this.prisma.passwordResetToken.findUnique({
       where: { tokenHash },
+      include: { user: { select: { tokenVersion: true, status: true } } },
     });
     if (
       !existingToken ||
+      existingToken.tokenVersion !== existingToken.user.tokenVersion ||
+      existingToken.user.status === UserStatus.INACTIVE ||
       existingToken.usedAt !== null ||
       existingToken.expiresAt.getTime() <= now.getTime()
     ) {
@@ -175,11 +180,20 @@ export class PasswordRecoveryService {
     const passwordHash = await hashPassword(newPassword);
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${existingToken.userId} FOR UPDATE`;
+      const currentUser = await tx.user.findUnique({
+        where: { id: existingToken.userId },
+        select: { tokenVersion: true, status: true },
+      });
+      if (!currentUser || currentUser.status === UserStatus.INACTIVE ||
+        currentUser.tokenVersion !== existingToken.tokenVersion) {
+        throw new BadRequestException('Link đã hết hạn, vui lòng gửi lại');
+      }
       const consumed = await tx.passwordResetToken.updateMany({
         where: {
           tokenHash,
           usedAt: null,
-          expiresAt: { gt: now },
+          expiresAt: { gt: new Date() },
         },
         data: {
           usedAt: now,

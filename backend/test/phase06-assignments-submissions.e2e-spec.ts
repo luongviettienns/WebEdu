@@ -609,10 +609,19 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     expect('reopenReason' in attempt2Body.submission).toBe(false);
     expect(attempt2Body.answers.length).toBeGreaterThanOrEqual(4);
 
+    await studentClient
+      .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
+      .send({ submissionId: firstSubmissionId })
+      .expect(409);
+    await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({ submissionId: firstSubmissionId, answers: [], elapsedSeconds: 1 })
+      .expect(409);
     // Student edits and submits Attempt #2
     await studentClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
       .send({
+        submissionId: attempt2Body.submission.id,
         elapsedSeconds: 120,
         remainingSeconds: 1680,
         answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['b'] } }],
@@ -729,6 +738,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
+        submissionId: reopenedSub.id,
         elapsedSeconds: 45,
         remainingSeconds: 1755,
         answers: [{ questionId: questionIds.fill, answerPayload: { text: '是' } }],
@@ -736,7 +746,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       .expect(200);
     await studentClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
-      .send({ elapsedSeconds: 60, remainingSeconds: 1740 })
+      .send({ submissionId: reopenedSub.id, elapsedSeconds: 60, remainingSeconds: 1740 })
       .expect(200);
 
     // Student B still sees isOverdue=true and receives 400 on POST /start

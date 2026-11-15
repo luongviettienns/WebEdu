@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 82-endpoint inventory through Phase 6 (`docs/test-inventory-api.md`).
+ * Canonical 87-endpoint inventory through Phase 7 Slices 7.1–7.2.
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -54,13 +54,16 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'POST', path: '/api/v1/students/:id/assign-initial-class', isPublic: false },
   { method: 'GET', path: '/api/v1/students/:id/learning-records', isPublic: false },
   { method: 'GET', path: '/api/v1/students/:id/class-history', isPublic: false },
-  // SystemSettingsController (6)
+  // SystemSettingsController (9)
   { method: 'GET', path: '/api/v1/system-settings/users', isPublic: false },
   { method: 'POST', path: '/api/v1/system-settings/users', isPublic: false },
   { method: 'PATCH', path: '/api/v1/system-settings/users/:id/roles', isPublic: false },
   { method: 'GET', path: '/api/v1/system-settings/config', isPublic: true },
   { method: 'PUT', path: '/api/v1/system-settings/config', isPublic: false },
   { method: 'GET', path: '/api/v1/system-settings/audit-logs', isPublic: false },
+  { method: 'GET', path: '/api/v1/system-settings/ai-grading', isPublic: false },
+  { method: 'PUT', path: '/api/v1/system-settings/ai-grading', isPublic: false },
+  { method: 'POST', path: '/api/v1/system-settings/ai-grading/test', isPublic: false },
   // CoursesController (3)
   { method: 'GET', path: '/api/v1/courses', isPublic: false },
   { method: 'POST', path: '/api/v1/courses', isPublic: false },
@@ -119,6 +122,19 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'GET', path: '/api/v1/assignments/:assignmentId/submissions/me', isPublic: false },
   { method: 'GET', path: '/api/v1/assignments/:assignmentId/media/:mediaId', isPublic: false },
   { method: 'POST', path: '/api/v1/submissions/:submissionId/reopen', isPublic: false },
+  // GradingController (12 — Phase 7 Slices 7.1–7.4 + Batch AI)
+  { method: 'GET', path: '/api/v1/assignments/:assignmentId/grading-tracker', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/overdue-zero', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/ai-grade', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/confirm-grades', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/publish-grades', isPublic: false },
+  { method: 'GET', path: '/api/v1/assignments/:assignmentId/published-result', isPublic: false },
+  { method: 'GET', path: '/api/v1/submissions/:submissionId/grading-detail', isPublic: false },
+  { method: 'POST', path: '/api/v1/submissions/:submissionId/auto-grade', isPublic: false },
+  { method: 'POST', path: '/api/v1/submissions/:submissionId/ai-grade', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/submissions/:submissionId/manual-grade', isPublic: false },
+  { method: 'POST', path: '/api/v1/submissions/:submissionId/confirm-grade', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/submissions/:submissionId/adjust-grade', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -212,7 +228,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(82);
+    expect(actualRoutes).toHaveLength(97);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -459,6 +475,9 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'patch', url: `/api/v1/system-settings/users/${pureSuperadmin.id}/roles` },
       { method: 'put', url: '/api/v1/system-settings/config' },
       { method: 'get', url: '/api/v1/system-settings/audit-logs' },
+      { method: 'get', url: '/api/v1/system-settings/ai-grading' },
+      { method: 'put', url: '/api/v1/system-settings/ai-grading' },
+      { method: 'post', url: '/api/v1/system-settings/ai-grading/test' },
       { method: 'get', url: '/api/v1/courses' },
       { method: 'post', url: '/api/v1/courses' },
       { method: 'patch', url: `/api/v1/courses/${course.id}` },
@@ -510,6 +529,18 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'get', url: `/api/v1/assignments/${nilId}/submissions/me` },
       { method: 'get', url: `/api/v1/assignments/${nilId}/media/${nilId}` },
       { method: 'post', url: `/api/v1/submissions/${nilId}/reopen` },
+      { method: 'get', url: `/api/v1/assignments/${nilId}/grading-tracker` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/overdue-zero` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/ai-grade` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/confirm-grades` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/publish-grades` },
+      { method: 'get', url: `/api/v1/assignments/${nilId}/published-result` },
+      { method: 'get', url: `/api/v1/submissions/${nilId}/grading-detail` },
+      { method: 'post', url: `/api/v1/submissions/${nilId}/auto-grade` },
+      { method: 'post', url: `/api/v1/submissions/${nilId}/ai-grade` },
+      { method: 'patch', url: `/api/v1/submissions/${nilId}/manual-grade` },
+      { method: 'post', url: `/api/v1/submissions/${nilId}/confirm-grade` },
+      { method: 'patch', url: `/api/v1/submissions/${nilId}/adjust-grade` },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -545,6 +576,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       `/api/v1/classes/${activeClass.id}`,
       '/api/v1/system-settings/users',
       '/api/v1/system-settings/audit-logs',
+      '/api/v1/system-settings/ai-grading',
       '/api/v1/assessments',
     ]) {
       const res = await request(server)
@@ -565,6 +597,17 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     for (const ep of [
       { method: 'get' as const, url: `/api/v1/assignments/${nilId}/submissions` },
       { method: 'post' as const, url: `/api/v1/submissions/${nilId}/reopen` },
+      { method: 'get' as const, url: `/api/v1/assignments/${nilId}/grading-tracker` },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/overdue-zero` },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/ai-grade` },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/confirm-grades` },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/publish-grades` },
+      { method: 'get' as const, url: `/api/v1/submissions/${nilId}/grading-detail` },
+      { method: 'post' as const, url: `/api/v1/submissions/${nilId}/auto-grade` },
+      { method: 'post' as const, url: `/api/v1/submissions/${nilId}/ai-grade` },
+      { method: 'patch' as const, url: `/api/v1/submissions/${nilId}/manual-grade` },
+      { method: 'post' as const, url: `/api/v1/submissions/${nilId}/confirm-grade` },
+      { method: 'patch' as const, url: `/api/v1/submissions/${nilId}/adjust-grade` },
     ]) {
       const res = await request(server)
         [ep.method](ep.url)
@@ -583,6 +626,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .expect(200);
     for (const ep of [
       { method: 'get' as const, url: '/api/v1/assignments/me' },
+      { method: 'get' as const, url: `/api/v1/assignments/${nilId}/published-result` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/submissions/start` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/submissions/submit` },
     ]) {
@@ -694,6 +738,29 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .set('Authorization', `Bearer ${saToken}`)
       .send({ classNameOrId: 'HSK2-A' })
       .expect(403);
+    await request(server)
+      .get(`/api/v1/assignments/${nilId}/grading-tracker`)
+      .set('Authorization', `Bearer ${saToken}`)
+      .expect(403);
+    await request(server)
+      .post(`/api/v1/assignments/${nilId}/publish-grades`)
+      .set('Authorization', `Bearer ${saToken}`)
+      .send({})
+      .expect(403);
+    await request(server)
+      .post(`/api/v1/submissions/${nilId}/auto-grade`)
+      .set('Authorization', `Bearer ${saToken}`)
+      .expect(403);
+    await request(server)
+      .post(`/api/v1/submissions/${nilId}/ai-grade`)
+      .set('Authorization', `Bearer ${saToken}`)
+      .send({})
+      .expect(403);
+    await request(server)
+      .post(`/api/v1/assignments/${nilId}/ai-grade`)
+      .set('Authorization', `Bearer ${saToken}`)
+      .send({})
+      .expect(403);
 
     // Pure SUPERADMIN can view student identity but internalNotes is masked to null & classHistory is empty
     const saStudentView = await request(server)
@@ -747,12 +814,26 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ centerName: 'Hacked Center' })
       .expect(403);
+    await request(server)
+      .get('/api/v1/system-settings/ai-grading')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+    await request(server)
+      .put('/api/v1/system-settings/ai-grading')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ enabled: true, provider: 'OPENAI' })
+      .expect(403);
+    await request(server)
+      .post('/api/v1/system-settings/ai-grading/test')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ provider: 'OPENAI' })
+      .expect(403);
 
     // 6. INACTIVE status (403) & Revoked token on ACTIVE account (401)
     await request(server)
       .patch(`/api/v1/system-settings/users/${studentPending.id}/roles`)
       .set('Authorization', `Bearer ${saToken}`)
-      .send({ status: UserStatus.INACTIVE })
+      .send({ expectedRevision: 0, status: UserStatus.INACTIVE })
       .expect(200);
 
     // INACTIVE account immediately receives 403 Forbidden in JwtAuthGuard

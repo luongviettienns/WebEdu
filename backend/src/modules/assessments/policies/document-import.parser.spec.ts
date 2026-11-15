@@ -23,6 +23,17 @@ C. 明天
 `;
 
 describe('document-import.parser (Task 5.3 TDD)', () => {
+  it.each([
+    ['1,25', 1.25, false],
+    ['1000', 1000, false],
+    ['1001', 1, true],
+    ['0.33', 1, true],
+    ['9'.repeat(309), 1, true],
+  ])('imports a points line of %s with the same bounds as question editing', (raw, points, needsReview) => {
+    const parsed = parseImportedQuestions(`Câu 1. 你好吗？\nA. 我很好\nB. 再见\nĐáp án: A\nĐiểm: ${raw}`);
+    expect(parsed).toEqual([expect.objectContaining({ prompt: '你好吗？', points, needsReview })]);
+  });
+
   it('parses three single-choice questions and flags missing answers', () => {
     const parsed = parseImportedQuestions(FIXTURE);
     expect(parsed).toHaveLength(3);
@@ -47,6 +58,12 @@ describe('document-import.parser (Task 5.3 TDD)', () => {
     expect(text).toContain('看图 nǐ hǎo');
     expect(images).toHaveLength(1);
     expect(images[0]?.mime).toBe('image/png');
+  });
+
+  it('requires review when any labeled correct option does not exist', () => {
+    const [question] = parseImportedQuestions('1. Chọn đáp án đúng\nA. 你好\nB. 谢谢\nĐáp án: A, D');
+    expect(question?.needsReview).toBe(true);
+    expect(question?.payload).toMatchObject({ correctOptionIds: [] });
   });
 
   it('accepts 1. numbering, inline A/B/C, skips headers, and maps answer text', () => {

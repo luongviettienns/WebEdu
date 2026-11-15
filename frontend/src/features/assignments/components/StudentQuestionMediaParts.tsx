@@ -133,7 +133,7 @@ export function StudentListeningBody({
             controlsList="nodownload"
             preload="none"
             crossOrigin="use-credentials"
-            src={getAssignmentMediaUrl(assignmentId, question.mediaId)}
+            src={getAssignmentMediaUrl(assignmentId, question.mediaId, question.id)}
             className="w-full"
             onPlay={(e) => {
               if (!readOnly && isLimitReached) {

@@ -23,6 +23,7 @@ export function CreateSystemUserModal({
   const [newEmail, setNewEmail] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
   const [newRoles, setNewRoles] = useState<Role[]>(['ADMIN']);
   const [createError, setCreateError] = useState<string>('');
   const [creating, setCreating] = useState<boolean>(false);
@@ -65,6 +66,10 @@ export function CreateSystemUserModal({
       return;
     }
 
+    if (newRoles.includes('STUDENT') && !dateOfBirth) {
+      setCreateError('Vui lòng nhập ngày sinh của học viên');
+      return;
+    }
     setCreating(true);
     try {
       await createSystemUser({
@@ -73,6 +78,7 @@ export function CreateSystemUserModal({
         phone: trimmedPhone,
         initialPassword: newPassword,
         roles: newRoles,
+        ...(newRoles.includes('STUDENT') ? { dateOfBirth } : {}),
         status: 'ACTIVE',
       });
       onSuccess();
@@ -199,6 +205,14 @@ export function CreateSystemUserModal({
               ))}
             </div>
           </div>
+
+          {newRoles.includes('STUDENT') && (
+            <label className="block text-sm font-medium">
+              Ngày sinh học viên
+              <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-[var(--line)] px-3 py-2" />
+            </label>
+          )}
 
           <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
             <button

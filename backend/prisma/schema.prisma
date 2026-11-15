@@ -160,6 +160,7 @@ model User {
   studentSubmissions        Submission[]             @relation("StudentSubmissions")
   gradedSubmissions         Submission[]             @relation("GradedSubmissions")
   reopenedSubmissions       SubmissionReopenLog[]    @relation("SubmissionReopener")
+  actedGradeAuditLogs       GradeAuditLog[]          @relation("GradeAuditActor")
 
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -227,6 +228,7 @@ model PasswordResetToken {
   id        String    @id @default(uuid())
   userId    String    @map("user_id")
   tokenHash String    @unique @map("token_hash") @db.VarChar(128)
+  tokenVersion Int?   @map("token_version")
   expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
   usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -616,6 +618,7 @@ model Submission {
   gradedAt          DateTime?        @map("graded_at") @db.Timestamptz(3)
   gradedById        String?          @map("graded_by_id")
   returnedAt        DateTime?        @map("returned_at") @db.Timestamptz(3)
+  gradeUpdatedAt    DateTime?        @map("grade_updated_at") @db.Timestamptz(3)
   createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -624,6 +627,7 @@ model Submission {
   gradedBy        User?                 @relation("GradedSubmissions", fields: [gradedById], references: [id], onDelete: SetNull)
   answers         SubmissionAnswer[]
   reopenLogs      SubmissionReopenLog[]
+  gradeAuditLogs  GradeAuditLog[]
 
   @@unique([classAssignmentId, studentId, attemptNumber])
   @@index([studentId, status])
@@ -638,14 +642,17 @@ model SubmissionAnswer {
   answerPayload   Json      @map("answer_payload")
   audioPlayCount  Int       @default(0) @map("audio_play_count")
   lastAudioPlayAt DateTime? @map("last_audio_play_at") @db.Timestamptz(3)
-  isCorrect       Boolean?  @map("is_correct")
-  earnedPoints   Float?   @map("earned_points")
-  aiFeedback     String?  @map("ai_feedback") @db.Text
-  teacherComment String?  @map("teacher_comment") @db.Text
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  isCorrect         Boolean?  @map("is_correct")
+  earnedPoints      Float?    @map("earned_points")
+  aiSuggestedPoints Float?    @map("ai_suggested_points")
+  aiFeedback        String?   @map("ai_feedback") @db.Text
+  teacherComment    String?   @map("teacher_comment") @db.Text
+  teacherEdited     Boolean   @default(false) @map("teacher_edited")
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  question   Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  submission     Submission      @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  gradeAuditLogs GradeAuditLog[]
 
   @@unique([submissionId, questionId])
   @@index([submissionId])
@@ -664,4 +671,23 @@ model SubmissionReopenLog {
 
   @@index([submissionId])
   @@map("submission_reopen_logs")
+}
+
+model GradeAuditLog {
+  id           String   @id @default(uuid())
+  submissionId String   @map("submission_id")
+  answerId     String?  @map("answer_id")
+  actorId      String   @map("actor_id")
+  oldScore     Float    @map("old_score")
+  newScore     Float    @map("new_score")
+  reason       String   @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  submission Submission        @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  answer     SubmissionAnswer? @relation(fields: [answerId], references: [id], onDelete: SetNull)
+  actor      User              @relation("GradeAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([submissionId, createdAt])
+  @@index([answerId])
+  @@map("grade_audit_logs")
 }

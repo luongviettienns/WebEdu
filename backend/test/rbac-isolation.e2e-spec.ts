@@ -481,7 +481,7 @@ describe('RBAC, Multi-Tenant IDOR, DEC-024/025/026 & Superadmin Isolation (e2e â
       .patch(`/api/v1/system-settings/users/${IDS.superadmin1}/roles`)
       .set('Cookie', adminSession.cookiePair)
       .set('Origin', 'http://localhost:3000')
-      .send({ status: UserStatus.INACTIVE })
+      .send({ expectedRevision: 0, status: UserStatus.INACTIVE })
       .expect(403);
 
     await request(harness.app.getHttpServer())
@@ -512,14 +512,14 @@ describe('RBAC, Multi-Tenant IDOR, DEC-024/025/026 & Superadmin Isolation (e2e â
       .patch(`/api/v1/system-settings/users/${IDS.saTeacher}/roles`)
       .set('Cookie', sa1Session.cookiePair)
       .set('Origin', 'http://localhost:3000')
-      .send({ status: UserStatus.INACTIVE })
+      .send({ expectedRevision: 0, status: UserStatus.INACTIVE })
       .expect(200);
 
     await request(harness.app.getHttpServer())
       .patch(`/api/v1/system-settings/users/${IDS.saStudent}/roles`)
       .set('Cookie', sa1Session.cookiePair)
       .set('Origin', 'http://localhost:3000')
-      .send({ status: UserStatus.INACTIVE })
+      .send({ expectedRevision: 0, status: UserStatus.INACTIVE })
       .expect(200);
 
     const sa2Session = await loginSession('sa.2@webedu.vn');
@@ -529,12 +529,12 @@ describe('RBAC, Multi-Tenant IDOR, DEC-024/025/026 & Superadmin Isolation (e2e â
         .patch(`/api/v1/system-settings/users/${IDS.superadmin2}/roles`)
         .set('Cookie', sa1Session.cookiePair)
         .set('Origin', 'http://localhost:3000')
-        .send({ status: UserStatus.INACTIVE }),
+        .send({ expectedRevision: 0, status: UserStatus.INACTIVE }),
       request(harness.app.getHttpServer())
         .patch(`/api/v1/system-settings/users/${IDS.superadmin1}/roles`)
         .set('Cookie', sa2Session.cookiePair)
         .set('Origin', 'http://localhost:3000')
-        .send({ status: UserStatus.INACTIVE }),
+        .send({ expectedRevision: 0, status: UserStatus.INACTIVE }),
     ]);
 
     const okResponses = [res1, res2].filter((r) => r.status === 200);

@@ -11,6 +11,7 @@ import {
   extractTokens,
   hasUsableOptionContent,
   isAnswerNonEmpty,
+  isMultipleChoiceOptionPayload,
   isRecord,
   matchesSequence,
   shuffleOptionsDeterministically,
@@ -73,9 +74,15 @@ export class SubmissionAnswerPolicy {
       case QuestionType.LISTENING:
       case QuestionType.IMAGE_BASED: {
         const rawOptions = extractOptions(p);
-        const options = hasUsableOptionContent(rawOptions)
+        const hasOptions = hasUsableOptionContent(rawOptions);
+        const options = hasOptions
           ? shuffleOptionsDeterministically(rawOptions, `${seedKey}:${question.id}:options`)
           : undefined;
+        const multiple = hasOptions
+          ? isMultipleChoiceOptionPayload(p)
+          : typeof p.multiple === 'boolean'
+            ? p.multiple
+            : undefined;
         return {
           ...base,
           ...(typeof p.mediaId === 'string' && p.mediaId.trim() ? { mediaId: p.mediaId } : {}),
@@ -85,7 +92,7 @@ export class SubmissionAnswerPolicy {
           ...(question.type === QuestionType.IMAGE_BASED && typeof p.caption === 'string'
             ? { caption: p.caption }
             : {}),
-          ...(typeof p.multiple === 'boolean' ? { multiple: p.multiple } : {}),
+          ...(multiple !== undefined ? { multiple } : {}),
           ...(options ? { options } : {}),
         };
       }
@@ -160,7 +167,11 @@ export class SubmissionAnswerPolicy {
       case QuestionType.IMAGE_BASED: {
         const options = extractOptions(questionPayload);
         return hasUsableOptionContent(options)
-          ? this.validateOptionSelection(options, answerPayload, questionPayload.multiple === true)
+          ? this.validateOptionSelection(
+              options,
+              answerPayload,
+              isMultipleChoiceOptionPayload(questionPayload),
+            )
           : this.validateTextAnswer(answerPayload, DEFAULT_MAX_TEXT_LENGTH);
       }
     }

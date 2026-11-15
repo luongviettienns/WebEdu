@@ -9,6 +9,13 @@ import {
   uploadMedia,
   type AssessmentType,
 } from '@/features/assessments/api/assessments.api';
+import {
+  getFileExtension,
+  MAX_DOC_BYTES,
+  parseOptionalDuration,
+  validateExtraFile,
+  WordTemplateGuideModal,
+} from '@/features/assessments/components/WordTemplateGuideModal';
 import { extractErrorMessage } from '@/lib/api-client';
 
 const FIELD =
@@ -16,40 +23,6 @@ const FIELD =
 
 const STEPS = ['1 · Tải lên', '2 · Phân tích', '3 · Hoàn tất'] as const;
 type Step = 'idle' | 'up' | 'parse' | 'done' | 'err';
-const MAX_DOC_BYTES = 20 * 1024 * 1024;
-const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a']);
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg']);
-
-function getFileExtension(name: string): string {
-  return name.split('.').pop()?.toLowerCase() ?? '';
-}
-
-function validateExtraFile(file: File): string | null {
-  const ext = getFileExtension(file.name);
-  if (IMAGE_EXTS.has(ext)) {
-    return file.size > 0 && file.size <= MAX_IMAGE_BYTES
-      ? null
-      : `Ảnh "${file.name}" phải khác rỗng và không vượt quá 5MB`;
-  }
-  if (AUDIO_EXTS.has(ext)) {
-    return file.size > 0 && file.size <= MAX_AUDIO_BYTES
-      ? null
-      : `Audio "${file.name}" phải khác rỗng và không vượt quá 20MB`;
-  }
-  return `File đính kèm "${file.name}" chỉ hỗ trợ ảnh (.png, .jpg, .jpeg) hoặc audio (.mp3, .wav, .m4a)`;
-}
-
-function parseOptionalDuration(raw: string): { valid: boolean; value?: number; error?: string } {
-  const trimmed = raw.trim();
-  if (!trimmed) return { valid: true };
-  const num = Number(trimmed);
-  if (!Number.isInteger(num) || num < 1 || num > 1440) {
-    return { valid: false, error: 'Thời gian làm bài phải là số nguyên từ 1 đến 1440 phút' };
-  }
-  return { valid: true, value: num };
-}
 
 export function ImportUploadPane({
   courses,
@@ -73,6 +46,7 @@ export function ImportUploadPane({
   const [summary, setSummary] = useState('');
   const [assessmentId, setAssessmentId] = useState('');
   const [fileName, setFileName] = useState('');
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const selectedCourseId = courseId || courses[0]?.id || '';
   const stepIdx = step === 'up' ? 0 : step === 'parse' ? 1 : step === 'done' ? 2 : -1;
@@ -165,11 +139,20 @@ export function ImportUploadPane({
       <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
         ← Danh sách đề
       </button>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-bold">Tải đề Word/PDF</h2>
-        <a href="/templates/mau-de-import.docx" download className="text-sm font-semibold text-[var(--blue)]">
-          Tải file mẫu Word
-        </a>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setGuideOpen(true)}
+            className="rounded-lg border border-[var(--line-2)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--ink-2)] hover:bg-[var(--hover)]"
+          >
+            Xem quy tắc gõ file Word (30 giây)
+          </button>
+          <a href="/templates/mau-de-import.docx" download className="text-sm font-semibold text-[var(--blue)]">
+            Tải file mẫu Word
+          </a>
+        </div>
       </div>
       {error ? (
         <div role="alert" className="rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] px-4 py-3 text-sm text-[var(--red-ink)]">
@@ -191,7 +174,7 @@ export function ImportUploadPane({
         </select>
         <input className={FIELD} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="Thời gian làm bài (phút)" aria-label="Thời gian làm bài" />
         <label
-          className="md:col-span-2 flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-[var(--line-2)] bg-[var(--surface-2)] px-4 py-8 text-center text-sm"
+          className="md:col-span-2 flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] bg-[var(--surface-2)] px-4 py-8 text-center text-sm hover:border-[var(--blue)] transition-colors"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -208,21 +191,27 @@ export function ImportUploadPane({
               e.target.value = '';
             }}
           />
+          <span className="rounded-full bg-[var(--red-soft)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--red-ink)]">
+            Bước 1 · Chọn file đề gốc (.docx hoặc .pdf)
+          </span>
           <b>{docFile ? docFile.name : 'Kéo thả file vào đây hoặc bấm để chọn'}</b>
-          <span className="text-xs text-[var(--ink-3)]">Dùng file mẫu Word · tối đa 20MB</span>
-          <span className="max-w-xl text-xs text-[var(--ink-3)]">
-            Năm dạng chữ trong mẫu. Audio/ảnh thêm bên dưới, gắn lúc kiểm tra đề. Khẩu ngữ không import.
+          <span className="text-xs text-[var(--ink-2)]">Dùng file mẫu Word · tối đa 20MB</span>
+          <span className="max-w-xl text-xs text-[var(--ink-2)]">
+            Hỗ trợ 5 dạng câu chữ trong mẫu (không dùng PDF ảnh scan). Khẩu ngữ không import.
           </span>
         </label>
-        <div className="md:col-span-2 space-y-2">
-          <div className="text-sm font-medium">Audio / hình ảnh (tuỳ chọn)</div>
+        <div className="md:col-span-2 space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
+          <div className="text-sm font-semibold text-[var(--ink)]">Bước 2 · Đính kèm file Nghe / Hình ảnh (tuỳ chọn)</div>
+          <p className="text-xs text-[var(--ink-2)]">
+            Nếu đề có câu Nghe (.mp3, .wav, .m4a) hoặc Hình (.png, .jpg), bấm chọn thêm tại đây để ghép nhanh ở bước kiểm tra.
+          </p>
           <div className="flex flex-wrap items-center gap-2">
             <input ref={audioRef} type="file" accept=".mp3,.m4a,.wav" className="hidden" aria-label="Thêm audio" multiple
               onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
             <input ref={imageRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" aria-label="Thêm hình" multiple
               onChange={(e) => { appendExtras(e.target.files); e.target.value = ''; }} />
-            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => audioRef.current?.click()}>Thêm audio</button>
-            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm" onClick={() => imageRef.current?.click()}>Thêm hình</button>
+            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm hover:bg-[var(--hover)]" onClick={() => audioRef.current?.click()}>Thêm audio</button>
+            <button type="button" className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-1.5 text-sm hover:bg-[var(--hover)]" onClick={() => imageRef.current?.click()}>Thêm hình</button>
           </div>
           {extras.length > 0 ? (
             <ul className="flex flex-wrap gap-2 text-xs text-[var(--ink-2)]">
@@ -289,6 +278,7 @@ export function ImportUploadPane({
           </div>
         ) : null}
       </div>
+      <WordTemplateGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   );
 }

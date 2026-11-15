@@ -108,6 +108,7 @@ export function buildResolvedSessionSnapshot(
 export function buildSyncPayload(snap: ExamSnapshotLike): AutosavePayload {
   const serverQuestionIds = new Set((snap.session?.answers ?? []).map((ans) => ans.questionId));
   return {
+    submissionId: snap.session?.submission.id,
     answers: toAutosaveAnswerItems(
       snap.session?.questions ?? [],
       snap.answers,
@@ -178,7 +179,7 @@ export function resolveResumeSyncAction(
 export async function fetchExamEntrySession(
   assignmentId: string,
   mode: string | null | undefined,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<{ dto: StudentExamSessionDto; nextMode: 'taking' | 'review' }> {
   if (mode === 'review') {
     const submitted = await getMySubmittedAssignment(assignmentId, { signal });

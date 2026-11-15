@@ -99,6 +99,7 @@ function makeMockDeps() {
       update: vi.fn(async () => ({})),
     },
     submissionAnswer: {
+      findMany: vi.fn(async () => []),
       upsert: vi.fn(async () => ({})),
     },
     submissionReopenLog: {
@@ -585,6 +586,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            submissionId: activeOverrideSub.id,
             answers: [
               { questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } },
               { questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } },
@@ -598,6 +600,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const saved = await service.autosave(
         'assign-1',
         {
+            submissionId: activeOverrideSub.id,
           answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } }],
           elapsedSeconds: 20,
           remainingSeconds: 1780,
@@ -830,7 +833,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         attemptNumber: 2,
         dueAtOverride: new Date(Date.now() + 86_400_000),
       } as never);
-      const overrideSubmit = await service.submit('assign-1', { elapsedSeconds: 220 }, student);
+      const overrideSubmit = await service.submit('assign-1', { submissionId: baseSub.id, elapsedSeconds: 220 }, student);
       expect(overrideSubmit.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
       expect(overrideSubmit.submission.autoSubmitted).toBe(false);
 
@@ -889,6 +892,26 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(view.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
       expect(view.answers).toHaveLength(1);
       expect(JSON.stringify(view.questions)).not.toContain('correctOptionIds');
+    });
+
+    it('charges only the selected question when listening questions share a media file', async () => {
+      const { prisma, tx, service } = makeMockDeps();
+      prisma.classAssignment.findUnique.mockResolvedValue(makeAssignmentRow({
+        questions: ['q-a', 'q-b'].map((id, position) => ({
+          id, position, type: QuestionType.LISTENING, prompt: 'Nghe', points: 1,
+          payload: { mediaId: 'shared-audio', maxListens: 1 },
+        })),
+      }) as never);
+      tx.submission.findFirst.mockResolvedValue({
+        id: 'sub-1', status: SubmissionStatus.IN_PROGRESS,
+        answers: [{ questionId: 'q-a', audioPlayCount: 1 }],
+      } as never);
+      await expect(service.streamAssignmentMedia('assign-1', 'shared-audio', student)).rejects.toThrow(BadRequestException);
+      await service.streamAssignmentMedia('assign-1', 'shared-audio', student, 'q-b');
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledTimes(1);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(expect.objectContaining({
+        where: { submissionId_questionId: { submissionId: 'sub-1', questionId: 'q-b' } },
+      }));
     });
 
     it('streamAssignmentMedia verifies asset metadata, enforces maxListens before reading disk, and streams file', async () => {
@@ -1569,6 +1592,96 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
       expect(finalTickRes.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
       expect(finalTickRes.submission.autoSubmitted).toBe(true);
+    });
+
+    it('awards the exact legacy objective maximum on manual submit and expired auto-submit', async () => {
+      const { prisma, tx, service } = makeMockDeps();
+      const dueAt = new Date(Date.now() + 600_000);
+      prisma.classAssignment.findUnique.mockResolvedValue(
+        makeAssignmentRow({
+          dueAt,
+          questions: [
+            {
+              id: 'q-1',
+              position: 1,
+              type: QuestionType.SINGLE_CHOICE,
+              prompt: 'Chọn đáp án',
+              points: 0.9,
+              payload: { options: [{ id: 'a', text: 'A' }], correctOptionIds: ['a'] },
+            },
+          ],
+        }),
+      );
+      const savedAnswers = [
+        {
+          id: 'ans-1',
+          questionId: 'q-1',
+          answerPayload: { selectedOptionIds: ['a'] },
+          isCorrect: null,
+          earnedPoints: null,
+          teacherEdited: false,
+          audioPlayCount: 0,
+          updatedAt: new Date(),
+        },
+      ];
+      tx.submissionAnswer.findMany.mockResolvedValueOnce(savedAnswers as never);
+      const activeSub = {
+        id: 'sub-obj-1',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        gradingStatus: GradingStatus.NONE,
+        elapsedSeconds: 30,
+        remainingSeconds: 600,
+        startedAt: new Date(Date.now() - 30_000),
+        lastSavedAt: new Date(),
+        lastSyncedAt: new Date(),
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: [],
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
+        ...activeSub,
+        ...args.data,
+        answers: savedAnswers,
+      })) as never);
+
+      await service.submit('assign-1', { elapsedSeconds: 35, remainingSeconds: 595 }, student);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { submissionId_questionId: { submissionId: 'sub-obj-1', questionId: 'q-1' } },
+          update: { isCorrect: true, earnedPoints: 0.9 },
+        }),
+      );
+      expect(tx.submission.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ autoScore: 0.9 }),
+        }),
+      );
+
+      tx.submissionAnswer.upsert.mockClear();
+      tx.submissionAnswer.findMany.mockResolvedValueOnce(savedAnswers as never);
+      const expiredSub = { ...activeSub, id: 'sub-obj-2', remainingSeconds: 0 };
+      tx.submission.findFirst.mockResolvedValueOnce(expiredSub as never);
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
+        ...expiredSub,
+        ...args.data,
+        answers: savedAnswers,
+      })) as never);
+
+      const expiredRes = await service.autosave(
+        'assign-1',
+        { elapsedSeconds: 600, remainingSeconds: 0, answers: [] },
+        student,
+      );
+      expect(expiredRes.submission.autoSubmitted).toBe(true);
+      expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { submissionId_questionId: { submissionId: 'sub-obj-2', questionId: 'q-1' } },
+          update: { isCorrect: true, earnedPoints: 0.9 },
+        }),
+      );
     });
   });
 });

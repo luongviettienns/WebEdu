@@ -95,7 +95,7 @@ function LoginFormContent() {
         <div className="w-full max-w-[420px]">
           {/* Mobile-only Branding Header */}
           <div className="lg:hidden flex flex-col items-center text-center mb-4">
-            <Link href="/" className="flex items-center gap-2 mb-2">
+            <Link href="/" aria-label={`Trang chủ ${centerName}`} className="flex items-center gap-2 mb-2">
               {centerLogo ? (
                 <Image
                   src={centerLogo}
@@ -106,7 +106,9 @@ function LoginFormContent() {
                   className="h-12 w-12 rounded-lg border border-[var(--line)] bg-white object-contain p-1 shadow-xs"
                 />
               ) : (
-                <div className="seal">TD</div>
+                <div className="seal" aria-hidden="true">
+                  汉
+                </div>
               )}
             </Link>
             <h1 className="text-xl font-bold tracking-tight text-[var(--ink)]">

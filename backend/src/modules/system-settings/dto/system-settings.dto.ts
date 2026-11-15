@@ -1,6 +1,20 @@
-import { IsArray, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Role, UserStatus } from '@prisma/client';
+import type { AiProviderType } from '../../grading/grading.types.js';
+
+export const AI_PROVIDER_VALUES: readonly AiProviderType[] = ['OPENAI', 'GEMINI', 'CUSTOM'];
 
 export class ListSystemUsersQueryDto {
   @ApiPropertyOptional()
@@ -48,6 +62,11 @@ export class CreateSystemUserDto {
   @MaxLength(72)
   initialPassword!: string;
 
+  @ApiPropertyOptional({ example: '1990-01-02' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateOfBirth?: string;
+
   @ApiProperty({ enum: Role, isArray: true, example: [Role.ADMIN] })
   @IsArray()
   @IsEnum(Role, { each: true })
@@ -60,6 +79,16 @@ export class CreateSystemUserDto {
 }
 
 export class UpdateUserRolesStatusDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  expectedRevision?: number;
+
+  @ApiPropertyOptional({ example: '1990-01-02' })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dateOfBirth?: string;
+
   @ApiPropertyOptional({ enum: Role, isArray: true })
   @IsOptional()
   @IsArray()
@@ -118,4 +147,75 @@ export class ListAuditLogsQueryDto {
   @ApiPropertyOptional({ default: 20 })
   @IsOptional()
   limit?: number | string;
+}
+
+export class UpdateAiGradingConfigDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiProperty({ enum: AI_PROVIDER_VALUES, example: 'OPENAI' })
+  @IsEnum(AI_PROVIDER_VALUES)
+  provider!: AiProviderType;
+
+  @ApiPropertyOptional({ example: 'https://api.openai.com/v1' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  baseUrl?: string;
+
+  @ApiPropertyOptional({ example: 'gpt-4o-mini' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  model?: string;
+
+  @ApiPropertyOptional({ description: 'API Key mới (bỏ trống hoặc gửi mask để giữ key cũ)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  apiKey?: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  clearApiKey?: boolean;
+
+  @ApiPropertyOptional({ default: 15000, minimum: 3000, maximum: 60000 })
+  @IsOptional()
+  @IsInt()
+  @Min(3000)
+  @Max(60000)
+  timeoutMs?: number;
+}
+
+export class TestAiGradingConnectionDto {
+  @ApiProperty({ enum: AI_PROVIDER_VALUES, example: 'OPENAI' })
+  @IsEnum(AI_PROVIDER_VALUES)
+  provider!: AiProviderType;
+
+  @ApiPropertyOptional({ example: 'https://api.openai.com/v1' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  baseUrl?: string;
+
+  @ApiPropertyOptional({ example: 'gpt-4o-mini' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(150)
+  model?: string;
+
+  @ApiPropertyOptional({ description: 'Nếu để trống sẽ kiểm tra bằng API Key đã lưu' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  apiKey?: string;
+
+  @ApiPropertyOptional({ default: 15000, minimum: 3000, maximum: 60000 })
+  @IsOptional()
+  @IsInt()
+  @Min(3000)
+  @Max(60000)
+  timeoutMs?: number;
 }

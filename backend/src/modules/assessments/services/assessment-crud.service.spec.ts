@@ -82,6 +82,20 @@ describe('AssessmentCrudService & QuestionCrudService (Task 5.2 TDD)', () => {
     isLocked: false,
   };
 
+  it('does not save a duplicated assessment when a referenced media file could not be copied', async () => {
+    const prisma = makePrisma({
+      assessment: {
+        ...draft,
+        originalStorageKey: null,
+        questions: [{ type: QuestionType.LISTENING, payload: { mediaId: 'missing-audio' } }],
+      },
+      media: [{ id: 'missing-audio', storageKey: 'uploads/media/develop-regression-missing.mp3' }],
+    });
+    const service = new AssessmentCrudService(prisma as never, schemaPolicy);
+    await expect(service.duplicate(draft.id, owner)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.assessment.create).not.toHaveBeenCalled();
+  });
+
   it('publish is blocked while any question needsReview', async () => {
     const state = {
       assessment: {

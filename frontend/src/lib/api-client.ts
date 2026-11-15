@@ -12,17 +12,6 @@ export interface ProblemDetails {
   [key: string]: unknown;
 }
 
-// Backward-compatible alias
-export type ApiErrorResponse = ProblemDetails;
-
-export interface HealthCheckResponse {
-  status: string;
-  service: string;
-  database?: string;
-  timezone: string;
-  timestamp: string;
-}
-
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
 
@@ -104,13 +93,7 @@ export class ApiClientError extends Error {
     this.name = 'ApiClientError';
   }
 
-  get statusCode(): number {
-    return this.status;
-  }
 
-  get errorResponse(): ProblemDetails {
-    return this.problem;
-  }
 }
 
 export async function fetchApi<T>(
@@ -168,10 +151,6 @@ export async function fetchApi<T>(
 }
 
 export const requestJson = fetchApi;
-
-export async function getSystemHealth(): Promise<HealthCheckResponse> {
-  return fetchApi<HealthCheckResponse>('/health');
-}
 
 /**
  * Tùy chọn chung cho các lời gọi API đọc dữ liệu: cho phép hủy request

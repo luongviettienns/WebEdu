@@ -115,8 +115,9 @@ export class AssignmentsController {
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
     @Param('mediaId', ParseUUIDPipe) mediaId: string,
+    @Query('questionId', new ParseUUIDPipe({ optional: true })) questionId?: string,
   ) {
-    return this.submissions.streamAssignmentMedia(assignmentId, mediaId, actor);
+    return this.submissions.streamAssignmentMedia(assignmentId, mediaId, actor, questionId);
   }
 
   @Post('submissions/:submissionId/reopen')

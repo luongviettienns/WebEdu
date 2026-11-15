@@ -79,6 +79,17 @@ describe('Test Database Safety Guard (assertSafeTestDatabaseUrl)', () => {
     ).toThrow(/TEST_DATABASE_URL contains forbidden production\/staging keyword/);
   });
 
+  it('only permits the local development seed when explicitly enabled', () => {
+    const url = 'postgresql://postgres@127.0.0.1:5432/webedu?schema=public';
+    const env = { NODE_ENV: 'development', ALLOW_TEST_DB_TRUNCATE: 'true' };
+    expect(() => assertSafeTestDatabaseUrl(url, env, true)).not.toThrow();
+    expect(() => assertSafeTestDatabaseUrl(url, env)).toThrow(/test.*qa/);
+    expect(() => assertSafeTestDatabaseUrl(url, { NODE_ENV: 'development' }, true)).toThrow();
+    expect(() => assertSafeTestDatabaseUrl(`${validLocalTestUrl}&host=db.example`, {
+      NODE_ENV: 'test',
+    })).toThrow(/target override/);
+  });
+
   it('rejects non-local database hosts and database names without explicit test/qa marker', () => {
     expect(() =>
       assertSafeTestDatabaseUrl(

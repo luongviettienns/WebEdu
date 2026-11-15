@@ -44,9 +44,7 @@ export class ClassEnrollmentService {
           );
         }
 
-        for (const sid of sortedIds) {
-          await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${sid} FOR UPDATE`;
-        }
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id IN (${Prisma.join(sortedIds)}) ORDER BY id ASC FOR UPDATE`;
 
         const users = await tx.user.findMany({
           where: { id: { in: sortedIds } },
@@ -77,19 +75,16 @@ export class ClassEnrollmentService {
           );
         }
 
-        for (const studentId of sortedIds) {
-          const user = userMap.get(studentId)!;
-          await tx.enrollment.create({
-            data: { classId: targetClass.id, studentId, status: EnrollmentStatus.ACTIVE, enrolledDate },
-          });
-          await tx.user.update({ where: { id: studentId }, data: { status: UserStatus.ACTIVE } });
-          if (user.studentProfile) {
-            await tx.studentProfile.update({
-              where: { userId: studentId },
-              data: { assignedClass: targetClass.code, currentClassId: targetClass.id, enrolledAt: enrolledDate },
-            });
-          }
-        }
+        await tx.enrollment.createMany({
+          data: sortedIds.map((studentId) => ({
+            classId: targetClass.id, studentId, status: EnrollmentStatus.ACTIVE, enrolledDate,
+          })),
+        });
+        await tx.user.updateMany({ where: { id: { in: sortedIds } }, data: { status: UserStatus.ACTIVE } });
+        await tx.studentProfile.updateMany({
+          where: { userId: { in: sortedIds } },
+          data: { currentClassId: targetClass.id, assignedClass: targetClass.code, enrolledAt: enrolledDate },
+        });
 
         await writeAuditLog(tx, actor, {
           action: 'CLASS_STUDENTS_ENROLLED',

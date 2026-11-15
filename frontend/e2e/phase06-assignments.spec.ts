@@ -210,6 +210,79 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     await reseedQaDatabase();
   });
 
+  test('an autosave response from a previous attempt cannot replace the reopened exam', async ({ page }) => {
+    await loginThroughUi(page, 'teacher.lan@webedu.vn');
+    const origin = new URL(page.url()).origin;
+    const headers = { Origin: origin };
+    const assessmentId = await seedPublishedHsk2Assessment(page, 'Đề kiểm tra mở lại khi đang lưu');
+    const classesResponse = await page.request.get(`${API_BASE_URL}/classes`);
+    expect(classesResponse.ok()).toBeTruthy();
+    const classes = (await classesResponse.json()) as { items: Array<{ id: string; code: string }> };
+    const classId = classes.items.find(({ code }) => code === 'HSK2-K26-01')!.id;
+    const assigned = await page.request.post(`${API_BASE_URL}/assessments/${assessmentId}/assign`, {
+      headers,
+      data: { classIds: [classId], dueAt: new Date(Date.now() + 3_600_000).toISOString() },
+    });
+    expect(assigned.ok()).toBeTruthy();
+    const { items } = (await assigned.json()) as { items: Array<{ id: string }> };
+    const submissionsUrl = `${API_BASE_URL}/assignments/${items[0]!.id}/submissions`;
+
+    await logoutViaApi(page);
+    await loginThroughUi(page, 'active.student@webedu.vn');
+    const teacher = await playwrightRequest.newContext();
+    let releaseOldResponse = () => {};
+    try {
+      const login = await teacher.post(`${API_BASE_URL}/auth/login`, {
+        headers, data: { email: 'teacher.lan@webedu.vn', password: 'Password@123' },
+      });
+      expect(login.ok()).toBeTruthy();
+      const startedPromise = page.waitForResponse(`${submissionsUrl}/start`);
+      await page.goto(`/student/assignments/${items[0]!.id}`);
+      const started = (await (await startedPromise).json()) as { submission: { id: string } };
+
+      const oldResponseGate = new Promise<void>((resolve) => { releaseOldResponse = resolve; });
+      let signalOldAutosave = () => {};
+      const oldAutosaveSaved = new Promise<void>((resolve) => { signalOldAutosave = resolve; });
+      let holdNextAutosave = true;
+      await page.route(`${submissionsUrl}/autosave`, async (route) => {
+        if (route.request().method() !== 'PATCH' || !holdNextAutosave) return route.continue();
+        holdNextAutosave = false;
+        const response = await route.fetch();
+        expect(response.ok()).toBeTruthy();
+        signalOldAutosave();
+        await oldResponseGate;
+        await route.fulfill({ response });
+      });
+
+      await page.getByRole('radio', { name: /Cảm ơn/i }).check();
+      await oldAutosaveSaved;
+      const submitted = await page.request.post(`${submissionsUrl}/submit`, {
+        headers, data: { submissionId: started.submission.id, answers: [], elapsedSeconds: 10 },
+      });
+      expect(submitted.ok()).toBeTruthy();
+      const reopened = await teacher.post(`${API_BASE_URL}/submissions/${started.submission.id}/reopen`, {
+        headers, data: { reason: 'Kiểm thử mở lại khi phản hồi lưu nháp còn chậm' },
+      });
+      expect(reopened.ok()).toBeTruthy();
+
+      await page.getByRole('radio', { name: /Xin lỗi/i }).check();
+      await expect(page.getByText('Lần làm 2')).toBeVisible();
+
+      const delayedResponse = page.waitForResponse((response) =>
+        response.url() === `${submissionsUrl}/autosave` && response.ok(),
+      );
+      releaseOldResponse();
+      await (await delayedResponse).finished();
+      await page.evaluate(() => new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }));
+      await expect(page.getByText('Lần làm 2')).toBeVisible();
+    } finally {
+      releaseOldResponse();
+      await teacher.dispose();
+    }
+  });
+
   test('Full E2E: assign -> student exam & autosave reload -> no key leaks -> submit -> reopen -> attempt 2 + Axe WCAG', async ({
     page,
   }, testInfo) => {

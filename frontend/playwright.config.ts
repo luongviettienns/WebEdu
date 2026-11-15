@@ -44,9 +44,7 @@ export default defineConfig({
       env: {
         CORS_ORIGIN: `http://localhost:3000,http://localhost:${PORT}`,
         FRONTEND_APP_URL: `http://localhost:${PORT}`,
-        TEST_DATABASE_URL:
-          process.env.TEST_DATABASE_URL ||
-          'postgresql://postgres:123456@127.0.0.1:5432/webedu_test?schema=public',
+        NODE_ENV: 'test',
       },
     },
     {

@@ -301,7 +301,7 @@ export class SessionWorkflowService {
     const target = await tx.lessonSession.findUnique({
       where: { id: sessionId },
       include: {
-        class: { select: { id: true, teacherId: true, status: true } },
+        class: { select: { id: true, teacherId: true, status: true, totalSessions: true } },
         makeupReplacement: { select: { id: true } },
       },
     });

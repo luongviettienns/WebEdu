@@ -186,11 +186,11 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
 
     mockPrisma = {
       $queryRaw: vi.fn(
-        async (strings: TemplateStringsArray, ...values: string[]) => {
+        async (strings: TemplateStringsArray, ...values: Array<string | { values: string[] }>) => {
           const lockedId = values[0] ?? '';
           const sql = strings.join('?');
           if (sql.includes('"users"')) {
-            lockedUserIdsOrder.push(lockedId);
+            lockedUserIdsOrder.push(...(typeof lockedId === 'string' ? [lockedId] : lockedId.values));
           }
           return [{ id: lockedId }];
         },
@@ -357,6 +357,32 @@ describe('ClassEnrollmentService — Student Enrollment, Transfer & Drop Lifecyc
           cb(mockPrisma),
       ),
     };
+
+    const delegates = mockPrisma as {
+      user: { update: (args: unknown) => Promise<unknown> };
+      enrollment: { create: (args: unknown) => Promise<unknown> };
+      studentProfile: { update: (args: unknown) => Promise<unknown> };
+    };
+    Object.assign(delegates.enrollment, {
+      createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+        for (const row of data) await delegates.enrollment.create({ data: row });
+        return { count: data.length };
+      }),
+    });
+    Object.assign(delegates.user, {
+      updateMany: vi.fn(async ({ where, data }: { where: { id: { in: string[] } }; data: unknown }) => {
+        for (const id of where.id.in) await delegates.user.update({ where: { id }, data });
+        return { count: where.id.in.length };
+      }),
+    });
+    Object.assign(delegates.studentProfile, {
+      updateMany: vi.fn(async ({ where, data }: { where: { userId: { in: string[] } }; data: unknown }) => {
+        for (const userId of where.userId.in) {
+          if (usersStore.get(userId)?.studentProfile) await delegates.studentProfile.update({ where: { userId }, data });
+        }
+        return { count: where.userId.in.length };
+      }),
+    });
 
     service = new ClassEnrollmentService(
       mockPrisma as unknown as PrismaService,

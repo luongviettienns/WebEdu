@@ -128,16 +128,17 @@ describe('AttendanceCrudService & AttendanceQueryService (TDD Slice 4.3-4.4)', (
       },
       attendanceRecord: {
         findMany: vi.fn().mockImplementation(async () => attendanceRecords),
-        create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
-          const rec = {
-            id: `att-${attendanceRecords.length + 1}`,
-            ...data,
-            updatedAt: new Date('2026-11-12T12:00:00.000Z'),
-            markedBy: { fullName: teacherActor.fullName },
-            updatedBy: null,
-          };
-          attendanceRecords.push(rec);
-          return rec;
+        createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
+          for (const entry of data) {
+            attendanceRecords.push({
+              id: 'att-' + String(attendanceRecords.length + 1),
+              ...entry,
+              updatedAt: new Date('2026-11-12T12:00:00.000Z'),
+              markedBy: { fullName: teacherActor.fullName },
+              updatedBy: null,
+            });
+          }
+          return { count: data.length };
         }),
         update: vi.fn().mockImplementation(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
           const rec = attendanceRecords.find((r) => r.id === where.id)!;
@@ -361,28 +362,20 @@ describe('AttendanceCrudService & AttendanceQueryService (TDD Slice 4.3-4.4)', (
     ]);
   });
 
-  it('rejects saving > 200 attendance records at both DTO validation and service level', async () => {
-    const overLimitRecords = Array.from({ length: 201 }, (_, idx) => ({
-      studentId: `00000000-0000-4000-8000-${String(idx).padStart(12, '0')}`,
+  it('saves a complete roster of 201 enrolled students in one batch', async () => {
+    const records = Array.from({ length: 201 }, (_, idx) => ({
+      studentId: '00000000-0000-4000-8000-' + String(idx).padStart(12, '0'),
       status: AttendanceStatus.PRESENT,
     }));
+    const dto = plainToInstance(SaveSessionAttendanceDto, { records });
+    expect(await validate(dto)).toEqual([]);
+    const enrollment = mockPrisma.enrollment as { findMany: ReturnType<typeof vi.fn> };
+    enrollment.findMany.mockResolvedValueOnce(records.map(({ studentId }) => ({ studentId })));
 
-    const dto = plainToInstance(SaveSessionAttendanceDto, {
-      records: overLimitRecords,
-    });
-    const errors = await validate(dto);
-    const messages = errors.flatMap((err) => Object.values(err.constraints ?? {}));
-    expect(messages).toContain('Danh sách điểm danh tối đa 200 học viên mỗi lần lưu');
+    await crudService.saveSessionAttendance(teacherActor, 'sess-1', dto);
 
-    await expect(
-      crudService.saveSessionAttendance(teacherActor, 'sess-1', {
-        records: overLimitRecords,
-      }),
-    ).rejects.toThrowError(
-      new BadRequestException('Danh sách điểm danh tối đa 200 học viên mỗi lần lưu'),
-    );
-    expect(
-      mockPrisma.$transaction as ReturnType<typeof vi.fn>,
-    ).not.toHaveBeenCalled();
+    expect(attendanceRecords).toHaveLength(201);
+    const delegate = mockPrisma.attendanceRecord as { createMany: ReturnType<typeof vi.fn> };
+    expect(delegate.createMany).toHaveBeenCalledTimes(1);
   });
 });

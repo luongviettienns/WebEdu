@@ -12,6 +12,7 @@ import {
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { StatusTag } from '@/features/common/components/StatusTag';
+import { isStudentScoreVisible } from '@/features/grading/utils/grading-status';
 import { extractErrorMessage } from '@/lib/api-client';
 import { formatDateTimeVn } from '@/lib/utils/date';
 import type { Role } from '@/types/user';
@@ -107,6 +108,7 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {visibleItems.map((item) => {
             const submitted = isSubmittedAssignmentStatus(item.status);
+            const scorePublished = isStudentScoreVisible(item.status);
             return (
               <article
                 key={item.assignmentId}
@@ -129,6 +131,11 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
                         </StatusTag>
                       ) : null}
                       {item.isOverdue ? <StatusTag tone="red">Quá hạn</StatusTag> : null}
+                      {scorePublished && item.totalScore !== null ? (
+                        <StatusTag tone="jade" dot={false}>
+                          Điểm: {item.totalScore}/{item.totalPoints}
+                        </StatusTag>
+                      ) : null}
                       <StatusTag tone={getAssignmentStatusTone(item.status)}>
                         {item.displayStatusLabel}
                       </StatusTag>
@@ -165,7 +172,7 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
                       href={`/student/assignments/${item.assignmentId}?mode=review`}
                       className="rounded-lg border border-[var(--blue)] bg-white px-3.5 py-2 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--blue-soft)]"
                     >
-                      Xem bài nộp
+                      {scorePublished ? 'Xem kết quả' : 'Xem bài nộp'}
                     </Link>
                   ) : item.isOverdue ? (
                     <button

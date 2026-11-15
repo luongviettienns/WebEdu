@@ -65,9 +65,16 @@ function fisherYatesShuffle<T>(items: readonly T[], seedInput: string, secret?: 
   return shuffled;
 }
 
-function matchesCorrectSentence(candidate: readonly string[], correctSentence?: string): boolean {
-  if (typeof correctSentence !== 'string' || !correctSentence.trim()) return false;
-  return candidate.join('').replace(/\s+/g, '').trim() === correctSentence.replace(/\s+/g, '').trim();
+export function isMultipleChoiceOptionPayload(payload: Record<string, unknown>): boolean {
+  if (payload.multiple === true) return true;
+  if (!Array.isArray(payload.correctOptionIds)) return false;
+  const uniqueCorrectIds = new Set(
+    payload.correctOptionIds
+      .filter((id): id is string => typeof id === 'string')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+  return uniqueCorrectIds.size > 1;
 }
 
 export function shuffleOptionsDeterministically<T>(
@@ -81,30 +88,12 @@ export function shuffleOptionsDeterministically<T>(
 export function shuffleTokensDeterministically(
   tokens: readonly string[],
   seedInput: string,
-  correctSentence?: string,
+  _correctSentence?: string,
   secret?: string,
 ): string[] {
   if (tokens.length < 2) return [...tokens];
-  const shuffled = fisherYatesShuffle(tokens, seedInput, secret);
-  if (new Set(tokens).size < 2) return shuffled;
-
-  const matchesSolution = (seq: readonly string[]): boolean =>
-    matchesSequence(seq, tokens) || matchesCorrectSentence(seq, correctSentence);
-  if (!matchesSolution(shuffled)) return shuffled;
-
-  for (let shift = 1; shift < shuffled.length; shift += 1) {
-    const rotated = [...shuffled.slice(shift), ...shuffled.slice(0, shift)];
-    if (!matchesSolution(rotated)) return rotated;
-  }
-  const diffIdx = shuffled.findIndex((t) => t !== shuffled[0]);
-  if (diffIdx > 0) {
-    const swapped = [...shuffled];
-    [swapped[0], swapped[diffIdx]] = [swapped[diffIdx]!, swapped[0]!];
-    if (!matchesCorrectSentence(swapped, correctSentence)) return swapped;
-  }
-  return !matchesCorrectSentence(shuffled, correctSentence)
-    ? shuffled
-    : [...shuffled.slice(1), shuffled[0]!];
+  const canonicalTokens = [...tokens].sort(compareLex);
+  return fisherYatesShuffle(canonicalTokens, seedInput, secret);
 }
 
 export function isAnswerNonEmpty(answerPayload: unknown): boolean {

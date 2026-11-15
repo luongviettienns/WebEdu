@@ -61,6 +61,9 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Check module size limits
+        run: node scripts/check-loc.js
+
       - name: Generate Prisma Client
         working-directory: backend
         run: npm run prisma:generate

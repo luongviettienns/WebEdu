@@ -337,7 +337,7 @@ describe('SubmissionAnswerPolicy', () => {
       expect(first).toEqual(second);
     });
 
-    it('never emits the original token order or correctSentence when >= 2 distinct tokens exist', () => {
+    it('shuffles 2 distinct tokens deterministically and independently of correctSentence (#6b)', () => {
       const twoTokenQ = {
         id: 'q-ord-2',
         position: 1,
@@ -349,10 +349,22 @@ describe('SubmissionAnswerPolicy', () => {
           correctSentence: '你好',
         },
       };
+      const altAnswerQ = {
+        ...twoTokenQ,
+        payload: {
+          tokens: ['你', '好'],
+          correctSentence: '好你',
+        },
+      };
+      const seenOrders = new Set<string>();
       for (let i = 0; i < 40; i += 1) {
         const res = policy.sanitizeQuestionForStudent(twoTokenQ, `seed-${i}`);
-        expect(res.tokens).toEqual(['好', '你']);
+        const altRes = policy.sanitizeQuestionForStudent(altAnswerQ, `seed-${i}`);
+        expect(res.tokens).toEqual(altRes.tokens);
+        expect([...(res.tokens ?? [])].sort()).toEqual(['你', '好']);
+        seenOrders.add((res.tokens ?? []).join('|'));
       }
+      expect(seenOrders.size).toBe(2);
 
       const threeTokenQ = {
         id: 'q-ord-3',
@@ -365,12 +377,22 @@ describe('SubmissionAnswerPolicy', () => {
           correctSentence: '我是学生',
         },
       };
+      const threeTokenOrders = new Set<string>();
+      const altThreeQ = {
+        ...threeTokenQ,
+        payload: {
+          tokens: ['学生', '是', '我'],
+          correctSentence: '学生是我',
+        },
+      };
       for (let i = 0; i < 40; i += 1) {
         const res = policy.sanitizeQuestionForStudent(threeTokenQ, `seed-${i}`);
-        expect(res.tokens).not.toEqual(['学生', '是', '我']);
-        expect(res.tokens?.join('')).not.toBe('我是学生');
+        const altRes = policy.sanitizeQuestionForStudent(altThreeQ, `seed-${i}`);
+        expect(res.tokens).toEqual(altRes.tokens);
         expect([...(res.tokens ?? [])].sort()).toEqual(['学生', '是', '我'].sort());
+        threeTokenOrders.add((res.tokens ?? []).join('|'));
       }
+      expect(threeTokenOrders.size).toBeGreaterThanOrEqual(3);
     });
 
     it('handles ordering questions with identical tokens without hanging', () => {
@@ -797,6 +819,31 @@ describe('SubmissionAnswerPolicy', () => {
       expect(() =>
         policy.validateStudentAnswer(listeningChoice, { selectedOptionIds: ['a'] }, 0, 1.5),
       ).toThrow(BadRequestException);
+
+      // Issue #7: LISTENING / IMAGE_BASED with >=2 correctOptionIds infers multiple=true consistently
+      const inferredMultiListening = {
+        id: 'q-list-multi-inferred',
+        position: 4,
+        points: 1,
+        prompt: 'Nghe và chọn các đáp án đúng',
+        type: QuestionType.LISTENING,
+        payload: {
+          mediaId: 'audio-multi',
+          options: [
+            { id: 'o1', text: 'Một' },
+            { id: 'o2', text: 'Hai' },
+            { id: 'o3', text: 'Ba' },
+          ],
+          correctOptionIds: ['o1', 'o2'],
+        },
+      };
+      expect(policy.sanitizeQuestionForStudent(inferredMultiListening, 'seed-m').multiple).toBe(true);
+      expect(
+        policy.validateStudentAnswer(inferredMultiListening, { selectedOptionIds: ['o1', 'o2'] }, 0),
+      ).toEqual({
+        normalizedPayload: { selectedOptionIds: ['o1', 'o2'] },
+        nextAudioPlayCount: 0,
+      });
     });
   });
 
