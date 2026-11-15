@@ -25,6 +25,13 @@ export function asStrings(payload: Record<string, unknown>, key: string): string
   return Array.isArray(payload[key]) ? (payload[key] as unknown[]).map((v) => String(v)) : [];
 }
 
+export function splitTeacherLines(raw: string, delim: '|' | '/'): string[] {
+  if (!raw.includes('\n') && raw.includes(delim)) {
+    return raw.split(delim).map((part) => part.trim()).filter(Boolean);
+  }
+  return raw.split('\n').map((part) => part.trim());
+}
+
 export function nextOptionId(options: Array<{ id: string }>): string {
   const used = new Set(options.map((o) => o.id.toLowerCase()));
   for (let code = 97; code <= 122; code += 1) {

@@ -78,6 +78,7 @@ test.describe('Phase 5 — Question bank & import review', () => {
 
     await page.getByLabel('Thời gian làm bài').fill('0');
     await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
+    await page.getByRole('button', { name: 'Tải đề lên' }).click();
     await expect(page.getByText('Thời gian làm bài phải là số nguyên từ 1 đến 1440 phút')).toBeVisible();
     expect(importCalls).toBe(0);
 
@@ -94,6 +95,7 @@ test.describe('Phase 5 — Question bank & import review', () => {
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
     await openUpload(page);
     await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
+    await page.getByRole('button', { name: 'Tải đề lên' }).click();
     await expect(page.getByText('3 · Hoàn tất')).toBeVisible();
     await expect(page.getByText('Nhận diện 3 câu; 1 câu cần kiểm tra')).toBeVisible();
     await page.getByRole('button', { name: 'Kiểm tra đề' }).click();
@@ -170,6 +172,7 @@ test.describe('Phase 5 — Question bank & import review', () => {
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
     await openUpload(page);
     await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(join(FIXTURES, 'sample-questions.docx'));
+    await page.getByRole('button', { name: 'Tải đề lên' }).click();
     await expect(page.getByText('3 · Hoàn tất')).toBeVisible();
     await page.getByRole('button', { name: 'Kiểm tra đề' }).click();
     await expect(page.getByRole('button', { name: 'Phát hành' })).toBeDisabled();

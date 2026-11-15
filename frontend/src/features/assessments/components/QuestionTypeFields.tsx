@@ -9,6 +9,7 @@ import {
   asOptions,
   asStrings,
   removeOptionAt,
+  splitTeacherLines,
   toggleCorrectOption,
   updateOptionField,
   withOptionalPositiveInt,
@@ -57,6 +58,9 @@ export function QuestionTypeFields({
     const multiple = type === 'MULTIPLE_CHOICE';
     return (
       <div className="space-y-2">
+        <p className="text-xs text-[var(--ink-2)]">
+          {multiple ? 'Tích mọi ô vuông là đáp án đúng.' : 'Bấm ô tròn cạnh đáp án đúng.'}
+        </p>
         {options.map((opt, idx) => (
           <label key={opt.id} className="flex items-center gap-2">
             <input
@@ -104,12 +108,13 @@ export function QuestionTypeFields({
     const answers = asStrings(payload, 'acceptedAnswers');
     return hideAnswer ? null : (
       <div className="space-y-2">
+        <p className="text-xs text-[var(--ink-2)]">Mỗi dòng một đáp án. Có thể dán: 您好 | 你好</p>
         <textarea
           className={FIELD}
           rows={3}
           value={answers.join('\n')}
           readOnly={disabled}
-          onChange={(e) => onChange({ ...payload, acceptedAnswers: e.target.value.split('\n') })}
+          onChange={(e) => onChange({ ...payload, acceptedAnswers: splitTeacherLines(e.target.value, '|') })}
           placeholder="Mỗi dòng một đáp án chấp nhận"
           aria-label="Đáp án chấp nhận"
         />
@@ -131,11 +136,12 @@ export function QuestionTypeFields({
     const tokens = asStrings(payload, 'tokens');
     return (
       <div className="space-y-2">
+        <p className="text-xs text-[var(--ink-2)]">Mỗi dòng một mảnh. Có thể dán: 我 / 姓 / 王</p>
         <textarea
           className={FIELD}
           rows={3}
           value={tokens.join('\n')}
-          onChange={(e) => onChange({ ...payload, tokens: e.target.value.split('\n') })}
+          onChange={(e) => onChange({ ...payload, tokens: splitTeacherLines(e.target.value, '/') })}
           placeholder="Mỗi dòng một mảnh từ"
           aria-label="Mảnh từ"
           readOnly={locked}
@@ -146,7 +152,7 @@ export function QuestionTypeFields({
             value={String(payload.correctSentence ?? '')}
             readOnly={disabled}
             onChange={(e) => onChange({ ...payload, correctSentence: e.target.value })}
-            placeholder="Câu đúng"
+            placeholder="Câu đúng sau khi sắp xếp"
             aria-label="Câu đúng"
           />
         )}
@@ -173,7 +179,7 @@ export function QuestionTypeFields({
           value={String(payload.rubric ?? '')}
           readOnly={disabled}
           onChange={(e) => onChange({ ...payload, rubric: e.target.value })}
-          placeholder="Rubric / tiêu chí chấm"
+          placeholder="Tiêu chí chấm (tuỳ chọn)"
           aria-label="Rubric"
         />
         <input
@@ -195,6 +201,7 @@ export function QuestionTypeFields({
   if (type === 'LISTENING') {
     return (
       <div className="space-y-2">
+        <p className="text-xs text-[var(--ink-2)]">Gắn file nghe tại đây. Không ghi tên file trong Word.</p>
         <MediaAttach
           kind="AUDIO"
           value={String(payload.mediaId ?? '')}
