@@ -159,8 +159,8 @@ export function AssessmentQuestionCard({
               <span>Điểm</span>
               <input
                 type="number"
-                min="0.5"
-                step="0.5"
+                min="0.25"
+                step="0.25"
                 className={POINTS_INPUT}
                 value={draft.points}
                 aria-label={`Điểm câu ${index + 1}`}

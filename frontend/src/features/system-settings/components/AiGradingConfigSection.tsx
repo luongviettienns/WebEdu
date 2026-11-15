@@ -133,7 +133,7 @@ export function AiGradingConfigSection({
               type="text"
               value={ai.model}
               onChange={(e) => ai.setModel(e.target.value)}
-              placeholder="gpt-4o-mini / gemini-2.5-flash"
+              placeholder="gpt-6-luna / gemini-3.5-flash-lite"
               className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
             />
           </div>
@@ -162,15 +162,21 @@ export function AiGradingConfigSection({
               value={ai.apiKeyInput}
               onChange={(e) => ai.setApiKeyInput(e.target.value)}
               placeholder={
-                ai.config?.hasApiKey
-                  ? `Đã lưu: ${ai.config.maskedApiKey ?? '••••••••'} (để trống nếu giữ nguyên)`
-                  : 'Nhập API Key...'
+                ai.canReuseStoredKey
+                  ? `Đã lưu: ${ai.config?.maskedApiKey ?? '••••••••'} (để trống nếu giữ nguyên)`
+                  : ai.config?.hasApiKey
+                    ? 'Nhập API Key mới cho Provider/URL mới...'
+                    : 'Nhập API Key...'
               }
               autoComplete="new-password"
               className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none"
             />
             <p className="text-[11px] text-[var(--ink-2)]">
-              Để trống nếu muốn giữ nguyên API Key đã lưu trên hệ thống.
+              {ai.canReuseStoredKey
+                ? 'Để trống nếu muốn giữ nguyên API Key đã lưu trên hệ thống.'
+                : ai.config?.hasApiKey
+                  ? 'Provider hoặc Base URL đã thay đổi — cần nhập API Key mới khi bật hoặc kiểm tra kết nối.'
+                  : 'Nhập API Key của nhà cung cấp AI (được mã hóa trước khi lưu).'}
             </p>
           </div>
 

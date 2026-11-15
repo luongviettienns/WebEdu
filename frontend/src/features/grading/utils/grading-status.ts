@@ -48,23 +48,54 @@ export function getTrackerRowBadge(row: GradingTrackerStudentRowDto): {
   return { label: 'Chưa làm', tone: 'grey' };
 }
 
+export interface SelectedOptionDisplayItem {
+  id: string;
+  letter: string;
+  text: string;
+  imageMediaId: string | null;
+}
+
+function formatOptionLetter(index: number): string {
+  return index >= 0 && index < 26 ? String.fromCharCode(65 + index) : String(index + 1);
+}
+
+export function extractSelectedOptionItems(
+  ids: unknown,
+  questionPayload?: Record<string, unknown> | null,
+): SelectedOptionDisplayItem[] {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const rawOptions = Array.isArray(questionPayload?.options) ? questionPayload.options : [];
+  const optionMap = new Map<string, SelectedOptionDisplayItem>();
+  rawOptions.forEach((opt, idx) => {
+    if (!opt || typeof opt !== 'object' || !('id' in opt)) return;
+    const record = opt as { id?: unknown; text?: unknown; imageMediaId?: unknown };
+    const id = String(record.id);
+    const text = typeof record.text === 'string' ? record.text.trim() : '';
+    const imageMediaId =
+      typeof record.imageMediaId === 'string' && record.imageMediaId.trim()
+        ? record.imageMediaId.trim()
+        : null;
+    optionMap.set(id, { id, letter: formatOptionLetter(idx), text, imageMediaId });
+  });
+
+  return ids.map((rawId) => {
+    const id = String(rawId);
+    return optionMap.get(id) ?? { id, letter: '', text: '', imageMediaId: null };
+  });
+}
+
 export function formatOptionTexts(
   ids: unknown,
   questionPayload?: Record<string, unknown> | null,
 ): string {
-  if (!Array.isArray(ids) || ids.length === 0) return '— (Không chọn)';
-  const rawOptions = Array.isArray(questionPayload?.options) ? questionPayload.options : [];
-  const optionMap = new Map<string, string>();
-  for (const opt of rawOptions) {
-    if (opt && typeof opt === 'object' && 'id' in opt && 'text' in opt) {
-      optionMap.set(String(opt.id), String(opt.text));
-    }
-  }
-  return ids
-    .map((id) => {
-      const key = String(id);
-      const label = optionMap.get(key);
-      return label ? `${label}` : key;
+  const items = extractSelectedOptionItems(ids, questionPayload);
+  if (items.length === 0) return '— (Không chọn)';
+  return items
+    .map((item) => {
+      if (item.letter && item.text) return `${item.letter}. ${item.text}`;
+      if (item.letter && item.imageMediaId) return `${item.letter}. (Hình ảnh)`;
+      if (item.letter) return `Phương án ${item.letter}`;
+      return item.text || item.id;
     })
     .join(', ');
 }

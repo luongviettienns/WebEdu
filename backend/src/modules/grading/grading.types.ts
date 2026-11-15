@@ -108,6 +108,22 @@ export interface AiGradeSubmissionResultDto {
   suggestions: AiEssaySuggestionItemDto[];
 }
 
+export interface AiBatchSuggestGradeItemDto {
+  submissionId: string;
+  ok: boolean;
+  gradingStatus?: GradingStatus;
+  suggestedCount?: number;
+  error?: string;
+}
+
+export interface AiBatchSuggestGradeResultDto {
+  assignmentId: string;
+  requestedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  results: AiBatchSuggestGradeItemDto[];
+}
+
 export interface GradingTrackerSummaryDto {
   totalStudents: number;
   notStartedCount: number;

@@ -74,7 +74,10 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
 
     await page.locator('#ai-cfg-enabled').check();
     await page.locator('#ai-cfg-provider').selectOption('GEMINI');
-    await expect(page.locator('#ai-cfg-model')).toHaveValue('gemini-2.5-flash');
+    await expect(page.locator('#ai-cfg-base-url')).toHaveValue(
+      'https://generativelanguage.googleapis.com/v1beta',
+    );
+    await expect(page.locator('#ai-cfg-model')).toHaveValue('gemini-3.5-flash-lite');
     await page.locator('#ai-cfg-api-key').fill('AIzaSyTestSecretKey987654321');
     await page.locator('#btn-save-ai-cfg').click();
 
@@ -85,6 +88,27 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await expect(page.locator('#ai-cfg-enabled')).toBeChecked();
     await expect(page.locator('#ai-cfg-provider')).toHaveValue('GEMINI');
     await expect(page.locator('#ai-cfg-api-key')).toHaveValue('');
+    await expect(page.locator('#ai-cfg-api-key')).toHaveAttribute(
+      'placeholder',
+      /để trống nếu giữ nguyên/i,
+    );
+
+    // Switching provider clears keep-key hint and blocks Test connection without firing a request (#1)
+    let testRequests = 0;
+    page.on('request', (req) => {
+      if (req.url().includes('/system-settings/ai-grading/test') && req.method() === 'POST') {
+        testRequests += 1;
+      }
+    });
+    await page.locator('#ai-cfg-provider').selectOption('CUSTOM');
+    await page.locator('#ai-cfg-base-url').fill('https://custom.example.com/v1');
+    await expect(page.locator('#ai-cfg-api-key')).not.toHaveAttribute(
+      'placeholder',
+      /để trống nếu giữ nguyên/i,
+    );
+    await page.locator('#btn-test-ai-cfg').click();
+    await expect(page.getByText(/Vui lòng nhập API Key mới/i)).toBeVisible();
+    expect(testRequests).toBe(0);
 
     const publicCfgRes = await page.request.get(`${API_BASE_URL}/system-settings/config`);
     expect(publicCfgRes.ok()).toBeTruthy();
@@ -166,9 +190,9 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
       headers: { Origin: origin },
       data: {
         type: 'ESSAY',
-        prompt: 'Viết 1 câu giới thiệu bản thân bằng tiếng Trung',
+        prompt: 'Viết 1 câu tiếng Trung nói về sở thích đọc sách',
         points: 6,
-        payload: { sampleAnswer: '我叫小明。', rubric: 'Đúng ngữ pháp cơ bản' },
+        payload: { sampleAnswer: '我喜欢看书。', rubric: 'Đúng ngữ pháp cơ bản' },
       },
     });
     expect(q2Res.ok()).toBeTruthy();
@@ -201,7 +225,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
         data: {
           answers: [
             { questionId: q1.id, answerPayload: { selectedOptionIds: ['a'] } },
-            { questionId: q2.id, answerPayload: { text: '我叫范家辉，很高兴认识你。' } },
+            { questionId: q2.id, answerPayload: { text: '我周末喜欢去图书馆看中文书。' } },
           ],
           elapsedSeconds: 45,
         },
@@ -223,6 +247,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await page.goto(`/teacher/assignments/${assignmentId}/grading`);
 
     await expect(page.getByRole('heading', { name: 'Kiểm tra HSK2 Chấm Tự luận E2E' })).toBeVisible();
+    await expect(page.locator('#btn-batch-ai-grade')).toBeVisible();
     await assertZeroSeriousAxe(page, 'teacher-grading-workspace');
 
     const stu1Row = page.locator('tr[data-student-email="active.student@webedu.vn"]');
@@ -233,8 +258,10 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await gradingDialog.locator(`#score-${q2.id}`).fill('5.5');
     await gradingDialog.locator(`#comment-${q2.id}`).fill('Câu viết tự nhiên, đúng ngữ pháp');
     await gradingDialog.locator('#submission-teacher-feedback').fill('Hoàn thành rất tốt!');
+    await expect(gradingDialog.locator('#btn-confirm-submission-grade')).toBeDisabled();
     await gradingDialog.locator('#btn-save-manual-grade').click();
     await expect(gradingDialog.getByText('Đã lưu điểm và nhận xét bài làm.')).toBeVisible();
+    await expect(gradingDialog.locator('#btn-confirm-submission-grade')).toBeEnabled();
 
     await gradingDialog.locator('#btn-confirm-submission-grade').click();
     await expect(gradingDialog.getByText(/Đã xác nhận điểm bài nộp/i)).toBeVisible();
@@ -269,6 +296,9 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     const stu2Row = page.locator('tr[data-student-email="lockout.desktop@webedu.vn"]');
     await expect(stu2Row.getByText('Quá hạn chưa nộp')).toBeVisible();
     await stu2Row.getByRole('button', { name: 'Ghi 0 điểm' }).click();
+    const zeroDialog = page.getByRole('dialog', { name: 'Xác nhận ghi nhận 0 điểm quá hạn' });
+    await expect(zeroDialog).toBeVisible();
+    await zeroDialog.getByRole('button', { name: 'Xác nhận ghi 0 điểm' }).click();
     await expect(page.getByText(/Đã ghi nhận 0 điểm cho học viên/i)).toBeVisible();
 
     await page.getByRole('tab', { name: 'Đã công bố' }).click();
@@ -279,6 +309,32 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
 
     await gradingDialog.locator('#btn-open-adjust-grade').click();
     const adjustDialog = page.getByRole('dialog', { name: /Chỉnh sửa điểm/i });
+
+    // Simulate another tab adjusting Q1 comment while this dialog is already open (#5)
+    const trackerForSubRes = await page.request.get(
+      `${API_BASE_URL}/assignments/${assignmentId}/grading-tracker`,
+    );
+    const trackerForSubJson = (await trackerForSubRes.json()) as {
+      students: Array<{ email: string; submissionId: string | null }>;
+    };
+    const stu1SubId = trackerForSubJson.students.find(
+      (s) => s.email === 'active.student@webedu.vn',
+    )?.submissionId;
+    expect(stu1SubId).toBeTruthy();
+    const concurrentCommentRes = await page.request.patch(
+      `${API_BASE_URL}/submissions/${stu1SubId!}/adjust-grade`,
+      {
+        headers: { Origin: origin },
+        data: {
+          reason: 'Tab khác nhận xét câu 1',
+          answers: [
+            { questionId: q1.id, teacherComment: 'Trắc nghiệm chuẩn', previousTeacherComment: null },
+          ],
+        },
+      },
+    );
+    expect(concurrentCommentRes.ok()).toBeTruthy();
+
     await adjustDialog.locator('#adjust-score-2').fill('6');
     await adjustDialog.locator('#adjust-reason').fill('Cộng 0.5 điểm diễn đạt tốt sau phúc khảo');
     await adjustDialog.locator('#btn-submit-adjust-grade').click();
@@ -288,7 +344,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await expect(auditPanel).toContainText('Cộng 0.5 điểm diễn đạt tốt sau phúc khảo');
     await gradingDialog.getByRole('button', { name: 'Đóng' }).click();
 
-    // 7. Student sees published 10/10 score, "Đã cập nhật" badge, explanation, and feedback
+    // 7. Student sees published 10/10 score, concurrent Q1 comment, "Đã cập nhật" badge, explanation, and feedback
     await logoutViaApi(page);
     await loginThroughUi(page, 'active.student@webedu.vn');
     await page.goto(`/student/assignments/${assignmentId}?mode=review`);
@@ -297,6 +353,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await expect(page.getByText('10 / 10 điểm')).toBeVisible();
     await expect(page.getByText(/Đã cập nhật \d{2}\/\d{2}\/\d{4}/).first()).toBeVisible();
     await expect(page.getByText('Hoàn thành rất tốt!')).toBeVisible();
+    await expect(page.getByText('Trắc nghiệm chuẩn')).toBeVisible();
     await expect(page.getByText('Câu viết tự nhiên, đúng ngữ pháp')).toBeVisible();
     await expect(page.getByText('你好 nghĩa là Xin chào')).toBeVisible();
     await assertZeroSeriousAxe(page, 'student-published-result');

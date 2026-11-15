@@ -4,22 +4,34 @@ import React from 'react';
 import { QUESTION_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import type { StudentPublishedQuestionResultDto } from '@/features/grading/api/grading.api';
+import { SelectedOptionImages } from '@/features/grading/components/SelectedOptionImages';
 import {
+  extractSelectedOptionItems,
   formatAnswerPayloadText,
   formatCorrectAnswerText,
 } from '@/features/grading/utils/grading-status';
 
 interface PublishedQuestionReviewCardProps {
+  assignmentId: string;
   question: StudentPublishedQuestionResultDto;
 }
 
 export function PublishedQuestionReviewCard({
+  assignmentId,
   question,
 }: PublishedQuestionReviewCardProps) {
   const { studentAnswer, isObjective, correctAnswer, explanation } = question;
   const studentText = formatAnswerPayloadText(
     question.type,
     studentAnswer.answerPayload,
+    correctAnswer,
+  );
+  const selectedItems = extractSelectedOptionItems(
+    studentAnswer.answerPayload.selectedOptionIds,
+    correctAnswer,
+  );
+  const correctItems = extractSelectedOptionItems(
+    correctAnswer?.correctOptionIds,
     correctAnswer,
   );
   const earned = studentAnswer.earnedPoints ?? 0;
@@ -57,6 +69,7 @@ export function PublishedQuestionReviewCard({
           Câu trả lời của bạn
         </div>
         <p className="mt-1 whitespace-pre-line text-[var(--ink)]">{studentText}</p>
+        <SelectedOptionImages assignmentId={assignmentId} items={selectedItems} />
       </div>
 
       {isObjective && correctAnswer ? (
@@ -67,6 +80,7 @@ export function PublishedQuestionReviewCard({
           <p className="mt-1 font-medium text-[var(--ink)]">
             {formatCorrectAnswerText(question.type, correctAnswer)}
           </p>
+          <SelectedOptionImages assignmentId={assignmentId} items={correctItems} />
           {explanation ? (
             <p className="mt-1.5 text-xs text-[var(--ink-2)]">
               <strong>Giải thích:</strong> {explanation}

@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useDialogFocusTrap } from '@/features/common/components/BaseDialog';
 import {
   adjustSubmissionGrade,
+  type AdjustGradeAnswerPayload,
   type TeacherSubmissionGradingDetailDto,
 } from '@/features/grading/api/grading.api';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -20,6 +22,7 @@ export function AdjustGradeDialog({
   onClose,
   onAdjusted,
 }: AdjustGradeDialogProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
   const [reason, setReason] = useState('');
   const [teacherFeedback, setTeacherFeedback] = useState(
     detail.submission.teacherFeedback ?? '',
@@ -28,12 +31,22 @@ export function AdjustGradeDialog({
     const map: Record<string, string> = {};
     for (const q of detail.questions) {
       map[q.questionId] =
-        q.studentAnswer.earnedPoints !== null ? String(q.studentAnswer.earnedPoints) : '0';
+        q.studentAnswer.earnedPoints !== null && q.studentAnswer.earnedPoints !== undefined
+          ? String(q.studentAnswer.earnedPoints)
+          : '';
+    }
+    return map;
+  });
+  const [comments, setComments] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const q of detail.questions) {
+      map[q.questionId] = q.studentAnswer.teacherComment ?? '';
     }
     return map;
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  useDialogFocusTrap(panelRef, onClose, saving, open);
 
   if (!open) return null;
 
@@ -46,17 +59,79 @@ export function AdjustGradeDialog({
       return;
     }
 
-    const answers = detail.questions.map((q) => ({
-      questionId: q.questionId,
-      earnedPoints: Number(scores[q.questionId] ?? '0'),
-    }));
+    const changedAnswers: AdjustGradeAnswerPayload[] = [];
+    for (const q of detail.questions) {
+      const initialScoreStr =
+        q.studentAnswer.earnedPoints !== null && q.studentAnswer.earnedPoints !== undefined
+          ? String(q.studentAnswer.earnedPoints)
+          : '';
+      const rawScoreStr = (scores[q.questionId] ?? '').trim();
+      const scoreChanged = rawScoreStr !== initialScoreStr;
+
+      let nextScore: number | undefined;
+      if (scoreChanged) {
+        if (!rawScoreStr) {
+          setError(`Điểm câu ${q.position} không được để trống khi chỉnh sửa.`);
+          return;
+        }
+        const parsed = Number(rawScoreStr);
+        if (
+          !Number.isFinite(parsed) ||
+          parsed < 0 ||
+          parsed > q.points + 1e-9 ||
+          Math.abs(parsed * 4 - Math.round(parsed * 4)) >= 1e-6
+        ) {
+          setError(
+            `Điểm câu ${q.position} phải là số từ 0 đến ${q.points} theo bước 0.25.`,
+          );
+          return;
+        }
+        nextScore = parsed;
+      }
+
+      const initialCommentStr = (q.studentAnswer.teacherComment ?? '').trim();
+      const nextCommentStr = (comments[q.questionId] ?? '').trim();
+      const commentChanged = nextCommentStr !== initialCommentStr;
+
+      if (scoreChanged || commentChanged) {
+        changedAnswers.push({
+          questionId: q.questionId,
+          ...(scoreChanged
+            ? {
+                earnedPoints: nextScore,
+                previousEarnedPoints: q.studentAnswer.earnedPoints,
+              }
+            : {}),
+          ...(commentChanged
+            ? {
+                teacherComment: nextCommentStr || null,
+                previousTeacherComment: q.studentAnswer.teacherComment ?? null,
+              }
+            : {}),
+        });
+      }
+    }
+
+    const initialFeedbackStr = (detail.submission.teacherFeedback ?? '').trim();
+    const nextFeedbackStr = teacherFeedback.trim();
+    const feedbackChanged = nextFeedbackStr !== initialFeedbackStr;
+
+    if (changedAnswers.length === 0 && !feedbackChanged) {
+      setError('Chưa có trường điểm hoặc nhận xét nào được thay đổi.');
+      return;
+    }
 
     setSaving(true);
     try {
       await adjustSubmissionGrade(detail.submission.id, {
         reason: trimmedReason,
-        teacherFeedback: teacherFeedback.trim() || null,
-        answers,
+        ...(feedbackChanged
+          ? {
+              teacherFeedback: nextFeedbackStr || null,
+              previousTeacherFeedback: detail.submission.teacherFeedback ?? null,
+            }
+          : {}),
+        ...(changedAnswers.length > 0 ? { answers: changedAnswers } : {}),
       });
       onAdjusted();
     } catch (err) {
@@ -68,12 +143,19 @@ export function AdjustGradeDialog({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="adjust-grade-title"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onClose();
+      }}
     >
-      <div className="w-full max-w-xl rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adjust-grade-title"
+        tabIndex={-1}
+        className="w-full max-w-xl rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl focus:outline-none"
+      >
         <h3 id="adjust-grade-title" className="text-lg font-bold text-[var(--ink)]">
           Chỉnh sửa điểm &amp; Ghi nhật ký kiểm toán (FUNC-061, 064)
         </h3>
@@ -92,30 +174,44 @@ export function AdjustGradeDialog({
         ) : null}
 
         <form onSubmit={(e) => void handleSubmit(e)} className="mt-4 space-y-4">
-          <div className="max-h-56 space-y-2.5 overflow-y-auto pr-1">
+          <div className="max-h-64 space-y-2.5 overflow-y-auto pr-1">
             {detail.questions.map((q) => (
               <div
                 key={q.questionId}
-                className="flex items-center justify-between gap-3 rounded-lg border border-[var(--line)] bg-[var(--surface-2)]/50 px-3 py-2"
+                className="space-y-1.5 rounded-lg border border-[var(--line)] bg-[var(--surface-2)]/50 px-3 py-2"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-semibold text-[var(--ink)]">
-                    Câu {q.position} (tối đa {q.points} đ)
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold text-[var(--ink)]">
+                      Câu {q.position} (tối đa {q.points} đ)
+                    </div>
+                    <div className="truncate text-xs text-[var(--ink-3)]">{q.prompt}</div>
                   </div>
-                  <div className="truncate text-xs text-[var(--ink-3)]">{q.prompt}</div>
+                  <input
+                    id={`adjust-score-${q.position}`}
+                    aria-label={`Điểm mới câu ${q.position}`}
+                    type="number"
+                    min={0}
+                    max={q.points}
+                    step={0.25}
+                    placeholder={q.studentAnswer.earnedPoints === null ? 'Chưa chấm' : ''}
+                    value={scores[q.questionId] ?? ''}
+                    onChange={(e) =>
+                      setScores((prev) => ({ ...prev, [q.questionId]: e.target.value }))
+                    }
+                    className="num w-24 rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1.5 text-sm font-semibold"
+                  />
                 </div>
                 <input
-                  id={`adjust-score-${q.position}`}
-                  aria-label={`Điểm mới câu ${q.position}`}
-                  type="number"
-                  min={0}
-                  max={q.points}
-                  step={0.25}
-                  value={scores[q.questionId] ?? '0'}
+                  id={`adjust-comment-${q.position}`}
+                  aria-label={`Nhận xét câu ${q.position}`}
+                  type="text"
+                  placeholder="Nhận xét riêng cho câu này (tùy chọn)..."
+                  value={comments[q.questionId] ?? ''}
                   onChange={(e) =>
-                    setScores((prev) => ({ ...prev, [q.questionId]: e.target.value }))
+                    setComments((prev) => ({ ...prev, [q.questionId]: e.target.value }))
                   }
-                  className="num w-24 rounded-md border border-[var(--line-2)] bg-white px-2.5 py-1.5 text-sm font-semibold"
+                  className="w-full rounded-md border border-[var(--line)] bg-white px-2.5 py-1 text-xs text-[var(--ink)]"
                 />
               </div>
             ))}

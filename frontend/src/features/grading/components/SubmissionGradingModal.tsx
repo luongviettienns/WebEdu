@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useDialogFocusTrap } from '@/features/common/components/BaseDialog';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import { AdjustGradeDialog } from '@/features/grading/components/AdjustGradeDialog';
 import { GradeAuditLogList } from '@/features/grading/components/GradeAuditLogList';
@@ -22,7 +23,9 @@ export function SubmissionGradingModal({
   onChanged,
 }: SubmissionGradingModalProps) {
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const g = useSubmissionGradingDetail(submissionId, onChanged);
+  useDialogFocusTrap(panelRef, onClose, Boolean(g.busy), Boolean(submissionId) && !adjustOpen);
 
   if (!submissionId) return null;
 
@@ -36,12 +39,19 @@ export function SubmissionGradingModal({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Chấm bài nộp học viên"
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !g.busy && !adjustOpen) onClose();
+      }}
     >
-      <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-2xl">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chấm bài nộp học viên"
+        tabIndex={-1}
+        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-2xl focus:outline-none"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] bg-white px-5 py-4">
           <div className="min-w-0">
             <h2 className="truncate text-lg font-bold text-[var(--ink)]">
@@ -121,6 +131,7 @@ export function SubmissionGradingModal({
                 {detail.questions.map((q) => (
                   <GradingQuestionCard
                     key={q.questionId}
+                    assignmentId={detail.assignment.id}
                     question={q}
                     scoreValue={g.scores[q.questionId] ?? ''}
                     commentValue={g.comments[q.questionId] ?? ''}
@@ -187,7 +198,12 @@ export function SubmissionGradingModal({
             </div>
 
             {canEditManually ? (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {g.hasUnsavedChanges ? (
+                  <span className="text-xs font-medium text-[var(--amber)]">
+                    Lưu nháp trước khi xác nhận điểm
+                  </span>
+                ) : null}
                 <button
                   id="btn-save-manual-grade"
                   type="button"
@@ -200,7 +216,12 @@ export function SubmissionGradingModal({
                 <button
                   id="btn-confirm-submission-grade"
                   type="button"
-                  disabled={Boolean(g.busy)}
+                  disabled={Boolean(g.busy) || g.hasUnsavedChanges}
+                  title={
+                    g.hasUnsavedChanges
+                      ? 'Vui lòng nhấn "Lưu điểm & Nhận xét" trước khi xác nhận điểm'
+                      : undefined
+                  }
                   onClick={() => void g.handleConfirmGrade()}
                   className="rounded-lg bg-[var(--blue)] px-4 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
                 >

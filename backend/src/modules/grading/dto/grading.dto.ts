@@ -14,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import type { PaginationInput } from '../../../common/utils/pagination.util.js';
@@ -31,6 +32,17 @@ const TRACKER_STATUS_FILTERS: ReadonlyArray<GradingTrackerStatusFilter> = [
 
 const trimValue = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+const parseStrictNumberInput = ({ value }: { value: unknown }): unknown => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return Number.NaN;
+    return Number(trimmed);
+  }
+  return value;
+};
 
 export class AiGradeSubmissionDto {
   @ApiPropertyOptional({ description: 'Chỉ gợi ý cho 1 câu tự luận cụ thể (tùy chọn)' })
@@ -67,12 +79,20 @@ export class ManualGradeAnswerItemDto {
   questionId!: string;
 
   @ApiPropertyOptional({ description: 'Điểm chấm (bội số 0.25, từ 0 tới points tối đa của câu)' })
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
+  @ValidateIf((_, value) => value !== undefined)
+  @Transform(parseStrictNumberInput)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1000)
   earnedPoints?: number;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Điểm trước khi sửa để kiểm tra xung đột tab khác' })
+  @IsOptional()
+  @Transform(parseStrictNumberInput)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(1000)
+  previousEarnedPoints?: number | null;
 
   @ApiPropertyOptional({ description: 'Áp dụng nhanh điểm gợi ý AI hiện có của câu hỏi' })
   @IsOptional()
@@ -84,6 +104,12 @@ export class ManualGradeAnswerItemDto {
   @IsString()
   @MaxLength(2000)
   teacherComment?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 2000, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  previousTeacherComment?: string | null;
 }
 
 export class ManualGradeSubmissionDto {
@@ -92,6 +118,12 @@ export class ManualGradeSubmissionDto {
   @IsString()
   @MaxLength(3000)
   teacherFeedback?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 3000, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(3000)
+  previousTeacherFeedback?: string | null;
 
   @ApiPropertyOptional({ type: [ManualGradeAnswerItemDto] })
   @IsOptional()
@@ -133,23 +165,56 @@ export class SubmissionBatchSelectionDto {
   submissionIds?: string[];
 }
 
+export class AiSuggestBatchGradeDto {
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: 20,
+    description: 'Danh sách ID bài nộp cần AI gợi ý chấm (tối đa 20 bài/lượt; để trống = tối đa 20 bài hợp lệ)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsUUID('all', { each: true })
+  submissionIds?: string[];
+
+  @ApiPropertyOptional({ description: 'Chỉ gợi ý cho 1 câu tự luận cụ thể (tùy chọn)' })
+  @IsOptional()
+  @IsUUID()
+  questionId?: string;
+}
+
 export class AdjustGradeAnswerItemDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   questionId!: string;
 
-  @ApiProperty({ description: 'Điểm mới cho câu hỏi (bội số 0.25, 0..maxPoints)' })
-  @Type(() => Number)
-  @IsNumber()
+  @ApiPropertyOptional({ description: 'Điểm mới cho câu hỏi (bội số 0.25, 0..maxPoints)' })
+  @ValidateIf((_, value) => value !== undefined)
+  @Transform(parseStrictNumberInput)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @Min(0)
   @Max(1000)
-  earnedPoints!: number;
+  earnedPoints?: number;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Điểm trước khi sửa để kiểm tra xung đột tab khác' })
+  @IsOptional()
+  @Transform(parseStrictNumberInput)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  @Max(1000)
+  previousEarnedPoints?: number | null;
 
   @ApiPropertyOptional({ maxLength: 2000, nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
   teacherComment?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 2000, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  previousTeacherComment?: string | null;
 }
 
 export class AdjustGradeSubmissionDto {
@@ -165,6 +230,12 @@ export class AdjustGradeSubmissionDto {
   @IsString()
   @MaxLength(3000)
   teacherFeedback?: string | null;
+
+  @ApiPropertyOptional({ maxLength: 3000, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(3000)
+  previousTeacherFeedback?: string | null;
 
   @ApiPropertyOptional({ type: [AdjustGradeAnswerItemDto] })
   @IsOptional()

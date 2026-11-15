@@ -18,6 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import {
   AdjustGradeSubmissionDto,
   AiGradeSubmissionDto,
+  AiSuggestBatchGradeDto,
   GradingTrackerQueryDto,
   ManualGradeSubmissionDto,
   RecordOverdueZeroDto,
@@ -89,6 +90,18 @@ export class GradingController {
     @Body() dto: SubmissionBatchSelectionDto,
   ) {
     return this.gradePublicationService.publishAssignmentGrades(assignmentId, dto, actor);
+  }
+
+  @Post('assignments/:assignmentId/ai-grade')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.TEACHER, Role.ADMIN)
+  @ApiOperation({ summary: 'Gọi AI gợi ý chấm nháp hàng loạt cho bài nộp của bài giao (Zero-PII)' })
+  suggestAssignmentEssayGradesBatch(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Body() dto?: AiSuggestBatchGradeDto,
+  ) {
+    return this.aiEssayGradingService.suggestEssayGradesForAssignmentBatch(assignmentId, dto, actor);
   }
 
   @Get('assignments/:assignmentId/published-result')

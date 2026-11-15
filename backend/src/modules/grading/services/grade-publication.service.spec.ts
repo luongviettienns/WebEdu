@@ -173,7 +173,7 @@ describe('GradePublicationService (Slice 7.4)', () => {
     expect(events.getPublishedEvents()).toHaveLength(1);
     expect(prisma.submission.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: { in: ['sub-graded'] } },
+        where: { id: { in: ['sub-graded'] }, status: SubmissionStatus.GRADED },
       }),
     );
 
@@ -190,5 +190,65 @@ describe('GradePublicationService (Slice 7.4)', () => {
     await expect(
       service.publishAssignmentGrades('assign-1', { submissionIds: ['sub-ungraded'] }, makeTeacher()),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('Issue #4: batch confirm re-reads locked DB scores before summing totalScore, and conditional publish emits events only for actually transitioned GRADED rows', async () => {
+    const { prisma, events, service } = setupMocks();
+    const emitted: Array<{ submissionIds: string[]; studentIds: string[] }> = [];
+    events.onScoresPublished((evt) => {
+      emitted.push({ submissionIds: evt.submissionIds, studentIds: evt.studentIds });
+    });
+
+    const questions = [
+      { id: 'q-1', type: QuestionType.SINGLE_CHOICE, points: 2, payload: { options: [{ id: 'a' }], correctOptionIds: ['a'] } },
+      { id: 'q-2', type: QuestionType.ESSAY, points: 3, payload: {} },
+    ];
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1',
+      classId: 'cls-1',
+      assessment: { questions },
+    });
+    prisma.submission.findMany.mockResolvedValueOnce([
+      {
+        id: 'sub-locked',
+        status: SubmissionStatus.SUBMITTED_WAITING,
+        answers: [
+          { id: 'a-1', questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] }, isCorrect: true, earnedPoints: 2, teacherEdited: false },
+          { id: 'a-2', questionId: 'q-2', answerPayload: { text: '你好' }, isCorrect: null, earnedPoints: 2, teacherEdited: true },
+        ],
+      },
+    ]);
+
+    await service.confirmAssignmentGradesBatch('assign-1', {}, makeTeacher());
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(prisma.submission.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sub-locked' },
+        data: expect.objectContaining({ status: SubmissionStatus.GRADED, totalScore: 4 }),
+      }),
+    );
+
+    // Partial updateMany (e.g. one submission concurrently reopened before updateMany): event contains ONLY transitioned row
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1',
+      classId: 'cls-1',
+      dueAt: new Date(Date.now() - 86_400_000),
+    });
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { studentId: 'stu-1' },
+      { studentId: 'stu-2' },
+    ]);
+    prisma.submission.findMany
+      .mockResolvedValueOnce([
+        { id: 'sub-1', studentId: 'stu-1', status: SubmissionStatus.GRADED, dueAtOverride: null },
+        { id: 'sub-2', studentId: 'stu-2', status: SubmissionStatus.GRADED, dueAtOverride: null },
+      ])
+      .mockResolvedValueOnce([{ id: 'sub-1', studentId: 'stu-1' }]);
+    prisma.submission.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const pubRes = await service.publishAssignmentGrades('assign-1', {}, makeTeacher());
+    expect(pubRes.publishedCount).toBe(1);
+    expect(pubRes.publishedSubmissionIds).toEqual(['sub-1']);
+    expect(emitted).toEqual([{ submissionIds: ['sub-1'], studentIds: ['stu-1'] }]);
   });
 });

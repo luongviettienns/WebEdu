@@ -7,9 +7,12 @@ import {
   SubmissionStatus,
   UserStatus,
 } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
+import { ManualGradeAnswerItemDto } from '../dto/grading.dto.js';
 import { TeacherGradingService } from './teacher-grading.service.js';
 
 function makeTeacher(id = 'teacher-1'): AuthenticatedUser {
@@ -200,5 +203,79 @@ describe('TeacherGradingService (Slice 7.3)', () => {
         makeTeacher(),
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('Issue #4 & #13: rejects duplicate questionId, blocks stale tab overwrite (409), and rejects non-numeric DTO inputs', async () => {
+    const invalidBool = plainToInstance(ManualGradeAnswerItemDto, {
+      questionId: '11111111-1111-4111-8111-111111111111',
+      earnedPoints: true,
+    });
+    expect(validateSync(invalidBool).length).toBeGreaterThan(0);
+
+    const invalidEmpty = plainToInstance(ManualGradeAnswerItemDto, {
+      questionId: '11111111-1111-4111-8111-111111111111',
+      earnedPoints: '   ',
+    });
+    expect(validateSync(invalidEmpty).length).toBeGreaterThan(0);
+
+    const { prisma, service } = setupMocks();
+    prisma.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      status: SubmissionStatus.SUBMITTED_WAITING,
+      teacherFeedback: 'Cũ',
+      classAssignment: {
+        classId: 'cls-1',
+        assessment: {
+          questions: [{ id: 'q-2', position: 2, type: QuestionType.ESSAY, points: 5, payload: {} }],
+        },
+      },
+      answers: [
+        { questionId: 'q-2', earnedPoints: 4, teacherComment: null },
+      ],
+    });
+    await expect(
+      service.gradeSubmissionManually(
+        'sub-1',
+        {
+          answers: [
+            { questionId: 'q-2', earnedPoints: 3 },
+            { questionId: 'q-2', earnedPoints: 4 },
+          ],
+        },
+        makeTeacher(),
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    prisma.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      status: SubmissionStatus.SUBMITTED_WAITING,
+      teacherFeedback: 'Cũ',
+      classAssignment: {
+        classId: 'cls-1',
+        assessment: {
+          questions: [{ id: 'q-2', position: 2, type: QuestionType.ESSAY, points: 5, payload: {} }],
+        },
+      },
+      answers: [
+        { questionId: 'q-2', earnedPoints: 4, teacherComment: 'Tab A đã sửa' },
+      ],
+    });
+    await expect(
+      service.gradeSubmissionManually(
+        'sub-1',
+        {
+          answers: [
+            {
+              questionId: 'q-2',
+              earnedPoints: 4,
+              previousEarnedPoints: 2,
+              teacherComment: 'Nhận xét mới',
+              previousTeacherComment: null,
+            },
+          ],
+        },
+        makeTeacher(),
+      ),
+    ).rejects.toThrow(ConflictException);
   });
 });

@@ -13,6 +13,9 @@ import type {
 } from '@/features/assignments/api/assignments.api';
 
 export type GradingStatus =
+  | 'NONE'
+  | 'PENDING_AI'
+  | 'AI_DRAFT_READY'
   | 'UNGRADED'
   | 'AUTO_GRADED'
   | 'AI_DRAFTED'
@@ -213,25 +216,76 @@ export async function getSubmissionGradingDetail(
   );
 }
 
+export interface AiEssaySuggestionItemDto {
+  questionId: string;
+  maxPoints: number;
+  aiSuggestedPoints: number;
+  aiFeedback: string;
+  skippedEmpty: boolean;
+}
+
+export interface AiGradeSubmissionResultDto {
+  submissionId: string;
+  gradingStatus: GradingStatus;
+  provider: string;
+  model: string;
+  suggestions: AiEssaySuggestionItemDto[];
+}
+
+export interface AiBatchSuggestGradeItemDto {
+  submissionId: string;
+  ok: boolean;
+  gradingStatus?: GradingStatus;
+  suggestedCount?: number;
+  error?: string;
+}
+
+export interface AiBatchSuggestGradeResultDto {
+  assignmentId: string;
+  requestedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  results: AiBatchSuggestGradeItemDto[];
+}
+
 export async function requestAiEssaySuggestion(
   submissionId: string,
   questionId?: string,
-): Promise<{ provider: string; model: string; suggestions: unknown[] }> {
-  return requestJson(`/submissions/${encodeURIComponent(submissionId)}/ai-grade`, {
-    method: 'POST',
-    body: JSON.stringify(questionId ? { questionId } : {}),
-  });
+): Promise<AiGradeSubmissionResultDto> {
+  return requestJson<AiGradeSubmissionResultDto>(
+    `/submissions/${encodeURIComponent(submissionId)}/ai-grade`,
+    {
+      method: 'POST',
+      body: JSON.stringify(questionId ? { questionId } : {}),
+    },
+  );
+}
+
+export async function requestBatchAiEssaySuggestion(
+  assignmentId: string,
+  payload?: { submissionIds?: string[]; questionId?: string },
+): Promise<AiBatchSuggestGradeResultDto> {
+  return requestJson<AiBatchSuggestGradeResultDto>(
+    `/assignments/${encodeURIComponent(assignmentId)}/ai-grade`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload ?? {}),
+    },
+  );
 }
 
 export async function saveManualGrade(
   submissionId: string,
   payload: {
     teacherFeedback?: string | null;
+    previousTeacherFeedback?: string | null;
     answers?: {
       questionId: string;
       earnedPoints?: number;
+      previousEarnedPoints?: number | null;
       applyAiSuggestion?: boolean;
       teacherComment?: string | null;
+      previousTeacherComment?: string | null;
     }[];
   },
 ): Promise<{ totalScore: number | null; readyToConfirm: boolean }> {
@@ -277,12 +331,21 @@ export async function recordOverdueZero(
   });
 }
 
+export interface AdjustGradeAnswerPayload {
+  questionId: string;
+  earnedPoints?: number;
+  teacherComment?: string | null;
+  previousEarnedPoints?: number | null;
+  previousTeacherComment?: string | null;
+}
+
 export async function adjustSubmissionGrade(
   submissionId: string,
   payload: {
     reason: string;
     teacherFeedback?: string | null;
-    answers?: { questionId: string; earnedPoints: number; teacherComment?: string | null }[];
+    previousTeacherFeedback?: string | null;
+    answers?: AdjustGradeAnswerPayload[];
   },
 ): Promise<{ totalScore: number; gradeUpdatedAt: string | null }> {
   return requestJson(`/submissions/${encodeURIComponent(submissionId)}/adjust-grade`, {

@@ -7,6 +7,7 @@ import { ROLES_KEY } from '../../common/decorators/roles.decorator.js';
 import {
   AdjustGradeSubmissionDto,
   AiGradeSubmissionDto,
+  AiSuggestBatchGradeDto,
   GradingTrackerQueryDto,
   ManualGradeSubmissionDto,
   RecordOverdueZeroDto,
@@ -39,7 +40,16 @@ const student: AuthenticatedUser = {
 describe('GradingController (Slices 7.1–7.4)', () => {
   function setupController() {
     const autoGrading = { gradeSubmission: vi.fn(async () => ({ submissionId: 'sub-1', autoScore: 4 })) };
-    const aiGrading = { suggestEssayGradesForSubmission: vi.fn(async () => ({ submissionId: 'sub-1', suggestions: [] })) };
+    const aiGrading = {
+      suggestEssayGradesForSubmission: vi.fn(async () => ({ submissionId: 'sub-1', suggestions: [] })),
+      suggestEssayGradesForAssignmentBatch: vi.fn(async () => ({
+        assignmentId: 'assign-1',
+        requestedCount: 2,
+        succeededCount: 2,
+        failedCount: 0,
+        results: [],
+      })),
+    };
     const tracker = {
       getAssignmentGradingTracker: vi.fn(async () => ({ students: [] })),
       recordOverdueZero: vi.fn(async () => ({ recordedCount: 1 })),
@@ -71,7 +81,7 @@ describe('GradingController (Slices 7.1–7.4)', () => {
     return { ctrl, autoGrading, aiGrading, tracker, teacherGrading, publication, adjustment, publishedRepo };
   }
 
-  it('delegates all 11 grading endpoints cleanly and enforces expected @Roles metadata', async () => {
+  it('delegates all 12 grading endpoints cleanly and enforces expected @Roles metadata', async () => {
     const mocks = setupController();
     const { ctrl } = mocks;
 
@@ -86,6 +96,13 @@ describe('GradingController (Slices 7.1–7.4)', () => {
 
     await ctrl.publishAssignmentGrades(teacher, 'assign-1', { submissionIds: ['sub-1'] });
     expect(mocks.publication.publishAssignmentGrades).toHaveBeenCalledWith('assign-1', { submissionIds: ['sub-1'] }, teacher);
+
+    await ctrl.suggestAssignmentEssayGradesBatch(teacher, 'assign-1', { submissionIds: ['sub-1'] });
+    expect(mocks.aiGrading.suggestEssayGradesForAssignmentBatch).toHaveBeenCalledWith(
+      'assign-1',
+      { submissionIds: ['sub-1'] },
+      teacher,
+    );
 
     await ctrl.getStudentPublishedResult(student, 'assign-1');
     expect(mocks.publishedRepo.getStudentPublishedResult).toHaveBeenCalledWith('assign-1', student);
@@ -113,6 +130,7 @@ describe('GradingController (Slices 7.1–7.4)', () => {
       'recordOverdueZero',
       'confirmAssignmentGradesBatch',
       'publishAssignmentGrades',
+      'suggestAssignmentEssayGradesBatch',
       'getSubmissionGradingDetail',
       'autoGradeSubmission',
       'suggestEssayGrades',
@@ -131,9 +149,23 @@ describe('GradingController (Slices 7.1–7.4)', () => {
     expect(Reflect.getMetadata(ROLES_KEY, studentResultTarget)).toEqual([Role.STUDENT]);
   });
 
-  it('validates Slice 7.2–7.4 DTOs cleanly', async () => {
+  it('validates Slice 7.2–7.4 & Batch AI DTOs cleanly (including strict blank-score rejection and max 20 batch limit)', async () => {
     expect(await validate(plainToInstance(AiGradeSubmissionDto, {}))).toHaveLength(0);
     expect(await validate(plainToInstance(AiGradeSubmissionDto, { questionId: 'bad-id' }))).not.toHaveLength(0);
+    expect(
+      await validate(
+        plainToInstance(AiSuggestBatchGradeDto, {
+          submissionIds: ['11111111-1111-4111-8111-111111111111'],
+        }),
+      ),
+    ).toHaveLength(0);
+    const overMaxIds = Array.from(
+      { length: 21 },
+      (_, idx) => `11111111-1111-4111-8111-${String(idx).padStart(12, '0')}`,
+    );
+    expect(
+      await validate(plainToInstance(AiSuggestBatchGradeDto, { submissionIds: overMaxIds })),
+    ).not.toHaveLength(0);
     expect(
       await validate(
         plainToInstance(GradingTrackerQueryDto, { status: 'OVERDUE_NOT_SUBMITTED', page: 1, limit: 25 }),
@@ -166,10 +198,18 @@ describe('GradingController (Slices 7.1–7.4)', () => {
     );
     expect(blankReasonErrors.length).toBeGreaterThan(0);
 
+    const blankScoreErrors = await validate(
+      plainToInstance(AdjustGradeSubmissionDto, {
+        reason: 'Hợp lệ',
+        answers: [{ questionId: '11111111-1111-4111-8111-111111111111', earnedPoints: '   ' }],
+      }),
+    );
+    expect(blankScoreErrors.length).toBeGreaterThan(0);
+
     const validAdjustErrors = await validate(
       plainToInstance(AdjustGradeSubmissionDto, {
         reason: 'Sửa sai sót chấm câu 2',
-        answers: [{ questionId: '11111111-1111-4111-8111-111111111111', earnedPoints: 4.25 }],
+        answers: [{ questionId: '11111111-1111-4111-8111-111111111111', earnedPoints: 4.25, previousEarnedPoints: null }],
       }),
     );
     expect(validAdjustErrors).toHaveLength(0);

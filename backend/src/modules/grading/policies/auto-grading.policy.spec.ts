@@ -27,11 +27,13 @@ describe('answer-normalizer.policy & auto-grading.policy (Slice 7.1 — DEC-037)
       expect(roundToQuarter(1.38)).toBe(1.5);
     });
 
-    it('clamps score strictly to [0, maxPoints] rounded to 0.25', () => {
+    it('clamps score strictly to [0, normalizeQuestionPoints(maxPoints)] rounded to 0.25', () => {
       expect(clampScoreToQuarter(-3, 5)).toBe(0);
       expect(clampScoreToQuarter(12, 5)).toBe(5);
       expect(clampScoreToQuarter(2.38, 5)).toBe(2.5);
       expect(clampScoreToQuarter(2, 0)).toBe(0);
+      expect(clampScoreToQuarter(0.9, 0.9)).toBe(1);
+      expect(clampScoreToQuarter(1.4, 1.4)).toBe(1.5);
     });
   });
 
@@ -300,6 +302,11 @@ describe('answer-normalizer.policy & auto-grading.policy (Slice 7.1 — DEC-037)
       expect(summary.autoScore).toBe(2);
       expect(summary.hasSubjectiveQuestions).toBe(true);
       expect(summary.questionResults).toHaveLength(3);
+    });
+
+    it('Issue #6a: preserves word boundaries for spaced ordering answers (xī xīxī vs xīxī xī)', () => {
+      expect(matchesNormalizedOrdering(['xī', 'xīxī'], 'xī xīxī')).toBe(true);
+      expect(matchesNormalizedOrdering(['xīxī', 'xī'], 'xī xīxī')).toBe(false);
     });
   });
 });

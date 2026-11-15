@@ -10,11 +10,15 @@ import {
   getAssignmentGradingTracker,
   publishConfirmedGrades,
   recordOverdueZero,
+  requestBatchAiEssaySuggestion,
   type AssignmentGradingTrackerDto,
   type GradingTrackerFilter,
   type GradingTrackerStudentRowDto,
 } from '@/features/grading/api/grading.api';
-import { GradingTrackerHeader } from '@/features/grading/components/GradingTrackerHeader';
+import {
+  GradingTrackerHeader,
+  type PendingOverdueZeroTarget,
+} from '@/features/grading/components/GradingTrackerHeader';
 import { GradingTrackerTable } from '@/features/grading/components/GradingTrackerTable';
 import { SubmissionGradingModal } from '@/features/grading/components/SubmissionGradingModal';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -38,6 +42,9 @@ function TeacherGradingWorkspace({
   const [notice, setNotice] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
+  const [pendingOverdueZero, setPendingOverdueZero] = useState<PendingOverdueZeroTarget | null>(
+    null,
+  );
   const [reloadTick, setReloadTick] = useState(0);
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
@@ -90,6 +97,21 @@ function TeacherGradingWorkspace({
           summary={tracker.summary}
           isAdminView={isAdminView}
           busyAction={busyAction}
+          pendingOverdueZero={pendingOverdueZero}
+          onBatchAiGrade={() =>
+            void runAction(
+              'batch-ai',
+              async () => {
+                const res = await requestBatchAiEssaySuggestion(assignmentId);
+                if (res.requestedCount === 0) return 'Không có bài nộp chờ chấm tự luận để AI gợi ý.';
+                if (res.succeededCount === 0 && res.failedCount > 0) {
+                  throw new Error(`AI không gợi ý được ${res.failedCount}/${res.requestedCount} bài (${res.results[0]?.error ?? 'cần chấm tay'}).`);
+                }
+                return `AI đã gợi ý ${res.succeededCount}/${res.requestedCount} bài nộp${res.failedCount > 0 ? ` (${res.failedCount} bài chuyển chấm tay)` : ''}.`;
+              },
+              'Không thể gọi AI gợi ý hàng loạt',
+            )
+          }
           onConfirmAll={() =>
             void runAction(
               'confirm-all',
@@ -111,17 +133,35 @@ function TeacherGradingWorkspace({
             )
           }
           onRecordOverdueZeroAll={() =>
-            void runAction(
-              'overdue-all',
-              async () => {
-                const res = await recordOverdueZero(assignmentId, {
-                  reason: 'Quá hạn chưa nộp bài — giáo viên ghi nhận 0 điểm',
-                });
-                return `Đã ghi nhận 0 điểm cho ${res.recordedCount} học viên quá hạn chưa nộp.`;
-              },
-              'Không thể ghi 0 điểm quá hạn',
-            )
+            setPendingOverdueZero({ mode: 'ALL', count: tracker.summary.overdueNotSubmittedCount })
           }
+          onCancelOverdueZero={() => setPendingOverdueZero(null)}
+          onConfirmOverdueZero={() => {
+            if (!pendingOverdueZero) return;
+            const target = pendingOverdueZero;
+            const actionKey = target.mode === 'ALL' ? 'overdue-all' : `overdue-${target.student.studentId}`;
+            void runAction(
+              actionKey,
+              async () => {
+                try {
+                  if (target.mode === 'ALL') {
+                    const res = await recordOverdueZero(assignmentId, {
+                      reason: 'Quá hạn chưa nộp bài — giáo viên ghi nhận 0 điểm',
+                    });
+                    return `Đã ghi nhận 0 điểm cho ${res.recordedCount} học viên quá hạn chưa nộp.`;
+                  }
+                  await recordOverdueZero(assignmentId, {
+                    studentIds: [target.student.studentId],
+                    reason: `Học viên ${target.student.fullName} quá hạn chưa nộp — ghi nhận 0 điểm`,
+                  });
+                  return `Đã ghi nhận 0 điểm cho học viên ${target.student.fullName}.`;
+                } finally {
+                  setPendingOverdueZero(null);
+                }
+              },
+              target.mode === 'ALL' ? 'Không thể ghi 0 điểm quá hạn' : 'Không thể ghi nhận 0 điểm',
+            );
+          }}
         />
       ) : null}
 
@@ -162,17 +202,7 @@ function TeacherGradingWorkspace({
           )
         }
         onRecordOverdueZeroStudent={(row: GradingTrackerStudentRowDto) =>
-          void runAction(
-            `overdue-${row.studentId}`,
-            async () => {
-              await recordOverdueZero(assignmentId, {
-                studentIds: [row.studentId],
-                reason: `Học viên ${row.fullName} quá hạn chưa nộp — ghi nhận 0 điểm`,
-              });
-              return `Đã ghi nhận 0 điểm cho học viên ${row.fullName}.`;
-            },
-            'Không thể ghi nhận 0 điểm',
-          )
+          setPendingOverdueZero({ mode: 'STUDENT', student: row })
         }
       />
 

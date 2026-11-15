@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -209,5 +210,56 @@ describe('AutoGradingService (Slice 7.1)', () => {
     await expect(service.gradeSubmission('sub-1', makeTeacher('teacher-1'))).rejects.toThrow(
       BadRequestException,
     );
+  });
+
+  it('Issue #8 & #9: blocks auto-grade on GRADED/RETURNED (409) and caps 0.9pt objective question at 0.75', async () => {
+    const { tx, service } = setupMocks();
+    for (const lockedStatus of [SubmissionStatus.GRADED, SubmissionStatus.RETURNED]) {
+      tx.submission.findUnique.mockResolvedValueOnce({
+        id: 'sub-locked',
+        status: lockedStatus,
+        gradingStatus: GradingStatus.GRADED,
+        totalScore: 5,
+        classAssignment: { classId: 'cls-1', assessment: { questions: [] } },
+        answers: [],
+      });
+      await expect(service.gradeSubmission('sub-locked', makeTeacher())).rejects.toThrow(
+        ConflictException,
+      );
+    }
+    expect(tx.submission.update).not.toHaveBeenCalled();
+
+    tx.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-cap',
+      status: SubmissionStatus.SUBMITTED_WAITING,
+      gradingStatus: GradingStatus.NONE,
+      totalScore: null,
+      classAssignment: {
+        classId: 'cls-1',
+        assessment: {
+          questions: [
+            {
+              id: 'q-1',
+              position: 1,
+              type: QuestionType.SINGLE_CHOICE,
+              prompt: 'Q1',
+              points: 0.9,
+              payload: { options: [{ id: 'a', text: 'A' }], correctOptionIds: ['a'] },
+            },
+          ],
+        },
+      },
+      answers: [
+        {
+          questionId: 'q-1',
+          answerPayload: { selectedOptionIds: ['a'] },
+          teacherEdited: false,
+          earnedPoints: null,
+        },
+      ],
+    });
+    const res = await service.gradeSubmission('sub-cap', makeTeacher());
+    expect(res.autoScore).toBe(1);
+    expect(res.totalScore).toBe(1);
   });
 });

@@ -28,20 +28,12 @@ function getFocusable(container: HTMLElement): HTMLElement[] {
   );
 }
 
-/**
- * Hộp thoại dùng chung: role=dialog + aria-modal, bẫy focus (Tab/Shift+Tab),
- * đóng bằng Escape, trả focus về phần tử đã mở hộp thoại và khóa cuộn nền.
- */
-export function BaseDialog({
-  eyebrow,
-  title,
-  onClose,
+export function useDialogFocusTrap(
+  panelRef: React.RefObject<HTMLElement | null>,
+  onClose: () => void,
   busy = false,
-  maxWidthClass = 'max-w-lg',
-  children,
-}: BaseDialogProps) {
-  const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
+  active = true,
+) {
   const onCloseRef = useRef(onClose);
   const busyRef = useRef(busy);
 
@@ -51,6 +43,7 @@ export function BaseDialog({
   }, [onClose, busy]);
 
   useEffect(() => {
+    if (!active) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
     const previousOverflow = document.body.style.overflow;
@@ -77,14 +70,14 @@ export function BaseDialog({
       }
       const firstEl = focusable[0]!;
       const lastEl = focusable[focusable.length - 1]!;
-      const active = document.activeElement;
-      if (event.shiftKey && (active === firstEl || active === panelRef.current)) {
+      const activeEl = document.activeElement;
+      if (event.shiftKey && (activeEl === firstEl || activeEl === panelRef.current)) {
         event.preventDefault();
         lastEl.focus();
-      } else if (!event.shiftKey && active === lastEl) {
+      } else if (!event.shiftKey && activeEl === lastEl) {
         event.preventDefault();
         firstEl.focus();
-      } else if (!panelRef.current.contains(active)) {
+      } else if (!panelRef.current.contains(activeEl)) {
         event.preventDefault();
         firstEl.focus();
       }
@@ -98,7 +91,24 @@ export function BaseDialog({
         previouslyFocused.focus();
       }
     };
-  }, []);
+  }, [panelRef, active]);
+}
+
+/**
+ * Hộp thoại dùng chung: role=dialog + aria-modal, bẫy focus (Tab/Shift+Tab),
+ * đóng bằng Escape, trả focus về phần tử đã mở hộp thoại và khóa cuộn nền.
+ */
+export function BaseDialog({
+  eyebrow,
+  title,
+  onClose,
+  busy = false,
+  maxWidthClass = 'max-w-lg',
+  children,
+}: BaseDialogProps) {
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocusTrap(panelRef, onClose, busy, true);
 
   return (
     <div

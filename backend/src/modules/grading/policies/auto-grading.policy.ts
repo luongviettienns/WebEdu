@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
+import { isMultipleChoiceOptionPayload } from '../../assignments/policies/submission-payload.util.js';
 import type {
   EvaluatedQuestionGrade,
   QuestionForGrading,
@@ -9,6 +10,7 @@ import {
   clampScoreToQuarter,
   matchesNormalizedBlank,
   matchesNormalizedOrdering,
+  normalizeQuestionPoints,
   roundToQuarter,
 } from './answer-normalizer.policy.js';
 
@@ -38,7 +40,7 @@ export function evaluateQuestionAnswer(
 ): EvaluatedQuestionGrade {
   const payload = isRecord(question.payload) ? question.payload : {};
   const answer = isRecord(answerPayload) ? answerPayload : {};
-  const maxPoints = Number.isFinite(question.points) && question.points > 0 ? question.points : 0;
+  const maxPoints = normalizeQuestionPoints(question.points);
 
   switch (question.type) {
     case QuestionType.SINGLE_CHOICE:
@@ -96,7 +98,7 @@ function gradeSingleChoice(
     questionId,
     isObjective: true,
     isCorrect,
-    earnedPoints: isCorrect ? roundToQuarter(maxPoints) : 0,
+    earnedPoints: isCorrect ? clampScoreToQuarter(maxPoints, maxPoints) : 0,
   };
 }
 
@@ -154,7 +156,7 @@ function gradeFillBlank(
     questionId,
     isObjective: true,
     isCorrect,
-    earnedPoints: isCorrect ? roundToQuarter(maxPoints) : 0,
+    earnedPoints: isCorrect ? clampScoreToQuarter(maxPoints, maxPoints) : 0,
   };
 }
 
@@ -177,7 +179,7 @@ function gradeOrdering(
     questionId,
     isObjective: true,
     isCorrect,
-    earnedPoints: isCorrect ? roundToQuarter(maxPoints) : 0,
+    earnedPoints: isCorrect ? clampScoreToQuarter(maxPoints, maxPoints) : 0,
   };
 }
 
@@ -190,7 +192,7 @@ function gradeHybridMediaQuestion(
   const optionCount = readValidOptionIds(payload).size;
   const correctIds = readStringArray(payload.correctOptionIds);
   if (optionCount >= 2 && correctIds.length >= 1) {
-    const isMultiple = payload.multiple === true || correctIds.length > 1;
+    const isMultiple = isMultipleChoiceOptionPayload(payload);
     return isMultiple
       ? gradeMultipleChoice(questionId, maxPoints, payload, answer)
       : gradeSingleChoice(questionId, maxPoints, payload, answer);

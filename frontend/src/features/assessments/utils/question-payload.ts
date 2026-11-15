@@ -126,8 +126,13 @@ function validateDraftValues(draft: QuestionDraft): { prompt: string; points: nu
   const prompt = draft.prompt.trim();
   if (!prompt) throw new Error('Nội dung câu hỏi không được để trống');
   const points = Number(draft.points);
-  if (!Number.isFinite(points) || points <= 0 || points > 1000) {
-    throw new Error('Điểm câu hỏi phải lớn hơn 0 và tối đa 1000');
+  if (
+    !Number.isFinite(points) ||
+    points < 0.25 ||
+    points > 1000 ||
+    Math.abs(points * 4 - Math.round(points * 4)) >= 1e-6
+  ) {
+    throw new Error('Điểm câu hỏi phải từ 0.25 đến 1000 và chia hết cho 0.25');
   }
   return { prompt, points };
 }

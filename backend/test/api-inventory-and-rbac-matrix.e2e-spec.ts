@@ -122,9 +122,10 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'GET', path: '/api/v1/assignments/:assignmentId/submissions/me', isPublic: false },
   { method: 'GET', path: '/api/v1/assignments/:assignmentId/media/:mediaId', isPublic: false },
   { method: 'POST', path: '/api/v1/submissions/:submissionId/reopen', isPublic: false },
-  // GradingController (11 — Phase 7 Slices 7.1–7.4)
+  // GradingController (12 — Phase 7 Slices 7.1–7.4 + Batch AI)
   { method: 'GET', path: '/api/v1/assignments/:assignmentId/grading-tracker', isPublic: false },
   { method: 'POST', path: '/api/v1/assignments/:assignmentId/overdue-zero', isPublic: false },
+  { method: 'POST', path: '/api/v1/assignments/:assignmentId/ai-grade', isPublic: false },
   { method: 'POST', path: '/api/v1/assignments/:assignmentId/confirm-grades', isPublic: false },
   { method: 'POST', path: '/api/v1/assignments/:assignmentId/publish-grades', isPublic: false },
   { method: 'GET', path: '/api/v1/assignments/:assignmentId/published-result', isPublic: false },
@@ -227,7 +228,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(96);
+    expect(actualRoutes).toHaveLength(97);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -530,6 +531,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'post', url: `/api/v1/submissions/${nilId}/reopen` },
       { method: 'get', url: `/api/v1/assignments/${nilId}/grading-tracker` },
       { method: 'post', url: `/api/v1/assignments/${nilId}/overdue-zero` },
+      { method: 'post', url: `/api/v1/assignments/${nilId}/ai-grade` },
       { method: 'post', url: `/api/v1/assignments/${nilId}/confirm-grades` },
       { method: 'post', url: `/api/v1/assignments/${nilId}/publish-grades` },
       { method: 'get', url: `/api/v1/assignments/${nilId}/published-result` },
@@ -597,6 +599,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'post' as const, url: `/api/v1/submissions/${nilId}/reopen` },
       { method: 'get' as const, url: `/api/v1/assignments/${nilId}/grading-tracker` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/overdue-zero` },
+      { method: 'post' as const, url: `/api/v1/assignments/${nilId}/ai-grade` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/confirm-grades` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/publish-grades` },
       { method: 'get' as const, url: `/api/v1/submissions/${nilId}/grading-detail` },
@@ -750,6 +753,11 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .expect(403);
     await request(server)
       .post(`/api/v1/submissions/${nilId}/ai-grade`)
+      .set('Authorization', `Bearer ${saToken}`)
+      .send({})
+      .expect(403);
+    await request(server)
+      .post(`/api/v1/assignments/${nilId}/ai-grade`)
       .set('Authorization', `Bearer ${saToken}`)
       .send({})
       .expect(403);

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,7 +10,10 @@ import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import type { AutoGradeSubmissionResultDto } from '../grading.types.js';
-import { ensureObjectiveAnswersScoredTx } from '../policies/grading-workflow.policy.js';
+import {
+  CONFIRMED_OR_PUBLISHED_STATUSES,
+  ensureObjectiveAnswersScoredTx,
+} from '../policies/grading-workflow.policy.js';
 
 const NON_GRADABLE_SUBMISSION_STATUSES = new Set<SubmissionStatus>([
   SubmissionStatus.IN_PROGRESS,
@@ -77,6 +81,11 @@ export class AutoGradingService {
       }
       if (NON_GRADABLE_SUBMISSION_STATUSES.has(submission.status)) {
         throw new BadRequestException('Chỉ có thể chấm tự động bài đã nộp hợp lệ');
+      }
+      if (CONFIRMED_OR_PUBLISHED_STATUSES.has(submission.status)) {
+        throw new ConflictException(
+          'Bài nộp đã xác nhận hoặc công bố điểm, vui lòng dùng luồng sửa điểm có lý do',
+        );
       }
 
       const questions = submission.classAssignment.assessment.questions;

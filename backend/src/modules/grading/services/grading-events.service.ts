@@ -33,13 +33,13 @@ export class GradingEventsService {
     }
 
     for (const listener of this.listeners) {
-      try {
-        void listener(event);
-      } catch (err) {
-        this.logger.warn(
-          `Scores published listener error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      Promise.resolve()
+        .then(() => listener(event))
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `Scores published listener error: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
     }
   }
 }

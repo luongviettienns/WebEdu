@@ -23,8 +23,8 @@ import type { SubmissionAnswerPolicy } from '../policies/submission-answer.polic
 import { isRecord } from '../policies/submission-payload.util.js';
 import {
   evaluateQuestionAnswer,
-  summarizeSubmissionAutoGrade,
 } from '../../grading/policies/auto-grading.policy.js';
+import { ensureObjectiveAnswersScoredTx } from '../../grading/policies/grading-workflow.policy.js';
 
 export const AUDIO_LISTEN_WINDOW_MS = 2 * 60 * 1000;
 export const MAX_AUTOSAVE_ELAPSED_STEP_SECONDS = 120;
@@ -39,6 +39,25 @@ export function isExpired(
   return (
     now.getTime() > effectiveDueAt.getTime() + graceMs ||
     (remainingSeconds !== null && remainingSeconds <= 0)
+  );
+}
+
+export function isSubmissionOverdueForZero(
+  now: Date,
+  effectiveDueAt: Date,
+  activeSubmission: {
+    status: SubmissionStatus;
+    remainingSeconds?: number | null;
+  } | null,
+): boolean {
+  if (now.getTime() <= effectiveDueAt.getTime()) return false;
+  if (!activeSubmission) return true;
+  if (activeSubmission.status !== SubmissionStatus.IN_PROGRESS) return false;
+  return isExpired(
+    now,
+    effectiveDueAt,
+    activeSubmission.remainingSeconds ?? null,
+    SUBMIT_GRACE_MS,
   );
 }
 
@@ -259,29 +278,29 @@ export async function createInitialSubmission(
   });
 }
 
-export function computeMergedAutoScore(
-  questions: ReadonlyArray<QuestionRecord>,
-  existingAnswers: ReadonlyArray<{ questionId: string; answerPayload: unknown }>,
-  incomingAnswers?: ReadonlyMap<string, StudentAnswerPayload>,
-): number {
-  const answerMap = new Map<string, unknown>();
-  for (const ans of existingAnswers) {
-    answerMap.set(ans.questionId, ans.answerPayload);
-  }
-  if (incomingAnswers) {
-    for (const [questionId, payload] of incomingAnswers) {
-      answerMap.set(questionId, payload);
-    }
-  }
-  return summarizeSubmissionAutoGrade(questions, answerMap).autoScore;
-}
-
 export async function autoSubmitExpiredSubmission(
   tx: Prisma.TransactionClient,
+  assignment: AssignmentSessionRow,
   submissionId: string,
   now: Date,
-  autoScore?: number,
 ) {
+  const latestAnswers = await tx.submissionAnswer.findMany({
+    where: { submissionId },
+    select: {
+      id: true,
+      questionId: true,
+      answerPayload: true,
+      isCorrect: true,
+      earnedPoints: true,
+      teacherEdited: true,
+    },
+  });
+  const { autoScore } = await ensureObjectiveAnswersScoredTx(
+    tx,
+    submissionId,
+    assignment.assessment.questions,
+    latestAnswers,
+  );
   return tx.submission.update({
     where: { id: submissionId },
     data: {
@@ -290,7 +309,7 @@ export async function autoSubmitExpiredSubmission(
       submittedAt: now,
       lastSavedAt: now,
       lastSyncedAt: now,
-      ...(autoScore !== undefined ? { autoScore } : {}),
+      autoScore,
     },
     include: { answers: { orderBy: { updatedAt: 'asc' } } },
   });
@@ -313,17 +332,12 @@ export async function applySubmissionTickAndPersist(
 ): Promise<StudentExamSessionDto> {
   const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
   if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
-    const expiredAutoScore = computeMergedAutoScore(
-      assignment.assessment.questions,
-      submission.answers,
-    );
-    const updated = await autoSubmitExpiredSubmission(tx, submission.id, now, expiredAutoScore);
+    const updated = await autoSubmitExpiredSubmission(tx, assignment, submission.id, now);
     return buildStudentExamSessionDto(answerPolicy, assignment, updated, now, actorId);
   }
 
-  let normalizedIncoming: Map<string, StudentAnswerPayload> | undefined;
   if (params.answers?.length) {
-    normalizedIncoming = await validateAndUpsertAnswers(
+    await validateAndUpsertAnswers(
       tx,
       answerPolicy,
       submission.id,
@@ -342,13 +356,28 @@ export async function applySubmissionTickAndPersist(
   const expired = isExpired(now, effectiveDueAt, timers.remainingSeconds, SUBMIT_GRACE_MS);
   const shouldSubmit = params.forceSubmit || expired;
   const autoSubmitted = Boolean(params.clientAutoSubmitted) || expired;
-  const autoScore = shouldSubmit
-    ? computeMergedAutoScore(
-        assignment.assessment.questions,
-        submission.answers,
-        normalizedIncoming,
-      )
-    : undefined;
+
+  let autoScore: number | undefined;
+  if (shouldSubmit) {
+    const latestAnswers = await tx.submissionAnswer.findMany({
+      where: { submissionId: submission.id },
+      select: {
+        id: true,
+        questionId: true,
+        answerPayload: true,
+        isCorrect: true,
+        earnedPoints: true,
+        teacherEdited: true,
+      },
+    });
+    const scored = await ensureObjectiveAnswersScoredTx(
+      tx,
+      submission.id,
+      assignment.assessment.questions,
+      latestAnswers,
+    );
+    autoScore = scored.autoScore;
+  }
 
   const updated = await tx.submission.update({
     where: { id: submission.id },
@@ -386,8 +415,7 @@ export async function recoverSessionAfterUniqueConflict(
     const now = new Date();
     const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, existing.dueAtOverride);
     if (isExpired(now, effectiveDueAt, existing.remainingSeconds, SUBMIT_GRACE_MS)) {
-      const autoScore = computeMergedAutoScore(assignment.assessment.questions, existing.answers);
-      existing = await autoSubmitExpiredSubmission(tx, existing.id, now, autoScore);
+      existing = await autoSubmitExpiredSubmission(tx, assignment, existing.id, now);
     }
     return buildStudentExamSessionDto(answerPolicy, assignment, existing, now, studentId);
   });

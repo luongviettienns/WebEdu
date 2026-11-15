@@ -9,18 +9,32 @@ import {
   IsNumber,
   IsObject,
   IsOptional,
-  IsPositive,
   IsString,
   IsUUID,
   Max,
   MaxLength,
   Min,
+  Validate,
   ValidateIf,
+  type ValidatorConstraintInterface,
+  ValidatorConstraint,
 } from 'class-validator';
 import { AssessmentStatus, AssessmentType, QuestionType } from '@prisma/client';
 
 const trimValue = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
+
+@ValidatorConstraint({ name: 'isQuarterStepQuestionPoints', async: false })
+export class IsQuarterStepQuestionPointsConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+    return value >= 0.25 && Math.abs(value * 4 - Math.round(value * 4)) < 1e-6;
+  }
+
+  defaultMessage(): string {
+    return 'Điểm câu hỏi phải từ 0.25 trở lên và là bội số của 0.25';
+  }
+}
 
 export class CreateAssessmentDto {
   @Transform(trimValue)
@@ -81,8 +95,9 @@ export class CreateQuestionDto {
   payload!: Record<string, unknown>;
 
   @IsNumber({ allowNaN: false, allowInfinity: false })
-  @IsPositive()
+  @Min(0.25, { message: 'Điểm câu hỏi phải từ 0.25 trở lên' })
   @Max(1000)
+  @Validate(IsQuarterStepQuestionPointsConstraint)
   points!: number;
 }
 
@@ -100,8 +115,9 @@ export class UpdateQuestionDto {
 
   @ValidateIf((_, value) => value !== undefined)
   @IsNumber({ allowNaN: false, allowInfinity: false })
-  @IsPositive()
+  @Min(0.25, { message: 'Điểm câu hỏi phải từ 0.25 trở lên' })
   @Max(1000)
+  @Validate(IsQuarterStepQuestionPointsConstraint)
   points?: number;
 
   @ValidateIf((_, value) => value !== undefined)

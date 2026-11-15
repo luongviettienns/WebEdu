@@ -16,14 +16,14 @@ export const AI_PROVIDER_PRESETS: Record<
   { label: string; baseUrl: string; model: string }
 > = {
   OPENAI: {
-    label: 'OpenAI (ChatGPT / GPT-4o)',
+    label: 'OpenAI (ChatGPT / GPT-6)',
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
+    model: 'gpt-6-luna',
   },
   GEMINI: {
-    label: 'Google Gemini (OpenAI-compatible)',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.5-flash',
+    label: 'Google Gemini (Native REST)',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    model: 'gemini-3.5-flash-lite',
   },
   CUSTOM: {
     label: 'Tùy chỉnh (OpenRouter / Groq / DeepSeek / Ollama / vLLM)',
@@ -32,8 +32,40 @@ export const AI_PROVIDER_PRESETS: Record<
   },
 };
 
-const PRESET_URLS = new Set(Object.values(AI_PROVIDER_PRESETS).map((p) => p.baseUrl));
-const PRESET_MODELS = new Set(Object.values(AI_PROVIDER_PRESETS).map((p) => p.model));
+const PRESET_URLS = new Set([
+  ...Object.values(AI_PROVIDER_PRESETS).map((p) => p.baseUrl),
+  'https://generativelanguage.googleapis.com/v1beta/openai',
+]);
+const PRESET_MODELS = new Set([
+  ...Object.values(AI_PROVIDER_PRESETS).map((p) => p.model),
+  'gpt-4o-mini',
+  'gemini-2.5-flash',
+]);
+
+export function normalizeAiBaseUrlForKeyTarget(
+  targetProvider: AiGradingProvider,
+  rawUrl: string,
+): string {
+  const candidate = rawUrl.trim() || AI_PROVIDER_PRESETS[targetProvider].baseUrl;
+  if (!candidate) return '';
+  try {
+    const parsed = new URL(candidate);
+    const bareHost = parsed.hostname.replace(/^\[|\]$/g, '').replace(/\.+$/, '').toLowerCase();
+    const hostWithBrackets = bareHost.includes(':') ? `[${bareHost}]` : bareHost;
+    const portSuffix = parsed.port ? `:${parsed.port}` : '';
+    const normalizedPath = parsed.pathname.replace(/\/+$/, '');
+    const normalized = `${parsed.protocol}//${hostWithBrackets}${portSuffix}${normalizedPath}`;
+    if (targetProvider === 'GEMINI') {
+      return normalized.replace(
+        /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/openai$/i,
+        'https://generativelanguage.googleapis.com/v1beta',
+      );
+    }
+    return normalized;
+  } catch {
+    return candidate.replace(/\/+$/, '');
+  }
+}
 
 export function useAiGradingConfig(
   onAuthError: (error: unknown) => boolean,
@@ -42,7 +74,7 @@ export function useAiGradingConfig(
   const [config, setConfig] = useState<AiGradingConfigResponse | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [provider, setProvider] = useState<AiGradingProvider>('OPENAI');
-  const [baseUrl, setBaseUrl] = useState(AI_PROVIDER_PRESETS.OPENAI.baseUrl);
+  const [baseUrl, setBaseUrlState] = useState(AI_PROVIDER_PRESETS.OPENAI.baseUrl);
   const [model, setModel] = useState(AI_PROVIDER_PRESETS.OPENAI.model);
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -62,7 +94,7 @@ export function useAiGradingConfig(
         setConfig(res);
         setEnabled(res.enabled);
         setProvider(res.provider);
-        setBaseUrl(res.baseUrl);
+        setBaseUrlState(normalizeAiBaseUrlForKeyTarget(res.provider, res.baseUrl));
         setModel(res.model);
       } catch (err) {
         if (controller.signal.aborted || onAuthError(err)) return;
@@ -74,13 +106,41 @@ export function useAiGradingConfig(
     return () => controller.abort();
   }, [onAuthError]);
 
+  const canReuseStoredKey = Boolean(
+    config?.hasApiKey &&
+      config.provider === provider &&
+      normalizeAiBaseUrlForKeyTarget(provider, baseUrl) ===
+        normalizeAiBaseUrlForKeyTarget(config.provider, config.baseUrl),
+  );
+
+  const handleBaseUrlChange = (nextUrl: string) => {
+    if (
+      normalizeAiBaseUrlForKeyTarget(provider, nextUrl) !==
+      normalizeAiBaseUrlForKeyTarget(provider, baseUrl)
+    ) {
+      setApiKeyInput('');
+    }
+    setSaveSuccess('');
+    setErrorMsg('');
+    setTestResult(null);
+    setBaseUrlState(nextUrl);
+  };
+
   const handleProviderChange = (next: AiGradingProvider) => {
+    const preset = AI_PROVIDER_PRESETS[next];
+    const nextBaseUrl = !baseUrl.trim() || PRESET_URLS.has(baseUrl.trim()) ? preset.baseUrl : baseUrl;
+    if (
+      next !== provider ||
+      normalizeAiBaseUrlForKeyTarget(next, nextBaseUrl) !==
+        normalizeAiBaseUrlForKeyTarget(provider, baseUrl)
+    ) {
+      setApiKeyInput('');
+    }
     setProvider(next);
     setSaveSuccess('');
     setErrorMsg('');
     setTestResult(null);
-    const preset = AI_PROVIDER_PRESETS[next];
-    if (!baseUrl.trim() || PRESET_URLS.has(baseUrl.trim())) setBaseUrl(preset.baseUrl);
+    if (nextBaseUrl !== baseUrl) setBaseUrlState(nextBaseUrl);
     if (!model.trim() || PRESET_MODELS.has(model.trim())) setModel(preset.model);
   };
 
@@ -100,7 +160,7 @@ export function useAiGradingConfig(
       setConfig(updated);
       setEnabled(updated.enabled);
       setProvider(updated.provider);
-      setBaseUrl(updated.baseUrl);
+      setBaseUrlState(normalizeAiBaseUrlForKeyTarget(updated.provider, updated.baseUrl));
       setModel(updated.model);
       setApiKeyInput('');
       setSaveSuccess('Đã lưu cấu hình AI chấm tự luận thành công!');
@@ -116,6 +176,12 @@ export function useAiGradingConfig(
     setErrorMsg('');
     setSaveSuccess('');
     setTestResult(null);
+    if (!apiKeyInput.trim() && !canReuseStoredKey) {
+      setErrorMsg(
+        'Vui lòng nhập API Key mới khi thay đổi Provider hoặc Base URL trước khi kiểm tra kết nối',
+      );
+      return;
+    }
     setTesting(true);
     try {
       const res = await testAiGradingConnection({
@@ -134,11 +200,12 @@ export function useAiGradingConfig(
 
   return {
     config,
+    canReuseStoredKey,
     enabled,
     setEnabled,
     provider,
     baseUrl,
-    setBaseUrl,
+    setBaseUrl: handleBaseUrlChange,
     model,
     setModel,
     apiKeyInput,

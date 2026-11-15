@@ -5,6 +5,7 @@ import {
 } from '../../assignments/mappers/assignment.mapper.js';
 import type { AssignmentDisplayStatus } from '../../assignments/assignments.types.js';
 import { isRecord } from '../../assignments/policies/submission-payload.util.js';
+import { isSubmissionOverdueForZero } from '../../assignments/services/submission-session.util.js';
 import type {
   GradeAuditLogItemDto,
   GradingTrackerAssignmentDto,
@@ -13,7 +14,10 @@ import type {
   StudentPublishedQuestionResultDto,
   TeacherGradingQuestionDetailDto,
 } from '../grading.types.js';
-import { roundToQuarter } from '../policies/answer-normalizer.policy.js';
+import {
+  resolveEffectiveQuestionPoints,
+  sumQuestionMaxScore,
+} from '../policies/answer-normalizer.policy.js';
 import {
   computeSubmissionScoreSummary,
   isObjectiveQuestion,
@@ -47,6 +51,7 @@ export interface TrackerSubmissionInput {
   status: SubmissionStatus;
   gradingStatus: GradingStatus;
   dueAtOverride: Date | null;
+  remainingSeconds?: number | null;
   submittedAt: Date | null;
   autoSubmitted: boolean;
   autoScore: number | null;
@@ -57,6 +62,7 @@ export interface TrackerSubmissionInput {
 
 export function toGradingTrackerAssignmentDto(
   row: TrackerAssignmentInput,
+  preserveLegacyScale = false,
 ): GradingTrackerAssignmentDto {
   const questions = row.assessment.questions;
   return {
@@ -68,7 +74,7 @@ export function toGradingTrackerAssignmentDto(
     classCode: row.class.code,
     className: row.class.course?.name ?? row.class.code,
     dueAt: row.dueAt.toISOString(),
-    totalPoints: roundToQuarter(questions.reduce((sum, q) => sum + q.points, 0)),
+    totalPoints: sumQuestionMaxScore(questions, preserveLegacyScale),
     questionCount: questions.length,
     hasSubjectiveQuestions: questions.some((q) => !isObjectiveQuestion(q)),
   };
@@ -83,8 +89,7 @@ export function toGradingTrackerStudentRow(
 ): GradingTrackerStudentRowDto {
   const status: AssignmentDisplayStatus = activeSub?.status ?? 'NOT_STARTED';
   const effectiveDueAt = resolveEffectiveDueAt(classDueAt, activeSub?.dueAtOverride);
-  const isNotSubmittedYet = activeSub === null || activeSub.status === SubmissionStatus.IN_PROGRESS;
-  const isOverdueNotSubmitted = isNotSubmittedYet && now.getTime() > effectiveDueAt.getTime();
+  const isOverdueNotSubmitted = isSubmissionOverdueForZero(now, effectiveDueAt, activeSub);
   const isLateSubmission =
     activeSub?.submittedAt !== null &&
     activeSub?.submittedAt !== undefined &&
@@ -129,6 +134,7 @@ export function toGradingTrackerStudentRow(
 export function toTeacherGradingQuestionDetail(
   question: QuestionForGrading,
   answer?: TrackerSubmissionAnswerInput,
+  preserveLegacyScale = false,
 ): TeacherGradingQuestionDetailDto {
   const payload = isRecord(question.payload) ? question.payload : {};
   return {
@@ -136,7 +142,7 @@ export function toTeacherGradingQuestionDetail(
     position: question.position,
     type: question.type,
     prompt: question.prompt,
-    points: question.points,
+    points: resolveEffectiveQuestionPoints(question.points, preserveLegacyScale),
     isObjective: isObjectiveQuestion(question),
     questionPayload: payload,
     studentAnswer: {
@@ -159,6 +165,7 @@ export function toPublishedStudentQuestionResult(
     TrackerSubmissionAnswerInput,
     'answerPayload' | 'isCorrect' | 'earnedPoints' | 'teacherComment'
   >,
+  preserveLegacyScale = false,
 ): StudentPublishedQuestionResultDto {
   const objective = isObjectiveQuestion(question);
   const payload = isRecord(question.payload) ? question.payload : {};
@@ -172,7 +179,7 @@ export function toPublishedStudentQuestionResult(
     position: question.position,
     type: question.type,
     prompt: question.prompt,
-    points: question.points,
+    points: resolveEffectiveQuestionPoints(question.points, preserveLegacyScale),
     isObjective: objective,
     studentAnswer: {
       answerPayload: isRecord(answer?.answerPayload) ? answer.answerPayload : {},

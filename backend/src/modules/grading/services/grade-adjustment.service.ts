@@ -10,11 +10,18 @@ import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import type { AdjustGradeSubmissionDto } from '../dto/grading.dto.js';
 import type { AdjustGradeResultDto } from '../grading.types.js';
+import { normalizeQuestionPoints } from '../policies/answer-normalizer.policy.js';
 import {
   assertValidQuestionScore,
   computeSubmissionScoreSummary,
   CONFIRMED_OR_PUBLISHED_STATUSES,
 } from '../policies/grading-workflow.policy.js';
+import {
+  assertNoDuplicateQuestionIds,
+  assertOptimisticAnswerMatch,
+  assertOptimisticTeacherFeedbackMatch,
+  lockClassRowForSubmissionTx,
+} from './grading-locking.util.js';
 
 @Injectable()
 export class GradeAdjustmentService {
@@ -36,8 +43,19 @@ export class GradeAdjustmentService {
       throw new BadRequestException('Vui lòng chọn ít nhất một câu hỏi hoặc nhận xét cần chỉnh sửa');
     }
 
+    assertNoDuplicateQuestionIds(
+      dto.answers ?? [],
+      'Danh sách câu hỏi điều chỉnh có questionId bị trùng lặp',
+    );
+    for (const item of dto.answers ?? []) {
+      if (item.earnedPoints === undefined && item.teacherComment === undefined) {
+        throw new BadRequestException('Mỗi câu hỏi điều chỉnh phải thay đổi điểm hoặc nhận xét');
+      }
+    }
+
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
+      await lockClassRowForSubmissionTx(tx, submissionId);
       await tx.$queryRaw`SELECT id FROM "submissions" WHERE id = ${submissionId} FOR UPDATE`;
       const submission = await tx.submission.findUnique({
         where: { id: submissionId },
@@ -60,6 +78,7 @@ export class GradeAdjustmentService {
               id: true,
               questionId: true,
               earnedPoints: true,
+              teacherComment: true,
             },
           },
         },
@@ -81,11 +100,17 @@ export class GradeAdjustmentService {
         );
       }
 
+      assertOptimisticTeacherFeedbackMatch(
+        submission.teacherFeedback,
+        dto.previousTeacherFeedback,
+      );
+
       const questions = submission.classAssignment.assessment.questions;
       const questionMap = new Map(questions.map((q) => [q.id, q]));
       const existingByQuestion = new Map(submission.answers.map((a) => [a.questionId, a]));
 
       let auditLogsCreated = 0;
+      let scoreFieldChanged = false;
 
       for (const item of dto.answers ?? []) {
         const question = questionMap.get(item.questionId);
@@ -93,63 +118,106 @@ export class GradeAdjustmentService {
           throw new BadRequestException('Câu hỏi không thuộc đề bài của bài nộp này');
         }
 
-        const newPoints = assertValidQuestionScore(
-          item.earnedPoints,
-          question.points,
-          question.position,
-        );
         const existing = existingByQuestion.get(question.id);
-        const oldPoints = existing?.earnedPoints ?? 0;
+        const existingPoints =
+          existing?.earnedPoints !== null && existing?.earnedPoints !== undefined
+            ? Number(existing.earnedPoints)
+            : null;
+        const existingComment = existing?.teacherComment?.trim() || null;
 
-        const savedAnswer = await tx.submissionAnswer.upsert({
-          where: {
-            submissionId_questionId: {
-              submissionId: submission.id,
-              questionId: question.id,
-            },
-          },
-          create: {
-            submissionId: submission.id,
-            questionId: question.id,
-            answerPayload: {} as Prisma.InputJsonValue,
-            earnedPoints: newPoints,
-            teacherEdited: true,
-            ...(item.teacherComment !== undefined
-              ? { teacherComment: item.teacherComment?.trim() || null }
-              : {}),
-          },
-          update: {
-            earnedPoints: newPoints,
-            teacherEdited: true,
-            ...(item.teacherComment !== undefined
-              ? { teacherComment: item.teacherComment?.trim() || null }
-              : {}),
-          },
-          select: { id: true },
+        assertOptimisticAnswerMatch({
+          questionPosition: question.position,
+          existingPoints,
+          existingComment,
+          previousEarnedPoints: item.previousEarnedPoints,
+          previousTeacherComment: item.previousTeacherComment,
         });
 
-        if (oldPoints !== newPoints || existing?.earnedPoints === null) {
-          await tx.gradeAuditLog.create({
-            data: {
-              submissionId: submission.id,
-              answerId: savedAnswer.id,
-              actorId: actor.id,
-              oldScore: oldPoints,
-              newScore: newPoints,
-              reason,
+        const nextCommentPatch =
+          item.teacherComment !== undefined
+            ? { teacherComment: item.teacherComment?.trim() || null }
+            : {};
+
+        if (item.earnedPoints !== undefined) {
+          const newPoints = assertValidQuestionScore(
+            item.earnedPoints,
+            normalizeQuestionPoints(question.points),
+            question.position,
+          );
+          const oldPoints = existingPoints ?? 0;
+          scoreFieldChanged = true;
+
+          const savedAnswer = await tx.submissionAnswer.upsert({
+            where: {
+              submissionId_questionId: {
+                submissionId: submission.id,
+                questionId: question.id,
+              },
             },
+            create: {
+              submissionId: submission.id,
+              questionId: question.id,
+              answerPayload: {} as Prisma.InputJsonValue,
+              earnedPoints: newPoints,
+              teacherEdited: true,
+              ...nextCommentPatch,
+            },
+            update: {
+              earnedPoints: newPoints,
+              teacherEdited: true,
+              ...nextCommentPatch,
+            },
+            select: { id: true },
           });
-          auditLogsCreated += 1;
+
+          if (oldPoints !== newPoints || existing?.earnedPoints === null || existing === undefined) {
+            await tx.gradeAuditLog.create({
+              data: {
+                submissionId: submission.id,
+                answerId: savedAnswer.id,
+                actorId: actor.id,
+                oldScore: oldPoints,
+                newScore: newPoints,
+                reason,
+              },
+            });
+            auditLogsCreated += 1;
+          }
+        } else {
+          await tx.submissionAnswer.upsert({
+            where: {
+              submissionId_questionId: {
+                submissionId: submission.id,
+                questionId: question.id,
+              },
+            },
+            create: {
+              submissionId: submission.id,
+              questionId: question.id,
+              answerPayload: {} as Prisma.InputJsonValue,
+              earnedPoints: null,
+              teacherEdited: true,
+              ...nextCommentPatch,
+            },
+            update: {
+              teacherEdited: true,
+              ...nextCommentPatch,
+            },
+            select: { id: true },
+          });
         }
       }
 
-      const latestAnswers = await tx.submissionAnswer.findMany({
-        where: { submissionId: submission.id },
-        select: { questionId: true, earnedPoints: true },
-      });
-      const latestMap = new Map(latestAnswers.map((a) => [a.questionId, a]));
-      const summary = computeSubmissionScoreSummary(questions, latestMap);
-      const nextTotalScore = summary.totalScore ?? 0;
+      let nextTotalScore = submission.totalScore ?? 0;
+      if (scoreFieldChanged) {
+        const latestAnswers = await tx.submissionAnswer.findMany({
+          where: { submissionId: submission.id },
+          select: { questionId: true, earnedPoints: true },
+        });
+        const latestMap = new Map(latestAnswers.map((a) => [a.questionId, a]));
+        const summary = computeSubmissionScoreSummary(questions, latestMap);
+        nextTotalScore = summary.totalScore ?? 0;
+      }
 
       const isPublished = submission.status === SubmissionStatus.RETURNED;
       const nextFeedback =

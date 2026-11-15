@@ -23,7 +23,11 @@ import {
   toGradingTrackerAssignmentDto,
   toTeacherGradingQuestionDetail,
 } from '../mappers/grading-result.mapper.js';
-import { clampScoreToQuarter } from '../policies/answer-normalizer.policy.js';
+import {
+  clampScoreToQuarter,
+  hasLegacyOffStepScores,
+  normalizeQuestionPoints,
+} from '../policies/answer-normalizer.policy.js';
 import {
   assertValidQuestionScore,
   computeSubmissionScoreSummary,
@@ -31,6 +35,21 @@ import {
   GRADEABLE_ACTIVE_STATUSES,
   resolveNavNeighbors,
 } from '../policies/grading-workflow.policy.js';
+import {
+  assertNoDuplicateQuestionIds,
+  assertOptimisticAnswerMatch,
+  assertOptimisticTeacherFeedbackMatch,
+  lockClassRowForSubmissionTx,
+} from './grading-locking.util.js';
+
+const QUESTION_SELECT_FOR_GRADING = {
+  id: true,
+  position: true,
+  type: true,
+  prompt: true,
+  points: true,
+  payload: true,
+} as const;
 
 @Injectable()
 export class TeacherGradingService {
@@ -54,17 +73,7 @@ export class TeacherGradingService {
               select: {
                 title: true,
                 type: true,
-                questions: {
-                  orderBy: { position: 'asc' },
-                  select: {
-                    id: true,
-                    position: true,
-                    type: true,
-                    prompt: true,
-                    points: true,
-                    payload: true,
-                  },
-                },
+                questions: { orderBy: { position: 'asc' }, select: QUESTION_SELECT_FOR_GRADING },
               },
             },
             class: { select: { code: true, course: { select: { name: true } } } },
@@ -80,32 +89,18 @@ export class TeacherGradingService {
         },
       },
     });
+    if (!submission) throw new NotFoundException('Không tìm thấy bài nộp');
 
-    if (!submission) {
-      throw new NotFoundException('Không tìm thấy bài nộp');
-    }
+    await this.accessPolicy.assertTeacherOrAdminCanReadClass(this.prisma, actor, submission.classAssignment.classId);
 
-    await this.accessPolicy.assertTeacherOrAdminCanReadClass(
-      this.prisma,
-      actor,
-      submission.classAssignment.classId,
-    );
-
-    if (
-      submission.status === SubmissionStatus.IN_PROGRESS ||
-      submission.status === SubmissionStatus.SUPERSEDED
-    ) {
-      throw new BadRequestException(
-        'Chỉ có thể xem chi tiết chấm bài cho bài đã nộp hoặc đã ghi nhận điểm',
-      );
+    if (submission.status === SubmissionStatus.IN_PROGRESS || submission.status === SubmissionStatus.SUPERSEDED) {
+      throw new BadRequestException('Chỉ có thể xem chi tiết chấm bài cho bài đã nộp hoặc đã ghi nhận điểm');
     }
 
     const siblingSubs = await this.prisma.submission.findMany({
       where: {
         classAssignmentId: submission.classAssignmentId,
-        status: {
-          notIn: [SubmissionStatus.SUPERSEDED, SubmissionStatus.IN_PROGRESS],
-        },
+        status: { notIn: [SubmissionStatus.SUPERSEDED, SubmissionStatus.IN_PROGRESS] },
         student: {
           enrollments: {
             some: {
@@ -122,13 +117,11 @@ export class TeacherGradingService {
     const questions = submission.classAssignment.assessment.questions;
     const answerByQuestion = new Map(submission.answers.map((ans) => [ans.questionId, ans]));
     const scoreSummary = computeSubmissionScoreSummary(questions, answerByQuestion);
-    const effectiveDueAt = resolveEffectiveDueAt(
-      submission.classAssignment.dueAt,
-      submission.dueAtOverride,
-    );
+    const effectiveDueAt = resolveEffectiveDueAt(submission.classAssignment.dueAt, submission.dueAtOverride);
     const isLateSubmission =
-      submission.submittedAt !== null &&
-      submission.submittedAt.getTime() > effectiveDueAt.getTime();
+      submission.submittedAt !== null && submission.submittedAt.getTime() > effectiveDueAt.getTime();
+    const preserveLegacyScale =
+      CONFIRMED_OR_PUBLISHED_STATUSES.has(submission.status) && hasLegacyOffStepScores(submission);
 
     return {
       submission: {
@@ -152,16 +145,11 @@ export class TeacherGradingService {
         hasSubjectiveQuestions: scoreSummary.hasSubjectiveQuestions,
         ungradedSubjectiveCount: scoreSummary.ungradedSubjectiveCount,
       },
-      assignment: toGradingTrackerAssignmentDto(submission.classAssignment),
+      assignment: toGradingTrackerAssignmentDto(submission.classAssignment, preserveLegacyScale),
       student: submission.student,
-      questions: questions.map((q) =>
-        toTeacherGradingQuestionDetail(q, answerByQuestion.get(q.id)),
-      ),
+      questions: questions.map((q) => toTeacherGradingQuestionDetail(q, answerByQuestion.get(q.id), preserveLegacyScale)),
       auditLogs: submission.gradeAuditLogs.map(toGradeAuditLogItemDto),
-      navigation: resolveNavNeighbors(
-        siblingSubs.map((s) => s.id),
-        submission.id,
-      ),
+      navigation: resolveNavNeighbors(siblingSubs.map((s) => s.id), submission.id),
     };
   }
 
@@ -173,8 +161,10 @@ export class TeacherGradingService {
     if ((!dto.answers || dto.answers.length === 0) && dto.teacherFeedback === undefined) {
       throw new BadRequestException('Vui lòng nhập điểm câu hỏi hoặc nhận xét bài làm');
     }
+    assertNoDuplicateQuestionIds(dto.answers ?? [], 'Danh sách câu chấm có questionId bị trùng lặp');
 
     return this.prisma.$transaction(async (tx) => {
+      await lockClassRowForSubmissionTx(tx, submissionId);
       await tx.$queryRaw`SELECT id FROM "submissions" WHERE id = ${submissionId} FOR UPDATE`;
       const submission = await tx.submission.findUnique({
         where: { id: submissionId },
@@ -184,16 +174,7 @@ export class TeacherGradingService {
               classId: true,
               assessment: {
                 select: {
-                  questions: {
-                    orderBy: { position: 'asc' },
-                    select: {
-                      id: true,
-                      position: true,
-                      type: true,
-                      points: true,
-                      payload: true,
-                    },
-                  },
+                  questions: { orderBy: { position: 'asc' }, select: QUESTION_SELECT_FOR_GRADING },
                 },
               },
             },
@@ -201,16 +182,9 @@ export class TeacherGradingService {
           answers: true,
         },
       });
+      if (!submission) throw new NotFoundException('Không tìm thấy bài nộp');
 
-      if (!submission) {
-        throw new NotFoundException('Không tìm thấy bài nộp');
-      }
-
-      await this.accessPolicy.assertTeacherOrAdminCanAccessClass(
-        tx,
-        actor,
-        submission.classAssignment.classId,
-      );
+      await this.accessPolicy.assertTeacherOrAdminCanAccessClass(tx, actor, submission.classAssignment.classId);
 
       if (CONFIRMED_OR_PUBLISHED_STATUSES.has(submission.status)) {
         throw new ConflictException(
@@ -220,6 +194,10 @@ export class TeacherGradingService {
       if (!GRADEABLE_ACTIVE_STATUSES.has(submission.status)) {
         throw new BadRequestException('Chỉ có thể chấm thủ công cho bài đã nộp hợp lệ');
       }
+      assertOptimisticTeacherFeedbackMatch(
+        submission.teacherFeedback,
+        dto.previousTeacherFeedback,
+      );
 
       const questions = submission.classAssignment.assessment.questions;
       const questionMap = new Map(questions.map((q) => [q.id, q]));
@@ -232,17 +210,26 @@ export class TeacherGradingService {
         }
 
         const existing = existingByQuestion.get(item.questionId);
+        assertOptimisticAnswerMatch({
+          questionPosition: question.position,
+          existingPoints: existing?.earnedPoints ?? null,
+          existingComment: existing?.teacherComment?.trim() || null,
+          previousEarnedPoints: item.previousEarnedPoints,
+          previousTeacherComment: item.previousTeacherComment,
+        });
+
+        const effectiveMaxPoints = normalizeQuestionPoints(question.points);
         let nextPoints: number | undefined;
 
         if (item.applyAiSuggestion === true) {
           if (existing?.aiSuggestedPoints === null || existing?.aiSuggestedPoints === undefined) {
             throw new BadRequestException('Câu hỏi chưa có điểm gợi ý từ AI để áp dụng');
           }
-          nextPoints = clampScoreToQuarter(existing.aiSuggestedPoints, question.points);
+          nextPoints = clampScoreToQuarter(existing.aiSuggestedPoints, effectiveMaxPoints);
         } else if (item.earnedPoints !== undefined) {
           nextPoints = assertValidQuestionScore(
             item.earnedPoints,
-            question.points,
+            effectiveMaxPoints,
             question.position,
           );
         }

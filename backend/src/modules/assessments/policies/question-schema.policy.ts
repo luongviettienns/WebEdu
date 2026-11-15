@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
+import { isMultipleChoiceOptionPayload } from '../../assignments/policies/submission-payload.util.js';
 
 type Option = { id: string; text: string; imageMediaId?: string };
 
@@ -58,6 +59,14 @@ export class QuestionSchemaPolicy {
           throw new BadRequestException('Dạng câu này yêu cầu mediaId');
         }
         this.assertOptionalIntRange(p.maxListens, 1, 20, 'Số lần nghe tối đa phải là số nguyên từ 1 đến 20');
+        this.assertOptionalBoolean(p.multiple, 'multiple phải là boolean');
+        const options = optionsOf(p);
+        const hasOptionContent = options.some((o) => trimmed(o.text) || trimmed(o.imageMediaId));
+        if (hasOptionContent) {
+          const allowMultiple =
+            p.multiple === true || (p.multiple === undefined && isMultipleChoiceOptionPayload(p));
+          this.validateChoice(options, p, allowMultiple ? 2 : 1, true);
+        }
         return;
       }
       case QuestionType.IMAGE_BASED: {
@@ -71,7 +80,9 @@ export class QuestionSchemaPolicy {
         }
         const hasOptionContent = options.some((o) => trimmed(o.text) || trimmed(o.imageMediaId));
         if (hasOptionContent) {
-          this.validateChoice(options, p, p.multiple === true ? 2 : 1, true);
+          const allowMultiple =
+            p.multiple === true || (p.multiple === undefined && isMultipleChoiceOptionPayload(p));
+          this.validateChoice(options, p, allowMultiple ? 2 : 1, true);
         }
         return;
       }

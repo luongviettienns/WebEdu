@@ -159,7 +159,11 @@ export function StudentSubmittedView({ session }: StudentSubmittedViewProps) {
       {publishedResult ? (
         <div className="space-y-4">
           {publishedResult.questions.map((q) => (
-            <PublishedQuestionReviewCard key={q.questionId} question={q} />
+            <PublishedQuestionReviewCard
+              key={q.questionId}
+              assignmentId={assignment.assignmentId}
+              question={q}
+            />
           ))}
         </div>
       ) : (

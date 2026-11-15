@@ -4,12 +4,15 @@ import React from 'react';
 import { QUESTION_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import type { TeacherGradingQuestionDetailDto } from '@/features/grading/api/grading.api';
+import { SelectedOptionImages } from '@/features/grading/components/SelectedOptionImages';
 import {
+  extractSelectedOptionItems,
   formatAnswerPayloadText,
   formatCorrectAnswerText,
 } from '@/features/grading/utils/grading-status';
 
 interface GradingQuestionCardProps {
+  assignmentId: string;
   question: TeacherGradingQuestionDetailDto;
   scoreValue: string;
   commentValue: string;
@@ -22,6 +25,7 @@ interface GradingQuestionCardProps {
 }
 
 export function GradingQuestionCard({
+  assignmentId,
   question,
   scoreValue,
   commentValue,
@@ -39,6 +43,14 @@ export function GradingQuestionCard({
     questionPayload,
   );
   const keyText = formatCorrectAnswerText(question.type, questionPayload);
+  const selectedItems = extractSelectedOptionItems(
+    studentAnswer.answerPayload.selectedOptionIds,
+    questionPayload,
+  );
+  const correctItems = extractSelectedOptionItems(
+    questionPayload.correctOptionIds,
+    questionPayload,
+  );
   const rubricText =
     typeof questionPayload.rubric === 'string' && questionPayload.rubric.trim()
       ? questionPayload.rubric.trim()
@@ -78,6 +90,7 @@ export function GradingQuestionCard({
             Bài làm của học viên
           </div>
           <p className="mt-1 whitespace-pre-line text-sm text-[var(--ink)]">{studentText}</p>
+          <SelectedOptionImages assignmentId={assignmentId} items={selectedItems} />
         </div>
 
         <div className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-3">
@@ -85,6 +98,7 @@ export function GradingQuestionCard({
             {isObjective ? 'Đáp án đúng' : 'Đáp án mẫu / Hướng dẫn chấm'}
           </div>
           <p className="mt-1 whitespace-pre-line text-sm text-[var(--ink-2)]">{keyText}</p>
+          <SelectedOptionImages assignmentId={assignmentId} items={correctItems} />
           {rubricText ? (
             <p className="mt-1.5 border-t border-[var(--line)] pt-1.5 text-xs text-[var(--ink-3)]">
               <strong>Rubric:</strong> {rubricText}

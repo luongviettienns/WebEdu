@@ -127,8 +127,8 @@ export function NewQuestionComposer({
         <span>Điểm</span>
         <input
           type="number"
-          min="0.5"
-          step="0.5"
+          min="0.25"
+          step="0.25"
           className={`${FIELD} w-24`}
           value={points}
           onChange={(e) => setPoints(e.target.value)}

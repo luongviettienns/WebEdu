@@ -11,6 +11,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
 import { resolveEffectiveDueAt } from '../../assignments/mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
+import { isSubmissionOverdueForZero } from '../../assignments/services/submission-session.util.js';
 import type { GradingTrackerQueryDto, RecordOverdueZeroDto } from '../dto/grading.dto.js';
 import type {
   AssignmentGradingTrackerDto,
@@ -23,6 +24,12 @@ import {
   toGradingTrackerStudentRow,
 } from '../mappers/grading-result.mapper.js';
 import { matchesTrackerFilter } from '../policies/grading-workflow.policy.js';
+import {
+  lockAssignmentSubmissionsOrderedTx,
+  lockClassAssignmentRowTx,
+  lockClassRowForAssignmentTx,
+  zeroOutSubmissionAnswersTx,
+} from './grading-locking.util.js';
 
 function summarizeTrackerRows(
   rows: ReadonlyArray<GradingTrackerStudentRowDto>,
@@ -172,15 +179,29 @@ export class GradingTrackerService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "class_assignments" WHERE id = ${assignmentId} FOR UPDATE`;
+      await lockClassRowForAssignmentTx(tx, assignmentId);
+      await lockClassAssignmentRowTx(tx, assignmentId);
       const assignment = await tx.classAssignment.findUnique({
         where: { id: assignmentId },
-        select: { id: true, classId: true, dueAt: true },
+        select: {
+          id: true,
+          classId: true,
+          dueAt: true,
+          assessment: {
+            select: {
+              questions: {
+                orderBy: { position: 'asc' },
+                select: { id: true, position: true, type: true, points: true, payload: true },
+              },
+            },
+          },
+        },
       });
       if (!assignment) {
         throw new NotFoundException('Không tìm thấy bài giao');
       }
 
+      await lockAssignmentSubmissionsOrderedTx(tx, assignmentId);
       await this.accessPolicy.assertTeacherOrAdminCanAccessClass(tx, actor, assignment.classId);
 
       const enrollments = await tx.enrollment.findMany({
@@ -193,12 +214,14 @@ export class GradingTrackerService {
       const enrolledIds = new Set(enrollments.map((e) => e.studentId));
       const allSubmissions = await tx.submission.findMany({
         where: { classAssignmentId: assignmentId },
+        orderBy: { id: 'asc' },
         select: {
           id: true,
           studentId: true,
           attemptNumber: true,
           status: true,
           dueAtOverride: true,
+          remainingSeconds: true,
         },
       });
 
@@ -222,16 +245,15 @@ export class GradingTrackerService {
             throw new ConflictException('Học viên đã nộp bài, không thể ghi 0 điểm quá hạn');
           }
           const effectiveDue = resolveEffectiveDueAt(assignment.dueAt, active?.dueAtOverride);
-          if (now.getTime() <= effectiveDue.getTime()) {
+          if (!isSubmissionOverdueForZero(now, effectiveDue, active)) {
             throw new BadRequestException('Bài tập chưa quá hạn nộp đối với học viên đã chọn');
           }
         }
       } else {
         targetStudentIds = [...enrolledIds].filter((studentId) => {
           const active = activeByStudent.get(studentId) ?? null;
-          if (active && active.status !== SubmissionStatus.IN_PROGRESS) return false;
           const effectiveDue = resolveEffectiveDueAt(assignment.dueAt, active?.dueAtOverride);
-          return now.getTime() > effectiveDue.getTime();
+          return isSubmissionOverdueForZero(now, effectiveDue, active);
         });
         if (targetStudentIds.length === 0) {
           throw new BadRequestException('Không có học viên quá hạn chưa nộp bài cần ghi 0 điểm');
@@ -277,6 +299,7 @@ export class GradingTrackerService {
           savedId = created.id;
         }
 
+        await zeroOutSubmissionAnswersTx(tx, savedId, assignment.assessment?.questions ?? []);
         submissionIds.push(savedId);
         await tx.gradeAuditLog.create({
           data: {

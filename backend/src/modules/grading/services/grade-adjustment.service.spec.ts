@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import {
   QuestionType,
   Role,
@@ -176,5 +176,86 @@ describe('GradeAdjustmentService (Slice 7.4 — FUNC-061, FUNC-064)', () => {
         makeActor('teacher-1', Role.TEACHER),
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('Issue #5: rejects duplicate questionId (400 with 0 audit), blocks stale concurrent edits (409), keeps ungraded null & preserves totalScore on comment-only edit', async () => {
+    const { prisma, service } = setupMocks();
+
+    // 1. Duplicate questionId -> 400 BEFORE any DB write
+    await expect(
+      service.adjustConfirmedOrPublishedGrade(
+        'sub-1',
+        {
+          reason: 'Sửa trùng ID',
+          answers: [
+            { questionId: 'q-1', earnedPoints: 2 },
+            { questionId: 'q-1', earnedPoints: 3 },
+          ],
+        },
+        makeActor('teacher-1', Role.TEACHER),
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.submissionAnswer.upsert).not.toHaveBeenCalled();
+    expect(prisma.gradeAuditLog.create).not.toHaveBeenCalled();
+
+    // 2. Stale previousEarnedPoints (same question modified in another tab) -> 409 Conflict
+    prisma.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-1',
+      status: SubmissionStatus.GRADED,
+      totalScore: 5.5,
+      teacherFeedback: null,
+      classAssignment: {
+        classId: 'cls-1',
+        assessment: {
+          questions: [{ id: 'q-1', position: 1, type: QuestionType.ESSAY, points: 5, payload: {} }],
+        },
+      },
+      answers: [{ id: 'ans-1', questionId: 'q-1', earnedPoints: 2, teacherComment: 'Cũ' }],
+    });
+    await expect(
+      service.adjustConfirmedOrPublishedGrade(
+        'sub-1',
+        {
+          reason: 'Tab B sửa câu 1 với baseline cũ',
+          answers: [{ questionId: 'q-1', earnedPoints: 3, previousEarnedPoints: 1 }],
+        },
+        makeActor('teacher-1', Role.TEACHER),
+      ),
+    ).rejects.toThrow(ConflictException);
+    expect(prisma.submissionAnswer.upsert).not.toHaveBeenCalled();
+
+    // 3. Comment-only edit on ungraded question preserves earnedPoints=null AND leaves submission totalScore unchanged
+    prisma.submission.findUnique.mockResolvedValueOnce({
+      id: 'sub-2',
+      status: SubmissionStatus.GRADED,
+      totalScore: 4,
+      teacherFeedback: null,
+      classAssignment: {
+        classId: 'cls-1',
+        assessment: {
+          questions: [
+            { id: 'q-1', position: 1, type: QuestionType.SINGLE_CHOICE, points: 4, payload: {} },
+            { id: 'q-2', position: 2, type: QuestionType.ESSAY, points: 6, payload: {} },
+          ],
+        },
+      },
+      answers: [{ id: 'ans-1', questionId: 'q-1', earnedPoints: 4, teacherComment: null }],
+    });
+    const commentRes = await service.adjustConfirmedOrPublishedGrade(
+      'sub-2',
+      {
+        reason: 'Bổ sung nhận xét câu tự luận',
+        answers: [{ questionId: 'q-2', teacherComment: 'Diễn đạt mạch lạc hơn', previousTeacherComment: null }],
+      },
+      makeActor('teacher-1', Role.TEACHER),
+    );
+    expect(commentRes.totalScore).toBe(4);
+    expect(commentRes.auditLogsCreated).toBe(0);
+    expect(prisma.submissionAnswer.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ earnedPoints: null, teacherComment: 'Diễn đạt mạch lạc hơn' }),
+        update: expect.objectContaining({ teacherComment: 'Diễn đạt mạch lạc hơn' }),
+      }),
+    );
   });
 });

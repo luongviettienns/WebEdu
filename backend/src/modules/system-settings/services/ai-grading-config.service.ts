@@ -3,6 +3,7 @@ import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
+  type AiProviderTransportOptions,
   DEFAULT_AI_BASE_URLS,
   DEFAULT_AI_MODELS,
   DEFAULT_AI_TIMEOUT_MS,
@@ -52,6 +53,17 @@ function defaultStoredConfig(): StoredAiGradingConfig {
   };
 }
 
+function normalizeStoredBaseUrl(provider: AiProviderType, rawBaseUrl: unknown): string {
+  if (typeof rawBaseUrl !== 'string' || !rawBaseUrl.trim()) {
+    return DEFAULT_AI_BASE_URLS[provider];
+  }
+  try {
+    return resolveProviderBaseUrl(provider, rawBaseUrl);
+  } catch {
+    return DEFAULT_AI_BASE_URLS[provider];
+  }
+}
+
 function parseStoredConfig(raw: string | null | undefined, updatedAt?: Date): StoredAiGradingConfig {
   const defaults = defaultStoredConfig();
   if (!raw) return defaults;
@@ -63,9 +75,7 @@ function parseStoredConfig(raw: string | null | undefined, updatedAt?: Date): St
     return {
       enabled: Boolean(parsed.enabled),
       provider,
-      baseUrl: typeof parsed.baseUrl === 'string' && parsed.baseUrl.trim()
-        ? parsed.baseUrl.trim()
-        : DEFAULT_AI_BASE_URLS[provider],
+      baseUrl: normalizeStoredBaseUrl(provider, parsed.baseUrl),
       model: typeof parsed.model === 'string' && parsed.model.trim()
         ? parsed.model.trim()
         : DEFAULT_AI_MODELS[provider],
@@ -85,6 +95,16 @@ function parseStoredConfig(raw: string | null | undefined, updatedAt?: Date): St
   } catch {
     return defaults;
   }
+}
+
+function hasMatchingStoredKeyTarget(
+  existing: StoredAiGradingConfig,
+  provider: AiProviderType,
+  normalizedBaseUrl: string,
+): boolean {
+  if (!existing.encryptedApiKey) return false;
+  if (existing.provider !== provider) return false;
+  return normalizeStoredBaseUrl(existing.provider, existing.baseUrl) === normalizedBaseUrl;
 }
 
 @Injectable()
@@ -138,17 +158,22 @@ export class AiGradingConfigService {
       where: { key: SETTING_KEY_AI_GRADING_CONFIG },
     });
     const existing = parseStoredConfig(existingRow?.value, existingRow?.updatedAt);
+    const targetMatches = hasMatchingStoredKeyTarget(existing, dto.provider, safeBaseUrl);
 
-    let nextEncryptedKey = existing.encryptedApiKey;
+    let nextEncryptedKey: string | null;
     if (dto.clearApiKey === true) {
       nextEncryptedKey = null;
     } else if (!isMaskedApiKeyPlaceholder(dto.apiKey)) {
       nextEncryptedKey = encryptAiSecret(dto.apiKey!.trim());
+    } else {
+      nextEncryptedKey = targetMatches ? existing.encryptedApiKey : null;
     }
 
     if (dto.enabled && !nextEncryptedKey) {
       throw new BadRequestException(
-        'Vui lòng nhập API Key hợp lệ trước khi bật tính năng AI gợi ý chấm bài',
+        targetMatches || !existing.encryptedApiKey
+          ? 'Vui lòng nhập API Key hợp lệ trước khi bật tính năng AI gợi ý chấm bài'
+          : 'Đã thay đổi Provider hoặc Base URL; vui lòng nhập API Key mới trước khi bật tính năng AI',
       );
     }
 
@@ -195,7 +220,7 @@ export class AiGradingConfigService {
 
   async testConnection(
     dto: TestAiGradingConnectionDto,
-    fetchImpl?: typeof fetch,
+    fetchOrOptions?: typeof fetch | AiProviderTransportOptions,
   ): Promise<AiConnectionTestResultDto> {
     const safeBaseUrl = resolveProviderBaseUrl(dto.provider, dto.baseUrl);
     const model = resolveProviderModel(dto.provider, dto.model);
@@ -208,11 +233,18 @@ export class AiGradingConfigService {
         where: { key: SETTING_KEY_AI_GRADING_CONFIG },
       });
       const existing = parseStoredConfig(existingRow?.value, existingRow?.updatedAt);
+      if (!hasMatchingStoredKeyTarget(existing, dto.provider, safeBaseUrl)) {
+        throw new BadRequestException(
+          'Vui lòng nhập API Key mới khi thay đổi Provider hoặc Base URL trước khi kiểm tra kết nối',
+        );
+      }
       resolvedApiKey = this.tryDecryptStoredKey(existing.encryptedApiKey) ?? '';
     }
 
     if (!resolvedApiKey) {
-      throw new BadRequestException('Vui lòng nhập API Key hoặc lưu cấu hình trước khi kiểm tra kết nối');
+      throw new BadRequestException(
+        'Vui lòng nhập API Key hoặc lưu cấu hình trước khi kiểm tra kết nối',
+      );
     }
 
     return testAiProviderConnection(
@@ -223,7 +255,7 @@ export class AiGradingConfigService {
         apiKey: resolvedApiKey,
         timeoutMs: dto.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
       },
-      fetchImpl,
+      fetchOrOptions,
     );
   }
 

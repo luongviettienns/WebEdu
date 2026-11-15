@@ -1,21 +1,11 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  EnrollmentStatus,
-  GradingStatus,
-  Prisma,
-  QuestionType,
-  SubmissionStatus,
-} from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { EnrollmentStatus, GradingStatus, Prisma, QuestionType, SubmissionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { resolveEffectiveDueAt } from '../../assignments/mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
+import { isSubmissionOverdueForZero } from '../../assignments/services/submission-session.util.js';
 import type { SubmissionBatchSelectionDto } from '../dto/grading.dto.js';
 import type {
   AssignmentScoresPublishedEvent,
@@ -32,15 +22,16 @@ import {
   type StoredAnswerForGrading,
 } from '../policies/grading-workflow.policy.js';
 import { GradingEventsService } from './grading-events.service.js';
+import {
+  lockAssignmentSubmissionsOrderedTx,
+  lockClassAssignmentRowTx,
+  lockClassRowForAssignmentTx,
+  lockClassRowForSubmissionTx,
+} from './grading-locking.util.js';
 
 const CONFIRM_QUESTION_SELECT = { id: true, type: true, points: true, payload: true } as const;
 const CONFIRM_ANSWER_SELECT = {
-  id: true,
-  questionId: true,
-  answerPayload: true,
-  isCorrect: true,
-  earnedPoints: true,
-  teacherEdited: true,
+  id: true, questionId: true, answerPayload: true, isCorrect: true, earnedPoints: true, teacherEdited: true,
 } as const;
 
 @Injectable()
@@ -57,6 +48,7 @@ export class GradePublicationService {
   ): Promise<ConfirmGradeResultDto> {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
+      await lockClassRowForSubmissionTx(tx, submissionId);
       await tx.$queryRaw`SELECT id FROM "submissions" WHERE id = ${submissionId} FOR UPDATE`;
       const submission = await tx.submission.findUnique({
         where: { id: submissionId },
@@ -121,7 +113,8 @@ export class GradePublicationService {
   ): Promise<BatchConfirmGradesResultDto> {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "class_assignments" WHERE id = ${assignmentId} FOR UPDATE`;
+      await lockClassRowForAssignmentTx(tx, assignmentId);
+      await lockClassAssignmentRowTx(tx, assignmentId);
       const assignment = await tx.classAssignment.findUnique({
         where: { id: assignmentId },
         include: {
@@ -130,10 +123,9 @@ export class GradePublicationService {
           },
         },
       });
-      if (!assignment) {
-        throw new NotFoundException('Không tìm thấy bài giao');
-      }
+      if (!assignment) throw new NotFoundException('Không tìm thấy bài giao');
 
+      await lockAssignmentSubmissionsOrderedTx(tx, assignmentId);
       await this.accessPolicy.assertTeacherOrAdminCanAccessClass(tx, actor, assignment.classId);
 
       const requestedIds = dto.submissionIds?.length ? [...new Set(dto.submissionIds)] : null;
@@ -150,6 +142,7 @@ export class GradePublicationService {
             },
           },
         },
+        orderBy: { id: 'asc' },
         include: { answers: { select: CONFIRM_ANSWER_SELECT } },
       });
 
@@ -190,12 +183,7 @@ export class GradePublicationService {
         });
       }
 
-      return {
-        assignmentId,
-        confirmedCount: confirmedSubmissionIds.length,
-        confirmedSubmissionIds,
-        skippedUngradedIds,
-      };
+      return { assignmentId, confirmedCount: confirmedSubmissionIds.length, confirmedSubmissionIds, skippedUngradedIds };
     });
   }
 
@@ -208,15 +196,15 @@ export class GradePublicationService {
     const requestedIds = dto.submissionIds?.length ? [...new Set(dto.submissionIds)] : null;
 
     const { result, event } = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "class_assignments" WHERE id = ${assignmentId} FOR UPDATE`;
+      await lockClassRowForAssignmentTx(tx, assignmentId);
+      await lockClassAssignmentRowTx(tx, assignmentId);
       const assignment = await tx.classAssignment.findUnique({
         where: { id: assignmentId },
         select: { id: true, classId: true, dueAt: true },
       });
-      if (!assignment) {
-        throw new NotFoundException('Không tìm thấy bài giao');
-      }
+      if (!assignment) throw new NotFoundException('Không tìm thấy bài giao');
 
+      await lockAssignmentSubmissionsOrderedTx(tx, assignmentId);
       await this.accessPolicy.assertTeacherOrAdminCanAccessClass(tx, actor, assignment.classId);
 
       const enrollments = await tx.enrollment.findMany({
@@ -227,17 +215,21 @@ export class GradePublicationService {
         select: { studentId: true },
       });
       const enrolledIds = new Set(enrollments.map((e) => e.studentId));
-
       const activeSubmissions = await tx.submission.findMany({
         where: { classAssignmentId: assignmentId, status: { not: SubmissionStatus.SUPERSEDED } },
-        select: { id: true, studentId: true, status: true, dueAtOverride: true },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          studentId: true,
+          status: true,
+          dueAtOverride: true,
+          remainingSeconds: true,
+        },
       });
 
       const targets = requestedIds
         ? activeSubmissions.filter((sub) => requestedIds.includes(sub.id))
-        : activeSubmissions.filter(
-            (sub) => sub.status === SubmissionStatus.GRADED && enrolledIds.has(sub.studentId),
-          );
+        : activeSubmissions.filter((sub) => sub.status === SubmissionStatus.GRADED && enrolledIds.has(sub.studentId));
 
       if (requestedIds && targets.length !== requestedIds.length) {
         throw new BadRequestException('Một số bài nộp được chọn không thuộc bài giao này');
@@ -250,18 +242,28 @@ export class GradePublicationService {
       }
 
       const targetIds = targets.map((sub) => sub.id);
-      const studentIds = [...new Set(targets.map((sub) => sub.studentId))];
-      await tx.submission.updateMany({
-        where: { id: { in: targetIds } },
+      const updateResult = await tx.submission.updateMany({
+        where: { id: { in: targetIds }, status: SubmissionStatus.GRADED },
         data: { status: SubmissionStatus.RETURNED, returnedAt: now },
       });
+      const publishedRows =
+        updateResult.count === targetIds.length
+          ? targets.map((sub) => ({ id: sub.id, studentId: sub.studentId }))
+          : await tx.submission.findMany({
+              where: { id: { in: targetIds }, status: SubmissionStatus.RETURNED, returnedAt: now },
+              select: { id: true, studentId: true },
+            });
+      if (publishedRows.length === 0) {
+        throw new ConflictException('Trạng thái bài nộp đã thay đổi, không có bài nào được công bố');
+      }
 
+      const publishedIds = publishedRows.map((row) => row.id);
+      const studentIds = [...new Set(publishedRows.map((row) => row.studentId))];
       const activeByStudent = new Map(activeSubmissions.map((sub) => [sub.studentId, sub]));
       const overdueUntouchedCount = [...enrolledIds].filter((studentId) => {
         const sub = activeByStudent.get(studentId) ?? null;
-        if (sub && sub.status !== SubmissionStatus.IN_PROGRESS) return false;
         const effectiveDue = resolveEffectiveDueAt(assignment.dueAt, sub?.dueAtOverride);
-        return now.getTime() > effectiveDue.getTime();
+        return isSubmissionOverdueForZero(now, effectiveDue, sub);
       }).length;
 
       await writeAuditLog(tx, actor, {
@@ -269,29 +271,28 @@ export class GradePublicationService {
         targetType: 'ClassAssignment',
         targetId: assignmentId,
         metadata: {
-          publishedCount: targetIds.length,
-          publishedSubmissionIds: targetIds,
+          publishedCount: publishedIds.length,
+          publishedSubmissionIds: publishedIds,
           overdueUntouchedCount,
         },
       });
 
-      const publishedEvent: AssignmentScoresPublishedEvent = {
-        assignmentId,
-        classId: assignment.classId,
-        submissionIds: targetIds,
-        studentIds,
-        publishedById: actor.id,
-        publishedAt: now.toISOString(),
-      };
       return {
         result: {
           assignmentId,
-          publishedCount: targetIds.length,
-          publishedSubmissionIds: targetIds,
+          publishedCount: publishedIds.length,
+          publishedSubmissionIds: publishedIds,
           publishedAt: now.toISOString(),
           overdueUntouchedCount,
         },
-        event: publishedEvent,
+        event: {
+          assignmentId,
+          classId: assignment.classId,
+          submissionIds: publishedIds,
+          studentIds,
+          publishedById: actor.id,
+          publishedAt: now.toISOString(),
+        } satisfies AssignmentScoresPublishedEvent,
       };
     });
 

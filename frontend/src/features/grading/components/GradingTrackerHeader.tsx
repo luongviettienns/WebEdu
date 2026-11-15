@@ -3,20 +3,30 @@
 import Link from 'next/link';
 import React from 'react';
 import { ASSESSMENT_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
+import { BaseDialog, DialogActions } from '@/features/common/components/BaseDialog';
 import type {
   GradingTrackerAssignmentDto,
+  GradingTrackerStudentRowDto,
   GradingTrackerSummaryDto,
 } from '@/features/grading/api/grading.api';
 import { formatDateTimeVn } from '@/lib/utils/date';
+
+export type PendingOverdueZeroTarget =
+  | { mode: 'ALL'; count: number }
+  | { mode: 'STUDENT'; student: GradingTrackerStudentRowDto };
 
 interface GradingTrackerHeaderProps {
   assignment: GradingTrackerAssignmentDto;
   summary: GradingTrackerSummaryDto;
   isAdminView?: boolean;
   busyAction: string | null;
+  pendingOverdueZero: PendingOverdueZeroTarget | null;
+  onBatchAiGrade: () => void;
   onConfirmAll: () => void;
   onPublishAllConfirmed: () => void;
   onRecordOverdueZeroAll: () => void;
+  onCancelOverdueZero: () => void;
+  onConfirmOverdueZero: () => void;
 }
 
 export function GradingTrackerHeader({
@@ -24,10 +34,20 @@ export function GradingTrackerHeader({
   summary,
   isAdminView = false,
   busyAction,
+  pendingOverdueZero,
+  onBatchAiGrade,
   onConfirmAll,
   onPublishAllConfirmed,
   onRecordOverdueZeroAll,
+  onCancelOverdueZero,
+  onConfirmOverdueZero,
 }: GradingTrackerHeaderProps) {
+  const overdueBusy =
+    pendingOverdueZero?.mode === 'ALL'
+      ? busyAction === 'overdue-all'
+      : pendingOverdueZero?.mode === 'STUDENT'
+        ? busyAction === `overdue-${pendingOverdueZero.student.studentId}`
+        : false;
   const needsGradingTotal =
     summary.submittedWaitingCount + summary.autoGradedPendingReviewCount;
   const backHref = isAdminView
@@ -89,6 +109,18 @@ export function GradingTrackerHeader({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {assignment.hasSubjectiveQuestions ? (
+            <button
+              id="btn-batch-ai-grade"
+              type="button"
+              disabled={Boolean(busyAction) || needsGradingTotal === 0}
+              onClick={onBatchAiGrade}
+              className="rounded-lg border border-[var(--amber)] bg-[var(--amber-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--amber)] hover:opacity-90 disabled:opacity-50"
+            >
+              {busyAction === 'batch-ai' ? 'Đang gợi ý AI...' : 'AI gợi ý chấm hàng loạt'}
+            </button>
+          ) : null}
+
           <button
             id="btn-confirm-all-grades"
             type="button"
@@ -128,6 +160,41 @@ export function GradingTrackerHeader({
           ) : null}
         </div>
       </div>
+
+      {pendingOverdueZero ? (
+        <BaseDialog
+          eyebrow="逾期记零 · XÁC NHẬN GHI 0 ĐIỂM QUÁ HẠN"
+          title="Xác nhận ghi nhận 0 điểm quá hạn"
+          onClose={onCancelOverdueZero}
+          busy={overdueBusy}
+          maxWidthClass="max-w-md"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onConfirmOverdueZero();
+            }}
+            className="mt-4 space-y-4"
+          >
+            <p className="text-sm text-[var(--ink)]">
+              {pendingOverdueZero.mode === 'ALL'
+                ? `Bạn sắp ghi nhận 0 điểm (trạng thái GRADED) cho toàn bộ ${pendingOverdueZero.count} học viên quá hạn chưa nộp bài.`
+                : `Bạn sắp ghi nhận 0 điểm (trạng thái GRADED) cho học viên ${pendingOverdueZero.student.fullName} (${pendingOverdueZero.student.email}).`}
+            </p>
+            <p className="text-xs text-[var(--ink-2)]">
+              Thao tác này chốt điểm 0 cho bài quá hạn và ghi nhận vào nhật ký kiểm toán. Học viên sẽ
+              không thể tiếp tục nộp bài trừ khi giáo viên mở lại lượt làm bài.
+            </p>
+            <DialogActions
+              onCancel={onCancelOverdueZero}
+              submitLabel="Xác nhận ghi 0 điểm"
+              submittingLabel="Đang ghi nhận..."
+              submitting={overdueBusy}
+              tone="danger"
+            />
+          </form>
+        </BaseDialog>
+      ) : null}
     </div>
   );
 }

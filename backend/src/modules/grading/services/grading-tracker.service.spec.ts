@@ -47,6 +47,7 @@ describe('GradingTrackerService (Slice 7.3)', () => {
         create: vi.fn(async () => ({ id: 'sub-zero-new' })),
         update: vi.fn(async (args: { where: { id: string } }) => ({ id: args.where.id })),
       },
+      submissionAnswer: { upsert: vi.fn(async () => ({})) },
       gradeAuditLog: { create: vi.fn(async () => ({})) },
       systemAuditLog: { create: vi.fn(async () => ({})) },
       $queryRaw: vi.fn(async () => []),
@@ -222,10 +223,15 @@ describe('GradingTrackerService (Slice 7.3)', () => {
   it('records explicit 0 points for overdue NOT_STARTED and IN_PROGRESS students and rejects invalid states', async () => {
     const { prisma, service } = setupTrackerMocks();
     const pastDue = new Date(Date.now() - 86_400_000);
+    const questions = [
+      { id: 'q-1', type: QuestionType.SINGLE_CHOICE, points: 2, payload: { options: [{ id: 'a' }], correctOptionIds: ['a'] } },
+      { id: 'q-2', type: QuestionType.ESSAY, points: 3, payload: {} },
+    ];
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
       dueAt: pastDue,
+      assessment: { questions },
     });
     prisma.enrollment.findMany.mockResolvedValueOnce([
       { studentId: 'stu-not-started' },
@@ -240,13 +246,26 @@ describe('GradingTrackerService (Slice 7.3)', () => {
     const res = await service.recordOverdueZero('assign-1', { reason: 'Quá hạn không nộp' }, makeTeacher());
     expect(res.recordedCount).toBe(2);
     expect(res.recordedStudentIds).toEqual(['stu-not-started', 'stu-in-progress']);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
     expect(prisma.submission.create).toHaveBeenCalledTimes(1);
     expect(prisma.submission.update).toHaveBeenCalledTimes(1);
+    // Issue #8: zeroes all per-question rows for BOTH created & in-progress autosaved submissions without overwriting answerPayload on update
+    expect(prisma.submissionAnswer.upsert).toHaveBeenCalledTimes(4);
+    for (const call of prisma.submissionAnswer.upsert.mock.calls) {
+      const arg = (call as unknown as [{ update: Record<string, unknown> }])[0];
+      expect(arg.update).toMatchObject({ earnedPoints: 0, teacherEdited: true });
+      expect('answerPayload' in arg.update).toBe(false);
+    }
     expect(prisma.gradeAuditLog.create).toHaveBeenCalledTimes(2);
     expect(prisma.systemAuditLog.create).toHaveBeenCalledTimes(1);
 
     // Reject already submitted student (409)
-    prisma.classAssignment.findUnique.mockResolvedValueOnce({ id: 'assign-1', classId: 'cls-1', dueAt: pastDue });
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1',
+      classId: 'cls-1',
+      dueAt: pastDue,
+      assessment: { questions },
+    });
     prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-submitted' }]);
     prisma.submission.findMany.mockResolvedValueOnce([
       { id: 'sub-done', studentId: 'stu-submitted', attemptNumber: 1, status: SubmissionStatus.SUBMITTED_WAITING, dueAtOverride: null },
@@ -260,11 +279,35 @@ describe('GradingTrackerService (Slice 7.3)', () => {
       id: 'assign-1',
       classId: 'cls-1',
       dueAt: new Date(Date.now() + 86_400_000),
+      assessment: { questions },
     });
     prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-future' }]);
     prisma.submission.findMany.mockResolvedValueOnce([]);
     await expect(
       service.recordOverdueZero('assign-1', {}, makeTeacher()),
+    ).rejects.toThrow(BadRequestException);
+
+    // Issue #5: reject IN_PROGRESS submission still inside 60s submit grace period
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1',
+      classId: 'cls-1',
+      dueAt: new Date(Date.now() - 20_000),
+      assessment: { questions },
+    });
+    prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-in-grace' }]);
+    prisma.submission.findMany.mockResolvedValueOnce([
+      {
+        id: 'sub-grace',
+        studentId: 'stu-in-grace',
+        status: SubmissionStatus.IN_PROGRESS,
+        attemptNumber: 1,
+        dueAtOverride: null,
+        remainingSeconds: 60,
+        startedAt: new Date(Date.now() - 60_000),
+      },
+    ]);
+    await expect(
+      service.recordOverdueZero('assign-1', { studentIds: ['stu-in-grace'] }, makeTeacher()),
     ).rejects.toThrow(BadRequestException);
   });
 });
