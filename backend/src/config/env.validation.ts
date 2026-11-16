@@ -79,6 +79,22 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   SMTP_FROM?: string;
+
+  @IsString()
+  @IsOptional()
+  DEFAULT_AI_PROVIDER?: string;
+
+  @IsString()
+  @IsOptional()
+  DEFAULT_AI_BASE_URL?: string;
+
+  @IsString()
+  @IsOptional()
+  DEFAULT_AI_MODEL?: string;
+
+  @IsString()
+  @IsOptional()
+  DEFAULT_AI_API_KEY?: string;
 }
 
 export function validateEnv(config: Record<string, unknown>): EnvironmentVariables {

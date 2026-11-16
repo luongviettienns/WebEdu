@@ -31,6 +31,23 @@ export const DEFAULT_AI_TIMEOUT_MS = 15_000;
 export const AI_REQUEST_BUDGET_MS = 25_000;
 export const MAX_AI_FEEDBACK_LENGTH = 2000;
 
+export async function runInBoundedChunks<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = Array.from({ length: items.length }) as R[];
+  for (let offset = 0; offset < items.length; offset += concurrency) {
+    const chunk = items.slice(offset, offset + concurrency);
+    await Promise.all(
+      chunk.map(async (item, chunkIdx) => {
+        results[offset + chunkIdx] = await worker(item);
+      }),
+    );
+  }
+  return results;
+}
+
 export function requireAiRequestTime(deadline: number): number {
   const remainingMs = deadline - Date.now();
   if (remainingMs < 1000) {
@@ -100,11 +117,14 @@ export function buildZeroPiiEssayGradingMessages(input: AiEssayGradingInput): {
     'Bạn là trợ lý chấm bài tự luận tiếng Trung/Hán ngữ cho giáo viên.',
     'Chỉ trả về DUY NHẤT một JSON object hợp lệ với đúng 2 trường:',
     '{"suggestedPoints": number, "feedback": string}',
-    `Quy tắc: suggestedPoints nằm trong [0, ${input.maxPoints}] theo bước 0.25.`,
-    'feedback viết bằng tiếng Việt ngắn gọn, rõ ràng, mang tính xây dựng, bám sát tiêu chí và đáp án mẫu.',
+    'Quy tắc:',
+    '- suggestedPoints nằm trong [0, maxPoints] của JSON đầu vào, theo bước 0.25; bám sát courseLevel, sampleAnswer và rubric (nếu có).',
+    '- Đánh giá theo: (1) Đúng ý/ngữ cảnh, (2) Ngữ pháp & trật tự từ tiếng Trung, (3) Từ vựng/lượng từ & chữ Hán.',
+    '- feedback viết bằng tiếng Việt ngắn gọn: khen điểm đúng, chỉ lỗi sai cụ thể và gợi ý 1 câu sửa mẫu (nếu chưa đạt điểm tối đa).',
   ].join('\n');
 
   const userPayload = {
+    courseLevel: input.courseLevel ?? null,
     questionPrompt: input.prompt,
     maxPoints: input.maxPoints,
     sampleAnswer: input.sampleAnswer ?? null,

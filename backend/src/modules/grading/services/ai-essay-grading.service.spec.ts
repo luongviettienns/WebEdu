@@ -16,9 +16,11 @@ import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import type { AiGradingConfigService } from '../../system-settings/services/ai-grading-config.service.js';
 import {
+  buildZeroPiiEssayGradingMessages,
   callAiProviderForEssayDraft,
   MAX_AI_FEEDBACK_LENGTH,
   parseAndClampAiGradingJson,
+  runInBoundedChunks,
 } from '../adapters/ai-provider.adapter.js';
 import {
   sanitizeAndVerifyEssayDraftInput,
@@ -630,5 +632,40 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         5,
       ),
     ).toThrow(BadGatewayException);
+  });
+
+  it('keeps systemPrompt invariant for prompt caching, includes courseLevel in userPayload, and runs bounded chunks in order', async () => {
+    const m1 = buildZeroPiiEssayGradingMessages({
+      prompt: 'Câu 1',
+      maxPoints: 2,
+      courseLevel: 'HSK1',
+      sampleAnswer: '我喜欢看书。',
+      rubric: null,
+      studentAnswer: '我喜欢看书。',
+    });
+    const m2 = buildZeroPiiEssayGradingMessages({
+      prompt: 'Câu 2',
+      maxPoints: 5,
+      courseLevel: 'HSK4',
+      sampleAnswer: null,
+      rubric: 'Đủ cấu trúc 把',
+      studentAnswer: '我把作业做完了。',
+    });
+
+    expect(m1.systemPrompt).toBe(m2.systemPrompt);
+    expect(JSON.parse(m1.userPrompt)).toMatchObject({ courseLevel: 'HSK1', maxPoints: 2 });
+    expect(JSON.parse(m2.userPrompt)).toMatchObject({ courseLevel: 'HSK4', maxPoints: 5 });
+
+    let active = 0;
+    let maxActive = 0;
+    const out = await runInBoundedChunks([1, 2, 3, 4, 5, 6], 2, async (n) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((r) => setTimeout(r, 5));
+      active -= 1;
+      return n * 10;
+    });
+    expect(maxActive).toBeLessThanOrEqual(2);
+    expect(out).toEqual([10, 20, 30, 40, 50, 60]);
   });
 });

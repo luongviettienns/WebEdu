@@ -547,5 +547,52 @@ describe('AiGradingConfigService, AES-256-GCM & SSRF Guard (Slice 7.2 — DEC-03
         }),
       ).rejects.toThrow(BadGatewayException);
     });
+
+    it('loads default AI provider from env when DB row is absent and allows Superadmin to toggle off without re-entering key', async () => {
+      const prevEnv = {
+        NODE_ENV: process.env.NODE_ENV,
+        DEFAULT_AI_PROVIDER: process.env.DEFAULT_AI_PROVIDER,
+        DEFAULT_AI_BASE_URL: process.env.DEFAULT_AI_BASE_URL,
+        DEFAULT_AI_MODEL: process.env.DEFAULT_AI_MODEL,
+        DEFAULT_AI_API_KEY: process.env.DEFAULT_AI_API_KEY,
+      };
+      try {
+        process.env.NODE_ENV = 'development';
+        process.env.DEFAULT_AI_PROVIDER = 'CUSTOM';
+        process.env.DEFAULT_AI_BASE_URL = 'https://modelapi.vn/v1';
+        process.env.DEFAULT_AI_MODEL = 'gpt-5.6-luna';
+        process.env.DEFAULT_AI_API_KEY = 'sk-default-project-key-9999';
+
+        const prisma = makePrismaMock();
+        const aiService = new AiGradingConfigService(prisma as never);
+        const sa = makeSuperadmin();
+
+        const initial = await aiService.getAiGradingConfig();
+        expect(initial).toMatchObject({
+          enabled: true,
+          provider: 'CUSTOM',
+          baseUrl: 'https://modelapi.vn/v1',
+          model: 'gpt-5.6-luna',
+          hasApiKey: true,
+          maskedApiKey: '••••••••9999',
+        });
+
+        const disabled = await aiService.updateAiGradingConfig(sa, {
+          enabled: false,
+          provider: 'CUSTOM',
+          baseUrl: 'https://modelapi.vn/v1',
+          model: 'gpt-5.6-luna',
+        });
+        expect(disabled.enabled).toBe(false);
+        expect(disabled.hasApiKey).toBe(true);
+        expect((await aiService.getResolvedAiRuntimeConfig()).enabled).toBe(false);
+      } finally {
+        process.env.NODE_ENV = prevEnv.NODE_ENV;
+        process.env.DEFAULT_AI_PROVIDER = prevEnv.DEFAULT_AI_PROVIDER;
+        process.env.DEFAULT_AI_BASE_URL = prevEnv.DEFAULT_AI_BASE_URL;
+        process.env.DEFAULT_AI_MODEL = prevEnv.DEFAULT_AI_MODEL;
+        process.env.DEFAULT_AI_API_KEY = prevEnv.DEFAULT_AI_API_KEY;
+      }
+    });
   });
 });

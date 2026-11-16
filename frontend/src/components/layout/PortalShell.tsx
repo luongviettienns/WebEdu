@@ -91,7 +91,10 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             onOpenMobileMenu={() => setMobileMenuOpen(true)}
           />
         </Suspense>
-        <div className="portal-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+        <div
+          tabIndex={0}
+          className="portal-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable] focus:outline-none"
+        >
           <main className="p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
             <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>
           </main>

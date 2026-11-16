@@ -43,6 +43,32 @@ interface StoredAiGradingConfig {
 const VALID_PROVIDERS = new Set<AiProviderType>(['OPENAI', 'GEMINI', 'CUSTOM']);
 
 function defaultStoredConfig(): StoredAiGradingConfig {
+  const envKey = process.env.NODE_ENV !== 'test' ? process.env.DEFAULT_AI_API_KEY?.trim() : '';
+  if (envKey) {
+    const rawProvider = process.env.DEFAULT_AI_PROVIDER?.trim().toUpperCase();
+    const provider: AiProviderType =
+      rawProvider && VALID_PROVIDERS.has(rawProvider as AiProviderType)
+        ? (rawProvider as AiProviderType)
+        : 'CUSTOM';
+    const baseUrl = normalizeStoredBaseUrl(provider, process.env.DEFAULT_AI_BASE_URL);
+    const model = process.env.DEFAULT_AI_MODEL?.trim() || DEFAULT_AI_MODELS[provider];
+    let encryptedApiKey: string | null = null;
+    try {
+      encryptedApiKey = encryptAiSecret(envKey);
+    } catch {
+      encryptedApiKey = null;
+    }
+    return {
+      enabled: Boolean(encryptedApiKey),
+      provider,
+      baseUrl,
+      model,
+      encryptedApiKey,
+      timeoutMs: DEFAULT_AI_TIMEOUT_MS,
+      updatedAt: null,
+    };
+  }
+
   return {
     enabled: false,
     provider: 'OPENAI',

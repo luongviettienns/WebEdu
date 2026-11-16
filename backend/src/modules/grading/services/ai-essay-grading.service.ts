@@ -15,7 +15,12 @@ import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import { AiGradingConfigService } from '../../system-settings/services/ai-grading-config.service.js';
-import { AI_REQUEST_BUDGET_MS, callAiProviderForEssayDraft, requireAiRequestTime } from '../adapters/ai-provider.adapter.js';
+import {
+  AI_REQUEST_BUDGET_MS,
+  callAiProviderForEssayDraft,
+  requireAiRequestTime,
+  runInBoundedChunks,
+} from '../adapters/ai-provider.adapter.js';
 import type { AiGradeSubmissionDto, AiSuggestBatchGradeDto } from '../dto/grading.dto.js';
 import type {
   AiBatchSuggestGradeItemDto,
@@ -30,6 +35,7 @@ import {
 } from './grading-locking.util.js';
 
 const MAX_BATCH_AI_SUBMISSIONS = 20;
+const BATCH_AI_CONCURRENCY = 4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -74,6 +80,7 @@ export class AiEssayGradingService {
             classId: true,
             assessment: {
               select: {
+                course: { select: { level: true } },
                 questions: {
                   where: { type: QuestionType.ESSAY },
                   orderBy: { position: 'asc' },
@@ -88,11 +95,7 @@ export class AiEssayGradingService {
     });
     if (!submission) throw new NotFoundException('Không tìm thấy bài nộp');
 
-    await this.accessPolicy.assertTeacherOrAdminCanAccessClass(
-      this.prisma,
-      actor,
-      submission.classAssignment.classId,
-    );
+    await this.accessPolicy.assertTeacherOrAdminCanAccessClass(this.prisma, actor, submission.classAssignment.classId);
 
     if (submission.status === SubmissionStatus.IN_PROGRESS || submission.status === SubmissionStatus.SUPERSEDED) {
       throw new BadRequestException('Chỉ có thể gọi AI gợi ý chấm cho bài đã nộp');
@@ -141,6 +144,7 @@ export class AiEssayGradingService {
         continue;
       }
 
+      const courseLevel = submission.classAssignment.assessment.course?.level ?? null;
       const qPayload = isRecord(question.payload) ? question.payload : {};
       const timeoutMs = Math.min(runtimeConfig.timeoutMs, requireAiRequestTime(deadline));
       const draft = await callAiProviderForEssayDraft(
@@ -148,6 +152,7 @@ export class AiEssayGradingService {
         {
           prompt: question.prompt,
           maxPoints: effectiveMaxPoints,
+          courseLevel,
           sampleAnswer: readOptionalString(qPayload.sampleAnswer),
           rubric: readOptionalString(qPayload.rubric),
           studentAnswer,
@@ -310,13 +315,10 @@ export class AiEssayGradingService {
       targetIds = candidateSubmissions.map((s) => s.id);
     }
 
-    const results: AiBatchSuggestGradeItemDto[] = [];
-    for (const submissionId of targetIds) {
+    const results = await runInBoundedChunks(targetIds, BATCH_AI_CONCURRENCY, async (submissionId): Promise<AiBatchSuggestGradeItemDto> => {
       if (validAssignmentSet && !validAssignmentSet.has(submissionId)) {
-        results.push({ submissionId, ok: false, error: 'Bài nộp không thuộc bài giao này hoặc không tồn tại' });
-        continue;
+        return { submissionId, ok: false, error: 'Bài nộp không thuộc bài giao này hoặc không tồn tại' };
       }
-
       try {
         requireAiRequestTime(deadline);
         const res = await this.suggestEssayGradesForSubmission(
@@ -327,15 +329,12 @@ export class AiEssayGradingService {
           requestedIds.length === 0,
           deadline,
         );
-        results.push({ submissionId, ok: true, gradingStatus: res.gradingStatus, suggestedCount: res.suggestions.length });
+        return { submissionId, ok: true, gradingStatus: res.gradingStatus, suggestedCount: res.suggestions.length };
       } catch (err) {
-        results.push({
-          submissionId,
-          ok: false,
-          error: err instanceof Error && err.message ? err.message : 'Không thể gọi AI gợi ý chấm bài nộp này',
-        });
+        const message = err instanceof Error && err.message ? err.message : 'Không thể gọi AI gợi ý chấm bài nộp này';
+        return { submissionId, ok: false, error: message };
       }
-    }
+    });
 
     const succeededCount = results.filter((item) => item.ok).length;
     return {

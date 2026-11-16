@@ -82,6 +82,7 @@ export interface AiConnectionTestResultDto {
 export interface AiEssayGradingInput {
   prompt: string;
   maxPoints: number;
+  courseLevel?: string | null;
   sampleAnswer: string | null;
   rubric: string | null;
   studentAnswer: string;

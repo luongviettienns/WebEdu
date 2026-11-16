@@ -154,6 +154,7 @@ export function sanitizeAndVerifyEssayDraftInput(
   return {
     prompt: scrubAndVerifyField('prompt', input.prompt),
     maxPoints: input.maxPoints,
+    courseLevel: input.courseLevel ?? null,
     sampleAnswer:
       input.sampleAnswer !== null ? scrubAndVerifyField('sampleAnswer', input.sampleAnswer) : null,
     rubric: input.rubric !== null ? scrubAndVerifyField('rubric', input.rubric) : null,
