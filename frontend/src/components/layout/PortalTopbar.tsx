@@ -94,7 +94,7 @@ export function PortalTopbar({ user, preferredRoleView = 'ADMIN', onOpenMobileMe
   );
 
   return (
-    <header className="sticky top-0 z-20 flex h-[57px] w-full items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--surface)]/95 px-4 backdrop-blur sm:px-6">
+    <header className="z-20 flex h-[57px] min-h-[57px] shrink-0 w-full items-center justify-between gap-2 border-b border-[var(--line)] bg-[var(--surface)]/95 px-4 backdrop-blur sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
         {/* Hamburger Mobile Trigger */}
         <button

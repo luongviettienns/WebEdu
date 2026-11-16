@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import React from 'react';
 import type { ClassDetail } from '@/features/classes/api/classes.api';
 import { ClassStatusBadge } from '@/features/classes/components/ClassesTableSection';
@@ -9,7 +8,6 @@ import type { ClassDetailPermissions } from '@/features/classes/permissions/clas
 export interface ClassHeaderProps {
   detail: ClassDetail;
   permissions: ClassDetailPermissions;
-  backHref: string;
   reopening: boolean;
   onEdit: () => void;
   onAddStudents: () => void;
@@ -20,7 +18,6 @@ export interface ClassHeaderProps {
 export function ClassHeader({
   detail,
   permissions,
-  backHref,
   reopening,
   onEdit,
   onAddStudents,
@@ -30,12 +27,8 @@ export function ClassHeader({
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4">
       <div>
-        <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-[var(--ink-2)]">
-          <Link href={backHref} className="font-medium hover:text-[var(--red)]">
-            ← Danh sách lớp học
-          </Link>
-          <span>·</span>
-          <span className="font-han uppercase tracking-widest text-[var(--red)]">班级详情 · CHI TIẾT LỚP HỌC</span>
+        <div className="font-han mb-1 text-xs uppercase tracking-widest text-[var(--red)]">
+          班级详情 · CHI TIẾT LỚP HỌC
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           <h1 className="num text-2xl font-bold tracking-tight text-[var(--ink)]">{detail.code}</h1>

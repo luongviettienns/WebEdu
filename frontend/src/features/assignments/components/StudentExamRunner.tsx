@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import React, { useState } from 'react';
 import {
   ASSESSMENT_TYPE_LABELS,
@@ -68,12 +67,6 @@ export function StudentExamRunner({
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4">
         <div className="space-y-1">
-          <Link
-            href="/student/assignments"
-            className="inline-flex text-xs font-semibold text-[var(--blue)] hover:underline"
-          >
-            ← Quay lại danh sách bài tập
-          </Link>
           <div className="font-han text-xs uppercase tracking-widest text-[var(--red)]">
             在线测验 · ĐANG LÀM BÀI
           </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -10,6 +11,11 @@ import { LoginFormCard } from '@/features/auth/components/LoginFormCard';
 import { getDefaultRouteForRole } from '@/features/auth/roles';
 import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
 import { extractErrorMessage } from '@/lib/api-client';
+
+const BambooLeavesBackground = dynamic(
+  () => import('@/features/auth/components/BambooLeavesBackground'),
+  { ssr: false },
+);
 
 function LoginFormContent() {
   const router = useRouter();
@@ -86,13 +92,14 @@ function LoginFormContent() {
   };
 
   return (
-    <div className="flex min-h-screen w-full bg-[var(--paper)]">
+    <div className="relative flex min-h-screen w-full bg-[var(--paper)]">
+      <BambooLeavesBackground />
       {/* Cột Trái Nghệ Thuật Thư Họa Á Đông (Desktop >= 1024px) */}
       <AuthArtSide />
 
       {/* Cột Phải Form Đăng Nhập */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div className="w-full max-w-[420px]">
+      <div className="relative z-10 w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+        <div data-bamboo-clear className="w-full max-w-[420px]">
           {/* Mobile-only Branding Header */}
           <div className="lg:hidden flex flex-col items-center text-center mb-4">
             <Link href="/" aria-label={`Trang chủ ${centerName}`} className="flex items-center gap-2 mb-2">

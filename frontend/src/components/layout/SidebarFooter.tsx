@@ -32,7 +32,9 @@ export function SidebarFooter({
 
   const initials = getUserInitials(user?.fullName);
   const hasAdminTeacherSwitch = Boolean(
-    user?.roles?.includes('ADMIN') && user?.roles?.includes('TEACHER'),
+    user?.roles?.includes('ADMIN') &&
+      user?.roles?.includes('TEACHER') &&
+      user?.effectiveRole !== 'SUPERADMIN',
   );
   const currentRoleView = activeRoleView ?? user?.effectiveRole;
 

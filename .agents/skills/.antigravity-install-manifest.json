@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-13T16:56:29.518Z",
+  "entries": [
+    "api-security-best-practices",
+    "clean-code",
+    "nestjs-expert",
+    "nextjs-best-practices",
+    "playwright-skill",
+    "prisma-expert"
+  ]
+}

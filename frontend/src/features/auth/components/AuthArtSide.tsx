@@ -13,7 +13,7 @@ export function AuthArtSide() {
         <div className="seal flex-none" aria-hidden="true">
           汉
         </div>
-        <div>
+        <div data-bamboo-clear>
           <div className="font-bold text-base tracking-tight text-[var(--ink)] leading-tight group-hover:text-[var(--red)] transition-colors">
             TD Hán Ngữ
           </div>
@@ -28,8 +28,8 @@ export function AuthArtSide() {
       </Link>
 
       {/* Giant Calligraphic Watermark: 學 */}
-      <div className="relative my-auto flex items-center justify-center" aria-hidden="true">
-        <div className="font-han font-bold text-[240px] leading-none text-[var(--jade)] opacity-85 select-none pointer-events-none">
+      <div className="relative z-10 my-auto flex items-center justify-center" aria-hidden="true">
+        <div data-bamboo-clear className="font-han font-bold text-[240px] leading-none text-[var(--jade)] opacity-85 select-none pointer-events-none">
           學
         </div>
 
@@ -44,7 +44,7 @@ export function AuthArtSide() {
       </div>
 
       {/* Lunyu Quote */}
-      <div className="border-l-[3px] border-[var(--red)] pl-4 max-w-[44ch] z-10">
+      <div data-bamboo-clear className="border-l-[3px] border-[var(--red)] pl-4 max-w-[44ch] z-10">
         <p className="font-han text-xl font-semibold tracking-wide text-[var(--ink)] mb-1.5 leading-snug">
           學而時習之，不亦說乎？
         </p>

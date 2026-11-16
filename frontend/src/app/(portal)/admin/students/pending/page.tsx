@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
@@ -83,14 +82,6 @@ function PendingEnrollmentStudentsContent({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--line)] pb-4 sm:items-end">
         <div>
-          <div className="mb-2">
-            <Link
-              href="/admin/students"
-              className="text-xs font-semibold text-[var(--red)] hover:text-[var(--red-ink)] transition-colors inline-flex items-center gap-1"
-            >
-              &larr; Quay lại danh sách tất cả học viên
-            </Link>
-          </div>
           <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
             待分班 · HÀNG ĐỢI XẾP LỚP
           </div>

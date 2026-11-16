@@ -70,3 +70,7 @@ playwright-report/
 test-results/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+
+# Local manual test files
+Test/
+

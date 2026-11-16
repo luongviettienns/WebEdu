@@ -26,7 +26,6 @@ import { extractErrorMessage } from '@/lib/api-client';
 export interface ClassDetailViewProps {
   detail: ClassDetail;
   permissions: ClassDetailPermissions;
-  backHref: string;
   includeInactiveEnrollments: boolean;
   onToggleIncludeInactive: (next: boolean) => void;
   onRefresh: (successMessage?: string) => void;
@@ -48,7 +47,6 @@ export function buildReopenMessage(
 export function ClassDetailView({
   detail,
   permissions,
-  backHref,
   includeInactiveEnrollments,
   onToggleIncludeInactive,
   onRefresh,
@@ -71,7 +69,6 @@ export function ClassDetailView({
       <ClassHeader
         detail={detail}
         permissions={permissions}
-        backHref={backHref}
         reopening={reopenOpen}
         onEdit={() => setEditOpen(true)}
         onAddStudents={() => setAddStudentsOpen(true)}

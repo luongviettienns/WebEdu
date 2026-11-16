@@ -83,7 +83,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       </Suspense>
 
       {/* Right Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <Suspense fallback={null}>
           <PortalTopbar
             user={user}
@@ -91,9 +91,11 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             onOpenMobileMenu={() => setMobileMenuOpen(true)}
           />
         </Suspense>
-        <main className="flex-1 p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
-          <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>
-        </main>
+        <div className="portal-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+          <main className="p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
+            <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>
+          </main>
+        </div>
       </div>
 
       <IdleTimeoutWarningModal

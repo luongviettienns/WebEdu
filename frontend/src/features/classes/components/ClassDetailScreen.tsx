@@ -123,7 +123,6 @@ export function ClassDetailScreen({
         <ClassDetailView
           detail={state.detail}
           permissions={permissions}
-          backHref={backHref}
           includeInactiveEnrollments={state.includeInactive}
           onToggleIncludeInactive={state.setIncludeInactive}
           onRefresh={state.refresh}
