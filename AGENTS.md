@@ -19,7 +19,7 @@ Take the first option that fully works:
 5. Can it be one line a reader gets at a glance? One line.
 6. Otherwise: the minimum code that works.
 
-- Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests and fixtures your change breaks.
+- Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests, verification gates and commits for everything your change touches — never leave verified in-scope changes uncommitted at the end of a task or phase.
 - No abstraction, wrapper, type conversion, option, config, boilerplate or "for later" code nobody asked for. Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions.
 - The shortest working diff wins, once you know everything it must touch. A one-liner that needs decoding is not short.
 - Comment only the why the code cannot show, in one line.
@@ -29,4 +29,4 @@ Take the first option that fully works:
 - Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check. Trivial changes need none.
 - A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.
 
-Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
+Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, verification gates that guard shared code or phase completion (run `test:cov` and all affected E2E regression suites rather than skipping them), clean git completion, anything the user asked for.
