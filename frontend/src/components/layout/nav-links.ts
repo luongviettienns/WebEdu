@@ -54,6 +54,9 @@ function buildAdminSectionItems({
 }: AdminSectionOptions): NavItem[] {
   return [
     ...(includeSuperadmin ? [SUPERADMIN_SETTINGS_ITEM] : []),
+    ...(includeAdminOnly
+      ? [{ href: '/admin/overview', label: 'Tổng quan các lớp', han: '概览' }]
+      : []),
     { href: '/admin/students', label: 'Học viên', han: '学员' },
     ...(includeAdminOnly
       ? [
@@ -82,6 +85,7 @@ function createStudentStudyGroup(): NavGroup {
       { href: '/student/overview', label: 'Tình trạng học cá nhân', han: '概览' },
       { href: '/student/schedule', label: 'Lịch học & điểm danh', han: '课表' },
       { href: '/student/assignments', label: 'Bài tập & Đề thi', han: '作业' },
+      { href: '/student/results', label: 'Kết quả học tập', han: '成绩' },
     ],
   };
 }

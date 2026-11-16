@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 87-endpoint inventory through Phase 7 Slices 7.1–7.2.
+ * Canonical 100-endpoint inventory through Phase 8 Task 8.2.
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -135,6 +135,10 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'PATCH', path: '/api/v1/submissions/:submissionId/manual-grade', isPublic: false },
   { method: 'POST', path: '/api/v1/submissions/:submissionId/confirm-grade', isPublic: false },
   { method: 'PATCH', path: '/api/v1/submissions/:submissionId/adjust-grade', isPublic: false },
+  // ProgressController (3 — Phase 8)
+  { method: 'GET', path: '/api/v1/progress/me', isPublic: false },
+  { method: 'GET', path: '/api/v1/classes/:classId/progress', isPublic: false },
+  { method: 'GET', path: '/api/v1/progress/admin-overview', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -228,7 +232,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(97);
+    expect(actualRoutes).toHaveLength(100);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -541,6 +545,9 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'patch', url: `/api/v1/submissions/${nilId}/manual-grade` },
       { method: 'post', url: `/api/v1/submissions/${nilId}/confirm-grade` },
       { method: 'patch', url: `/api/v1/submissions/${nilId}/adjust-grade` },
+      { method: 'get', url: '/api/v1/progress/me' },
+      { method: 'get', url: `/api/v1/classes/${activeClass.id}/progress` },
+      { method: 'get', url: '/api/v1/progress/admin-overview' },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -578,6 +585,8 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       '/api/v1/system-settings/audit-logs',
       '/api/v1/system-settings/ai-grading',
       '/api/v1/assessments',
+      `/api/v1/classes/${activeClass.id}/progress`,
+      '/api/v1/progress/admin-overview',
     ]) {
       const res = await request(server)
         .get(forbiddenUrl)
@@ -624,8 +633,14 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .get('/api/v1/assignments/me')
       .set('Authorization', `Bearer ${studentAToken}`)
       .expect(200);
+    await request(server)
+      .get('/api/v1/progress/me')
+      .set('Authorization', `Bearer ${studentAToken}`)
+      .expect(200);
     for (const ep of [
       { method: 'get' as const, url: '/api/v1/assignments/me' },
+      { method: 'get' as const, url: '/api/v1/progress/me' },
+      { method: 'get' as const, url: '/api/v1/progress/admin-overview' },
       { method: 'get' as const, url: `/api/v1/assignments/${nilId}/published-result` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/submissions/start` },
       { method: 'post' as const, url: `/api/v1/assignments/${nilId}/submissions/submit` },
@@ -639,6 +654,18 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     await request(server)
       .get(`/api/v1/classes/${activeClass.id}/assignments`)
       .set('Authorization', `Bearer ${unassignedTeacherToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/api/v1/classes/${activeClass.id}/progress`)
+      .set('Authorization', `Bearer ${activeTeacherToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/api/v1/classes/${activeClass.id}/progress`)
+      .set('Authorization', `Bearer ${unassignedTeacherToken}`)
+      .expect(403);
+    await request(server)
+      .get(`/api/v1/classes/${activeClass.id}/progress`)
+      .set('Authorization', `Bearer ${replacedTeacherToken}`)
       .expect(403);
 
     // 3. TEACHER 4 data-state boundaries (Active FULL, Completed READ_ONLY, Replaced 403, Unassigned 403, ClassHistory 403)
@@ -727,6 +754,9 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       `/api/v1/classes/${activeClass.id}`,
       `/api/v1/students/${studentA.id}/class-history`,
       `/api/v1/students/${studentA.id}/learning-records`,
+      '/api/v1/progress/me',
+      `/api/v1/classes/${activeClass.id}/progress`,
+      '/api/v1/progress/admin-overview',
     ]) {
       await request(server)
         .get(saDeniedUrl)
@@ -798,6 +828,22 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .post(`/api/v1/students/${studentPending.id}/assign-initial-class`)
       .set('Authorization', `Bearer ${dualSaAdminToken}`)
       .send({ classNameOrId: 'HSK2-A' })
+      .expect(200);
+    await request(server)
+      .get('/api/v1/progress/admin-overview')
+      .set('Authorization', `Bearer ${dualSaAdminToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/progress/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+    await request(server)
+      .get('/api/v1/progress/admin-overview')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/api/v1/classes/${activeClass.id}/progress`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
     // 5. ADMIN cannot access SUPERADMIN-only endpoints (403)

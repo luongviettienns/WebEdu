@@ -8,6 +8,7 @@
 
 - HV chỉ của mình; GV chỉ lớp được giao; Admin xem tất cả lớp.
 - Tiến độ buổi/điểm danh liên kết lịch hủy/bù và học viên chuyển lớp.
+- **`DEC-041` (`FUNC-071..075` — ĐÃ CHỐT 16/11/2026):** Tiến độ buổi học tính từ số buổi `COMPLETED` (đã điểm danh theo `DEC-009`) trên `totalSessions`, kèm `nextSession` (buổi `SCHEDULED` gần nhất từ hôm nay GMT+7) và `expectedEndDate` (ngày buổi hoạt động cuối cùng). Giao diện gồm: nâng cấp `/student/overview` + thêm `/student/results` cho Học viên; thêm tab `"Tiến độ & Kết quả"` trong Chi tiết lớp cho Giáo viên/Admin (cảnh báo khi vắng $\ge 30\%$ hoặc nộp BTVN $< 60\%$); thêm `/admin/overview` cho Admin (giữ nguyên trang đích sau đăng nhập Admin là `/admin/students`).
 
 **Mọi phần trích nguồn dưới đây là tài liệu truy vết, không tự chứng minh quy tắc đã duyệt. Đoạn nào xung đột thì chỉ thực hiện theo phần OVERRIDE và Decision Log.**
 

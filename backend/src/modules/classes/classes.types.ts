@@ -62,6 +62,16 @@ export interface ClassEnrollmentItemDto {
   absencesCount?: number;
 }
 
+export interface ClassNextSessionDto {
+  id: string;
+  sessionNumber: number | null;
+  sessionDate: string;
+  weekdayLabel: string;
+  startTime: string;
+  endTime: string;
+  isMakeup: boolean;
+}
+
 export interface ClassItemDto {
   id: string;
   code: string;
@@ -84,6 +94,9 @@ export interface ClassItemDto {
   activeStudentsCount: number;
   totalEnrollmentsCount: number;
   completedSessionsCount: number;
+  remainingSessionsCount: number;
+  progressPercent: number;
+  nextSession: ClassNextSessionDto | null;
   isStartDateLocked?: boolean;
   scheduleConflictWarning?: string | null;
   createdAt: string;

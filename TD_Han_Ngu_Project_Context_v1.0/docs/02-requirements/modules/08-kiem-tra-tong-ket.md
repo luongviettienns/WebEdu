@@ -7,8 +7,9 @@
 ## Điều kiện và override trước khi code
 
 - Mini/Giữa/Cuối dùng form khác nhau, có thể nhiều bài mỗi loại.
-- Công thức tổng kết, rubric, mẫu đề để sau theo quyết định 06/11; không tự gán tỷ trọng.
-- FUNC-076 ngoài phạm vi Phase 1.
+- **`DEC-039` (`EXAM-01`, `FUNC-065, 068, 070` — ĐÃ CHỐT 16/11/2026):** Cấu hình động công thức Điểm tổng kết theo từng **Khóa học HSK** (`Course` tại `/admin/courses`) gồm 4 thông số: `% Mini-test` (mặc định `20%`), `% Giữa kỳ` (mặc định `30%`), `% Cuối kỳ` (mặc định `50%`, tổng 3 mục `= 100%`) và `Điểm Đạt` thang 10 (mặc định `5.0`). Quy từng bài đã công bố (`RETURNED`) về thang 10; thành phần có trọng số `> 0%` phải có ít nhất 1 bài `RETURNED` mới tính Điểm tổng kết (trọng số `= 0%` tự động bỏ qua; thiếu thành phần `> 0%` hiển thị `"Chưa đủ dữ liệu"`). Gắn buổi học (`sessionId`) là tùy chọn; khi tạo đề có Preset gợi ý thời lượng & cấu trúc phần theo 4 loại đề (`HOMEWORK`, `MINI_TEST` 15p, `MIDTERM` 45p, `FINAL` 60p).
+- **`DEC-040` (`ATT-02`, `FUNC-069` — ĐÃ CHỐT 16/11/2026):** BTVN hoàn thành = học viên có nộp bài hợp lệ (`submittedAt !== null`, không tính bản ghi chốt `0 điểm` quá hạn không nộp) trên tổng BTVN đã giao trong thời gian học của HV tại lớp. Hiển thị tách biệt 2 chỉ số `"Tỷ lệ chuyên cần buổi học"` (`DEC-033`) và `"Tỷ lệ nộp BTVN"` + `"Điểm TB BTVN (tham khảo)"`. BTVN không tính vào điểm tổng kết (`DEC-014`).
+- `FUNC-076` (Nhập điểm kiểm tra giấy thủ công) ngoài phạm vi Phase 1 (`DEC-018`).
 
 **Mọi phần trích nguồn dưới đây là tài liệu truy vết, không tự chứng minh quy tắc đã duyệt. Đoạn nào xung đột thì chỉ thực hiện theo phần OVERRIDE và Decision Log.**
 

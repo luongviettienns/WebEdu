@@ -20,6 +20,7 @@ import {
   assertStartDateMutableInTx,
   assertValidActiveCourseInDb,
   assertValidActiveTeacherInDb,
+  findNextScheduledSession,
   findTeacherScheduleConflictWarning,
   getClassMutabilityCountsInTx,
   resolveUpdateClassScheduleConflictInTx,
@@ -53,7 +54,7 @@ export class ClassCrudService {
     const notes = dto.notes?.trim() || null;
 
     try {
-      const { created, scheduleConflictWarning } = await this.prisma.$transaction(async (tx) => {
+      const { created, scheduleConflictWarning, nextSession } = await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${dto.teacherId} FOR UPDATE`;
         await assertValidActiveTeacherInDb(tx, dto.teacherId);
         await tx.$queryRaw`SELECT id FROM "courses" WHERE id = ${dto.courseId} FOR SHARE`;
@@ -114,9 +115,10 @@ export class ClassCrudService {
           targetId: cls.id,
           metadata: { code: cls.code, courseId: course.id, teacherId: dto.teacherId, totalSessions, startDate: formatIsoDateUtc(startDate), expectedEndDate: formatIsoDateUtc(expectedEndDate) },
         });
-        return { created: cls, scheduleConflictWarning: warning };
+        const nextSession = await findNextScheduledSession(tx, cls.id);
+        return { created: cls, scheduleConflictWarning: warning, nextSession };
       });
-      return toClassItemDto(created, scheduleConflictWarning, 0, false);
+      return toClassItemDto(created, scheduleConflictWarning, 0, false, nextSession);
     } catch (err: unknown) {
       if (isPrismaUniqueConstraintError(err)) {
         throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');
@@ -129,7 +131,7 @@ export class ClassCrudService {
     if (dto.status !== undefined) assertOpenClassStatus(dto.status);
 
     try {
-      const { updated, warning, completedSessionsCount, isStartDateLocked } =
+      const { updated, warning, completedSessionsCount, isStartDateLocked, nextSession } =
         await this.prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "classes" WHERE id = ${classId} FOR UPDATE`;
         const existing = (await tx.class.findUnique({
@@ -286,9 +288,10 @@ export class ClassCrudService {
           metadata: { code: cls.code, courseId: cls.courseId, teacherId: cls.teacherId, status: cls.status, totalSessions: cls.totalSessions, expectedEndDate: formatIsoDateUtc(reconciled.expectedEndDate ?? nextExpectedEndDate) },
         });
         const mutability = startDateChanged ? { completedSessionsCount: 0, isStartDateLocked: false } : await getClassMutabilityCountsInTx(tx, classId);
-        return { updated: cls, warning: scheduleWarning, completedSessionsCount: mutability.completedSessionsCount, isStartDateLocked: mutability.isStartDateLocked };
+        const nextSession = await findNextScheduledSession(tx, classId);
+        return { updated: cls, warning: scheduleWarning, completedSessionsCount: mutability.completedSessionsCount, isStartDateLocked: mutability.isStartDateLocked, nextSession };
       });
-      return toClassItemDto(updated, warning, completedSessionsCount, isStartDateLocked);
+      return toClassItemDto(updated, warning, completedSessionsCount, isStartDateLocked, nextSession);
     } catch (err: unknown) {
       if (isPrismaUniqueConstraintError(err)) {
         throw new ConflictException('Mã lớp học đã tồn tại trong hệ thống');

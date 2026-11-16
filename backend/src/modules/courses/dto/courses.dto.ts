@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   Length,
@@ -66,6 +67,34 @@ export class CreateCourseDto {
   @Max(200, { message: 'Số buổi mặc định tối đa là 200 buổi' })
   defaultSessions?: number | null;
 
+  @ApiPropertyOptional({ example: 20, default: 20 })
+  @IsOptional()
+  @IsInt({ message: 'Tỷ trọng kiểm tra ngắn phải là số nguyên từ 0 đến 100' })
+  @Min(0, { message: 'Tỷ trọng kiểm tra ngắn phải từ 0 đến 100%' })
+  @Max(100, { message: 'Tỷ trọng kiểm tra ngắn phải từ 0 đến 100%' })
+  miniTestWeight?: number;
+
+  @ApiPropertyOptional({ example: 30, default: 30 })
+  @IsOptional()
+  @IsInt({ message: 'Tỷ trọng giữa kỳ phải là số nguyên từ 0 đến 100' })
+  @Min(0, { message: 'Tỷ trọng giữa kỳ phải từ 0 đến 100%' })
+  @Max(100, { message: 'Tỷ trọng giữa kỳ phải từ 0 đến 100%' })
+  midtermWeight?: number;
+
+  @ApiPropertyOptional({ example: 50, default: 50 })
+  @IsOptional()
+  @IsInt({ message: 'Tỷ trọng cuối khóa phải là số nguyên từ 0 đến 100' })
+  @Min(0, { message: 'Tỷ trọng cuối khóa phải từ 0 đến 100%' })
+  @Max(100, { message: 'Tỷ trọng cuối khóa phải từ 0 đến 100%' })
+  finalWeight?: number;
+
+  @ApiPropertyOptional({ example: 5.0, default: 5 })
+  @IsOptional()
+  @IsNumber({}, { message: 'Điểm đạt phải là một số hợp lệ từ 0 đến 10' })
+  @Min(0, { message: 'Điểm đạt tối thiểu là 0' })
+  @Max(10, { message: 'Điểm đạt tối đa là 10' })
+  passingScore?: number;
+
   @ApiPropertyOptional({
     example: 'Giáo trình Hán ngữ Chuẩn HSK 1 (300 từ vựng nền tảng)',
     nullable: true,
@@ -114,6 +143,34 @@ export class UpdateCourseDto {
   @Min(1, { message: 'Số buổi mặc định tối thiểu là 1 buổi' })
   @Max(200, { message: 'Số buổi mặc định tối đa là 200 buổi' })
   defaultSessions?: number | null;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @IsInt({ message: 'Tỷ trọng kiểm tra ngắn phải là số nguyên từ 0 đến 100' })
+  @Min(0, { message: 'Tỷ trọng kiểm tra ngắn phải từ 0 đến 100%' })
+  @Max(100, { message: 'Tỷ trọng kiểm tra ngắn phải từ 0 đến 100%' })
+  miniTestWeight?: number;
+
+  @ApiPropertyOptional({ example: 30 })
+  @IsOptional()
+  @IsInt({ message: 'Tỷ trọng giữa kỳ phải là số nguyên từ 0 đến 100' })
+  @Min(0, { message: 'Tỷ trọng giữa kỳ phải từ 0 đến 100%' })
+  @Max(100, { message: 'Tỷ trọng giữa kỳ phải từ 0 đến 100%' })
+  midtermWeight?: number;
+
+  @ApiPropertyOptional({ example: 50 })
+  @IsOptional()
+  @IsInt({ message: 'Tỷ trọng cuối khóa phải là số nguyên từ 0 đến 100' })
+  @Min(0, { message: 'Tỷ trọng cuối khóa phải từ 0 đến 100%' })
+  @Max(100, { message: 'Tỷ trọng cuối khóa phải từ 0 đến 100%' })
+  finalWeight?: number;
+
+  @ApiPropertyOptional({ example: 5.0 })
+  @IsOptional()
+  @IsNumber({}, { message: 'Điểm đạt phải là một số hợp lệ từ 0 đến 10' })
+  @Min(0, { message: 'Điểm đạt tối thiểu là 0' })
+  @Max(10, { message: 'Điểm đạt tối đa là 10' })
+  passingScore?: number;
 
   @ApiPropertyOptional({ nullable: true })
   @IsOptional()

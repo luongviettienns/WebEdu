@@ -22,9 +22,11 @@ const STATIC_ROUTE_LABELS: Record<string, string> = {
   '/student/overview': 'Tổng quan học tập',
   '/student/schedule': 'Lịch học của tôi',
   '/student/assignments': 'Bài tập & Đề thi',
+  '/student/results': 'Kết quả học tập',
   '/teacher/classes': 'Lớp học phụ trách',
   '/teacher/schedules': 'Lịch dạy',
   '/teacher/assessments': 'Ngân hàng đề',
+  '/admin/overview': 'Tổng quan các lớp',
   '/admin/courses': 'Khóa học HSK',
   '/admin/classes': 'Quản lý lớp học',
   '/admin/schedules': 'Quản lý lịch học',
@@ -38,6 +40,7 @@ const STATIC_ROUTE_LABELS: Record<string, string> = {
 
 const DYNAMIC_ROUTE_LABELS: ReadonlyArray<{ pattern: RegExp; label: string }> = [
   { pattern: /^\/student\/assignments\/[^/]+$/, label: 'Làm bài & Bài nộp' },
+  { pattern: /^\/teacher\/assignments\/[^/]+\/grading$/, label: 'Chấm điểm bài tập' },
   { pattern: /^\/teacher\/classes\/[^/]+$/, label: 'Chi tiết lớp học' },
   { pattern: /^\/admin\/classes\/[^/]+$/, label: 'Chi tiết lớp học' },
 ];

@@ -13,8 +13,14 @@ import {
 } from '@prisma/client';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
-import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
-import { hasTimeRangeOverlap } from '../../schedules/policies/session-schedule.policy.js';
+import {
+  formatIsoDateUtc,
+  resolveVnToday,
+  VN_TIMEZONE,
+} from '../../../common/utils/timezone.util.js';
+import { formatInTimeZone } from 'date-fns-tz';
+import { getWeekdayVnLabel, hasTimeRangeOverlap } from '../../schedules/policies/session-schedule.policy.js';
+import type { ClassNextSessionDto } from '../classes.types.js';
 import {
   assertValidTimeRange,
   buildScheduleConflictWarning,
@@ -77,6 +83,7 @@ export async function resolveUpdateClassScheduleConflictInTx(
     nextStartDate: Date;
     effectiveEndDate: Date;
   },
+  now: Date = new Date(),
 ): Promise<string | null> {
   if (!params.teacherChanged || !params.assignedFromDate) {
     return findTeacherScheduleConflictWarning(
@@ -125,7 +132,17 @@ export async function resolveUpdateClassScheduleConflictInTx(
     orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }],
     select: { sessionDate: true, startTime: true, endTime: true },
   });
-  if (candidateSessions.length === 0) {
+  const todayVn = resolveVnToday(now);
+  const localTime = formatInTimeZone(now, VN_TIMEZONE, 'HH:mm');
+  // Match recurring-rule regeneration cutoff so already-started sessions today do not block a same-day reassignment.
+  const activeCandidates =
+    params.assignedFromDate.getTime() === todayVn.getTime()
+      ? candidateSessions.filter(
+          (session) =>
+            session.sessionDate.getTime() > todayVn.getTime() || session.startTime > localTime,
+        )
+      : candidateSessions;
+  if (activeCandidates.length === 0) {
     return null;
   }
 
@@ -159,7 +176,7 @@ export async function resolveUpdateClassScheduleConflictInTx(
     }
   }
 
-  for (const candidate of candidateSessions) {
+  for (const candidate of activeCandidates) {
     const dateKey = formatIsoDateUtc(candidate.sessionDate);
     const sameDaySessions = byDate.get(dateKey);
     if (!sameDaySessions) continue;
@@ -406,4 +423,106 @@ export async function restoreAutoCancelledSessionsOnReopenInTx(
     await renumberAndSyncFn(tx, classId);
   }
   return autoCancelled.length;
+}
+
+function toClassCountMap(
+  rows: ReadonlyArray<{ classId: string; _count: { _all: number } }>,
+): Map<string, number> {
+  return new Map(rows.map((row) => [row.classId, row._count._all]));
+}
+
+export async function getCompletedSessionsCountMap(
+  db: Prisma.TransactionClient | PrismaService,
+  classIds: string[],
+): Promise<Map<string, number>> {
+  if (classIds.length === 0) return new Map();
+  const rows = await db.lessonSession.groupBy({
+    by: ['classId'],
+    where: { classId: { in: classIds }, status: SessionStatus.COMPLETED },
+    _count: { _all: true },
+  });
+  return toClassCountMap(rows);
+}
+
+export async function getAttendanceRecordsCountMap(
+  db: Prisma.TransactionClient | PrismaService,
+  classIds: string[],
+): Promise<Map<string, number>> {
+  if (classIds.length === 0) return new Map();
+  const rows = await db.attendanceRecord.groupBy({
+    by: ['classId'],
+    where: { classId: { in: classIds } },
+    _count: { _all: true },
+  });
+  return toClassCountMap(rows);
+}
+
+const NEXT_SESSION_SELECT = {
+  id: true,
+  classId: true,
+  sessionNumber: true,
+  sessionDate: true,
+  startTime: true,
+  endTime: true,
+  isMakeup: true,
+} satisfies Prisma.LessonSessionSelect;
+
+export function toClassNextSessionDto(session: {
+  id: string;
+  sessionNumber: number | null;
+  sessionDate: Date;
+  startTime: string;
+  endTime: string;
+  isMakeup?: boolean;
+}): ClassNextSessionDto {
+  return {
+    id: session.id,
+    sessionNumber: session.sessionNumber ?? null,
+    sessionDate: formatIsoDateUtc(session.sessionDate),
+    weekdayLabel: getWeekdayVnLabel(session.sessionDate),
+    startTime: session.startTime,
+    endTime: session.endTime,
+    isMakeup: Boolean(session.isMakeup),
+  };
+}
+
+export async function getNextSessionMap(
+  db: Prisma.TransactionClient | PrismaService,
+  classIds: string[],
+  nowInstant: Date = new Date(),
+): Promise<Map<string, ClassNextSessionDto>> {
+  if (classIds.length === 0) return new Map();
+  const rows = await db.lessonSession.findMany({
+    where: {
+      classId: { in: classIds },
+      status: SessionStatus.SCHEDULED,
+      sessionDate: { gte: resolveVnToday(nowInstant) },
+    },
+    orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
+    select: NEXT_SESSION_SELECT,
+  });
+  const map = new Map<string, ClassNextSessionDto>();
+  for (const row of rows) {
+    if (!map.has(row.classId)) {
+      map.set(row.classId, toClassNextSessionDto(row));
+    }
+  }
+  return map;
+}
+
+export async function findNextScheduledSession(
+  db: Prisma.TransactionClient | PrismaService,
+  classId: string,
+  nowInstant: Date = new Date(),
+): Promise<ClassNextSessionDto | null> {
+  const row = await db.lessonSession.findFirst({
+    where: {
+      classId,
+      status: SessionStatus.SCHEDULED,
+      sessionDate: { gte: resolveVnToday(nowInstant) },
+    },
+    orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
+    select: NEXT_SESSION_SELECT,
+  });
+  return row ? toClassNextSessionDto(row) : null;
 }

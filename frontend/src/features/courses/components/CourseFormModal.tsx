@@ -8,6 +8,8 @@ import {
   type CourseItemDto,
   type CourseLevel,
 } from '@/features/courses/api/courses.api';
+import { CourseGradingWeightsFields } from '@/features/courses/components/CourseGradingWeightsFields';
+import { validateCourseGradingInputs } from '@/features/courses/utils/course-grading.util';
 import {
   BaseDialog,
   DIALOG_INPUT_CLS,
@@ -39,6 +41,18 @@ export function CourseFormModal({
     selectedCourse?.defaultSessions !== null && selectedCourse?.defaultSessions !== undefined
       ? String(selectedCourse.defaultSessions)
       : '24',
+  );
+  const [miniTestWeight, setMiniTestWeight] = useState<string>(
+    String(selectedCourse?.miniTestWeight ?? 20),
+  );
+  const [midtermWeight, setMidtermWeight] = useState<string>(
+    String(selectedCourse?.midtermWeight ?? 30),
+  );
+  const [finalWeight, setFinalWeight] = useState<string>(
+    String(selectedCourse?.finalWeight ?? 50),
+  );
+  const [passingScore, setPassingScore] = useState<string>(
+    String(selectedCourse?.passingScore ?? 5),
   );
   const [description, setDescription] = useState<string>(selectedCourse?.description ?? '');
   const [isActive, setIsActive] = useState<boolean>(selectedCourse?.isActive ?? true);
@@ -78,6 +92,17 @@ export function CourseFormModal({
       parsedSessions = numeric;
     }
 
+    const gradingValidation = validateCourseGradingInputs({
+      miniTestWeight,
+      midtermWeight,
+      finalWeight,
+      passingScore,
+    });
+    if (!gradingValidation.ok) {
+      setFormError(gradingValidation.error);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const payload = {
@@ -85,6 +110,7 @@ export function CourseFormModal({
         name: trimmedName,
         level,
         defaultSessions: parsedSessions,
+        ...gradingValidation.data,
         description: description.trim() || null,
         isActive,
       };
@@ -196,6 +222,17 @@ export function CourseFormModal({
               </select>
             </div>
           </div>
+
+          <CourseGradingWeightsFields
+            miniTestWeight={miniTestWeight}
+            midtermWeight={midtermWeight}
+            finalWeight={finalWeight}
+            passingScore={passingScore}
+            onChangeMiniTestWeight={setMiniTestWeight}
+            onChangeMidtermWeight={setMidtermWeight}
+            onChangeFinalWeight={setFinalWeight}
+            onChangePassingScore={setPassingScore}
+          />
 
           <div className="space-y-1.5">
             <label htmlFor="course-description" className={DIALOG_LABEL_CLS}>Mô tả / Giáo trình áp dụng</label>

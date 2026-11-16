@@ -11,6 +11,8 @@ import {
 import type { StudentMyAttendance } from '@/features/attendance/api/attendance.api';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
+import type { StudentProgressResponseDto } from '@/features/progress/types/progress.types';
+import { formatRemainingSessionsSummary } from '@/features/progress/utils/progress-format';
 import {
   PastClassesHistoryList,
   type PastClassesHistoryListProps,
@@ -37,6 +39,7 @@ interface StudentOverviewCardsProps {
   enrolledAt: string | null;
   myAttendance?: StudentMyAttendance | null;
   myAssignments?: StudentAssignmentListItemDto[];
+  myProgress?: StudentProgressResponseDto | null;
 }
 
 export function ActiveStudentClassSection({
@@ -46,6 +49,7 @@ export function ActiveStudentClassSection({
   enrolledAt,
   myAttendance = null,
   myAssignments = [],
+  myProgress = null,
 }: StudentOverviewCardsProps) {
   const pendingAssignments = myAssignments.filter((item) => !isSubmittedAssignmentStatus(item.status));
   const pastClasses = studentDetail?.pastClasses ?? [];
@@ -55,34 +59,35 @@ export function ActiveStudentClassSection({
     pastClasses.find(
       (c) => c.classCode === assignedClass || c.enrollmentStatus === 'ACTIVE',
     ) ?? null;
+  const progressSelected = myProgress?.selectedClass ?? null;
   const courseName =
     currentClassRecord?.courseName ??
+    progressSelected?.courseName ??
     myAttendance?.activeClass?.courseName ??
     'Khóa học HSK Tiêu chuẩn';
   const teacherName =
     currentClassRecord?.teacherName ??
+    progressSelected?.teacherName ??
     myAttendance?.activeClass?.teacherName ??
     'Giáo viên phụ trách';
 
   const sessions = myAttendance?.sessions ?? [];
-  const completedSessionsCount = sessions.filter(
-    (s) => s.status === 'COMPLETED',
-  ).length;
-  const totalSessions = myAttendance?.activeClass?.totalSessions ?? 0;
+  const attendanceCompleted = sessions.filter((s) => s.status === 'COMPLETED').length;
+  const completedSessionsCount = progressSelected?.completedSessionsCount ?? attendanceCompleted;
+  const totalSessions = progressSelected?.totalSessions ?? myAttendance?.activeClass?.totalSessions ?? 0;
   const progressPercent =
-    totalSessions > 0
-      ? Math.min(100, Math.round((completedSessionsCount / totalSessions) * 100))
-      : 0;
-  const nextSession =
-    sessions.find(
-      (s) => s.displayStatus === 'TODAY' || s.displayStatus === 'SCHEDULED',
-    ) ?? null;
+    progressSelected?.progressPercent ??
+    (totalSessions > 0 ? Math.min(100, Math.round((completedSessionsCount / totalSessions) * 100)) : 0);
+  const remainingSessions =
+    progressSelected?.remainingSessionsCount ?? Math.max(0, totalSessions - completedSessionsCount);
+  const expectedEndDate = progressSelected?.expectedEndDate ?? null;
+  const attNext = sessions.find((s) => s.displayStatus === 'TODAY' || s.displayStatus === 'SCHEDULED') ?? null;
+  const progNext = progressSelected?.nextSession ?? null;
+  const nextSession = attNext ?? (progNext ? { ...progNext, displayStatus: 'SCHEDULED' as const } : null);
   const nextSessionLabel = nextSession
     ? nextSession.sessionNumber !== null
       ? `Buổi ${nextSession.sessionNumber}`
-      : nextSession.isMakeup
-        ? 'Buổi học bù'
-        : 'Buổi học'
+      : nextSession.isMakeup ? 'Buổi học bù' : 'Buổi học'
     : null;
 
   return (
@@ -139,7 +144,9 @@ export function ActiveStudentClassSection({
                       Vào lớp:{' '}
                       <strong>
                         {formatDateDdMmYyyy(
-                          enrolledAt ?? myAttendance?.activeClass?.enrolledDate,
+                          enrolledAt ??
+                            progressSelected?.enrolledDate ??
+                            myAttendance?.activeClass?.enrolledDate,
                         )}
                       </strong>
                     </span>
@@ -150,6 +157,11 @@ export function ActiveStudentClassSection({
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
+                  {totalSessions > 0 || progressSelected ? (
+                    <p className="num text-[11px] text-[var(--ink-3)]">
+                      {formatRemainingSessionsSummary(remainingSessions, expectedEndDate)}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -277,6 +289,7 @@ export function ActiveStudentClassSection({
         profile={profile}
         studentDetail={studentDetail}
         myAttendance={myAttendance}
+        myProgress={myProgress}
       />
     </div>
   );

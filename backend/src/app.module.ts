@@ -19,6 +19,7 @@ import { AttendanceModule } from './modules/attendance/attendance.module.js';
 import { AssessmentsModule } from './modules/assessments/assessments.module.js';
 import { AssignmentsModule } from './modules/assignments/assignments.module.js';
 import { GradingModule } from './modules/grading/grading.module.js';
+import { ProgressModule } from './modules/progress/progress.module.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { GradingModule } from './modules/grading/grading.module.js';
     AssessmentsModule,
     AssignmentsModule,
     GradingModule,
+    ProgressModule,
   ],
   providers: [
     {

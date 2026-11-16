@@ -17,10 +17,15 @@ import type {
 import type { CourseItemDto, CourseListResponseDto } from '../courses.types.js';
 import {
   COURSE_LEVEL_SORT_ORDER,
+  DEFAULT_FINAL_WEIGHT,
+  DEFAULT_MIDTERM_WEIGHT,
+  DEFAULT_MINI_TEST_WEIGHT,
+  DEFAULT_PASSING_SCORE,
   normalizeAndValidateCourseCode,
   normalizeAndValidateCourseName,
   toCourseItemDto,
   validateCourseDefaultSessions,
+  validateCourseGradingConfig,
 } from '../mappers/course.mapper.js';
 
 const COURSE_INCLUDE = {
@@ -70,6 +75,12 @@ export class CoursesService {
       throw new BadRequestException('Cấp độ khóa học không hợp lệ');
     }
     const defaultSessions = validateCourseDefaultSessions(dto.defaultSessions);
+    const gradingConfig = validateCourseGradingConfig({
+      miniTestWeight: dto.miniTestWeight ?? DEFAULT_MINI_TEST_WEIGHT,
+      midtermWeight: dto.midtermWeight ?? DEFAULT_MIDTERM_WEIGHT,
+      finalWeight: dto.finalWeight ?? DEFAULT_FINAL_WEIGHT,
+      passingScore: dto.passingScore ?? DEFAULT_PASSING_SCORE,
+    });
     const description = dto.description?.trim() || null;
     const isActive = dto.isActive ?? true;
 
@@ -81,7 +92,15 @@ export class CoursesService {
     try {
       const created = await this.prisma.$transaction(async (tx) => {
         const course = await tx.course.create({
-          data: { code, name, level: dto.level, defaultSessions, description, isActive },
+          data: {
+            code,
+            name,
+            level: dto.level,
+            defaultSessions,
+            ...gradingConfig,
+            description,
+            isActive,
+          },
           include: COURSE_INCLUDE,
         });
         await writeAuditLog(tx, actor, {
@@ -93,6 +112,10 @@ export class CoursesService {
             name: course.name,
             level: course.level,
             defaultSessions: course.defaultSessions,
+            miniTestWeight: course.miniTestWeight,
+            midtermWeight: course.midtermWeight,
+            finalWeight: course.finalWeight,
+            passingScore: course.passingScore,
             isActive: course.isActive,
           },
         });
@@ -129,6 +152,12 @@ export class CoursesService {
       dto.defaultSessions !== undefined
         ? validateCourseDefaultSessions(dto.defaultSessions)
         : existing.defaultSessions;
+    const gradingConfig = validateCourseGradingConfig({
+      miniTestWeight: dto.miniTestWeight ?? existing.miniTestWeight,
+      midtermWeight: dto.midtermWeight ?? existing.midtermWeight,
+      finalWeight: dto.finalWeight ?? existing.finalWeight,
+      passingScore: dto.passingScore ?? existing.passingScore,
+    });
     const nextDescription =
       dto.description !== undefined ? dto.description?.trim() || null : existing.description;
     const nextIsActive = dto.isActive ?? existing.isActive;
@@ -151,6 +180,10 @@ export class CoursesService {
             ...(dto.name !== undefined ? { name: nextName } : {}),
             ...(dto.level != null ? { level: nextLevel } : {}),
             ...(dto.defaultSessions !== undefined ? { defaultSessions: nextDefaultSessions } : {}),
+            ...(dto.miniTestWeight !== undefined ? { miniTestWeight: gradingConfig.miniTestWeight } : {}),
+            ...(dto.midtermWeight !== undefined ? { midtermWeight: gradingConfig.midtermWeight } : {}),
+            ...(dto.finalWeight !== undefined ? { finalWeight: gradingConfig.finalWeight } : {}),
+            ...(dto.passingScore !== undefined ? { passingScore: gradingConfig.passingScore } : {}),
             ...(dto.description !== undefined ? { description: nextDescription } : {}),
             ...(dto.isActive != null ? { isActive: nextIsActive } : {}),
           },
@@ -165,6 +198,10 @@ export class CoursesService {
             name: course.name,
             level: course.level,
             defaultSessions: course.defaultSessions,
+            miniTestWeight: course.miniTestWeight,
+            midtermWeight: course.midtermWeight,
+            finalWeight: course.finalWeight,
+            passingScore: course.passingScore,
             isActive: course.isActive,
           },
         });

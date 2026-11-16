@@ -94,6 +94,7 @@ interface MockLessonSessionRecord {
   id: string;
   classId: string;
   status: SessionStatus;
+  isMakeup?: boolean;
   sessionNumber?: number | null;
   sessionDate?: Date;
   startTime?: string;
@@ -993,8 +994,9 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
             where,
           }: {
             where?: {
-              classId?: string;
+              classId?: string | { in?: string[] };
               status?: SessionStatus;
+              sessionDate?: { gte?: Date };
               cancelReason?: string;
               makeupReplacement?: { is: null } | null;
             };
@@ -1004,10 +1006,21 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
                 .map((s) => s.makeupForSessionId)
                 .filter((id): id is string => typeof id === 'string'),
             );
+            const classIdsFilter =
+              where?.classId && typeof where.classId === 'object' && 'in' in where.classId
+                ? new Set(where.classId.in ?? [])
+                : null;
             return sessionsStore
               .filter((s) => {
-                if (where?.classId && s.classId !== where.classId) return false;
+                if (typeof where?.classId === 'string' && s.classId !== where.classId) return false;
+                if (classIdsFilter && !classIdsFilter.has(s.classId)) return false;
                 if (where?.status && s.status !== where.status) return false;
+                if (
+                  where?.sessionDate?.gte &&
+                  (!s.sessionDate || s.sessionDate.getTime() < where.sessionDate.gte.getTime())
+                ) {
+                  return false;
+                }
                 if (
                   where?.cancelReason !== undefined &&
                   s.cancelReason !== where.cancelReason
@@ -1285,6 +1298,150 @@ describe('ClassAccessService, ClassQueryService & ClassLifecycleService', () => 
       await expect(
         queryService.getClassById(adminActor, 'class-missing'),
       ).rejects.toThrowError(new NotFoundException('Không tìm thấy lớp học'));
+    });
+
+    it('computes remainingSessionsCount, progressPercent, and nearest SCHEDULED nextSession on listClasses and getClassById', async () => {
+      sessionsStore.push(
+        {
+          id: 's-completed-1',
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: 1,
+          sessionDate: new Date('2026-10-02T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 's-completed-2',
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: 2,
+          sessionDate: new Date('2026-10-05T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 's-future-1',
+          classId: 'class-active-1',
+          status: SessionStatus.SCHEDULED,
+          sessionNumber: 3,
+          sessionDate: new Date('2099-05-05T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+          isMakeup: true,
+        },
+        {
+          id: 's-future-2',
+          classId: 'class-active-1',
+          status: SessionStatus.SCHEDULED,
+          sessionNumber: 4,
+          sessionDate: new Date('2099-05-07T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+      );
+
+      const listed = await queryService.listClasses(adminActor, {});
+      const clsItem = listed.items.find((c) => c.id === 'class-active-1');
+      expect(clsItem).toMatchObject({
+        completedSessionsCount: 2,
+        remainingSessionsCount: 22,
+        progressPercent: 8,
+        nextSession: {
+          id: 's-future-1',
+          sessionNumber: 3,
+          sessionDate: '2099-05-05',
+          startTime: '18:00',
+          endTime: '19:30',
+          isMakeup: true,
+        },
+      });
+
+      const detail = await queryService.getClassById(adminActor, 'class-active-1');
+      expect(detail.remainingSessionsCount).toBe(22);
+      expect(detail.progressPercent).toBe(8);
+      expect(detail.nextSession?.id).toBe('s-future-1');
+      expect(detail.nextSession?.weekdayLabel).toBe('T3');
+    });
+
+    it('returns nextSession: null and progressPercent: 100 when all sessions are completed, ignores past/cancelled sessions, and batches nextSession lookup', async () => {
+      for (let i = 1; i <= 24; i += 1) {
+        sessionsStore.push({
+          id: `s-done-${i}`,
+          classId: 'class-active-1',
+          status: SessionStatus.COMPLETED,
+          sessionNumber: i,
+          sessionDate: new Date('2026-11-01T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        });
+      }
+      // Past SCHEDULED (before mocked 2026-12-31 GMT+7) and future CANCELLED must NOT be returned as nextSession
+      sessionsStore.push(
+        {
+          id: 's-past-scheduled',
+          classId: 'class-active-1',
+          status: SessionStatus.SCHEDULED,
+          sessionNumber: 25,
+          sessionDate: new Date('2026-12-30T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 's-future-cancelled',
+          classId: 'class-active-1',
+          status: SessionStatus.CANCELLED,
+          sessionNumber: null,
+          sessionDate: new Date('2099-06-01T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        // Same-day (2026-12-31 GMT+7) SCHEDULED session on class-other IS eligible as nextSession
+        {
+          id: 's-other-today',
+          classId: 'class-other',
+          status: SessionStatus.SCHEDULED,
+          sessionNumber: 1,
+          sessionDate: new Date('2026-12-31T00:00:00.000Z'),
+          startTime: '19:00',
+          endTime: '20:30',
+        },
+      );
+
+      const findManySpy = (
+        mockPrisma.lessonSession as { findMany: ReturnType<typeof vi.fn> }
+      ).findMany;
+      findManySpy.mockClear();
+
+      const listed = await queryService.listClasses(adminActor, {});
+      expect(findManySpy).toHaveBeenCalledTimes(1);
+
+      const activeItem = listed.items.find((c) => c.id === 'class-active-1');
+      expect(activeItem).toMatchObject({
+        completedSessionsCount: 24,
+        remainingSessionsCount: 0,
+        progressPercent: 100,
+        nextSession: null,
+      });
+
+      const otherItem = listed.items.find((c) => c.id === 'class-other');
+      expect(otherItem?.nextSession).toMatchObject({
+        id: 's-other-today',
+        sessionDate: '2026-12-31',
+        weekdayLabel: 'T5',
+        isMakeup: false,
+      });
+
+      const detail = await queryService.getClassById(adminActor, 'class-active-1');
+      expect(detail.remainingSessionsCount).toBe(0);
+      expect(detail.progressPercent).toBe(100);
+      expect(detail.nextSession).toBeNull();
+
+      // Empty page skips batched nextSession findMany completely
+      findManySpy.mockClear();
+      const emptyRes = await queryService.listClasses(adminActor, { search: 'NO_MATCH_XYZ' });
+      expect(emptyRes.items).toEqual([]);
+      expect(findManySpy).not.toHaveBeenCalled();
     });
 
     it('REGRESSION (P2-5 & P2-4): excludes source class via excludeClassId in listClasses and returns live scheduleConflictWarning for open overlapping classes', async () => {

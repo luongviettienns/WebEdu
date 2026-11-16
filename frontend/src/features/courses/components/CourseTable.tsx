@@ -3,6 +3,7 @@
 import React from 'react';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import { COURSE_LEVEL_HAN, type CourseItemDto } from '@/features/courses/api/courses.api';
+import { formatPassingScore } from '@/features/courses/utils/course-grading.util';
 
 export interface CourseTableProps {
   loading: boolean;
@@ -35,6 +36,7 @@ export function CourseTable({
               <th className="px-4 py-3">Tên khóa học & Giáo trình</th>
               <th className="px-4 py-3">Cấp độ</th>
               <th className="px-4 py-3 text-center">Số buổi mặc định</th>
+              <th className="px-4 py-3 whitespace-nowrap">Công thức Tổng kết</th>
               <th className="px-4 py-3 text-center">Lớp đang mở / Tổng lớp</th>
               <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3 text-right">Thao tác</th>
@@ -43,13 +45,13 @@ export function CourseTable({
           <tbody className="divide-y divide-[var(--line)]">
             {loading && !loaded ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-[var(--ink-3)]">
+                <td colSpan={8} className="px-4 py-8 text-center text-[var(--ink-3)]">
                   Đang tải danh mục khóa học HSK...
                 </td>
               </tr>
             ) : courses.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-[var(--ink-3)]">
+                <td colSpan={8} className="px-4 py-8 text-center text-[var(--ink-3)]">
                   {hasFilters ? (
                     <div className="space-y-2">
                       <p>Không tìm thấy khóa học nào phù hợp với bộ lọc.</p>
@@ -84,6 +86,15 @@ export function CourseTable({
                   </td>
                   <td className="px-4 py-3.5 text-center font-medium text-[var(--ink)] num">
                     {course.defaultSessions ? `${course.defaultSessions} buổi` : '—'}
+                  </td>
+                  <td className="px-4 py-3.5 whitespace-nowrap num">
+                    <div className="font-semibold text-[var(--ink)]">
+                      {course.miniTestWeight ?? 20}/{course.midtermWeight ?? 30}/
+                      {course.finalWeight ?? 50}%
+                    </div>
+                    <div className="mt-0.5 text-xs text-[var(--ink-2)]">
+                      Đạt ≥ {formatPassingScore(course.passingScore)}
+                    </div>
                   </td>
                   <td className="px-4 py-3.5 text-center font-medium text-[var(--ink)] num">
                     <span className="font-bold text-[var(--blue)]">{course.activeClassesCount}</span>

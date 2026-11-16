@@ -537,6 +537,16 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
                 return true;
               })
               .map((s) => ({
+                isRescheduled: false,
+                isMakeup: false,
+                cancelReason: null,
+                makeupReplacement: null,
+                _count: {
+                  changeLogs: 0,
+                  classAssignments: 0,
+                  attendanceRecords: 0,
+                  attendanceAudits: 0,
+                },
                 ...s,
                 class: classesStore.get(s.classId) ?? { code: 'UNKNOWN' },
               }));
@@ -1342,6 +1352,108 @@ describe('ClassCrudService & class-schedule.util — Class Creation, Schedule Ca
         teacherAssignedFrom: '2026-11-09',
       });
       expect(ok.teacherId).toBe('teacher-02');
+    });
+
+    it('skips same-day already-started sessions on teacherAssignedFrom === today while still rejecting future-time conflicts', async () => {
+      vi.setSystemTime(new Date('2026-11-16T15:30:00.000Z')); // 22:30 GMT+7 on 2026-11-16
+
+      const classA = await service.createClass(adminActor, {
+        code: 'HSK1-CUTOFF-A',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:30',
+        scheduleEndTime: '20:00',
+        startDate: '2026-10-05',
+        totalSessions: 24,
+      });
+
+      const classB = await service.createClass(adminActor, {
+        code: 'HSK2-CUTOFF-B',
+        courseId: 'course-hsk2',
+        teacherId: 'teacher-02',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:00',
+        scheduleEndTime: '19:30',
+        startDate: '2026-10-01',
+        totalSessions: 24,
+      });
+
+      sessionsStore.push(
+        {
+          id: 'sess-a-today-past',
+          classId: classA.id,
+          status: SessionStatus.SCHEDULED,
+          type: SessionType.REGULAR,
+          sessionDate: new Date('2026-11-16T00:00:00.000Z'),
+          startTime: '18:30',
+          endTime: '20:00',
+        },
+        {
+          id: 'sess-a-next',
+          classId: classA.id,
+          status: SessionStatus.SCHEDULED,
+          type: SessionType.REGULAR,
+          sessionDate: new Date('2026-11-18T00:00:00.000Z'),
+          startTime: '20:00',
+          endTime: '21:30',
+        },
+        {
+          id: 'sess-b-today-past',
+          classId: classB.id,
+          status: SessionStatus.SCHEDULED,
+          type: SessionType.REGULAR,
+          sessionDate: new Date('2026-11-16T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+        {
+          id: 'sess-b-next',
+          classId: classB.id,
+          status: SessionStatus.SCHEDULED,
+          type: SessionType.REGULAR,
+          sessionDate: new Date('2026-11-18T00:00:00.000Z'),
+          startTime: '18:00',
+          endTime: '19:30',
+        },
+      );
+
+      // Updating schedule hours to non-overlapping 20:00-21:30 after 22:30 GMT+7 leaves 18:30 today intact; must succeed
+      const reassigned = await service.updateClass(adminActor, classA.id, {
+        teacherId: 'teacher-02',
+        teacherAssignedFrom: '2026-11-16',
+        scheduleStartTime: '20:00',
+        scheduleEndTime: '21:30',
+      });
+      expect(reassigned.teacherId).toBe('teacher-02');
+
+      // Earlier in the same day (14:00 GMT+7), 18:30 is still upcoming -> overlapping today session rejects 409
+      vi.setSystemTime(new Date('2026-11-16T07:00:00.000Z'));
+      const classC = await service.createClass(adminActor, {
+        code: 'HSK1-CUTOFF-C',
+        courseId: 'course-hsk1',
+        teacherId: 'teacher-01',
+        scheduleDays: [1, 3, 5],
+        scheduleStartTime: '18:30',
+        scheduleEndTime: '20:00',
+        startDate: '2026-10-05',
+        totalSessions: 24,
+      });
+      sessionsStore.push({
+        id: 'sess-c-today-upcoming',
+        classId: classC.id,
+        status: SessionStatus.SCHEDULED,
+        type: SessionType.REGULAR,
+        sessionDate: new Date('2026-11-16T00:00:00.000Z'),
+        startTime: '18:30',
+        endTime: '20:00',
+      });
+      await expect(
+        service.updateClass(adminActor, classC.id, {
+          teacherId: 'teacher-02',
+          teacherAssignedFrom: '2026-11-16',
+        }),
+      ).rejects.toThrowError(ConflictException);
     });
   });
 });

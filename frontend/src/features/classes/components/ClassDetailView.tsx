@@ -20,6 +20,7 @@ import { DropStudentClassModal } from '@/features/classes/components/DropStudent
 import { TransferStudentClassModal } from '@/features/classes/components/TransferStudentClassModal';
 import type { ClassDetailPermissions } from '@/features/classes/permissions/class-permissions';
 import { ConfirmDialog } from '@/features/common/components/ConfirmDialog';
+import { ClassProgressResultsTab } from '@/features/progress/components/ClassProgressResultsTab';
 import { notifyPendingEnrollmentUpdated } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage } from '@/lib/api-client';
 
@@ -58,7 +59,7 @@ export function ClassDetailView({
   const [editWarning, setEditWarning] = useState('');
   const [transferTarget, setTransferTarget] = useState<ClassEnrollmentItem | null>(null);
   const [dropTarget, setDropTarget] = useState<ClassEnrollmentItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'info' | 'sessions' | 'attendance' | 'assignments'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'sessions' | 'attendance' | 'assignments' | 'progress'>('info');
   const activeScheduleWarning = detail.scheduleConflictWarning || editWarning;
   const canMarkAttendance =
     permissions.assignedRoles.includes('ADMIN') ||
@@ -97,6 +98,7 @@ export function ClassDetailView({
             ['sessions', 'Lịch học'],
             ['attendance', 'Điểm danh'],
             ['assignments', 'Bài tập & Kiểm tra'],
+            ['progress', 'Tiến độ & Kết quả'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -159,6 +161,8 @@ export function ClassDetailView({
           canAssign={canMarkAttendance}
         />
       ) : null}
+
+      {activeTab === 'progress' ? <ClassProgressResultsTab classId={detail.id} /> : null}
 
       {permissions.canEditClass ? (
         <ClassFormModal

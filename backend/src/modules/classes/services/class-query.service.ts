@@ -37,6 +37,9 @@ import {
 import {
   computeStudentAbsencesMap,
   findTeacherScheduleConflictWarning,
+  getAttendanceRecordsCountMap,
+  getCompletedSessionsCountMap,
+  getNextSessionMap,
 } from '../policies/class-session-lifecycle.util.js';
 import { ClassAccessService } from './class-access.service.js';
 
@@ -154,10 +157,12 @@ export class ClassQueryService {
 
     const classEntities = rows as unknown as ClassItemEntity[];
     const classIds = classEntities.map((row) => row.id);
-    const [completedCountMap, attendanceCountMap] = await Promise.all([
-      this.getCompletedSessionsCountMap(classIds),
-      this.getAttendanceRecordsCountMap(classIds),
-    ]);
+    const [completedCountMap, attendanceCountMap, nextSessionMap] =
+      await Promise.all([
+        getCompletedSessionsCountMap(this.prisma, classIds),
+        getAttendanceRecordsCountMap(this.prisma, classIds),
+        getNextSessionMap(this.prisma, classIds),
+      ]);
     const items = classEntities.map((row) => {
       const completedCount = completedCountMap.get(row.id) ?? 0;
       const attendanceCount = attendanceCountMap.get(row.id) ?? 0;
@@ -166,6 +171,7 @@ export class ClassQueryService {
         null,
         completedCount,
         completedCount > 0 || attendanceCount > 0,
+        nextSessionMap.get(row.id) ?? null,
       );
     });
 
@@ -201,6 +207,7 @@ export class ClassQueryService {
       scheduledSessionsCount,
       attendanceRecordsCount,
       absenceRecords,
+      nextSessionMap,
     ] = await Promise.all([
       isEndedClass
         ? Promise.resolve(null)
@@ -216,7 +223,7 @@ export class ClassQueryService {
             },
             cls.id,
           ),
-      this.getCompletedSessionsCountMap([cls.id]),
+      getCompletedSessionsCountMap(this.prisma, [cls.id]),
       this.prisma.lessonSession.count({
         where: { classId: cls.id, status: SessionStatus.SCHEDULED },
       }),
@@ -232,6 +239,7 @@ export class ClassQueryService {
           session: { select: { sessionDate: true } },
         },
       }),
+      getNextSessionMap(this.prisma, [cls.id]),
     ]);
 
     const completedSessionsCount = completedCountMap.get(cls.id) ?? 0;
@@ -267,38 +275,9 @@ export class ClassQueryService {
         scheduledSessionsCount,
         isStartDateLocked,
         absencesByStudentId,
+        nextSession: nextSessionMap.get(cls.id) ?? null,
       },
     );
-  }
-
-  private toClassCountMap(
-    rows: ReadonlyArray<{ classId: string; _count: { _all: number } }>,
-  ): Map<string, number> {
-    return new Map(rows.map((row) => [row.classId, row._count._all]));
-  }
-
-  private async getCompletedSessionsCountMap(
-    classIds: string[],
-  ): Promise<Map<string, number>> {
-    if (classIds.length === 0) return new Map();
-    const rows = await this.prisma.lessonSession.groupBy({
-      by: ['classId'],
-      where: { classId: { in: classIds }, status: SessionStatus.COMPLETED },
-      _count: { _all: true },
-    });
-    return this.toClassCountMap(rows);
-  }
-
-  private async getAttendanceRecordsCountMap(
-    classIds: string[],
-  ): Promise<Map<string, number>> {
-    if (classIds.length === 0) return new Map();
-    const rows = await this.prisma.attendanceRecord.groupBy({
-      by: ['classId'],
-      where: { classId: { in: classIds } },
-      _count: { _all: true },
-    });
-    return this.toClassCountMap(rows);
   }
 
   async previewSchedule(dto: PreviewClassScheduleDto): Promise<{

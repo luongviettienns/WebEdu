@@ -7,6 +7,10 @@ export interface CourseItemDto {
   level: CourseLevel;
   levelLabel: string;
   defaultSessions: number | null;
+  miniTestWeight: number;
+  midtermWeight: number;
+  finalWeight: number;
+  passingScore: number;
   description: string | null;
   isActive: boolean;
   activeClassesCount: number;

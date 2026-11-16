@@ -1,7 +1,7 @@
 # Kho Lưu Trữ Bề Mặt API Backend (Backend API Surface Inventory)
 
-> **Đồng bộ gần nhất:** 2026-11-14 (sau hoàn tất Phase 6 — `AssignmentsController`, nhánh `feature/phase-06-assignment-delivery-and-submission`)
-> **Phạm vi kiểm chứng hiện tại:** **82 HTTP Endpoints** trên **12 Controllers** (gồm **55 endpoints / 10 controllers** cho Modules 01–05 kể cả endpoint OTP đổi email `POST /profile/me/send-email-change-code` + **17 endpoints / 1 controller** `AssessmentsController` cho Phase 5 + **10 endpoints / 1 controller** `AssignmentsController` cho Phase 6), đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
+> **Đồng bộ gần nhất:** 2026-11-16 (Phase 8 Task 8.2 — `ProgressController`)
+> **Phạm vi kiểm chứng hiện tại:** **100 HTTP Endpoints** trên **14 Controllers**, đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
 
 ---
 
@@ -15,7 +15,7 @@
 
 ---
 
-## 2. Danh Sách 82 API Endpoints Theo Controller
+## 2. Danh Sách 100 API Endpoints Theo Controller
 
 ### A. Hạ Tầng & Xác Thực (Phases 1–2 — `develop`)
 
@@ -87,9 +87,9 @@
 
 | STT | Method | Đường dẫn (`/api/v1/...`) | Phân quyền | Input / Query / DTO | Output & Ghi chú nghiệp vụ |
 | :---: | :---: | :--- | :--- | :--- | :--- |
-| 31 | `GET` | `/courses` | `ADMIN`, `TEACHER` | `ListCoursesQueryDto`: `{ activeOnly?, search?, level? }` | `200 OK` — Danh mục khóa học HSK (`HSK1..HSK4`, `BASIC_COMM`, HSK 3.0) |
-| 32 | `POST` | `/courses` | `ADMIN` | `CreateCourseDto`: `{ code, name, level, defaultSessions?, description?, isActive? }` | `201 Created` — Tạo khóa học (`code` duy nhất `^[A-Z0-9_-]+$`, 2–30 ký tự) |
-| 33 | `PATCH` | `/courses/:id` | `ADMIN` | `UpdateCourseDto`: `{ code?, name?, level?, defaultSessions?, description?, isActive? }` | `200 OK` — Cập nhật thông tin hoặc kích hoạt/tạm ngưng khóa học |
+| 31 | `GET` | `/courses` | `ADMIN`, `TEACHER` | `ListCoursesQueryDto`: `{ activeOnly?, search?, level? }` | `200 OK` — Danh mục khóa học HSK (`HSK1..HSK4`, `BASIC_COMM`, HSK 3.0) kèm công thức tổng kết (`miniTestWeight`, `midtermWeight`, `finalWeight`, `passingScore`) |
+| 32 | `POST` | `/courses` | `ADMIN` | `CreateCourseDto`: `{ code, name, level, defaultSessions?, miniTestWeight?, midtermWeight?, finalWeight?, passingScore?, description?, isActive? }` | `201 Created` — Tạo khóa học (`code` duy nhất `^[A-Z0-9_-]+$`, 2–30 ký tự; tỷ trọng mặc định `20/30/50%`, tổng = `100%`, điểm đạt `5.0`) |
+| 33 | `PATCH` | `/courses/:id` | `ADMIN` | `UpdateCourseDto`: `{ code?, name?, level?, defaultSessions?, miniTestWeight?, midtermWeight?, finalWeight?, passingScore?, description?, isActive? }` | `200 OK` — Cập nhật thông tin, tỷ trọng điểm tổng kết (kiểm tra tổng 3 phần sau gộp = `100%`) hoặc kích hoạt/tạm ngưng khóa học |
 
 #### 2.8 `ClassesController` (`/api/v1/classes` — 10 endpoints)
 
@@ -171,3 +171,33 @@ Toàn bộ endpoints dưới đây áp dụng `@Roles(Role.ADMIN, Role.TEACHER)`
 | 80 | `GET` | `/assignments/:assignmentId/submissions/me` | `:assignmentId` (UUID) (`STUDENT`) | `200 OK` — Xem lại bài đã nộp chế độ chỉ đọc Zero-Leak (`StudentExamSessionDto`); `400` nếu đang `IN_PROGRESS` |
 | 81 | `GET` | `/assignments/:assignmentId/media/:mediaId` | `:assignmentId` (UUID), `:mediaId` (UUID) (`ADMIN`, `TEACHER`, `STUDENT`) | `200 OK` — Phát tệp media đính kèm (`StreamableFile`) kèm header `X-Content-Type-Options: nosniff` |
 | 82 | `POST` | `/submissions/:submissionId/reopen` | `:submissionId` (UUID) + `ReopenSubmissionDto { reason, newDueAt? }` (`ADMIN`, `TEACHER`) | `200 OK` — Đánh dấu lượt cũ `SUPERSEDED`, ghi `SubmissionReopenLog`, nhân bản đáp án sang `Attempt #N+1` (`IN_PROGRESS`) |
+
+### 2.13 `SystemSettingsController` (AI Grading — Phase 7) & `GradingController` (`backend/src/modules/grading/grading.controller.ts`)
+> **Kiểm chứng E2E:** `backend/test/phase07-grading-and-publication.e2e-spec.ts` & `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`.
+
+| STT | Method | Path (`/api/v1/...`) | Phân quyền / Params / Body | Phản hồi & Hành vi xác thực |
+|---:|:---:|---|---|---|
+| 83 | `GET` | `/system-settings/ai-grading` | `SUPERADMIN` | `200 OK` — Trạng thái & cấu hình AI grading (mask `apiKey`) |
+| 84 | `PUT` | `/system-settings/ai-grading` | `SUPERADMIN` | `200 OK` — Lưu cấu hình AI grading (SSRF guard, mã hóa API key) |
+| 85 | `POST` | `/system-settings/ai-grading/test` | `SUPERADMIN` | `200 OK` — Kiểm tra kết nối AI provider |
+| 86 | `GET` | `/assignments/:assignmentId/grading-tracker` | `ADMIN`, `TEACHER` | `200 OK` — Bảng theo dõi chấm điểm và danh sách quá hạn |
+| 87 | `POST` | `/assignments/:assignmentId/overdue-zero` | `ADMIN`, `TEACHER` | `200 OK` — Ghi nhận 0 điểm quá hạn chưa nộp (`DEC-038`) |
+| 88 | `POST` | `/assignments/:assignmentId/ai-grade` | `ADMIN`, `TEACHER` | `200 OK` — AI gợi ý chấm nháp hàng loạt (Zero-PII) |
+| 89 | `POST` | `/assignments/:assignmentId/confirm-grades` | `ADMIN`, `TEACHER` | `200 OK` — Xác nhận hàng loạt sang `GRADED` |
+| 90 | `POST` | `/assignments/:assignmentId/publish-grades` | `ADMIN`, `TEACHER` | `200 OK` — Công bố điểm hàng loạt `GRADED -> RETURNED` |
+| 91 | `GET` | `/assignments/:assignmentId/published-result` | `STUDENT` | `200 OK` — Kết quả đã công bố của học viên (Zero-Leak) |
+| 92 | `GET` | `/submissions/:submissionId/grading-detail` | `ADMIN`, `TEACHER` | `200 OK` — Chi tiết chấm bài, gợi ý AI & lịch sử sửa điểm |
+| 93 | `POST` | `/submissions/:submissionId/auto-grade` | `ADMIN`, `TEACHER` | `200 OK` — Chấm tự động câu hỏi khách quan |
+| 94 | `POST` | `/submissions/:submissionId/ai-grade` | `ADMIN`, `TEACHER` | `200 OK` — AI gợi ý chấm nháp 1 bài nộp |
+| 95 | `PATCH` | `/submissions/:submissionId/manual-grade` | `ADMIN`, `TEACHER` | `200 OK` — Chấm thủ công câu tự luận & nhận xét |
+| 96 | `POST` | `/submissions/:submissionId/confirm-grade` | `ADMIN`, `TEACHER` | `200 OK` — Xác nhận 1 bài sang `GRADED` |
+| 97 | `PATCH` | `/submissions/:submissionId/adjust-grade` | `ADMIN`, `TEACHER` | `200 OK` — Điều chỉnh điểm sau xác nhận/công bố kèm lý do |
+
+### 2.14 `ProgressController` (Phase 8 — `backend/src/modules/progress/progress.controller.ts`)
+> **Kiểm chứng E2E:** `backend/test/phase08-exams-and-progress.e2e-spec.ts` & `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`.
+
+| STT | Method | Path (`/api/v1/...`) | Phân quyền / Query / Params | Phản hồi & Hành vi xác thực |
+|---:|:---:|---|---|---|
+| 98 | `GET` | `/progress/me` | `STUDENT` · Query: `GetStudentProgressQueryDto { classId? }` | `200 OK` — Tiến độ buổi học, chuyên cần, thống kê BTVN tách biệt, điểm tổng kết theo trọng số khóa học, `publishedResults` (chỉ `RETURNED` — Zero-Leak) & `classHistory`; `403` nếu truyền `classId` không thuộc ghi danh của HV |
+| 99 | `GET` | `/classes/:classId/progress` | `ADMIN`, `TEACHER` (chủ nhiệm lớp) · Param: `:classId` (UUID) | `200 OK` — Tóm tắt lớp, công thức điểm khóa học & bảng tiến độ từng HV (`absencesCount`, `attendanceRatePercent`, `homeworkSubmittedCount`/`GivenCount`, `miniTestAvg`, `midtermAvg`, `finalAvg`, `finalScore`, `passStatus`, `isAtRisk`), cô lập lịch sử lớp cũ (`DEC-024`/`DEC-025`) |
+| 100 | `GET` | `/progress/admin-overview` | `ADMIN` · Query: `AdminOverviewQueryDto { courseId?, teacherId?, status?, includeEnded? }` | `200 OK` — 5 chỉ số KPI hệ thống, danh sách lớp kèm tiến độ & chuyên cần TB tính theo lô, danh sách buổi học `Hôm nay` & `5 ngày tới` (GMT+7), bộ lọc khóa học/giáo viên |

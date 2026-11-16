@@ -1,8 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import React from 'react';
+import { ASSESSMENT_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
 import type { StudentMyAttendance } from '@/features/attendance/api/attendance.api';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
+import type { StudentProgressResponseDto } from '@/features/progress/types/progress.types';
+import {
+  canReviewClassResults,
+  formatScore10,
+} from '@/features/progress/utils/progress-format';
 import type { StudentItemDto } from '../api/students.api';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
 
@@ -10,14 +17,21 @@ interface StudentMetricsSidebarProps {
   profile: UserProfileDto;
   studentDetail: StudentItemDto | null;
   myAttendance?: StudentMyAttendance | null;
+  myProgress?: StudentProgressResponseDto | null;
 }
 
 export function StudentMetricsSidebar({
   profile,
   studentDetail,
   myAttendance = null,
+  myProgress = null,
 }: StudentMetricsSidebarProps) {
   const metrics = myAttendance?.metrics ?? null;
+  const hw = myProgress?.academicSummary?.homeworkStats ?? null;
+  const publishedResults = myProgress?.publishedResults ?? [];
+  const canReviewDetails = myProgress?.selectedClass
+    ? canReviewClassResults(myProgress.selectedClass.enrollmentStatus)
+    : true;
   const isWarning = Boolean(metrics?.isAt30PercentWarning);
   const attendanceRateDisplay = metrics
     ? metrics.attendanceRatePercent !== null
@@ -91,11 +105,19 @@ export function StudentMetricsSidebar({
             <span className="block text-xs font-medium text-[var(--ink-2)]">
               Tỷ lệ nộp BTVN
             </span>
-            <span className="mt-1 block font-num text-xs font-semibold text-[var(--ink)]">
-              —
+            <span className="mt-1 block font-num text-2xl font-bold text-[var(--ink)]">
+              {hw && hw.submissionRatePercent !== null ? `${hw.submissionRatePercent}%` : '—'}
             </span>
-            <span className="mt-0.5 block text-[11px] text-[var(--ink-3)]">
-              Đang cập nhật
+            <span
+              className={`mt-0.5 block font-num text-[11px] ${
+                hw ? 'text-[var(--ink-2)]' : 'text-[var(--ink-3)]'
+              }`}
+            >
+              {hw
+                ? `${hw.submittedCount}/${hw.givenCount} bài${
+                    hw.averageScore10 !== null ? ` · TB ${formatScore10(hw.averageScore10)}` : ''
+                  }`
+                : 'Chưa có dữ liệu'}
             </span>
           </div>
         </div>
@@ -110,13 +132,73 @@ export function StudentMetricsSidebar({
           <h2 className="text-base font-bold text-[var(--ink)]">
             Kết quả gần đây
           </h2>
-          <span className="text-xs font-medium text-[var(--ink-3)]">
-            Chờ tổng hợp
-          </span>
+          <Link
+            href="/student/results"
+            className="text-xs font-semibold text-[var(--blue)] hover:underline"
+          >
+            Xem tất cả
+          </Link>
         </div>
-        <div className="py-8 text-center text-xs text-[var(--ink-2)]">
-          Chưa có kết quả bài thi đã chấm. Điểm kiểm tra sẽ hiển thị sau khi giảng viên hoàn tất chấm bài.
-        </div>
+        {publishedResults.length > 0 ? (
+          <ul className="divide-y divide-[var(--line)]">
+            {publishedResults.slice(0, 4).map((r) => {
+              const itemContent = (
+                <>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-[var(--ink)]">{r.title}</p>
+                    <p className="mt-0.5 text-[11px] text-[var(--ink-2)]">
+                      {ASSESSMENT_TYPE_LABELS[r.type]}
+                      {r.returnedAt ? ` · ${formatDateDdMmYyyy(r.returnedAt)}` : ''}
+                      {r.isOverdueZero ? ' · Quá hạn 0đ' : ''}
+                      {!canReviewDetails ? (
+                        <span className="text-[var(--ink-3)]"> · Đã rời lớp</span>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right font-num">
+                    <span
+                      className={`block text-sm font-bold ${
+                        r.isOverdueZero ? 'text-[var(--red)]' : 'text-[var(--ink)]'
+                      }`}
+                    >
+                      {formatScore10(r.score10)}
+                    </span>
+                    <span className="block text-[11px] text-[var(--ink-3)]">
+                      {r.rawScore}/{r.maxScore}
+                    </span>
+                  </div>
+                </>
+              );
+
+              return (
+                <li key={r.submissionId}>
+                  {canReviewDetails ? (
+                    <Link
+                      href={`/student/assignments/${r.assignmentId}?mode=review`}
+                      className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-[var(--hover)]/60"
+                    >
+                      {itemContent}
+                    </Link>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3 py-3 text-[var(--ink-2)]">
+                      {itemContent}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="py-7 text-center text-xs text-[var(--ink-2)]">
+            <p>Chưa có kết quả bài kiểm tra đã công bố.</p>
+            <Link
+              href="/student/results"
+              className="mt-2 inline-block font-semibold text-[var(--blue)] hover:underline"
+            >
+              Xem trang kết quả học tập
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Thông tin học viên */}

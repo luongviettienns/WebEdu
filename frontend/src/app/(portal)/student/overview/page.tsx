@@ -13,6 +13,8 @@ import {
 } from '@/features/attendance/api/attendance.api';
 import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
+import { getMyProgress } from '@/features/progress/api/progress.api';
+import type { StudentProgressResponseDto } from '@/features/progress/types/progress.types';
 import {
   getStudentDetail,
   type StudentItemDto,
@@ -47,6 +49,9 @@ function StudentOverviewContent({
   const [myAssignments, setMyAssignments] = useState<
     StudentAssignmentListItemDto[]
   >([]);
+  const [myProgress, setMyProgress] = useState<StudentProgressResponseDto | null>(
+    null,
+  );
   const [detailLoading, setDetailLoading] = useState<boolean>(isStudentAccount);
   const [detailError, setDetailError] = useState<string>('');
 
@@ -59,11 +64,13 @@ function StudentOverviewContent({
 
     void (async () => {
       try {
-        const [detailRes, attendanceRes, assignmentsRes] = await Promise.allSettled([
-          getStudentDetail(profile.id, { signal: controller.signal }),
-          getMyAttendance(undefined, controller.signal),
-          getMyAssignments({ signal: controller.signal }),
-        ]);
+        const [detailRes, attendanceRes, assignmentsRes, progressRes] =
+          await Promise.allSettled([
+            getStudentDetail(profile.id, { signal: controller.signal }),
+            getMyAttendance(undefined, controller.signal),
+            getMyAssignments({ signal: controller.signal }),
+            getMyProgress(undefined, { signal: controller.signal }),
+          ]);
         if (controller.signal.aborted) return;
 
         if (detailRes.status === 'fulfilled') {
@@ -94,6 +101,12 @@ function StudentOverviewContent({
           setMyAssignments(assignmentsRes.value.items ?? []);
         } else {
           setMyAssignments([]);
+        }
+
+        if (progressRes.status === 'fulfilled') {
+          setMyProgress(progressRes.value);
+        } else {
+          setMyProgress(null);
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -155,6 +168,7 @@ function StudentOverviewContent({
           enrolledAt={enrolledAt}
           myAttendance={myAttendance}
           myAssignments={myAssignments}
+          myProgress={myProgress}
         />
       )}
     </div>

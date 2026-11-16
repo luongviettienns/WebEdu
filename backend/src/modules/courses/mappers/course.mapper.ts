@@ -4,6 +4,18 @@ import type { CourseItemDto } from '../courses.types.js';
 
 export const COURSE_CODE_REGEX = /^[A-Z0-9_-]+$/;
 
+export const DEFAULT_MINI_TEST_WEIGHT = 20;
+export const DEFAULT_MIDTERM_WEIGHT = 30;
+export const DEFAULT_FINAL_WEIGHT = 50;
+export const DEFAULT_PASSING_SCORE = 5;
+
+export interface CourseGradingConfig {
+  miniTestWeight: number;
+  midtermWeight: number;
+  finalWeight: number;
+  passingScore: number;
+}
+
 export const COURSE_LEVEL_LABELS: Record<CourseLevel, string> = {
   [CourseLevel.HSK1]: 'HSK 1',
   [CourseLevel.HSK2]: 'HSK 2',
@@ -57,6 +69,37 @@ export function validateCourseDefaultSessions(
   return value;
 }
 
+export function validateCourseGradingConfig(
+  input: CourseGradingConfig,
+): CourseGradingConfig {
+  const { miniTestWeight, midtermWeight, finalWeight, passingScore } = input;
+  const weights = [miniTestWeight, midtermWeight, finalWeight];
+  if (weights.some((w) => !Number.isInteger(w) || w < 0 || w > 100)) {
+    throw new BadRequestException(
+      'Tỷ trọng điểm kiểm tra ngắn, giữa kỳ và cuối khóa phải là số nguyên từ 0 đến 100%',
+    );
+  }
+  if (miniTestWeight + midtermWeight + finalWeight !== 100) {
+    throw new BadRequestException(
+      'Tổng tỷ trọng điểm (Kiểm tra ngắn + Giữa kỳ + Cuối khóa) phải bằng 100%',
+    );
+  }
+  if (
+    typeof passingScore !== 'number' ||
+    !Number.isFinite(passingScore) ||
+    passingScore < 0 ||
+    passingScore > 10
+  ) {
+    throw new BadRequestException('Điểm đạt phải nằm trong khoảng từ 0 đến 10');
+  }
+  return {
+    miniTestWeight,
+    midtermWeight,
+    finalWeight,
+    passingScore: Math.round(passingScore * 100) / 100,
+  };
+}
+
 export function toCourseItemDto(course: CourseWithCounts): CourseItemDto {
   return {
     id: course.id,
@@ -65,6 +108,10 @@ export function toCourseItemDto(course: CourseWithCounts): CourseItemDto {
     level: course.level,
     levelLabel: COURSE_LEVEL_LABELS[course.level] ?? course.level,
     defaultSessions: course.defaultSessions ?? null,
+    miniTestWeight: course.miniTestWeight,
+    midtermWeight: course.midtermWeight,
+    finalWeight: course.finalWeight,
+    passingScore: course.passingScore,
     description: course.description ?? null,
     isActive: course.isActive,
     activeClassesCount: course.classes?.length ?? 0,

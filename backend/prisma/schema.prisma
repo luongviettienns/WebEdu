@@ -278,6 +278,10 @@ model Course {
   name            String      @db.VarChar(150)
   level           CourseLevel
   defaultSessions Int?        @map("default_sessions")
+  miniTestWeight  Int         @default(20) @map("mini_test_weight")
+  midtermWeight   Int         @default(30) @map("midterm_weight")
+  finalWeight     Int         @default(50) @map("final_weight")
+  passingScore    Float       @default(5) @map("passing_score")
   description     String?     @db.Text
   isActive        Boolean     @default(true) @map("is_active")
   createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)

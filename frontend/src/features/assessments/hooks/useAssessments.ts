@@ -23,6 +23,9 @@ import {
 } from '@/features/assessments/api/assessments.api';
 import type { MediaItem } from '@/features/assessments/components/MediaAttach';
 import {
+  formatPresetDurationInput,
+} from '@/features/assessments/utils/assessment-presets';
+import {
   omitDraft,
   parseDurationMinutes,
   swapQuestionIds,
@@ -112,6 +115,7 @@ export function useAssessmentWorkspace(assessmentId: string | null, mode: 'edit'
   const [type, setType] = useState<AssessmentType>('HOMEWORK');
   const [courseId, setCourseId] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
+  const [durationTouched, setDurationTouched] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({});
   const [library, setLibrary] = useState<MediaItem[]>([]);
   const [saving, setSaving] = useState(false);
@@ -132,6 +136,7 @@ export function useAssessmentWorkspace(assessmentId: string | null, mode: 'edit'
         setType(row.type);
         setCourseId(row.courseId);
         setDurationMinutes(row.durationMinutes ? String(row.durationMinutes) : '');
+        setDurationTouched(false);
         setDrafts({});
       })
       .catch((err) => {
@@ -272,9 +277,21 @@ export function useAssessmentWorkspace(assessmentId: string | null, mode: 'edit'
       }
     : undefined;
 
+  const handleTypeChange = (nextType: AssessmentType) => {
+    setType(nextType);
+    if (assessmentId === null && !detail && !durationTouched) {
+      setDurationMinutes(formatPresetDurationInput(nextType));
+    }
+  };
+
+  const handleDurationChange = (nextDuration: string) => {
+    setDurationTouched(true);
+    setDurationMinutes(nextDuration);
+  };
+
   return {
-    detail, title, setTitle, description, setDescription, type, setType,
-    courseId, setCourseId, durationMinutes, setDurationMinutes,
+    detail, title, setTitle, description, setDescription, type, setType: handleTypeChange,
+    courseId, setCourseId, durationMinutes, setDurationMinutes: handleDurationChange,
     drafts, setQuestionDraft: (id: string, next: QuestionDraft) => setDrafts((c) => ({ ...c, [id]: next })),
     library, saving, error, setError, saved, preview, setPreview,
     questions, isLocked, hasNeedsReview,

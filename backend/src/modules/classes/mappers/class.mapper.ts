@@ -15,6 +15,7 @@ import type {
   ClassEffectiveRole,
   ClassEnrollmentItemDto,
   ClassItemDto,
+  ClassNextSessionDto,
   ClassTeacherHistoryItemDto,
 } from '../classes.types.js';
 
@@ -22,49 +23,23 @@ export const CLASS_CODE_REGEX = /^[A-Z0-9_-]{2,20}$/;
 
 export const CLASS_ITEM_INCLUDE = {
   course: {
-    select: {
-      id: true,
-      code: true,
-      name: true,
-      level: true,
-      defaultSessions: true,
-    },
+    select: { id: true, code: true, name: true, level: true, defaultSessions: true },
   },
   teacher: {
-    select: {
-      id: true,
-      fullName: true,
-      email: true,
-      phone: true,
-    },
+    select: { id: true, fullName: true, email: true, phone: true },
   },
   enrollments: {
     where: { status: EnrollmentStatus.ACTIVE },
     select: { id: true },
   },
-  _count: {
-    select: { enrollments: true },
-  },
+  _count: { select: { enrollments: true } },
 } satisfies Prisma.ClassInclude;
 
 export interface ClassItemEntity extends Class {
-  course: {
-    id: string;
-    code: string;
-    name: string;
-    level: CourseLevel;
-    defaultSessions: number | null;
-  };
-  teacher: {
-    id: string;
-    fullName: string;
-    email: string;
-    phone: string;
-  };
+  course: { id: string; code: string; name: string; level: CourseLevel; defaultSessions: number | null };
+  teacher: { id: string; fullName: string; email: string; phone: string };
   enrollments?: Array<{ id: string; status?: EnrollmentStatus }>;
-  _count?: {
-    enrollments?: number;
-  };
+  _count?: { enrollments?: number };
 }
 
 export interface ClassDetailEntity extends ClassItemEntity {
@@ -126,13 +101,17 @@ export function toClassItemDto(
   scheduleConflictWarning: string | null = null,
   completedSessionsCount = 0,
   isStartDateLocked?: boolean,
+  nextSession: ClassNextSessionDto | null = null,
 ): ClassItemDto {
   const enrollments = entity.enrollments ?? [];
   const activeStudentsCount = enrollments.filter(
     (e) => e.status === undefined || e.status === EnrollmentStatus.ACTIVE,
   ).length;
-  const totalEnrollmentsCount =
-    entity._count?.enrollments ?? enrollments.length;
+  const totalEnrollmentsCount = entity._count?.enrollments ?? enrollments.length;
+  const remainingSessionsCount = Math.max(0, entity.totalSessions - completedSessionsCount);
+  const progressPercent = entity.totalSessions > 0
+    ? Math.min(100, Math.round((completedSessionsCount / entity.totalSessions) * 100))
+    : 0;
 
   return {
     id: entity.id,
@@ -167,6 +146,9 @@ export function toClassItemDto(
     activeStudentsCount,
     totalEnrollmentsCount,
     completedSessionsCount,
+    remainingSessionsCount,
+    progressPercent,
+    nextSession,
     ...(isStartDateLocked !== undefined && { isStartDateLocked }),
     scheduleConflictWarning,
     createdAt: entity.createdAt.toISOString(),
@@ -183,6 +165,7 @@ export interface ClassDetailExtras {
   scheduledSessionsCount?: number;
   isStartDateLocked?: boolean;
   absencesByStudentId?: Map<string, number>;
+  nextSession?: ClassNextSessionDto | null;
 }
 
 export function toClassDetailDto(
@@ -193,7 +176,13 @@ export function toClassDetailDto(
   completedSessionsCount = 0,
   extras?: ClassDetailExtras,
 ): ClassDetailDto {
-  const base = toClassItemDto(entity, scheduleConflictWarning, completedSessionsCount, extras?.isStartDateLocked);
+  const base = toClassItemDto(
+    entity,
+    scheduleConflictWarning,
+    completedSessionsCount,
+    extras?.isStartDateLocked,
+    extras?.nextSession ?? null,
+  );
   const resolvedAccessMode: ClassAccessMode =
     accessMode ??
     (entity.status === ClassStatus.COMPLETED || entity.status === ClassStatus.ARCHIVED

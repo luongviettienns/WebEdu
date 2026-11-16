@@ -21,6 +21,10 @@ interface MockCourseRecord {
   name: string;
   level: CourseLevel;
   defaultSessions: number | null;
+  miniTestWeight: number;
+  midtermWeight: number;
+  finalWeight: number;
+  passingScore: number;
   description: string | null;
   isActive: boolean;
   createdAt: Date;
@@ -151,6 +155,14 @@ describe('CoursesService — HSK Course Catalog Management', () => {
             level: data.level as CourseLevel,
             defaultSessions:
               (data.defaultSessions as number | null | undefined) ?? null,
+            miniTestWeight:
+              typeof data.miniTestWeight === 'number' ? data.miniTestWeight : 20,
+            midtermWeight:
+              typeof data.midtermWeight === 'number' ? data.midtermWeight : 30,
+            finalWeight:
+              typeof data.finalWeight === 'number' ? data.finalWeight : 50,
+            passingScore:
+              typeof data.passingScore === 'number' ? data.passingScore : 5,
             description:
               (data.description as string | null | undefined) ?? null,
             isActive:
@@ -192,6 +204,18 @@ describe('CoursesService — HSK Course Catalog Management', () => {
             if ('defaultSessions' in data) {
               existing.defaultSessions =
                 (data.defaultSessions as number | null) ?? null;
+            }
+            if (typeof data.miniTestWeight === 'number') {
+              existing.miniTestWeight = data.miniTestWeight;
+            }
+            if (typeof data.midtermWeight === 'number') {
+              existing.midtermWeight = data.midtermWeight;
+            }
+            if (typeof data.finalWeight === 'number') {
+              existing.finalWeight = data.finalWeight;
+            }
+            if (typeof data.passingScore === 'number') {
+              existing.passingScore = data.passingScore;
             }
             if ('description' in data) {
               existing.description =
@@ -417,5 +441,110 @@ describe('CoursesService — HSK Course Catalog Management', () => {
         name: 'Không tồn tại',
       }),
     ).rejects.toThrowError(new NotFoundException('Không tìm thấy khóa học'));
+  });
+
+  it('validates dynamic grading weights (sum === 100) and passingScore (0..10), defaulting to 20/30/50 and 5.0', async () => {
+    const createdDefault = await service.createCourse(adminActor, {
+      code: 'HSK1-DEF',
+      name: 'Tiếng Trung HSK 1 Mặc Định',
+      level: CourseLevel.HSK1,
+    });
+    expect(createdDefault).toMatchObject({
+      miniTestWeight: 20,
+      midtermWeight: 30,
+      finalWeight: 50,
+      passingScore: 5,
+    });
+
+    await expect(
+      service.createCourse(adminActor, {
+        code: 'HSK1-BAD',
+        name: 'Tổng khác 100',
+        level: CourseLevel.HSK1,
+        miniTestWeight: 20,
+        midtermWeight: 20,
+        finalWeight: 50,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    await expect(
+      service.createCourse(adminActor, {
+        code: 'HSK1-PASS',
+        name: 'Điểm đạt ngoài khoảng',
+        level: CourseLevel.HSK1,
+        passingScore: 10.5,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    await expect(
+      service.updateCourse(adminActor, createdDefault.id, {
+        finalWeight: 70,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    const updatedWeights = await service.updateCourse(adminActor, createdDefault.id, {
+      miniTestWeight: 30,
+      midtermWeight: 0,
+      finalWeight: 70,
+      passingScore: 6.5,
+    });
+    expect(updatedWeights).toMatchObject({
+      miniTestWeight: 30,
+      midtermWeight: 0,
+      finalWeight: 70,
+      passingScore: 6.5,
+    });
+    expect(auditLogs[auditLogs.length - 1]?.metadata).toMatchObject({
+      miniTestWeight: 30,
+      midtermWeight: 0,
+      finalWeight: 70,
+      passingScore: 6.5,
+    });
+
+    await expect(
+      service.createCourse(adminActor, {
+        code: 'HSK1-NEG',
+        name: 'Trọng số âm',
+        level: CourseLevel.HSK1,
+        miniTestWeight: -10,
+        midtermWeight: 60,
+        finalWeight: 50,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    await expect(
+      service.createCourse(adminActor, {
+        code: 'HSK1-DEC',
+        name: 'Trọng số thập phân',
+        level: CourseLevel.HSK1,
+        miniTestWeight: 20.5,
+        midtermWeight: 29.5,
+        finalWeight: 50,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    await expect(
+      service.updateCourse(adminActor, createdDefault.id, {
+        miniTestWeight: -5,
+        midtermWeight: 35,
+        finalWeight: 70,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    await expect(
+      service.updateCourse(adminActor, createdDefault.id, {
+        passingScore: -0.5,
+      }),
+    ).rejects.toThrowError(BadRequestException);
+
+    const updatedPassOnly = await service.updateCourse(adminActor, createdDefault.id, {
+      passingScore: 0,
+    });
+    expect(updatedPassOnly).toMatchObject({
+      miniTestWeight: 30,
+      midtermWeight: 0,
+      finalWeight: 70,
+      passingScore: 0,
+    });
   });
 });

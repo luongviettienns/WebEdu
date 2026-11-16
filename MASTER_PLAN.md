@@ -228,25 +228,27 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 ---
 
-### Phase 8: Module 08 & 09 — Bài Kiểm Tra Tổng Kết & Theo Dõi Tiến Độ Học Tập
-- **File Sub-Plan dự kiến:** `docs/plans/phase-08-exams-and-progress-tracking.md`
+### Phase 8: Module 08 & 09 — Bài Kiểm Tra Tổng Kết & Theo Dõi Tiến Độ Học Tập *(HOÀN THÀNH — 100% GATES PASS)*
+- **File Sub-Plan:** [`docs/plans/phase-08-exams-and-progress-tracking.md`](./docs/plans/phase-08-exams-and-progress-tracking.md)
 - **Phạm vi Mã Chức Năng (9 FUNCs In-Scope + 1 Out-of-Scope):**
   - `Module 08 — Kiểm tra & tổng kết (4 In-Scope + 1 Out-of-Scope)`:
-    - `FUNC-065` (Quản lý bài kiểm tra Mini-test / Giữa kỳ / Cuối kỳ), `FUNC-068` (Hỗ trợ biểu mẫu đề kiểm tra khác nhau), `FUNC-069` (Theo dõi tỷ lệ hoàn thành BTVN phục vụ chuyên cần — **BTVN không tính vào điểm tổng kết** theo `DEC-014`), `FUNC-070` (Tính điểm tổng kết từ Mini-test, Giữa kỳ, Cuối kỳ — Dự kiến P1).
+    - `FUNC-065` (Quản lý bài kiểm tra Mini-test / Giữa kỳ / Cuối kỳ — gắn buổi học tùy chọn theo `DEC-039`), `FUNC-068` (Preset biểu mẫu gợi ý theo 4 loại đề), `FUNC-069` (Theo dõi tỷ lệ nộp BTVN & Điểm TB BTVN tham khảo tách biệt — **BTVN không tính vào điểm tổng kết** theo `DEC-014`, `DEC-040`), `FUNC-070` (Tính điểm tổng kết theo công thức động cấu hình trên từng Khóa học HSK — `DEC-039`).
     - **`FUNC-076` (Nhập điểm kiểm tra giấy thủ công — Loại bỏ hoàn toàn theo `DEC-018`)**.
   - `Module 09 — Theo dõi tiến độ (5 In-Scope)`:
-    - `FUNC-071` (Theo dõi tiến độ buổi học của lớp: số buổi đã học / tổng số buổi), `FUNC-072` (Tự động tính ngày dự kiến kết thúc lớp khi có đổi/hủy/bù lịch), `FUNC-073` (Hiển thị tình trạng học tập cá nhân của Học viên), `FUNC-074` (Giáo viên theo dõi tiến độ lớp phụ trách), `FUNC-075` (Admin xem tổng quan tất cả các lớp).
-- **Open Issues Gate cần chốt đầu Phase 8:**
-  - `EXAM-01` (`DEC-002`, `Q36`, `Q39`): Công thức tính điểm tổng kết, trọng số giữa Mini-test / Giữa kỳ / Cuối kỳ, ngưỡng điểm Đạt/Chưa đạt.
-  - `ATT-02` (`Q44`): Định nghĩa "Hoàn thành BTVN" (đã nộp hay đạt ngưỡng điểm) và công thức tính % chuyên cần.
+    - `FUNC-071` (Theo dõi tiến độ buổi học của lớp: số buổi đã hoàn thành / tổng số buổi, buổi tiếp theo), `FUNC-072` (Tự động tính ngày dự kiến kết thúc lớp khi có đổi/hủy/bù lịch), `FUNC-073` (Hiển thị tình trạng học tập cá nhân `/student/overview` & `/student/results`), `FUNC-074` (Giáo viên theo dõi tiến độ lớp phụ trách qua tab `"Tiến độ & Kết quả"`), `FUNC-075` (Admin xem tổng quan tất cả các lớp tại `/admin/overview` — `DEC-041`).
+- **Open Issues Gate (`EXAM-01`, `ATT-02`):** **ĐÃ CHỐT (`RESOLVED`)** tại `DEC-039`, `DEC-040`, `DEC-041`.
 - **Interfaces (`Consumes` / `Produces`):**
-  - **Consumes:** `LessonSession`, `AttendanceRecord` (Phase 4) + `ClassAssignment`, `Submission`, `PublishedGradesRepository` (Phase 6 & 7).
+  - **Consumes:** `Course`, `Class`, `Enrollment`, `LessonSession`, `AttendanceRecord` (Phase 3–4) + `ClassAssignment`, `Submission`, `PublishedGradesRepository` (Phase 6–7).
   - **Produces:**
-    - Services: `CourseProgressService` (tính tiến độ buổi học & ngày kết thúc dự kiến `FUNC-071, 072`), `FinalGradeCalculationService` (`FUNC-069, 070` — chỉ lấy bài `PUBLISHED` và loại trừ `HOMEWORK`), `DashboardAggregationService` (`FUNC-073, 074, 075`).
+    - Schema & Extensions: `Course` (`miniTestWeight`, `midtermWeight`, `finalWeight`, `passingScore`), `ClassItemDto`/`ClassDetailDto` (`remainingSessionsCount`, `progressPercent`, `nextSession`).
+    - Module `ProgressModule`: `grade-calculation.policy.ts`, `StudentProgressService`, `ClassProgressService`, `AdminOverviewService`, `ProgressController` (`/api/v1/progress/me`, `/api/v1/classes/:classId/progress`, `/api/v1/progress/admin-overview`).
+    - UI: `/admin/courses` (cấu hình tỷ trọng), `/student/overview` (nối dữ liệu thật), `/student/results`, `/admin/overview`, tab `"Tiến độ & Kết quả"` trên Chi tiết lớp.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 8:**
-  - [ ] **Task 8.1:** Xây dựng `CourseProgressService` (`FUNC-071, 072`): Tính số buổi đã hoàn thành (đã điểm danh) và cập nhật ngày kết thúc dự kiến khi lịch thay đổi/học bù.
-  - [ ] **Task 8.2:** Xây dựng dịch vụ thống kê Chuyên cần BTVN (`FUNC-069`) và Điểm tổng kết từ Mini-test / Giữa kỳ / Cuối kỳ (`FUNC-065, 068, 070` theo công thức chốt tại `EXAM-01`).
-  - [ ] **Task 8.3:** Xây dựng API & Giao diện Dashboard Tiến độ cho 3 vai trò: Học viên (`FUNC-073` — Zero-Leak: chỉ tính bài `PUBLISHED`), Giáo viên (`FUNC-074`), Admin (`FUNC-075`).
+  - [x] **Task 8.1:** Dynamic Course Grading Formula (`DEC-039`) & Class Session Progress Enrichment (`FUNC-071, 072`).
+  - [x] **Task 8.2:** Pure Calculation Policy & Backend `ProgressModule` (`FUNC-069, 070, 073, 074, 075`) + Real-PG E2E & API Inventory (100 endpoints).
+  - [x] **Task 8.3:** Frontend Course Weights Config, Assessment Type Presets (`FUNC-068`) & Class Progress Tab (`FUNC-074`).
+  - [x] **Task 8.4:** Student Overview Live Wiring & `/student/results` Page (`FUNC-069, 070, 073`).
+  - [x] **Task 8.5:** Admin Overview Dashboard `/admin/overview` (`FUNC-075`), Full E2E Verification & Quality Gates.
 
 ---
 
