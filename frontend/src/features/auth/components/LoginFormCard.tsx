@@ -21,7 +21,17 @@ interface LoginFormCardProps {
   resetSuccess: boolean;
   idleTimeout: boolean;
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+  onDevQuickLogin?: (email: string, password: string) => void;
 }
+
+const DEV_ACCOUNTS = [
+  { label: 'Học viên', role: 'STUDENT', email: 'active.student@webedu.vn' },
+  { label: 'Giáo viên', role: 'TEACHER', email: 'teacher.lan@webedu.vn' },
+  { label: 'Admin kiêm GV', role: 'ADMIN + TEACHER', email: 'admin.teacher@webedu.vn' },
+  { label: 'Superadmin', role: 'SUPERADMIN', email: 'superadmin@webedu.vn' },
+] as const;
+
+const DEV_PASSWORD = 'Password@123';
 
 export function LoginFormCard({
   email,
@@ -40,6 +50,7 @@ export function LoginFormCard({
   resetSuccess,
   idleTimeout,
   onSubmit,
+  onDevQuickLogin,
 }: LoginFormCardProps) {
   return (
     <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] px-6 py-6 shadow-xs sm:px-7 sm:py-6">
@@ -169,6 +180,29 @@ export function LoginFormCard({
           </Link>
         </p>
       </div>
+
+      {process.env.NODE_ENV === 'development' && onDevQuickLogin && (
+        <div className="mt-3.5 border-t border-dashed border-[var(--line-2)] pt-3">
+          <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-medium text-[var(--ink-2)]">
+            <span>Đăng nhập nhanh (Dev)</span>
+            <span className="num text-[var(--ink-3)]">MK: {DEV_PASSWORD}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {DEV_ACCOUNTS.map((acc) => (
+              <button
+                key={acc.email}
+                type="button"
+                disabled={submitting}
+                onClick={() => onDevQuickLogin(acc.email, DEV_PASSWORD)}
+                className="flex flex-col items-start rounded-lg border border-[var(--line)] bg-[var(--paper)]/70 px-2.5 py-1.5 text-left transition-colors hover:border-[var(--red)]/40 hover:bg-[var(--red-soft)]/40 focus:outline-none focus:ring-2 focus:ring-[var(--red)]/30 disabled:opacity-50"
+              >
+                <span className="text-xs font-semibold text-[var(--ink)]">{acc.label}</span>
+                <span className="w-full truncate text-[11px] text-[var(--ink-2)]">{acc.email}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

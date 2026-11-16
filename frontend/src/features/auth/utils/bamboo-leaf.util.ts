@@ -1,14 +1,14 @@
 export const BAMBOO_LEAVES = {
   layers: [
-    { size: [30, 48], speed: [20, 30], alpha: 0.1, sensitivity: 0.25, shade: 2 },
-    { size: [52, 74], speed: [30, 45], alpha: 0.16, sensitivity: 0.6, shade: 1 },
-    { size: [80, 106], speed: [45, 60], alpha: 0.22, sensitivity: 1, shade: 0 },
+    { size: [34, 50], speed: [20, 32], alpha: 0.13, sensitivity: 0.25, shade: 2, veinBoost: 0 },
+    { size: [56, 80], speed: [32, 48], alpha: 0.21, sensitivity: 0.72, shade: 1, veinBoost: 1.2 },
+    { size: [86, 114], speed: [46, 64], alpha: 0.32, sensitivity: 1, shade: 0, veinBoost: 2.3 },
   ],
-  areaPerLeaf: 60_000,
-  minLeaves: 8,
-  maxLeaves: 32,
-  coarseMaxLeaves: 10,
-  maxAlpha: 0.25,
+  areaPerLeaf: 24_000,
+  minLeaves: 12,
+  maxLeaves: 56,
+  coarseMaxLeaves: 16,
+  maxAlpha: 0.34,
   goldChance: 1 / 8,
   layerShadeChance: 0.65,
   palette: [
@@ -27,15 +27,24 @@ export const BAMBOO_LEAVES = {
     tipExponent: 1.7,
     bend: [0.07, 0.10],
     asymmetry: 0.92,
-    segments: 18,
+    segments: 24,
   },
   details: {
-    veinAlpha: 0.28,
-    veinWidthRatio: 120,
-    minVeinWidth: 0.6,
-    secondaryVeins: [0.4, 0.72],
-    secondaryAlpha: 0.13,
-    secondaryWidthRatio: 260,
+    unitDivisor: 170,
+    minUnit: 0.6,
+    midribDarkWidth: 3.4,
+    midribLightWidth: 1.7,
+    midribDarkAlpha: 0.24,
+    midribLightAlpha: 0.55,
+    midribTaperExponent: 0.9,
+    secondaryVeins: [0.18, 0.36, 0.54, 0.72, 0.88],
+    secondaryWeights: [1.0, 0.8, 1.0, 0.8, 1.0],
+    secondaryDarkAlpha: 0.30,
+    secondaryLightAlpha: 0.20,
+    secondaryHighlightOffset: 0.9,
+    crossVeinAlpha: 0.07,
+    crossVeinWidth: 0.3,
+    crossVeinTipShift: 0.55,
     foldAlpha: 0.10,
     stemLength: 0.05,
     stemWidthRatio: 90,
@@ -45,23 +54,25 @@ export const BAMBOO_LEAVES = {
   swayRate: [0.45, 0.95],
   tumbleRate: [0.85, 1.55],
   maxTilt: (35 * Math.PI) / 180,
-  minScaleX: 0.15,
+  minScaleX: 0.22,
   wind: [
     { strength: 8, rate: 0.33 },
     { strength: 5, rate: 0.72 },
   ],
-  pointerRadius: 140,
-  repulsion: 240,
-  pointerDrag: 0.16,
-  pointerSmoothing: 14,
-  velocitySmoothing: 10,
-  maxPointerSpeed: 420,
-  touchImpulse: 0.16,
-  torque: 0.012,
+  pointerRadius: 190,
+  repulsion: 2800,
+  pointerDrag: 2.6,
+  pointerSmoothing: 24,
+  velocitySmoothing: 18,
+  maxPointerSpeed: 1200,
+  touchImpulse: 0.28,
+  torque: 0.45,
+  tumbleTorque: 0.35,
   damping: 2.2,
   offsetReturn: 2.6,
-  maxSpeed: 72,
-  maxSpin: 1.25,
+  maxSpeed: 520,
+  maxSpin: 7.5,
+  maxTumbleSpin: 10,
   fadeIn: 0.6,
   maxDt: 0.05,
   desktopDpr: 2,
@@ -69,10 +80,12 @@ export const BAMBOO_LEAVES = {
   resizeDebounceMs: 100,
   frameSampleSize: 60,
   slowFrameMs: 24,
-  textClearance: 6,
+  textClearance: 24,
 } as const;
 
 const TAU = 2 * Math.PI;
+const DESKTOP_LAYER_CYCLE: readonly Layer[] = [0, 1, 2, 0, 2, 1, 0, 2];
+const COARSE_LAYER_CYCLE: readonly Layer[] = [0, 1, 0, 1, 0];
 type Layer = 0 | 1 | 2;
 type Range = readonly [number, number];
 
@@ -111,6 +124,7 @@ interface BambooLeaf {
   vx: number;
   vy: number;
   spin: number;
+  tumbleSpin: number;
   offsetX: number;
   offsetY: number;
   offsetAngle: number;
@@ -122,11 +136,45 @@ export function getLeafCount(width: number, height: number, isCoarse: boolean): 
   return Math.max(minLeaves, Math.min(limit, Math.round((width * height) / areaPerLeaf)));
 }
 
+export function getLeafLayer(index: number, isCoarse: boolean): Layer {
+  const cycle = isCoarse ? COARSE_LAYER_CYCLE : DESKTOP_LAYER_CYCLE;
+  return cycle[index % cycle.length];
+}
+
+export function getVeinUnit(length: number): number {
+  return Math.max(BAMBOO_LEAVES.details.minUnit, length / BAMBOO_LEAVES.details.unitDivisor);
+}
+
+export function shouldSkipCrossVein(index: number): boolean {
+  return (index * 7) % 5 === 0;
+}
+
 export function between(range: Range, random: () => number): number {
   return range[0] + (range[1] - range[0]) * random();
 }
 
-type Point = [number, number];
+export type Point = [number, number];
+
+export function getMidribPolygon(mid: readonly Point[], baseWidth: number): { upper: Point[]; lower: Point[] } {
+  const last = mid.length - 1;
+  const exp = BAMBOO_LEAVES.details.midribTaperExponent;
+  const upper: Point[] = [];
+  const lower: Point[] = [];
+  for (let i = 0; i <= last; i++) {
+    const prev = mid[Math.max(0, i - 1)];
+    const next = mid[Math.min(last, i + 1)];
+    const dx = next[0] - prev[0];
+    const dy = next[1] - prev[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const t = i / last;
+    const half = (baseWidth * Math.pow(Math.max(0, 1 - t), exp)) / 2;
+    upper.push([mid[i][0] + nx * half, mid[i][1] + ny * half]);
+    lower.push([mid[i][0] - nx * half, mid[i][1] - ny * half]);
+  }
+  return { upper, lower };
+}
 
 export function getLeafOutline(length: number, ratio: number, widestAt: number, bend: number) {
   const { asymmetry, segments, baseExponent, tipExponent } = BAMBOO_LEAVES.shape;
@@ -176,6 +224,7 @@ function resetLeaf(leaf: BambooLeaf, bounds: LeafBounds, spread: boolean, random
   leaf.vx = 0;
   leaf.vy = 0;
   leaf.spin = 0;
+  leaf.tumbleSpin = 0;
   leaf.offsetX = 0;
   leaf.offsetY = 0;
   leaf.offsetAngle = 0;
@@ -186,7 +235,7 @@ export function createLeaf(bounds: LeafBounds, layer: Layer, spread: boolean, ra
   const leaf = {
     layer, shade: 0, shape: 0, ratio: 0, size: 0, fallSpeed: 0, baseX: 0, baseY: 0, sway: 0,
     swayAngle: 0, swayRate: 0, tumble: 0, tumbleRate: 0, x: 0, y: 0, rotation: 0,
-    scaleX: 1, vx: 0, vy: 0, spin: 0, offsetX: 0, offsetY: 0, offsetAngle: 0,
+    scaleX: 1, vx: 0, vy: 0, spin: 0, tumbleSpin: 0, offsetX: 0, offsetY: 0, offsetAngle: 0,
   };
   resetLeaf(leaf, bounds, spread, random);
   return leaf;
@@ -207,6 +256,7 @@ export function stepLeaf(
   leaf.vx *= damping;
   leaf.vy *= damping;
   leaf.spin *= damping;
+  leaf.tumbleSpin *= damping;
 
   if (pointer.active) {
     const dx = leaf.x - pointer.x;
@@ -222,6 +272,7 @@ export function stepLeaf(
       if (distance > 0) {
         const tangent = (dx * pointer.vy - dy * pointer.vx) / distance;
         leaf.spin += impulse * tangent * settings.torque;
+        leaf.tumbleSpin += impulse * tangent * settings.tumbleTorque;
       }
       const speed = Math.hypot(leaf.vx, leaf.vy);
       if (speed > settings.maxSpeed) {
@@ -229,6 +280,7 @@ export function stepLeaf(
         leaf.vy *= settings.maxSpeed / speed;
       }
       leaf.spin = Math.max(-settings.maxSpin, Math.min(settings.maxSpin, leaf.spin));
+      leaf.tumbleSpin = Math.max(-settings.maxTumbleSpin, Math.min(settings.maxTumbleSpin, leaf.tumbleSpin));
     }
   }
 
@@ -238,7 +290,7 @@ export function stepLeaf(
   leaf.baseX += wind * sensitivity * dt;
   leaf.baseY += leaf.fallSpeed * dt;
   leaf.swayAngle += leaf.swayRate * dt;
-  leaf.tumble += leaf.tumbleRate * dt;
+  leaf.tumble += (leaf.tumbleRate + leaf.tumbleSpin) * dt;
   updatePose(leaf);
 
   if (leaf.x < -leaf.size) {

@@ -73,6 +73,25 @@ async function main(tx) {
     },
   });
 
+  // 2b. Admin kiêm Giảng viên
+  const adminTeacher = await tx.user.create({
+    data: {
+      email: 'admin.teacher@webedu.vn',
+      phone: '0909000006',
+      fullName: 'Trần Minh Quản (Admin kiêm GV)',
+      passwordHash,
+      roles: [Role.ADMIN, Role.TEACHER],
+      status: UserStatus.ACTIVE,
+    },
+  });
+  await tx.teacherProfile.create({
+    data: {
+      userId: adminTeacher.id,
+      notes: 'Admin Đào tạo kiêm Giảng viên HSK',
+      activeClassesCount: 0,
+    },
+  });
+
   // 3. Giảng viên
   const teacherLan = await tx.user.create({
     data: {

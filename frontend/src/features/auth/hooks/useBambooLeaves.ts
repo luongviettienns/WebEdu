@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useRef, type RefObject } from 'react';
-import { createLeafAtlases, createLeafProfiles } from '../utils/bamboo-leaf-sprites';
+import { createClearanceMask, createLeafAtlases, createLeafProfiles } from '../utils/bamboo-leaf-sprites';
 import {
   BAMBOO_LEAVES as settings,
   createLeaf,
   getLeafCount,
+  getLeafLayer,
   stepLeaf,
   type LeafPointer,
 } from '../utils/bamboo-leaf.util';
@@ -50,7 +51,6 @@ export function useBambooLeaves(canvasRef: RefObject<HTMLCanvasElement | null>):
     const jade = getComputedStyle(canvas).getPropertyValue('--jade').trim();
     const profiles = createLeafProfiles();
     const protectedElements = root.querySelectorAll<HTMLElement>('[data-bamboo-clear]');
-    const protectedAreas: { x: number; y: number; width: number; height: number }[] = [];
     const bounds = { width: 0, height: 0 };
     const leaves: ReturnType<typeof createLeaf>[] = [];
     const frameTimes = new Float64Array(settings.frameSampleSize);
@@ -69,6 +69,7 @@ export function useBambooLeaves(canvasRef: RefObject<HTMLCanvasElement | null>):
     let sampleCount = 0;
     let sampleTotal = 0;
     let atlases: ReturnType<typeof createLeafAtlases> | null = null;
+    let clearanceMask: HTMLCanvasElement | null = null;
 
     function resetPointer() {
       pointer.active = false;
@@ -92,7 +93,7 @@ export function useBambooLeaves(canvasRef: RefObject<HTMLCanvasElement | null>):
     }
 
     function pointerMove(event: PointerEvent) {
-      if (event.pointerType === 'mouse' || event.pointerType === 'pen') trackPointer(event, false);
+      if (event.pointerType !== 'touch') trackPointer(event, false);
     }
 
     function pointerDown(event: PointerEvent) {
@@ -174,11 +175,14 @@ export function useBambooLeaves(canvasRef: RefObject<HTMLCanvasElement | null>):
         );
       }
       if (pointer.touch) resetPointer();
-      // Keep the existing background intact under copy and controls.
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      for (let i = 0; i < protectedAreas.length; i++) {
-        const area = protectedAreas[i];
-        ctx.clearRect(area.x, area.y, area.width, area.height);
+      // Soft-feather behind floating copy so leaves pass behind text without sharp cutouts or contrast drops.
+      if (clearanceMask) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 1;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(clearanceMask, 0, 0);
+        ctx.restore();
       }
       frame = window.requestAnimationFrame(tick);
     }
@@ -240,23 +244,17 @@ export function useBambooLeaves(canvasRef: RefObject<HTMLCanvasElement | null>):
       const count = degraded ? Math.floor(targetCount / 2) : targetCount;
       if (leaves.length > count) leaves.length = count;
       while (leaves.length < count) {
-        const layer = leaves.length % (coarseProfile ? 2 : 3);
-        leaves.push(createLeaf(bounds, layer === 2 ? 2 : layer === 1 ? 1 : 0, true));
+        leaves.push(createLeaf(bounds, getLeafLayer(leaves.length, coarseProfile), true));
       }
 
-      protectedAreas.length = 0;
-      for (const element of protectedElements) {
-        const area = element.getBoundingClientRect();
-        const pad = settings.textClearance;
-        if (area.width && area.height) {
-          protectedAreas.push({
-            x: area.left - rect.left - pad,
-            y: area.top - rect.top - pad,
-            width: area.width + 2 * pad,
-            height: area.height + 2 * pad,
-          });
-        }
-      }
+      clearanceMask = createClearanceMask(
+        rect.width,
+        rect.height,
+        dpr,
+        rect,
+        protectedElements,
+        settings.textClearance,
+      );
       syncActivity();
     }
 

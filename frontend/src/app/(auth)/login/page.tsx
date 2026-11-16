@@ -59,19 +59,14 @@ function LoginFormContent() {
     return valid;
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!validateForm()) {
-      return;
-    }
-
+  const submitLogin = async (loginEmail: string, loginPassword: string) => {
     setSubmitting(true);
     setServerError('');
 
     try {
       const response = await loginWithEmail({
-        email: email.trim().toLowerCase(),
-        password,
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPassword,
         rememberMe,
       });
 
@@ -91,6 +86,22 @@ function LoginFormContent() {
     }
   };
 
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!validateForm()) {
+      return;
+    }
+    await submitLogin(email, password);
+  };
+
+  const handleDevQuickLogin = (devEmail: string, devPassword: string) => {
+    setEmail(devEmail);
+    setPassword(devPassword);
+    setEmailError('');
+    setPasswordError('');
+    void submitLogin(devEmail, devPassword);
+  };
+
   return (
     <div className="relative flex min-h-screen w-full bg-[var(--paper)]">
       <BambooLeavesBackground />
@@ -99,9 +110,9 @@ function LoginFormContent() {
 
       {/* Cột Phải Form Đăng Nhập */}
       <div className="relative z-10 w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
-        <div data-bamboo-clear className="w-full max-w-[420px]">
+        <div className="w-full max-w-[420px]">
           {/* Mobile-only Branding Header */}
-          <div className="lg:hidden flex flex-col items-center text-center mb-4">
+          <div data-bamboo-clear className="lg:hidden flex flex-col items-center text-center mb-4">
             <Link href="/" aria-label={`Trang chủ ${centerName}`} className="flex items-center gap-2 mb-2">
               {centerLogo ? (
                 <Image
@@ -127,7 +138,7 @@ function LoginFormContent() {
           </div>
 
           {/* Desktop Heading with Hanzi eyebrow */}
-          <div className="hidden lg:block mb-4">
+          <div data-bamboo-clear className="hidden lg:block mb-4">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
               登录 · HỆ THỐNG HSK
             </div>
@@ -156,6 +167,7 @@ function LoginFormContent() {
             resetSuccess={resetSuccess}
             idleTimeout={idleTimeout}
             onSubmit={(e) => void handleSubmit(e)}
+            onDevQuickLogin={process.env.NODE_ENV === 'development' ? handleDevQuickLogin : undefined}
           />
         </div>
       </div>

@@ -1,5 +1,15 @@
 import { expect, test } from '@playwright/test';
-import { BAMBOO_LEAVES, createLeaf, getLeafCount, getLeafOutline, stepLeaf } from './bamboo-leaf.util';
+import {
+  BAMBOO_LEAVES,
+  createLeaf,
+  getLeafCount,
+  getLeafLayer,
+  getLeafOutline,
+  getMidribPolygon,
+  getVeinUnit,
+  shouldSkipCrossVein,
+  stepLeaf,
+} from './bamboo-leaf.util';
 
 const bounds = { width: 1440, height: 900 };
 const idlePointer = { active: false, x: 0, y: 0, vx: 0, vy: 0, touch: false };
@@ -20,13 +30,14 @@ test('recycles the same leaf above the viewport and resets its extra motion', ()
   expect(leaf.layer).toBe(2);
 });
 
-test('pointer force vanishes at the radius and points away from the pointer inside it', () => {
+test('pointer force vanishes at the radius and reacts with repulsion, spin, and 3D tumble inside it', () => {
   const leaf = createLeaf(bounds, 2, true, random);
-  const pointer = { ...idlePointer, active: true, x: leaf.x - 140, y: leaf.y, vy: 200 };
+  const pointer = { ...idlePointer, active: true, x: leaf.x - BAMBOO_LEAVES.pointerRadius, y: leaf.y, vy: 200 };
   stepLeaf(leaf, dt, 0, pointer, bounds);
   expect(leaf.vx).toBe(0);
   expect(leaf.vy).toBe(0);
   expect(leaf.spin).toBe(0);
+  expect(leaf.tumbleSpin).toBe(0);
 
   pointer.x = leaf.x - 20;
   pointer.y = leaf.y;
@@ -34,6 +45,17 @@ test('pointer force vanishes at the radius and points away from the pointer insi
   expect(leaf.vx).toBeGreaterThan(0);
   expect(leaf.vy).toBeGreaterThan(0);
   expect(leaf.spin).toBeGreaterThan(0);
+  expect(Math.abs(leaf.tumbleSpin)).toBeGreaterThan(0);
+
+  const sweepLeaf = createLeaf(bounds, 2, true, random);
+  const sweepPointer = { ...idlePointer, active: true, x: sweepLeaf.x - 45, y: sweepLeaf.y - 10, vx: 420, vy: 140 };
+  for (let frame = 0; frame < 10; frame += 1) {
+    stepLeaf(sweepLeaf, dt, 0, sweepPointer, bounds);
+    sweepPointer.x = sweepLeaf.x - 45;
+    sweepPointer.y = sweepLeaf.y - 10;
+  }
+  expect(Math.hypot(sweepLeaf.offsetX, sweepLeaf.offsetY)).toBeGreaterThanOrEqual(25);
+  expect(Math.abs(sweepLeaf.offsetAngle)).toBeGreaterThanOrEqual(0.12);
 
   const farLeaf = createLeaf(bounds, 0, true, random);
   pointer.x = farLeaf.x - 50;
@@ -47,6 +69,7 @@ test('extra velocity decays exponentially and the displaced leaf returns to its 
   leaf.vx = 30;
   leaf.vy = -15;
   leaf.spin = 1;
+  leaf.tumbleSpin = 0.8;
   leaf.offsetX = 20;
 
   for (let frame = 0; frame < 120; frame += 1) stepLeaf(leaf, dt, 0, idlePointer, bounds);
@@ -55,6 +78,7 @@ test('extra velocity decays exponentially and the displaced leaf returns to its 
   expect(leaf.vx).toBeCloseTo(30 * damping, 8);
   expect(leaf.vy).toBeCloseTo(-15 * damping, 8);
   expect(leaf.spin).toBeCloseTo(damping, 8);
+  expect(leaf.tumbleSpin).toBeCloseTo(0.8 * damping, 8);
   expect(Math.abs(leaf.offsetX)).toBeLessThan(1);
 });
 
@@ -69,11 +93,23 @@ test('tumble preserves a visible width on either side of the fold', () => {
   expect(leaf.scaleX).toBe(-BAMBOO_LEAVES.minScaleX);
 });
 
-test('area-based leaf count keeps desktop and coarse-pointer budgets', () => {
-  expect(getLeafCount(1440, 900, false)).toBe(22);
-  expect(getLeafCount(3840, 2160, false)).toBe(32);
-  expect(getLeafCount(375, 812, true)).toBe(8);
-  expect(getLeafCount(1280, 800, true)).toBe(10);
+test('area-based leaf count and weighted layer distribution fit desktop and coarse budgets', () => {
+  expect(getLeafCount(1440, 900, false)).toBe(54);
+  expect(getLeafCount(1366, 768, false)).toBe(44);
+  expect(getLeafCount(3840, 2160, false)).toBe(56);
+  expect(getLeafCount(375, 812, true)).toBe(13);
+  expect(getLeafCount(1280, 800, true)).toBe(16);
+
+  const desktopLayers = Array.from({ length: 40 }, (_, i) => getLeafLayer(i, false));
+  const farCount = desktopLayers.filter((l) => l === 0).length;
+  const midCount = desktopLayers.filter((l) => l === 1).length;
+  const nearCount = desktopLayers.filter((l) => l === 2).length;
+  expect(farCount).toBeGreaterThanOrEqual(nearCount);
+  expect(nearCount).toBeGreaterThanOrEqual(midCount);
+  expect(midCount).toBeGreaterThan(0);
+
+  const coarseLayers = Array.from({ length: 16 }, (_, i) => getLeafLayer(i, true));
+  expect(coarseLayers.every((l) => l === 0 || l === 1)).toBe(true);
 });
 
 test('blade narrows to both tips and is widest 40 percent from the stem', () => {
@@ -81,11 +117,39 @@ test('blade narrows to both tips and is widest 40 percent from the stem', () => 
   const { upper, lower, mid } = getLeafOutline(length, 7.2, 0.4, 0.08);
   const widths = lower.map(([, y], index) => y - upper[index][1]);
   const widest = Math.max(...widths);
-  expect(upper).toHaveLength(19);
+  const segs = BAMBOO_LEAVES.shape.segments;
+  expect(upper).toHaveLength(segs + 1);
   expect(upper[0]).toEqual([-50, 0]);
   expect(widths.at(-1)).toBeCloseTo(0);
   expect(mid.at(-1)).toEqual([50, 6]);
-  expect(widths.indexOf(widest) / 18).toBeCloseTo(0.4, 1);
+  expect(widths.indexOf(widest) / segs).toBeCloseTo(0.4, 1);
   expect(widest).toBeGreaterThan(12);
   expect(widest).toBeLessThan(14);
+});
+
+test('vein unit, tapered midrib polygon, and irregular cross-vein spacing match spec', () => {
+  expect(getVeinUnit(90)).toBe(0.6);
+  expect(getVeinUnit(170)).toBe(1);
+  expect(getVeinUnit(102)).toBe(0.6);
+  expect(getVeinUnit(112)).toBeCloseTo(112 / 170, 6);
+
+  const { mid } = getLeafOutline(102, 7.2, 0.4, 0.08);
+  const { upper, lower } = getMidribPolygon(mid, 1.7 * getVeinUnit(102));
+  expect(upper).toHaveLength(mid.length);
+  expect(lower).toHaveLength(mid.length);
+  const baseThickness = Math.hypot(upper[0][0] - lower[0][0], upper[0][1] - lower[0][1]);
+  const midIdx = Math.floor(mid.length / 2);
+  const midThickness = Math.hypot(upper[midIdx][0] - lower[midIdx][0], upper[midIdx][1] - lower[midIdx][1]);
+  const tipThickness = Math.hypot(upper.at(-1)![0] - lower.at(-1)![0], upper.at(-1)![1] - lower.at(-1)![1]);
+  expect(baseThickness).toBeCloseTo(1.7 * 0.6, 4);
+  expect(midThickness).toBeCloseTo(1.7 * 0.6 * 0.5 ** 0.9, 3);
+  expect(tipThickness).toBeCloseTo(0, 6);
+
+  expect(shouldSkipCrossVein(5)).toBe(true);
+  expect(shouldSkipCrossVein(10)).toBe(true);
+  expect(shouldSkipCrossVein(3)).toBe(false);
+  expect(BAMBOO_LEAVES.layers[0].veinBoost).toBe(0);
+  expect(BAMBOO_LEAVES.layers[1].veinBoost).toBeCloseTo(1.2, 5);
+  expect(BAMBOO_LEAVES.layers[2].veinBoost).toBeGreaterThanOrEqual(1.8);
+  expect(BAMBOO_LEAVES.layers[2].alpha).toBeGreaterThanOrEqual(0.28);
 });
