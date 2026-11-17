@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Post,
@@ -93,6 +94,7 @@ export class AuthController {
 
   @AuthenticatedOnly()
   @Get('me')
+  @Header('Cache-Control', 'private, no-store')
   @ApiOperation({ summary: 'Lấy thông tin người dùng hiện tại' })
   async getMe(@CurrentUser() user: AuthenticatedUser) {
     return this.sessionService.getMe(user.id);
@@ -106,7 +108,7 @@ export class AuthController {
     @CurrentUser() user: AuthenticatedUser,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.sessionService.logout(user.id);
+    const result = await this.sessionService.logout(user.id, user.tokenVersion);
     this.tokenService.clearAuthCookie(res);
     return result;
   }

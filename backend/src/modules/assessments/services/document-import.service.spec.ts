@@ -1,20 +1,13 @@
 import { BadRequestException, HttpStatus } from '@nestjs/common';
 import { AssessmentType } from '@prisma/client';
 import { vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   DocumentImportService,
   MAX_CONCURRENT_EXTRACTS,
 } from './document-import.service.js';
 
-function minimalDocx(): Buffer {
-  const local = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
-  const eocd = Buffer.alloc(22);
-  eocd.writeUInt32LE(0x06054b50, 0);
-  eocd.writeUInt32LE(local.length, 16);
-  return Buffer.concat([local, eocd]);
-}
-
-const DOCX = minimalDocx();
+const DOCX = readFileSync(new URL('../../../../../frontend/e2e/fixtures/sample-questions.docx', import.meta.url));
 const PDF_MAGIC = Buffer.from('%PDF-1.4 mock');
 
 const THREE_QUESTIONS = `Câu 1. 你好吗？

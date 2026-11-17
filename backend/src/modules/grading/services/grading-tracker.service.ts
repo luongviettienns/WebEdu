@@ -4,67 +4,48 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EnrollmentStatus, GradingStatus, SubmissionStatus } from '@prisma/client';
+import { ClassStatus, EnrollmentStatus, GradingStatus, type Prisma, SubmissionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { resolvePagination } from '../../../common/utils/pagination.util.js';
 import { resolveEffectiveDueAt } from '../../assignments/mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
-import { isSubmissionOverdueForZero } from '../../assignments/services/submission-session.util.js';
+import {
+  autoSubmitExpiredSubmission,
+  isExpired,
+  type AssignmentSessionRow,
+} from '../../assignments/services/submission-session.util.js';
+import { tickSubmissionTimer } from '../../assignments/services/submission-timer.util.js';
+import { isAssignmentEligibleForEnrollment } from '../../progress/policies/grade-calculation.policy.js';
 import type { GradingTrackerQueryDto, RecordOverdueZeroDto } from '../dto/grading.dto.js';
-import type {
-  AssignmentGradingTrackerDto,
-  GradingTrackerStudentRowDto,
-  GradingTrackerSummaryDto,
-  RecordOverdueZeroResultDto,
-} from '../grading.types.js';
+import type { AssignmentGradingTrackerDto, RecordOverdueZeroResultDto } from '../grading.types.js';
 import {
   toGradingTrackerAssignmentDto,
   toGradingTrackerStudentRow,
 } from '../mappers/grading-result.mapper.js';
-import { matchesTrackerFilter } from '../policies/grading-workflow.policy.js';
+import { findExpiredTrackerDrafts, findTrackerPage } from '../repositories/grading-tracker.repository.js';
 import {
-  lockAssignmentSubmissionsOrderedTx,
   lockClassAssignmentRowTx,
   lockClassRowForAssignmentTx,
   zeroOutSubmissionAnswersTx,
 } from './grading-locking.util.js';
 
-function summarizeTrackerRows(
-  rows: ReadonlyArray<GradingTrackerStudentRowDto>,
-): GradingTrackerSummaryDto {
-  let notStartedCount = 0;
-  let overdueNotSubmittedCount = 0;
-  let inProgressCount = 0;
-  let submittedWaitingCount = 0;
-  let autoGradedPendingReviewCount = 0;
-  let gradedConfirmedCount = 0;
-  let returnedPublishedCount = 0;
+const ASSIGNMENT_INCLUDE = {
+  assessment: {
+    select: {
+      title: true,
+      type: true,
+      questions: {
+        orderBy: { position: 'asc' },
+        select: { id: true, position: true, type: true, prompt: true, points: true, payload: true },
+      },
+    },
+  },
+  class: { select: { code: true, status: true, course: { select: { name: true } } } },
+} satisfies Prisma.ClassAssignmentInclude;
 
-  for (const row of rows) {
-    if (row.isOverdueNotSubmitted) overdueNotSubmittedCount += 1;
-    if (row.status === 'NOT_STARTED') notStartedCount += 1;
-    else if (row.status === SubmissionStatus.IN_PROGRESS) inProgressCount += 1;
-    else if (row.status === SubmissionStatus.SUBMITTED_WAITING) submittedWaitingCount += 1;
-    else if (row.status === SubmissionStatus.AUTO_GRADED_PENDING_REVIEW) {
-      autoGradedPendingReviewCount += 1;
-    } else if (row.status === SubmissionStatus.GRADED) gradedConfirmedCount += 1;
-    else if (row.status === SubmissionStatus.RETURNED) returnedPublishedCount += 1;
-  }
-
-  return {
-    totalStudents: rows.length,
-    notStartedCount,
-    overdueNotSubmittedCount,
-    inProgressCount,
-    submittedWaitingCount,
-    autoGradedPendingReviewCount,
-    gradedConfirmedCount,
-    returnedPublishedCount,
-    readyToPublishCount: gradedConfirmedCount,
-  };
-}
+const openClass = (status: ClassStatus) => status === ClassStatus.UPCOMING || status === ClassStatus.ACTIVE;
 
 @Injectable()
 export class GradingTrackerService {
@@ -73,98 +54,92 @@ export class GradingTrackerService {
     private readonly accessPolicy: AssignmentAccessPolicy,
   ) {}
 
+  private async loadAssignment(assignmentId: string) {
+    const assignment = await this.prisma.classAssignment.findUnique({
+      where: { id: assignmentId },
+      include: ASSIGNMENT_INCLUDE,
+    });
+    if (!assignment) throw new NotFoundException('Không tìm thấy bài giao');
+    return assignment;
+  }
+
+  private async submitExpiredDrafts(
+    assignment: AssignmentSessionRow,
+    actor: AuthenticatedUser,
+    now: Date,
+  ): Promise<void> {
+    if (!(await findExpiredTrackerDrafts(this.prisma, assignment, now, false)).length) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      await lockClassRowForAssignmentTx(tx, assignment.id);
+      const cls = await this.accessPolicy.assertTeacherOrAdminCanReadClass(tx, actor, assignment.classId);
+      if (!openClass(cls.status)) return;
+      await lockClassAssignmentRowTx(tx, assignment.id);
+      const candidates = await findExpiredTrackerDrafts(tx, assignment, now, true);
+      for (const draft of candidates) {
+        const timers = tickSubmissionTimer(draft, assignment.effectiveDurationMinutes, now);
+        if (isExpired(now, resolveEffectiveDueAt(assignment.dueAt, draft.dueAtOverride), timers.remainingSeconds)) {
+          await autoSubmitExpiredSubmission(tx, assignment, draft.id, now, timers);
+        }
+      }
+    }, { timeout: 15_000 });
+  }
+
   async getAssignmentGradingTracker(
     assignmentId: string,
     actor: AuthenticatedUser,
     query?: GradingTrackerQueryDto,
   ): Promise<AssignmentGradingTrackerDto> {
-    const assignment = await this.prisma.classAssignment.findUnique({
-      where: { id: assignmentId },
-      include: {
-        assessment: {
-          select: {
-            title: true,
-            type: true,
-            questions: {
-              orderBy: { position: 'asc' },
-              select: { id: true, position: true, type: true, prompt: true, points: true, payload: true },
-            },
-          },
-        },
-        class: { select: { code: true, course: { select: { name: true } } } },
-      },
-    });
-    if (!assignment) {
-      throw new NotFoundException('Không tìm thấy bài giao');
-    }
+    const assignment = await this.loadAssignment(assignmentId);
+    const cls = await this.accessPolicy.assertTeacherOrAdminCanReadClass(this.prisma, actor, assignment.classId);
+    const canMutate = openClass(cls.status);
+    const now = new Date();
+    if (canMutate) await this.submitExpiredDrafts(assignment, actor, now);
 
-    await this.accessPolicy.assertTeacherOrAdminCanReadClass(this.prisma, actor, assignment.classId);
+    const { page, limit, skip } = resolvePagination(query, 50);
+    const { rows, total, ...summary } = await findTrackerPage(
+      this.prisma, assignment, now, query?.status ?? 'ALL', skip, limit,
+    );
 
-    const enrollments = await this.prisma.enrollment.findMany({
-      where: {
-        classId: assignment.classId,
-        status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
-      },
-      orderBy: [{ enrolledDate: 'asc' }, { id: 'asc' }],
-      select: {
-        studentId: true,
-        student: { select: { id: true, fullName: true, email: true } },
-      },
-    });
-
-    const uniqueStudents = new Map<string, { id: string; fullName: string; email: string }>();
-    for (const row of enrollments) {
-      if (!uniqueStudents.has(row.studentId)) {
-        uniqueStudents.set(row.studentId, row.student);
-      }
-    }
-
-    const activeSubmissions = await this.prisma.submission.findMany({
+    const activeSubmissions = rows.length ? await this.prisma.submission.findMany({
       where: {
         classAssignmentId: assignmentId,
         status: { not: SubmissionStatus.SUPERSEDED },
-        studentId: { in: [...uniqueStudents.keys()] },
+        studentId: { in: rows.map((row) => row.studentId) },
       },
-      include: {
-        answers: {
-          select: {
-            id: true,
-            questionId: true,
-            answerPayload: true,
-            audioPlayCount: true,
-            isCorrect: true,
-            earnedPoints: true,
-            aiSuggestedPoints: true,
-            aiFeedback: true,
-            teacherComment: true,
-            teacherEdited: true,
-          },
-        },
+      select: {
+        studentId: true,
+        id: true,
+        attemptNumber: true,
+        status: true,
+        gradingStatus: true,
+        dueAtOverride: true,
+        submittedAt: true,
+        autoSubmitted: true,
+        autoScore: true,
+        totalScore: true,
+        gradeUpdatedAt: true,
+        answers: { select: { questionId: true, earnedPoints: true, aiSuggestedPoints: true } },
       },
-    });
+    }) : [];
 
     const subByStudent = new Map(activeSubmissions.map((sub) => [sub.studentId, sub]));
-    const now = new Date();
-    const allRows = [...uniqueStudents.values()].map((student) =>
+    const students = rows.map((row) =>
       toGradingTrackerStudentRow(
-        student,
-        subByStudent.get(student.id) ?? null,
+        { id: row.studentId, fullName: row.fullName, email: row.email },
+        subByStudent.get(row.studentId) ?? null,
         assignment.dueAt,
         assignment.assessment.questions,
-        now,
+        row.overdue,
+        canMutate,
       ),
     );
 
-    const summary = summarizeTrackerRows(allRows);
-    const statusFilter = query?.status ?? 'ALL';
-    const filtered = allRows.filter((row) => matchesTrackerFilter(row, statusFilter));
-    const { page, limit, skip } = resolvePagination(query, 50);
-
     return {
-      assignment: toGradingTrackerAssignmentDto(assignment),
+      assignment: toGradingTrackerAssignmentDto(assignment, canMutate),
       summary,
-      students: filtered.slice(skip, skip + limit),
-      total: filtered.length,
+      students,
+      total,
       page,
       limit,
     };
@@ -177,31 +152,14 @@ export class GradingTrackerService {
   ): Promise<RecordOverdueZeroResultDto> {
     const reason = dto.reason?.trim() || 'Học viên quá hạn chưa nộp bài — ghi nhận 0 điểm';
     const now = new Date();
+    const assignment = await this.loadAssignment(assignmentId);
+    await this.accessPolicy.assertTeacherOrAdminCanAccessClass(this.prisma, actor, assignment.classId);
+    await this.submitExpiredDrafts(assignment, actor, now);
+    if (now <= assignment.dueAt) throw new BadRequestException('Bài tập chưa quá hạn nộp');
 
     return this.prisma.$transaction(async (tx) => {
       await lockClassRowForAssignmentTx(tx, assignmentId);
       await lockClassAssignmentRowTx(tx, assignmentId);
-      const assignment = await tx.classAssignment.findUnique({
-        where: { id: assignmentId },
-        select: {
-          id: true,
-          classId: true,
-          dueAt: true,
-          assessment: {
-            select: {
-              questions: {
-                orderBy: { position: 'asc' },
-                select: { id: true, position: true, type: true, points: true, payload: true },
-              },
-            },
-          },
-        },
-      });
-      if (!assignment) {
-        throw new NotFoundException('Không tìm thấy bài giao');
-      }
-
-      await lockAssignmentSubmissionsOrderedTx(tx, assignmentId);
       await this.accessPolicy.assertTeacherOrAdminCanAccessClass(tx, actor, assignment.classId);
 
       const enrollments = await tx.enrollment.findMany({
@@ -209,90 +167,50 @@ export class GradingTrackerService {
           classId: assignment.classId,
           status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
         },
+        select: { studentId: true, enrolledDate: true, leftDate: true },
+      });
+      const enrolledIds = new Set(enrollments
+        .filter((enrollment) => isAssignmentEligibleForEnrollment(assignment, enrollment, false))
+        .map((enrollment) => enrollment.studentId));
+      const existingAttempts = await tx.submission.findMany({
+        where: { classAssignmentId: assignmentId },
         select: { studentId: true },
       });
-      const enrolledIds = new Set(enrollments.map((e) => e.studentId));
-      const allSubmissions = await tx.submission.findMany({
-        where: { classAssignmentId: assignmentId },
-        orderBy: { id: 'asc' },
-        select: {
-          id: true,
-          studentId: true,
-          attemptNumber: true,
-          status: true,
-          dueAtOverride: true,
-          remainingSeconds: true,
-        },
-      });
-
-      const activeByStudent = new Map<string, (typeof allSubmissions)[number]>();
-      const maxAttemptByStudent = new Map<string, number>();
-      for (const sub of allSubmissions) {
-        const prevMax = maxAttemptByStudent.get(sub.studentId) ?? 0;
-        if (sub.attemptNumber > prevMax) maxAttemptByStudent.set(sub.studentId, sub.attemptNumber);
-        if (sub.status !== SubmissionStatus.SUPERSEDED) activeByStudent.set(sub.studentId, sub);
-      }
+      const attemptedIds = new Set(existingAttempts.map((attempt) => attempt.studentId));
 
       let targetStudentIds: string[];
-      if (dto.studentIds && dto.studentIds.length > 0) {
+      if (dto.studentIds?.length) {
         targetStudentIds = [...new Set(dto.studentIds)];
         for (const studentId of targetStudentIds) {
           if (!enrolledIds.has(studentId)) {
-            throw new BadRequestException('Học viên được chọn không thuộc danh sách lớp');
+            throw new BadRequestException('Học viên được chọn không thuộc danh sách nhận bài giao');
           }
-          const active = activeByStudent.get(studentId) ?? null;
-          if (active && active.status !== SubmissionStatus.IN_PROGRESS) {
-            throw new ConflictException('Học viên đã nộp bài, không thể ghi 0 điểm quá hạn');
-          }
-          const effectiveDue = resolveEffectiveDueAt(assignment.dueAt, active?.dueAtOverride);
-          if (!isSubmissionOverdueForZero(now, effectiveDue, active)) {
-            throw new BadRequestException('Bài tập chưa quá hạn nộp đối với học viên đã chọn');
+          if (attemptedIds.has(studentId)) {
+            throw new ConflictException('Học viên đã bắt đầu làm bài, không thể ghi 0 điểm quá hạn');
           }
         }
       } else {
-        targetStudentIds = [...enrolledIds].filter((studentId) => {
-          const active = activeByStudent.get(studentId) ?? null;
-          const effectiveDue = resolveEffectiveDueAt(assignment.dueAt, active?.dueAtOverride);
-          return isSubmissionOverdueForZero(now, effectiveDue, active);
-        });
+        targetStudentIds = [...enrolledIds].filter((studentId) => !attemptedIds.has(studentId));
         if (targetStudentIds.length === 0) {
           throw new BadRequestException('Không có học viên quá hạn chưa nộp bài cần ghi 0 điểm');
         }
       }
 
-      const grade = {
-        status: SubmissionStatus.GRADED,
-        gradingStatus: GradingStatus.GRADED,
-        autoScore: 0,
-        totalScore: 0,
-        gradedAt: now,
-        gradedById: actor.id,
-        teacherFeedback: reason,
-      };
-      const idByStudent = new Map<string, string>();
-      const missingStudents: string[] = [];
-      for (const studentId of targetStudentIds) {
-        const active = activeByStudent.get(studentId);
-        if (active) idByStudent.set(studentId, active.id);
-        else missingStudents.push(studentId);
-      }
-      if (idByStudent.size > 0) {
-        await tx.submission.updateMany({ where: { id: { in: [...idByStudent.values()] } }, data: grade });
-      }
-      if (missingStudents.length > 0) {
-        const created = await tx.submission.createManyAndReturn({
-          data: missingStudents.map((studentId) => ({
-            classAssignmentId: assignmentId,
-            studentId,
-            attemptNumber: (maxAttemptByStudent.get(studentId) ?? 0) + 1,
-            ...grade,
-          })),
-          select: { id: true, studentId: true },
-        });
-        for (const { studentId, id } of created) idByStudent.set(studentId, id);
-      }
-
-      const submissionIds = targetStudentIds.map((studentId) => idByStudent.get(studentId)!);
+      const created = await tx.submission.createManyAndReturn({
+        data: targetStudentIds.map((studentId) => ({
+          classAssignmentId: assignmentId,
+          studentId,
+          status: SubmissionStatus.GRADED,
+          gradingStatus: GradingStatus.GRADED,
+          autoScore: 0,
+          totalScore: 0,
+          gradedAt: now,
+          gradedById: actor.id,
+          teacherFeedback: reason,
+        })),
+        select: { id: true },
+      });
+      const submissionIds = created.map(({ id }) => id);
       await zeroOutSubmissionAnswersTx(tx, submissionIds, assignment.assessment.questions);
       await tx.gradeAuditLog.createMany({
         data: submissionIds.map((submissionId) => ({

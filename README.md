@@ -41,6 +41,16 @@ npm run dev
 
 Lệnh `npm run seed` đặt lại toàn bộ dữ liệu demo. Dùng một DB cục bộ có tên chứa `test` hoặc `qa` với `NODE_ENV=test`. Để seed DB cục bộ `webedu` từ cấu hình mẫu, đặt `NODE_ENV=development` và `ALLOW_TEST_DB_TRUNCATE=true` cho lần chạy đó. Browser QA mặc định tạo PostgreSQL tạm khi không có `TEST_DATABASE_URL`.
 
+## Triển khai lần đầu
+
+Chạy `npx prisma migrate deploy` trong `backend` với `DATABASE_URL` của môi trường đích. Cấp `BOOTSTRAP_SUPERADMIN_EMAIL`, `BOOTSTRAP_SUPERADMIN_PHONE`, `BOOTSTRAP_SUPERADMIN_NAME` và `BOOTSTRAP_SUPERADMIN_PASSWORD` qua bộ quản lý bí mật, rồi chạy `npm run bootstrap:superadmin` một lần trong `backend`. Lệnh chỉ tạo một tài khoản và từ chối chạy lại khi đã có Superadmin. Gỡ các biến khởi tạo sau khi dùng.
+
+Phục vụ frontend và `/api/v1` qua cùng hostname HTTPS. Trong production, cấu hình reverse proxy chuyển `/api/v1` trực tiếp tới NestJS và các đường còn lại tới Next.js. Cho phép tối đa 64 MiB ở tuyến nộp bài và giới hạn truy cập trực tiếp vào backend. Chỉ đặt `TRUST_PROXY=1` khi backend có đúng một proxy tin cậy ghi đè `X-Forwarded-For`. Đặt `FRONTEND_APP_URL` và `CORS_ORIGIN` thành địa chỉ HTTPS của cổng.
+
+Next.js có sẵn rewrite dùng trong phát triển và kiểm thử. Đặt `BACKEND_ORIGIN` trước khi build nếu địa chỉ NestJS khác `http://127.0.0.1:3001`.
+
+Khi nâng cấp, chạy migration trước và phát hành backend cùng frontend. Trình làm bài mới gửi phiên bản bản nháp mỗi lần lưu hoặc nộp. Mã OTP đang chờ xác minh cần được yêu cầu lại sau migration phân luồng mã.
+
 ## 🧪 Lệnh kiểm thử & kiểm soát chất lượng
 
 ```bash

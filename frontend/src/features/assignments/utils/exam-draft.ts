@@ -17,7 +17,6 @@ export interface ExamLocalDraft {
 
 const DRAFT_PREFIX = 'webedu_exam_draft_';
 
-export const MAX_LOCAL_DRAFT_DRIFT_MS = 5 * 60 * 1000;
 export const MAX_CLOCK_SKEW_MS = 5_000;
 export const MAX_ELAPSED_DELTA_SECONDS = 300;
 
@@ -143,7 +142,7 @@ export function purgePriorAttemptDrafts(
     for (let i = 0; i < storage.length; i += 1) {
       const key = storage.key(i);
       if (!key || !key.startsWith(prefix)) continue;
-      if (currentKey && key === currentKey) continue;
+      if (currentKey && (key === currentKey || key.startsWith(`${currentKey}:`))) continue;
       if (
         !currentKey &&
         (key === `${DRAFT_PREFIX}${currentSubmissionId}` ||
@@ -412,7 +411,6 @@ export function resolveInitialSessionDraft(
       localDraft !== null &&
       Number.isFinite(serverSavedMs) &&
       localDraft.updatedAtMs > serverSavedMs &&
-      localDraft.updatedAtMs <= serverSavedMs + MAX_LOCAL_DRAFT_DRIFT_MS &&
       localDraft.updatedAtMs <= nowMs + MAX_CLOCK_SKEW_MS;
 
     if (isWithinValidWindow) {

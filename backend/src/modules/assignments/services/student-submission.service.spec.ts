@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   AssessmentType,
+  ClassStatus,
   GradingStatus,
   Prisma,
   QuestionType,
@@ -24,7 +25,6 @@ import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js'
 import { StudentSubmissionService } from './student-submission.service.js';
 import {
   AUDIO_LISTEN_WINDOW_MS,
-  MAX_AUTOSAVE_ELAPSED_STEP_SECONDS,
   SUBMIT_GRACE_MS,
   isExpired,
 } from './submission-session.util.js';
@@ -63,7 +63,7 @@ function makeAssignmentRow(overrides?: {
     effectiveDurationMinutes:
       overrides?.effectiveDurationMinutes === undefined ? 30 : overrides.effectiveDurationMinutes,
     instructions: 'Đọc kỹ đề',
-    class: { code: 'HSK1-A', course: { name: 'Tiếng Trung HSK 1' } },
+    class: { code: 'HSK1-A', status: ClassStatus.ACTIVE, course: { name: 'Tiếng Trung HSK 1' } },
     assessment: {
       title: 'Bài kiểm tra 1',
       type: AssessmentType.MINI_TEST,
@@ -89,9 +89,19 @@ function makeAssignmentRow(overrides?: {
 }
 
 function makeMockDeps() {
+  const enrollment = {
+    findFirst: vi.fn(async () => ({ id: 'enr-1' })),
+    findMany: vi.fn(async () => []),
+  };
+  const classAssignment = {
+    findUnique: vi.fn(async () => makeAssignmentRow()),
+    findMany: vi.fn(async () => []),
+  };
   const tx = {
     $queryRaw: vi.fn(async () => []),
     $executeRaw: vi.fn(async () => 1),
+    enrollment,
+    classAssignment,
     submission: {
       findFirst: vi.fn(async () => null),
       aggregate: vi.fn(async () => ({ _max: { attemptNumber: null } })),
@@ -110,10 +120,7 @@ function makeMockDeps() {
   const prisma = {
     $queryRaw: vi.fn(async () => []),
     $transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
-    enrollment: {
-      findFirst: vi.fn(async () => ({ id: 'enr-1' })),
-      findMany: vi.fn(async () => []),
-    },
+    enrollment,
     class: {
       findUnique: vi.fn(async () => ({
         id: 'cls-1',
@@ -124,10 +131,7 @@ function makeMockDeps() {
         course: { name: 'Tiếng Trung HSK 1' },
       })),
     },
-    classAssignment: {
-      findUnique: vi.fn(async () => makeAssignmentRow()),
-      findMany: vi.fn(async () => []),
-    },
+    classAssignment,
     submission: {
       findFirst: vi.fn(async () => null),
       findMany: vi.fn(async () => []),
@@ -239,6 +243,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         classAssignmentId: 'assign-1',
         studentId: 'student-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         gradingStatus: GradingStatus.NONE,
         startedAt: new Date('2026-11-14T10:00:00.000Z'),
@@ -251,9 +259,11 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         autoScore: null,
         totalScore: null,
         teacherFeedback: null,
+        dueAtOverride: null,
         answers: [],
       };
       tx.submission.create.mockResolvedValueOnce(createdSub as never);
+      tx.submission.update.mockResolvedValueOnce({ ...createdSub, timerClientId: 'sub-1' } as never);
 
       const session = await service.startOrResume('assign-1', student);
       expect(session.submission.id).toBe('sub-1');
@@ -290,10 +300,14 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
           clientVersion: '6.4.1',
         }),
       );
-      tx.submission.findFirst.mockResolvedValueOnce({
+      const concurrentSub = {
         id: 'sub-concurrent',
         studentId: 'student-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         startedAt: new Date('2026-11-14T10:00:00.000Z'),
         lastSavedAt: new Date('2026-11-14T10:00:00.000Z'),
@@ -307,7 +321,9 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         totalScore: null,
         teacherFeedback: null,
         answers: [],
-      } as never);
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(concurrentSub as never);
+      tx.submission.update.mockResolvedValueOnce(concurrentSub as never);
       const recovered = await service.startOrResume('assign-1', student);
       expect(recovered.submission.id).toBe('sub-concurrent');
       expect(recovered.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
@@ -372,10 +388,14 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       prisma.classAssignment.findUnique.mockResolvedValueOnce(
         makeAssignmentRow({ dueAt: pastDue }) as never,
       );
-      tx.submission.findFirst.mockResolvedValueOnce({
+      const reopenedSub = {
         id: 'sub-reopened',
         studentId: 'student-1',
         attemptNumber: 2,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         startedAt: new Date('2026-11-14T10:00:00.000Z'),
         lastSavedAt: new Date('2026-11-14T10:00:00.000Z'),
@@ -389,13 +409,19 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         totalScore: null,
         teacherFeedback: null,
         answers: [],
-      } as never);
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(reopenedSub as never);
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
+        ...reopenedSub,
+        ...args.data,
+        answers: [],
+      })) as never);
 
       const session = await service.startOrResume('assign-1', student);
       expect(session.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
       expect(session.submission.dueAtOverride).toBe(futureOverride.toISOString());
       expect(session.assignment.dueAt).toBe(futureOverride.toISOString());
-      expect(tx.submission.update).not.toHaveBeenCalled();
+      expect(tx.submission.update).toHaveBeenCalledTimes(1);
     });
 
     it('auto-submits expired IN_PROGRESS session on resume and omits reopenReason on attemptNumber > 1', async () => {
@@ -479,6 +505,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.findFirst.mockResolvedValue({
         id: 'sub-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 10,
         remainingSeconds: 1790,
@@ -494,6 +524,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            revision: 0,
             answers: [{ questionId: 'q-unknown', answerPayload: { text: 'x' } }],
             elapsedSeconds: 15,
           },
@@ -505,6 +536,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            revision: 0,
             answers: [
               {
                 questionId: 'q-list',
@@ -522,6 +554,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            revision: 0,
             answers: [
               { questionId: 'q-list', answerPayload: { selectedOptionIds: ['a'] } },
               { questionId: 'q-list', answerPayload: { selectedOptionIds: ['b'] } },
@@ -564,6 +597,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         id: 'sub-override',
         studentId: 'student-1',
         attemptNumber: 2,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 10,
         remainingSeconds: 1790,
@@ -579,6 +616,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...activeOverrideSub,
         ...args.data,
+        revision: 1,
         answers: [],
       })) as never);
 
@@ -587,6 +625,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
           'assign-1',
           {
             submissionId: activeOverrideSub.id,
+            revision: 0,
             answers: [
               { questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } },
               { questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } },
@@ -600,7 +639,8 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const saved = await service.autosave(
         'assign-1',
         {
-            submissionId: activeOverrideSub.id,
+          submissionId: activeOverrideSub.id,
+          revision: 0,
           answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } }],
           elapsedSeconds: 20,
           remainingSeconds: 1780,
@@ -608,6 +648,22 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         student,
       );
       expect(saved.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
+      expect(saved.submission.revision).toBe(1);
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+
+      // Out-of-order / stale revision rejected with 409 Conflict without overwriting newer answers
+      tx.submission.findFirst.mockResolvedValueOnce({ ...activeOverrideSub, revision: 1 } as never);
+      await expect(
+        service.autosave(
+          'assign-1',
+          {
+            submissionId: activeOverrideSub.id,
+            revision: 0,
+            answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
+          },
+          student,
+        ),
+      ).rejects.toThrowError(new ConflictException('Bản nháp đã thay đổi. Vui lòng đồng bộ trước khi tiếp tục'));
       expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     });
 
@@ -636,6 +692,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         id: 'sub-desync',
         studentId: 'student-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 10,
         remainingSeconds: 1790,
@@ -651,6 +711,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...baseListeningSub,
         ...args.data,
+        revision: 0,
         answers: baseListeningSub.answers,
       })) as never);
 
@@ -658,6 +719,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            revision: 0,
             answers: [
               {
                 questionId: 'q-list',
@@ -676,6 +738,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.submit(
           'assign-1',
           {
+            revision: 0,
             answers: [
               {
                 questionId: 'q-list',
@@ -697,6 +760,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            revision: 0,
             answers: [
               {
                 questionId: 'q-list',
@@ -714,6 +778,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         service.autosave(
           'assign-1',
           {
+            revision: 0,
             answers: [
               {
                 questionId: 'q-list',
@@ -728,17 +793,24 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       ).rejects.toThrowError(new BadRequestException('Đã hết lượt nghe cho phép'));
     });
 
-    it('enforces monotonic elapsedSeconds, prevents remainingSeconds upward jump, and auto-submits at 0', async () => {
+    it('enforces monotonic elapsedSeconds, ignores spoofed client remainingSeconds=0, and auto-submits when server lease reaches 0', async () => {
+      vi.useFakeTimers();
+      const t0 = new Date('2026-11-14T10:02:00.000Z');
+      vi.setSystemTime(t0);
       const { tx, service } = makeMockDeps();
       const baseSub = {
         id: 'sub-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: t0,
+        timerLeaseUntil: new Date(t0.getTime() + 15_000),
+        timerClientId: 'tab-1',
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 120,
         remainingSeconds: 1680,
         startedAt: new Date('2026-11-14T10:00:00.000Z'),
-        lastSavedAt: new Date('2026-11-14T10:02:00.000Z'),
-        lastSyncedAt: new Date('2026-11-14T10:02:00.000Z'),
+        lastSavedAt: t0,
+        lastSyncedAt: t0,
         submittedAt: null,
         autoSubmitted: false,
         autoScore: null,
@@ -750,16 +822,19 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...baseSub,
         ...args.data,
+        revision: typeof args.data.revision === 'number' ? args.data.revision : 1,
         answers: [],
       })) as never);
 
-      // Client sends stale elapsedSeconds=30 and remainingSeconds=1790 -> clamped!
+      // Client sends stale elapsedSeconds=30 and remainingSeconds=1790 -> server keeps 120 / 1680
       const saved = await service.autosave(
         'assign-1',
         {
+          revision: 0,
           answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } }],
           elapsedSeconds: 30,
           remainingSeconds: 1790,
+          timerClientId: 'tab-1',
         },
         student,
       );
@@ -767,14 +842,40 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(saved.submission.remainingSeconds).toBe(1680);
       expect(saved.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
 
-      // Client sends remainingSeconds=0 -> autoSubmitted!
+      // Spoofed client remainingSeconds=0 does NOT auto-submit while server lease still has remaining time
       tx.submission.findFirst.mockResolvedValueOnce(baseSub as never);
-      const expired = await service.autosave(
+      const ignoredClientZero = await service.autosave(
         'assign-1',
         {
           answers: [],
           elapsedSeconds: 1800,
           remainingSeconds: 0,
+          timerClientId: 'tab-1',
+        },
+        student,
+      );
+      expect(ignoredClientZero.submission.remainingSeconds).toBe(1680);
+      expect(ignoredClientZero.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
+      expect(ignoredClientZero.submission.autoSubmitted).toBe(false);
+
+      // Server lease reaches 0 -> autoSubmitted!
+      const nearEndSub = {
+        ...baseSub,
+        elapsedSeconds: 1795,
+        remainingSeconds: 5,
+      };
+      vi.setSystemTime(new Date(t0.getTime() + 5_000));
+      tx.submission.findFirst.mockResolvedValueOnce(nearEndSub as never);
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
+        ...nearEndSub,
+        ...args.data,
+        answers: [],
+      })) as never);
+      const expired = await service.autosave(
+        'assign-1',
+        {
+          answers: [],
+          timerClientId: 'tab-1',
         },
         student,
       );
@@ -790,6 +891,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const baseSub = {
         id: 'sub-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 200,
         remainingSeconds: 1600,
@@ -806,13 +911,14 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...baseSub,
         ...args.data,
+        revision: 1,
         answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] }, audioPlayCount: 0, updatedAt: new Date() }],
       })) as never);
 
       tx.submission.findFirst.mockResolvedValueOnce(baseSub as never);
       const res = await service.submit(
         'assign-1',
-        { answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }], elapsedSeconds: 210 },
+        { revision: 0, answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }], elapsedSeconds: 210 },
         student,
       );
       expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
@@ -823,7 +929,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         makeAssignmentRow({ dueAt: new Date(Date.now() - 120_000) }) as never,
       );
       tx.submission.findFirst.mockResolvedValueOnce(baseSub as never);
-      await expect(service.submit('assign-1', {}, student)).rejects.toThrowError(
+      await expect(service.submit('assign-1', { revision: 0 }, student)).rejects.toThrowError(
         new BadRequestException('Đã quá hạn nộp bài'),
       );
 
@@ -833,13 +939,13 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         attemptNumber: 2,
         dueAtOverride: new Date(Date.now() + 86_400_000),
       } as never);
-      const overrideSubmit = await service.submit('assign-1', { submissionId: baseSub.id, elapsedSeconds: 220 }, student);
+      const overrideSubmit = await service.submit('assign-1', { submissionId: baseSub.id, revision: 0, elapsedSeconds: 220 }, student);
       expect(overrideSubmit.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
       expect(overrideSubmit.submission.autoSubmitted).toBe(false);
 
       // With autoSubmitted: true -> allowed
       tx.submission.findFirst.mockResolvedValueOnce(baseSub as never);
-      const autoRes = await service.submit('assign-1', { autoSubmitted: true }, student);
+      const autoRes = await service.submit('assign-1', { revision: 0, autoSubmitted: true }, student);
       expect(autoRes.submission.autoSubmitted).toBe(true);
     });
 
@@ -1139,19 +1245,25 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(streamStoredFile).not.toHaveBeenCalled();
     });
 
-    it('caps client-reported elapsedSeconds=999999999 to prevElapsed + 120 and <= durationMinutes * 60 (timed & untimed)', async () => {
-      expect(MAX_AUTOSAVE_ELAPSED_STEP_SECONDS).toBe(120);
+    it('ignores client-reported elapsedSeconds=999999999 and accounts active lease seconds + pauses offline gaps', async () => {
+      vi.useFakeTimers();
+      const t0 = new Date('2026-11-15T10:00:00.000Z');
+      vi.setSystemTime(t0);
 
       const { prisma, tx, service } = makeMockDeps();
       const timedSub = {
         id: 'sub-timed',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: t0,
+        timerLeaseUntil: new Date(t0.getTime() + 15_000),
+        timerClientId: 'tab-1',
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 100,
         remainingSeconds: 1700,
-        startedAt: new Date('2026-11-15T10:00:00.000Z'),
-        lastSavedAt: new Date('2026-11-15T10:01:40.000Z'),
-        lastSyncedAt: new Date('2026-11-15T10:01:40.000Z'),
+        startedAt: new Date('2026-11-15T09:58:20.000Z'),
+        lastSavedAt: t0,
+        lastSyncedAt: t0,
         submittedAt: null,
         autoSubmitted: false,
         dueAtOverride: null,
@@ -1161,28 +1273,39 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...timedSub,
         ...args.data,
+        revision: typeof args.data.revision === 'number' ? args.data.revision : 0,
         answers: [],
       })) as never);
 
-      // Timed 30 min (1800s): 100 -> capped at 100 + 120 = 220
+      // Client offline 180s later sends elapsedSeconds=999_999_999 -> server accounts ONLY 15s active lease, freezes 165s offline gap
+      vi.setSystemTime(new Date(t0.getTime() + 180_000));
       const cappedTimed = await service.autosave(
         'assign-1',
-        { answers: [], elapsedSeconds: 999_999_999 },
+        { answers: [], elapsedSeconds: 999_999_999, timerClientId: 'tab-1' },
         student,
       );
-      expect(cappedTimed.submission.elapsedSeconds).toBe(220);
-      expect(cappedTimed.submission.remainingSeconds).toBe(1580);
+      expect(cappedTimed.submission.elapsedSeconds).toBe(115);
+      expect(cappedTimed.submission.remainingSeconds).toBe(1685);
       expect(cappedTimed.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
 
-      // Timed near ceiling (1750 -> min(1750 + 120, 1800) = 1800, remaining = 0 -> autoSubmitted)
-      tx.submission.findFirst.mockResolvedValueOnce({
+      // Timed near ceiling (1790 + 10s elapsed in lease -> 1800, remaining = 0 -> autoSubmitted)
+      const nearCeilingSub = {
         ...timedSub,
-        elapsedSeconds: 1750,
-        remainingSeconds: 50,
-      } as never);
+        elapsedSeconds: 1790,
+        remainingSeconds: 10,
+        timerAccountedAt: new Date(t0.getTime() + 180_000),
+        timerLeaseUntil: new Date(t0.getTime() + 195_000),
+      };
+      vi.setSystemTime(new Date(t0.getTime() + 190_000));
+      tx.submission.findFirst.mockResolvedValueOnce(nearCeilingSub as never);
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
+        ...nearCeilingSub,
+        ...args.data,
+        answers: [],
+      })) as never);
       const cappedAtMax = await service.autosave(
         'assign-1',
-        { answers: [], elapsedSeconds: 999_999_999 },
+        { answers: [], elapsedSeconds: 999_999_999, timerClientId: 'tab-1' },
         student,
       );
       expect(cappedAtMax.submission.elapsedSeconds).toBe(1800);
@@ -1190,7 +1313,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       expect(cappedAtMax.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
       expect(cappedAtMax.submission.autoSubmitted).toBe(true);
 
-      // Untimed (effectiveDurationMinutes: null): 50 -> capped at 50 + 120 = 170, remainingSeconds: null
+      // Untimed (effectiveDurationMinutes: null): ignores elapsedSeconds=999999999 and keeps remainingSeconds: null
       prisma.classAssignment.findUnique.mockResolvedValueOnce(
         makeAssignmentRow({ effectiveDurationMinutes: null }) as never,
       );
@@ -1199,20 +1322,23 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         id: 'sub-untimed',
         elapsedSeconds: 50,
         remainingSeconds: null,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
       };
       tx.submission.findFirst.mockResolvedValueOnce(untimedSub as never);
-      tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
         ...untimedSub,
         ...args.data,
+        revision: 1,
         answers: [],
       })) as never);
 
       const cappedUntimed = await service.submit(
         'assign-1',
-        { elapsedSeconds: 999_999_999 },
+        { revision: 0, elapsedSeconds: 999_999_999 },
         student,
       );
-      expect(cappedUntimed.submission.elapsedSeconds).toBe(170);
+      expect(cappedUntimed.submission.elapsedSeconds).toBe(50);
       expect(cappedUntimed.submission.remainingSeconds).toBeNull();
     });
 
@@ -1231,6 +1357,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const activeSub = {
         id: 'sub-grace',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 100,
         remainingSeconds: 1700,
@@ -1245,6 +1375,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...activeSub,
         ...args.data,
+        revision: 1,
         answers: [],
       })) as never);
 
@@ -1262,7 +1393,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
       const submittedInGrace = await service.submit(
         'assign-1',
-        { elapsedSeconds: 115, remainingSeconds: 1685 },
+        { revision: 0, elapsedSeconds: 115, remainingSeconds: 1685 },
         student,
       );
       expect(submittedInGrace.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
@@ -1281,11 +1412,11 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
 
       tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
       await expect(
-        service.submit('assign-1', { elapsedSeconds: 120, remainingSeconds: 1680 }, student),
+        service.submit('assign-1', { revision: 0, elapsedSeconds: 120, remainingSeconds: 1680 }, student),
       ).rejects.toThrowError(new BadRequestException('Đã quá hạn nộp bài'));
     });
 
-    it('rate-limits autosave (> 30 req/min) and submit (> 10 req/min) with 429 TOO_MANY_REQUESTS', async () => {
+    it('rate-limits autosave and exam-timer (> 30 req/min) and submit (> 10 req/min) with 429 TOO_MANY_REQUESTS', async () => {
       const { prisma, tx, service } = makeMockDeps();
       const rateCounts = new Map<string, number>();
       const capturedMaxPoints = new Map<string, number>();
@@ -1312,6 +1443,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const baseSub = {
         id: 'sub-rl',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 10,
         remainingSeconds: 1790,
@@ -1327,31 +1462,53 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...baseSub,
         ...args.data,
+        revision: 0,
         answers: [],
       })) as never);
 
       for (let i = 0; i < 30; i += 1) {
         await expect(
-          service.autosave('assign-1', { answers: [], elapsedSeconds: 10 }, student),
+          service.autosave(
+            'assign-1',
+            { revision: 0, answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } }] },
+            student,
+          ),
         ).resolves.toMatchObject({ submission: { id: 'sub-rl' } });
       }
       expect(capturedMaxPoints.get('autosave:assign-1:student-1')).toBe(30);
 
       await expect(
-        service.autosave('assign-1', { answers: [], elapsedSeconds: 10 }, student),
+        service.autosave(
+          'assign-1',
+          { revision: 0, answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['a'] } }] },
+          student,
+        ),
+      ).rejects.toSatisfy(
+        (err: unknown) =>
+          err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS,
+      );
+
+      for (let i = 0; i < 30; i += 1) {
+        await expect(
+          service.autosave('assign-1', { answers: [] }, student),
+        ).resolves.toMatchObject({ submission: { id: 'sub-rl' } });
+      }
+      expect(capturedMaxPoints.get('exam-timer:assign-1:student-1')).toBe(30);
+      await expect(
+        service.autosave('assign-1', { answers: [] }, student),
       ).rejects.toSatisfy(
         (err: unknown) =>
           err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS,
       );
 
       for (let i = 0; i < 10; i += 1) {
-        await expect(service.submit('assign-1', { elapsedSeconds: 20 }, student)).resolves.toMatchObject(
+        await expect(service.submit('assign-1', { revision: 0, elapsedSeconds: 20 }, student)).resolves.toMatchObject(
           { submission: { id: 'sub-rl' } },
         );
       }
       expect(capturedMaxPoints.get('submit:assign-1:student-1')).toBe(10);
 
-      await expect(service.submit('assign-1', { elapsedSeconds: 20 }, student)).rejects.toSatisfy(
+      await expect(service.submit('assign-1', { revision: 0, elapsedSeconds: 20 }, student)).rejects.toSatisfy(
         (err: unknown) =>
           err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS,
       );
@@ -1507,6 +1664,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
         id: 'sub-zero-server',
         studentId: 'student-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         elapsedSeconds: 1800,
         remainingSeconds: 0,
@@ -1521,6 +1682,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...alreadyZeroSub,
         ...args.data,
+        revision: 1,
         answers: preExpiryAnswers,
       })) as never);
 
@@ -1529,6 +1691,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const autosaveRes = await service.autosave(
         'assign-1',
         {
+          revision: 0,
           answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
           elapsedSeconds: 1810,
           remainingSeconds: 0,
@@ -1545,6 +1708,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const submitRes = await service.submit(
         'assign-1',
         {
+          revision: 0,
           autoSubmitted: true,
           answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
           elapsedSeconds: 1810,
@@ -1569,6 +1733,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementation((async (args: { data: Record<string, unknown> }) => ({
         ...finalTickSub,
         ...args.data,
+        revision: 1,
         answers: [
           {
             questionId: 'q-1',
@@ -1582,6 +1747,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const finalTickRes = await service.submit(
         'assign-1',
         {
+          revision: 0,
           autoSubmitted: true,
           answers: [{ questionId: 'q-1', answerPayload: { selectedOptionIds: ['b'] } }],
           elapsedSeconds: 1800,
@@ -1591,7 +1757,7 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       );
       expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
       expect(finalTickRes.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
-      expect(finalTickRes.submission.autoSubmitted).toBe(true);
+      expect(finalTickRes.submission.autoSubmitted).toBe(false);
     });
 
     it('awards the exact legacy objective maximum on manual submit and expired auto-submit', async () => {
@@ -1628,6 +1794,10 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       const activeSub = {
         id: 'sub-obj-1',
         attemptNumber: 1,
+        revision: 0,
+        timerAccountedAt: null,
+        timerLeaseUntil: null,
+        timerClientId: null,
         status: SubmissionStatus.IN_PROGRESS,
         gradingStatus: GradingStatus.NONE,
         elapsedSeconds: 30,
@@ -1644,10 +1814,11 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
         ...activeSub,
         ...args.data,
+        revision: 1,
         answers: savedAnswers,
       })) as never);
 
-      await service.submit('assign-1', { elapsedSeconds: 35, remainingSeconds: 595 }, student);
+      await service.submit('assign-1', { revision: 0, elapsedSeconds: 35, remainingSeconds: 595 }, student);
       expect(tx.submissionAnswer.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { submissionId_questionId: { submissionId: 'sub-obj-1', questionId: 'q-1' } },

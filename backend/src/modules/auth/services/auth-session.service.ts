@@ -88,9 +88,9 @@ export class AuthSessionService {
     return this.toAuthUserDto(user);
   }
 
-  async logout(userId: string): Promise<{ message: string }> {
-    await this.prisma.user.update({
-      where: { id: userId },
+  async logout(userId: string, tokenVersion: number): Promise<{ message: string }> {
+    await this.prisma.user.updateMany({
+      where: { id: userId, tokenVersion },
       data: {
         tokenVersion: { increment: 1 },
       },

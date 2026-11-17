@@ -17,6 +17,9 @@ import {
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { verifyEmailVerificationCodeOrThrow } from '../src/common/auth/email-otp.util.js';
 import { PrismaService } from '../src/common/prisma/prisma.service.js';
 import {
   resolveAuthServices,
@@ -1509,6 +1512,49 @@ describe('Real PostgreSQL Integration Suite (Phase 2 — 13 Mandatory Scenarios)
     expect(summary.deletedEmailVerifications).toBe(2);
     expect(summary.deletedEmailRateLimits).toBe(1);
     expect(summary.deletedAuthRateLimits).toBe(1);
+  });
+
+  it('keeps older OTPs spent and isolates registration from each account email change', async () => {
+    const email = 'otp.scoped@example.com';
+    const expiresAt = new Date(Date.now() + 60_000);
+    const registrationCode = '123456';
+    const oldCode = '234567';
+    const changeCode = '345678';
+    const row = (scope: string, code: string, ageMs: number) => ({
+      email, scope, expiresAt, createdAt: new Date(Date.now() - ageMs),
+      codeHash: crypto.createHash('sha256').update(code).digest('hex'),
+    });
+    await prisma.emailVerification.createMany({
+      data: [
+        row('registration', oldCode, 2000),
+        row('registration', registrationCode, 1000),
+        row('email_change:current-user', changeCode, 0),
+      ],
+    });
+    await expect(verifyEmailVerificationCodeOrThrow(prisma, email, changeCode)).rejects.toThrow(BadRequestException);
+    await expect(verifyEmailVerificationCodeOrThrow(prisma, email, changeCode, 'other-user')).rejects.toThrow(BadRequestException);
+    await expect(verifyEmailVerificationCodeOrThrow(prisma, email, registrationCode)).resolves.toBeUndefined();
+    await expect(verifyEmailVerificationCodeOrThrow(prisma, email, oldCode)).rejects.toThrow(BadRequestException);
+    await expect(verifyEmailVerificationCodeOrThrow(prisma, email, changeCode, 'current-user')).resolves.toBeUndefined();
+  });
+
+  it('bootstraps a single Superadmin without deleting existing users', async () => {
+    const preserved = await prisma.user.create({
+      data: { fullName: 'Existing', email: 'existing@example.com', phone: '0901234566', passwordHash: 'test' },
+    });
+    const bootstrap = () => promisify(execFile)(process.execPath, ['prisma/bootstrap-superadmin.mjs'], {
+      env: {
+        ...process.env,
+        BOOTSTRAP_SUPERADMIN_EMAIL: 'bootstrap@example.com',
+        BOOTSTRAP_SUPERADMIN_PHONE: '0901234567',
+        BOOTSTRAP_SUPERADMIN_NAME: 'Bootstrap',
+        BOOTSTRAP_SUPERADMIN_PASSWORD: 'Fixture-Dedicated-Pass@123',
+      },
+    });
+    const results = await Promise.allSettled([bootstrap(), bootstrap()]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(await prisma.user.count({ where: { roles: { has: Role.SUPERADMIN } } })).toBe(1);
+    expect(await prisma.user.findUnique({ where: { id: preserved.id } })).not.toBeNull();
   });
 
   it('Scenario 17 (PostgreSQL Schema CHECK Constraints & Triggers): Enforces bounds, race-safe active_classes_count trigger under concurrency, and blocks GuardianConsent mutations', async () => {

@@ -30,7 +30,7 @@ export class AutoGradingService {
 
   async gradeSubmission(
     submissionId: string,
-    actor?: AuthenticatedUser,
+    actor: AuthenticatedUser,
   ): Promise<AutoGradeSubmissionResultDto> {
     return this.prisma.$transaction(async (tx) => {
       await lockClassRowForSubmissionTx(tx, submissionId);
@@ -74,13 +74,11 @@ export class AutoGradingService {
       if (!submission) {
         throw new NotFoundException('Không tìm thấy bài nộp');
       }
-      if (actor) {
-        await this.accessPolicy.assertTeacherOrAdminCanAccessClass(
-          tx,
-          actor,
-          submission.classAssignment.classId,
-        );
-      }
+      await this.accessPolicy.assertTeacherOrAdminCanAccessClass(
+        tx,
+        actor,
+        submission.classAssignment.classId,
+      );
       if (NON_GRADABLE_SUBMISSION_STATUSES.has(submission.status)) {
         throw new BadRequestException('Chỉ có thể chấm tự động bài đã nộp hợp lệ');
       }

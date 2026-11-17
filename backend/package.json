@@ -24,6 +24,7 @@
     "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
     "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma",
     "seed": "node prisma/seed.mjs",
+    "bootstrap:superadmin": "node prisma/bootstrap-superadmin.mjs",
     "check:loc": "node ../scripts/check-loc.js",
     "test:mutation": "stryker run"
   },

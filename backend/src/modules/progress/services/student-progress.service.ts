@@ -170,7 +170,9 @@ export class StudentProgressService {
     const academicInputs: AcademicAssignmentInput[] = assignments.map((assignment) => {
       const subs = subsByAssignment.get(assignment.id) ?? [];
       const maxScore = sumQuestionMaxScore(assignment.assessment.questions);
-      const hasSubmission = subs.some((sub) => sub.status !== SubmissionStatus.SUPERSEDED);
+      const hasSubmission = subs.some(
+        (sub) => sub.status !== SubmissionStatus.SUPERSEDED && sub.submittedAt !== null,
+      );
       const isEligible = isAssignmentEligibleForAnyEnrollment(
         assignment,
         classIntervals,
@@ -180,7 +182,7 @@ export class StudentProgressService {
       const returned = subs.find(
         (sub) => sub.status === SubmissionStatus.RETURNED && sub.totalScore !== null,
       );
-      if (returned && returned.totalScore !== null) {
+      if (returned && returned.totalScore !== null && (isEligible || returned.submittedAt !== null)) {
         publishedResults.push(
           toPublishedResultItemDto(
             assignment,

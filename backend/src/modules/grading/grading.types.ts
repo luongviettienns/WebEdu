@@ -164,6 +164,7 @@ export interface GradingTrackerStudentRowDto {
 }
 
 export interface GradingTrackerAssignmentDto {
+  canMutate: boolean;
   id: string;
   assessmentId: string;
   assessmentTitle: string;

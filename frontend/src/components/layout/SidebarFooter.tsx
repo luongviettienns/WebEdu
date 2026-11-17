@@ -1,8 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import React, { useState } from 'react';
-import { logoutUser, type AuthUserDto } from '@/features/auth/api/auth.api';
+import React from 'react';
+import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { ROLE_LABELS, type Role } from '@/types/user';
 import { getUserInitials } from './nav-links';
 
@@ -10,26 +9,17 @@ interface SidebarFooterProps {
   user: AuthUserDto | null;
   activeRoleView?: Role;
   onSwitchRoleView?: (role: 'ADMIN' | 'TEACHER') => void;
+  onLogout: () => void;
+  loggingOut: boolean;
 }
 
 export function SidebarFooter({
   user,
   activeRoleView,
   onSwitchRoleView,
+  onLogout,
+  loggingOut,
 }: SidebarFooterProps) {
-  const router = useRouter();
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await logoutUser();
-    } finally {
-      router.replace('/login');
-    }
-  };
-
   const initials = getUserInitials(user?.fullName);
   const hasAdminTeacherSwitch = Boolean(
     user?.roles?.includes('ADMIN') &&
@@ -96,7 +86,7 @@ export function SidebarFooter({
           </div>
           <button
             type="button"
-            onClick={() => void handleLogout()}
+            onClick={onLogout}
             disabled={loggingOut}
             title="Đăng xuất"
             aria-label="Đăng xuất"

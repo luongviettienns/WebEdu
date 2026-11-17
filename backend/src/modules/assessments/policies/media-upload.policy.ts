@@ -1,4 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
+import { promisify } from 'node:util';
+import { inflateRaw } from 'node:zlib';
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
@@ -70,42 +72,55 @@ export function assertSafeUpload(buffer: Buffer, filename: string): { mime: stri
 const MAX_ZIP_UNCOMPRESSED = 80 * 1024 * 1024;
 const MAX_ZIP_ENTRY = 20 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 500;
+const inflateEntry = promisify(inflateRaw);
 
-/** Rejects zip-bombs / ZIP64 before mammoth inflates a .docx. */
-export function assertSafeDocxZip(buffer: Buffer): void {
-  if (buffer.length < 22) throw new BadRequestException('File Word không hợp lệ');
-  let eocd = -1;
-  const start = Math.max(0, buffer.length - 22 - 65535);
-  for (let i = buffer.length - 22; i >= start; i -= 1) {
-    if (buffer[i] === 0x50 && buffer[i + 1] === 0x4b && buffer[i + 2] === 0x05 && buffer[i + 3] === 0x06) {
-      eocd = i;
-      break;
-    }
-  }
-  if (eocd < 0) throw new BadRequestException('File Word không hợp lệ');
+export async function assertSafeDocxZip(buffer: Buffer): Promise<void> {
+  const invalid = () => new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+  // Match the extractor's last-signature lookup before trusting any directory.
+  const eocd = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0 || eocd > buffer.length - 22 ||
+      eocd + 22 + buffer.readUInt16LE(eocd + 20) !== buffer.length) throw invalid();
   const entries = buffer.readUInt16LE(eocd + 10);
   const cdSize = buffer.readUInt32LE(eocd + 12);
   const cdOffset = buffer.readUInt32LE(eocd + 16);
-  if (entries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
-    throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
-  }
-  if (entries > MAX_ZIP_ENTRIES) throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+  if (buffer.readUInt32LE(eocd + 4) !== 0 || buffer.readUInt16LE(eocd + 8) !== entries ||
+      entries === 0 || entries > MAX_ZIP_ENTRIES || cdOffset + cdSize !== eocd) throw invalid();
+  const files: Array<{ offset: number; start: number; end: number; method: number; size: number }> = [];
   let pos = cdOffset;
   let total = 0;
   for (let i = 0; i < entries; i += 1) {
-    if (pos + 46 > buffer.length || buffer.readUInt32LE(pos) !== 0x02014b50) {
-      throw new BadRequestException('File Word không hợp lệ');
-    }
+    if (pos + 46 > eocd || buffer.readUInt32LE(pos) !== 0x02014b50) throw invalid();
+    const flags = buffer.readUInt16LE(pos + 8);
+    const method = buffer.readUInt16LE(pos + 10);
+    const compressed = buffer.readUInt32LE(pos + 20);
     const uncompressed = buffer.readUInt32LE(pos + 24);
     const nameLen = buffer.readUInt16LE(pos + 28);
     const extraLen = buffer.readUInt16LE(pos + 30);
     const commentLen = buffer.readUInt16LE(pos + 32);
-    if (uncompressed === 0xffffffff || uncompressed > MAX_ZIP_ENTRY) {
-      throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
-    }
+    const offset = buffer.readUInt32LE(pos + 42);
+    if ((flags & 1) || (method !== 0 && method !== 8) || buffer.readUInt16LE(pos + 34) !== 0 ||
+        uncompressed > MAX_ZIP_ENTRY || offset + 30 > cdOffset ||
+        buffer.readUInt32LE(offset) !== 0x04034b50 ||
+        buffer.readUInt16LE(offset + 8) !== method) throw invalid();
+    const start = offset + 30 + buffer.readUInt16LE(offset + 26) + buffer.readUInt16LE(offset + 28);
+    const end = start + compressed;
+    if (end > cdOffset) throw invalid();
+    files.push({ offset, start, end, method, size: uncompressed });
     total += uncompressed;
-    if (total > MAX_ZIP_UNCOMPRESSED) throw new BadRequestException('File Word quá lớn hoặc không hợp lệ');
+    if (total > MAX_ZIP_UNCOMPRESSED) throw invalid();
     pos += 46 + nameLen + extraLen + commentLen;
+  }
+  if (pos !== eocd) throw invalid();
+  let previousEnd = 0;
+  for (const file of files.sort((a, b) => a.offset - b.offset)) {
+    if (file.offset < previousEnd) throw invalid();
+    previousEnd = file.end;
+    const bytes = buffer.subarray(file.start, file.end);
+    const actualSize = file.method === 0
+      ? bytes.length
+      : (await inflateEntry(bytes, { maxOutputLength: Math.max(1, file.size) })
+          .catch(() => { throw invalid(); })).length;
+    if (actualSize !== file.size) throw invalid();
   }
 }
 

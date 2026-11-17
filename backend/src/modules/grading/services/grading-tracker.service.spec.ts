@@ -27,6 +27,8 @@ function makeTeacher(id = 'teacher-1'): AuthenticatedUser {
 
 describe('GradingTrackerService (Slice 7.3)', () => {
   function setupTrackerMocks() {
+    const trackerRows = vi.fn<() => Promise<unknown[]>>(async () => []);
+    const expiredDrafts = vi.fn<() => Promise<unknown[]>>(async () => []);
     const prisma = {
       classAssignment: {
         findUnique: vi.fn(),
@@ -41,34 +43,45 @@ describe('GradingTrackerService (Slice 7.3)', () => {
           course: { name: 'HSK 1' },
         })),
       },
-      enrollment: { findMany: vi.fn() },
+      enrollment: { findMany: vi.fn<() => Promise<unknown[]>>() },
       submission: {
-        findMany: vi.fn(),
+        findMany: vi.fn<() => Promise<unknown[]>>(),
         createManyAndReturn: vi.fn(async () => [{ id: 'sub-zero-new', studentId: 'stu-not-started' }]),
+        update: vi.fn<() => Promise<unknown>>(async () => ({})),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
       submissionAnswer: {
+        findMany: vi.fn<() => Promise<unknown[]>>(async () => []),
+        upsert: vi.fn<() => Promise<unknown>>(async () => ({})),
         createMany: vi.fn(async () => ({ count: 3 })),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
       gradeAuditLog: { createMany: vi.fn(async () => ({ count: 2 })) },
       systemAuditLog: { create: vi.fn(async () => ({})) },
-      $queryRaw: vi.fn(async () => []),
+      $queryRaw: vi.fn(async (strings: TemplateStringsArray) => {
+        const sql = strings.join('');
+        if (sql.includes('WITH roster AS')) return trackerRows();
+        if (sql.includes('timer_accounted_at')) return expiredDrafts();
+        return [];
+      }),
       $transaction: vi.fn(),
     };
     prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
     const service = new GradingTrackerService(prisma as never, new AssignmentAccessPolicy());
-    return { prisma, service };
+    return { prisma, service, trackerRows, expiredDrafts };
   }
 
   it('builds grading tracker with summary counts, overdue detection, AI draft flag & status filtering', async () => {
-    const { prisma, service } = setupTrackerMocks();
+    const { prisma, service, trackerRows } = setupTrackerMocks();
     const pastDue = new Date(Date.now() - 86_400_000);
+    const assignedAt = new Date(pastDue.getTime() - 7 * 86_400_000);
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       assessmentId: 'asm-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: pastDue,
+      effectiveDurationMinutes: null,
       assessment: {
         title: 'Đề kiểm tra HSK 1',
         type: AssessmentType.MINI_TEST,
@@ -91,12 +104,26 @@ describe('GradingTrackerService (Slice 7.3)', () => {
           },
         ],
       },
-      class: { code: 'HSK1-K26-01', course: { name: 'HSK 1' } },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([
-      { studentId: 'stu-1', student: { id: 'stu-1', fullName: 'An', email: 'an@webedu.vn' } },
-      { studentId: 'stu-2', student: { id: 'stu-2', fullName: 'Bình', email: 'binh@webedu.vn' } },
-      { studentId: 'stu-3', student: { id: 'stu-3', fullName: 'Chi', email: 'chi@webedu.vn' } },
+    trackerRows.mockResolvedValueOnce([
+      {
+        totalStudents: 3,
+        notStartedCount: 1,
+        overdueNotSubmittedCount: 1,
+        inProgressCount: 0,
+        submittedWaitingCount: 1,
+        autoGradedPendingReviewCount: 0,
+        gradedConfirmedCount: 1,
+        returnedPublishedCount: 0,
+        readyToPublishCount: 1,
+        total: 3,
+        rows: [
+          { studentId: 'stu-1', fullName: 'An', email: 'an@webedu.vn', overdue: false },
+          { studentId: 'stu-2', fullName: 'Bình', email: 'binh@webedu.vn', overdue: false },
+          { studentId: 'stu-3', fullName: 'Chi', email: 'chi@webedu.vn', overdue: true },
+        ],
+      },
     ]);
     prisma.submission.findMany.mockResolvedValueOnce([
       {
@@ -189,12 +216,26 @@ describe('GradingTrackerService (Slice 7.3)', () => {
       id: 'assign-1',
       assessmentId: 'asm-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: pastDue,
+      effectiveDurationMinutes: null,
       assessment: { title: 'Đề', type: AssessmentType.MINI_TEST, questions: [] },
-      class: { code: 'HSK1-K26-01', course: { name: 'HSK 1' } },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([
-      { studentId: 'stu-3', student: { id: 'stu-3', fullName: 'Chi', email: 'chi@webedu.vn' } },
+    trackerRows.mockResolvedValueOnce([
+      {
+        totalStudents: 3,
+        notStartedCount: 1,
+        overdueNotSubmittedCount: 1,
+        inProgressCount: 0,
+        submittedWaitingCount: 1,
+        autoGradedPendingReviewCount: 0,
+        gradedConfirmedCount: 1,
+        returnedPublishedCount: 0,
+        readyToPublishCount: 1,
+        total: 1,
+        rows: [{ studentId: 'stu-3', fullName: 'Chi', email: 'chi@webedu.vn', overdue: true }],
+      },
     ]);
     prisma.submission.findMany.mockResolvedValueOnce([]);
 
@@ -214,108 +255,159 @@ describe('GradingTrackerService (Slice 7.3)', () => {
       id: 'assign-1',
       assessmentId: 'asm-1',
       classId: 'cls-1',
+      assignedAt: new Date(),
       dueAt: new Date(),
+      effectiveDurationMinutes: null,
       assessment: { title: 'Đề', type: AssessmentType.HOMEWORK, questions: [] },
-      class: { code: 'C1', course: { name: 'C' } },
+      class: { code: 'C1', status: 'ACTIVE', course: { name: 'C' } },
     });
     await expect(
       service.getAssignmentGradingTracker('assign-1', makeTeacher('other-teacher')),
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it('records explicit 0 points for overdue NOT_STARTED and IN_PROGRESS students and rejects invalid states', async () => {
-    const { prisma, service } = setupTrackerMocks();
+  it('auto-submits expired IN_PROGRESS drafts before overdue-zero, excludes late-enrolled students, and records 0 only for eligible NOT_STARTED students', async () => {
+    const { prisma, service, expiredDrafts } = setupTrackerMocks();
     const pastDue = new Date(Date.now() - 86_400_000);
+    const assignedAt = new Date(pastDue.getTime() - 7 * 86_400_000);
+    const enrolledBeforeDue = new Date(assignedAt.getTime() - 86_400_000);
+    const enrolledAfterDue = new Date(pastDue.getTime() + 86_400_000);
     const questions = [
-      { id: 'q-1', type: QuestionType.SINGLE_CHOICE, points: 2, payload: { options: [{ id: 'a' }], correctOptionIds: ['a'] } },
-      { id: 'q-2', type: QuestionType.ESSAY, points: 3, payload: {} },
+      { id: 'q-1', position: 1, prompt: 'Q1', type: QuestionType.SINGLE_CHOICE, points: 2, payload: { options: [{ id: 'a' }], correctOptionIds: ['a'] } },
+      { id: 'q-2', position: 2, prompt: 'Q2', type: QuestionType.ESSAY, points: 3, payload: {} },
     ];
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: pastDue,
-      assessment: { questions },
+      effectiveDurationMinutes: null,
+      assessment: { title: 'Đề', type: AssessmentType.MINI_TEST, questions },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([
-      { studentId: 'stu-not-started' },
-      { studentId: 'stu-in-progress' },
-      { studentId: 'stu-submitted' },
-    ]);
+    // submitExpiredDrafts finds sub-prog -> locks & auto-submits it with saved objective score = 2!
+    const draft = {
+      id: 'sub-prog', elapsedSeconds: 0, remainingSeconds: null, dueAtOverride: null,
+      timerAccountedAt: null, timerLeaseUntil: null, timerClientId: null,
+    };
+    expiredDrafts.mockResolvedValueOnce([draft]).mockResolvedValueOnce([draft]);
     prisma.submission.findMany.mockResolvedValueOnce([
-      { id: 'sub-prog', studentId: 'stu-in-progress', attemptNumber: 1, status: SubmissionStatus.IN_PROGRESS, dueAtOverride: null },
-      { id: 'sub-done', studentId: 'stu-submitted', attemptNumber: 1, status: SubmissionStatus.SUBMITTED_WAITING, dueAtOverride: null },
+      { studentId: 'stu-in-progress' }, { studentId: 'stu-submitted' },
+    ]);
+    prisma.submissionAnswer.findMany.mockResolvedValueOnce([
+      {
+        id: 'ans-prog-1',
+        questionId: 'q-1',
+        answerPayload: { selectedOptionIds: ['a'] },
+        isCorrect: null,
+        earnedPoints: null,
+        teacherEdited: false,
+      },
+    ]);
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { studentId: 'stu-not-started', enrolledDate: enrolledBeforeDue, leftDate: null },
+      { studentId: 'stu-in-progress', enrolledDate: enrolledBeforeDue, leftDate: null },
+      { studentId: 'stu-submitted', enrolledDate: enrolledBeforeDue, leftDate: null },
+      { studentId: 'stu-late-enrolled', enrolledDate: enrolledAfterDue, leftDate: null },
     ]);
 
     const res = await service.recordOverdueZero('assign-1', { reason: 'Quá hạn không nộp' }, makeTeacher());
-    expect(res.recordedCount).toBe(2);
-    expect(res.recordedStudentIds).toEqual(['stu-not-started', 'stu-in-progress']);
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    // Auto-submitted draft is NOT zeroed; late-enrolled student is excluded -> only stu-not-started receives 0!
+    expect(res.recordedCount).toBe(1);
+    expect(res.recordedStudentIds).toEqual(['stu-not-started']);
+    expect(prisma.submissionAnswer.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { submissionId_questionId: { submissionId: 'sub-prog', questionId: 'q-1' } },
+        update: { isCorrect: true, earnedPoints: 2 },
+      }),
+    );
+    expect(prisma.submission.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'sub-prog' },
+        data: expect.objectContaining({ status: SubmissionStatus.SUBMITTED_WAITING, autoSubmitted: true, autoScore: 2 }),
+      }),
+    );
     expect(prisma.submission.createManyAndReturn).toHaveBeenCalledTimes(1);
-    expect(prisma.submission.updateMany).toHaveBeenCalledTimes(1);
-    expect(prisma.submissionAnswer.updateMany).toHaveBeenCalledExactlyOnceWith({
-      where: { submissionId: { in: ['sub-zero-new', 'sub-prog'] }, questionId: { in: ['q-1', 'q-2'] } },
-      data: { earnedPoints: 0, isCorrect: null, aiSuggestedPoints: null, aiFeedback: null, teacherEdited: true },
-    });
     expect(prisma.submissionAnswer.createMany).toHaveBeenCalledExactlyOnceWith({
-      data: ['sub-zero-new', 'sub-prog'].flatMap((submissionId) =>
-        ['q-1', 'q-2'].map((questionId) => expect.objectContaining({
-          submissionId, questionId, answerPayload: {}, earnedPoints: 0,
-        })),
+      data: ['q-1', 'q-2'].map((questionId) =>
+        expect.objectContaining({
+          submissionId: 'sub-zero-new',
+          questionId,
+          answerPayload: {},
+          earnedPoints: 0,
+        }),
       ),
       skipDuplicates: true,
     });
     expect(prisma.gradeAuditLog.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.systemAuditLog.create).toHaveBeenCalledTimes(1);
 
-    // Reject already submitted student (409)
+    // Reject already submitted student (409) & late-enrolled student (400)
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: pastDue,
-      assessment: { questions },
+      effectiveDurationMinutes: null,
+      assessment: { title: 'Đề', type: AssessmentType.MINI_TEST, questions },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-submitted' }]);
-    prisma.submission.findMany.mockResolvedValueOnce([
-      { id: 'sub-done', studentId: 'stu-submitted', attemptNumber: 1, status: SubmissionStatus.SUBMITTED_WAITING, dueAtOverride: null },
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { studentId: 'stu-submitted', enrolledDate: enrolledBeforeDue, leftDate: null },
+      { studentId: 'stu-late-enrolled', enrolledDate: enrolledAfterDue, leftDate: null },
     ]);
+    prisma.submission.findMany.mockResolvedValueOnce([{ studentId: 'stu-submitted' }]);
     await expect(
       service.recordOverdueZero('assign-1', { studentIds: ['stu-submitted'] }, makeTeacher()),
     ).rejects.toThrow(ConflictException);
+
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      id: 'assign-1',
+      classId: 'cls-1',
+      assignedAt,
+      dueAt: pastDue,
+      effectiveDurationMinutes: null,
+      assessment: { title: 'Đề', type: AssessmentType.MINI_TEST, questions },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
+    });
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { studentId: 'stu-late-enrolled', enrolledDate: enrolledAfterDue, leftDate: null },
+    ]);
+    prisma.submission.findMany.mockResolvedValueOnce([]);
+    await expect(
+      service.recordOverdueZero('assign-1', { studentIds: ['stu-late-enrolled'] }, makeTeacher()),
+    ).rejects.toThrow(BadRequestException);
 
     // Reject future due date (400)
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: new Date(Date.now() + 86_400_000),
-      assessment: { questions },
+      effectiveDurationMinutes: null,
+      assessment: { title: 'Đề', type: AssessmentType.MINI_TEST, questions },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-future' }]);
-    prisma.submission.findMany.mockResolvedValueOnce([]);
-    await expect(
-      service.recordOverdueZero('assign-1', {}, makeTeacher()),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.recordOverdueZero('assign-1', {}, makeTeacher())).rejects.toThrow(
+      BadRequestException,
+    );
 
-    // Issue #5: reject IN_PROGRESS submission still inside 60s submit grace period
+    // Reject IN_PROGRESS submission still inside 60s submit grace period with Conflict (never zeroes in-flight draft)
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: new Date(Date.now() - 20_000),
-      assessment: { questions },
+      effectiveDurationMinutes: null,
+      assessment: { title: 'Đề', type: AssessmentType.MINI_TEST, questions },
+      class: { code: 'HSK1-K26-01', status: 'ACTIVE', course: { name: 'HSK 1' } },
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-in-grace' }]);
-    prisma.submission.findMany.mockResolvedValueOnce([
-      {
-        id: 'sub-grace',
-        studentId: 'stu-in-grace',
-        status: SubmissionStatus.IN_PROGRESS,
-        attemptNumber: 1,
-        dueAtOverride: null,
-        remainingSeconds: 60,
-        startedAt: new Date(Date.now() - 60_000),
-      },
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { studentId: 'stu-in-grace', enrolledDate: enrolledBeforeDue, leftDate: null },
     ]);
+    prisma.submission.findMany.mockResolvedValueOnce([{ studentId: 'stu-in-grace' }]);
     await expect(
       service.recordOverdueZero('assign-1', { studentIds: ['stu-in-grace'] }, makeTeacher()),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow(ConflictException);
   });
 });

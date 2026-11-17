@@ -223,7 +223,7 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
         ),
       ).rejects.toThrowError(new BadRequestException('Lớp học không thuộc khóa học của đề này'));
 
-      // COMPLETED or ARCHIVED class -> 400
+      // COMPLETED or ARCHIVED class -> 403
       prisma.tx.class.findUnique.mockResolvedValueOnce({
         id: 'cls-done',
         code: 'HSK1-DONE',
@@ -235,7 +235,7 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
       await expect(
         service.assignToClasses('asm-1', { classIds: ['cls-done'], dueAt: futureIso() }, teacher),
       ).rejects.toThrowError(
-        new BadRequestException('Không thể giao bài cho lớp đã kết thúc hoặc lưu trữ'),
+        new ForbiddenException('Lớp đã kết thúc hoặc lưu trữ, chỉ có thể xem bài tập'),
       );
 
       // Cancelled session -> 400

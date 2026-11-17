@@ -121,6 +121,7 @@ export interface StudentExamSessionDto {
     startedAt: string;
     lastSavedAt: string;
     lastSyncedAt: string;
+    revision: number;
     elapsedSeconds: number;
     remainingSeconds: number | null;
     submittedAt: string | null;

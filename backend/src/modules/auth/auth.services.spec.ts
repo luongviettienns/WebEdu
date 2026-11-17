@@ -78,6 +78,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
     {
       id: string;
       email: string;
+      scope: string;
       codeHash: string;
       expiresAt: Date;
       attempts: number;
@@ -181,6 +182,15 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           return record;
         },
       ),
+      updateMany: vi.fn(async ({ where, data }: {
+        where: { id: string; tokenVersion: number };
+        data: { tokenVersion: { increment: number } };
+      }) => {
+        const record = usersStore.get(where.id);
+        if (!record || record.tokenVersion !== where.tokenVersion) return { count: 0 };
+        record.tokenVersion += data.tokenVersion.increment;
+        return { count: 1 };
+      }),
     };
 
     const studentProfileDelegate = {
@@ -305,6 +315,7 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         const rec = {
           id,
           email: data.email as string,
+          scope: (data.scope as string | undefined) ?? 'registration',
           codeHash: data.codeHash as string,
           expiresAt: data.expiresAt as Date,
           attempts: (data.attempts as number) ?? 0,
@@ -456,18 +467,14 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
           const inputHash = String(values[0]);
           const now = values[1] as Date;
           const email = String(values[2]);
+          const scope = String(values[3]);
           const maxAttempts = Number(values[4] ?? 5);
           const candidates = Array.from(emailVerificationsStore.values())
             .reverse()
-            .filter(
-              (v) =>
-                v.email === email &&
-                v.verifiedAt === null &&
-                v.expiresAt.getTime() > now.getTime(),
-            )
+            .filter((v) => v.email === email && v.scope === scope)
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
           const latest = candidates[0];
-          if (!latest || latest.attempts >= maxAttempts) {
+          if (!latest || latest.verifiedAt || latest.expiresAt <= now || latest.attempts >= maxAttempts) {
             return [];
           }
           latest.attempts += 1;
@@ -1151,8 +1158,11 @@ describe('Auth Services (FUNC-001..005 — Hardened Lockout & Mail Abstraction)'
         'Tài khoản không tồn tại',
       );
 
-      const logoutRes = await service.logout(reg.user.id);
+      const logoutRes = await service.logout(reg.user.id, 0);
       expect(logoutRes.message).toBe('Đăng xuất thành công');
+      expect(usersStore.get(reg.user.id)?.tokenVersion).toBe(1);
+
+      await expect(service.logout(reg.user.id, 0)).resolves.toEqual(logoutRes);
       expect(usersStore.get(reg.user.id)?.tokenVersion).toBe(1);
     });
 

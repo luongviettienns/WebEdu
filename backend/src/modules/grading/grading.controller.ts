@@ -9,12 +9,14 @@ import {
   Patch,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { ProtectedJsonBodyInterceptor } from '../../common/http/protected-json-body.interceptor.js';
 import {
   AdjustGradeSubmissionDto,
   AiGradeSubmissionDto,
@@ -95,6 +97,7 @@ export class GradingController {
   @Post('assignments/:assignmentId/ai-grade')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.TEACHER, Role.ADMIN)
+  @UseInterceptors(ProtectedJsonBodyInterceptor)
   @ApiOperation({ summary: 'Gọi AI gợi ý chấm nháp hàng loạt cho bài nộp của bài giao (Zero-PII)' })
   suggestAssignmentEssayGradesBatch(
     @CurrentUser() actor: AuthenticatedUser,
@@ -138,6 +141,7 @@ export class GradingController {
   @Post('submissions/:submissionId/ai-grade')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.TEACHER, Role.ADMIN)
+  @UseInterceptors(ProtectedJsonBodyInterceptor)
   @ApiOperation({ summary: 'Gọi AI gợi ý chấm nháp câu tự luận theo yêu cầu (Zero-PII)' })
   suggestEssayGrades(
     @CurrentUser() actor: AuthenticatedUser,

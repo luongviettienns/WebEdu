@@ -189,20 +189,24 @@ export function toClassDetailDto(
       ? 'READ_ONLY'
       : 'FULL');
 
-  const enrollments: ClassEnrollmentItemDto[] = entity.enrollments.map((e) => ({
-    id: e.id,
-    studentId: e.studentId,
-    studentFullName: e.student.fullName,
-    studentEmail: e.student.email,
-    studentPhone: e.student.phone,
-    status: e.status,
-    enrolledDate: formatIsoDateUtc(e.enrolledDate),
-    leftDate: e.leftDate ? formatIsoDateUtc(e.leftDate) : null,
-    reason: e.reason ?? null,
-    ...(extras?.absencesByStudentId && {
-      absencesCount: extras.absencesByStudentId.get(e.studentId) ?? 0,
-    }),
-  }));
+  const enrollments: ClassEnrollmentItemDto[] = entity.enrollments.map((e) => {
+    const historicalOnly = viewer.effectiveRole === 'TEACHER' &&
+      (e.status === EnrollmentStatus.TRANSFERRED || e.status === EnrollmentStatus.DROPPED);
+    return {
+      id: e.id,
+      studentId: e.studentId,
+      studentFullName: e.student.fullName,
+      studentEmail: historicalOnly ? null : e.student.email,
+      studentPhone: historicalOnly ? null : e.student.phone,
+      status: e.status,
+      enrolledDate: formatIsoDateUtc(e.enrolledDate),
+      leftDate: e.leftDate ? formatIsoDateUtc(e.leftDate) : null,
+      reason: historicalOnly ? null : e.reason ?? null,
+      ...(historicalOnly ? { absencesCount: null } : extras?.absencesByStudentId && {
+        absencesCount: extras.absencesByStudentId.get(e.studentId) ?? 0,
+      }),
+    };
+  });
 
   const teacherHistory: ClassTeacherHistoryItemDto[] = entity.teacherHistory.map((h) => ({
     id: h.id,

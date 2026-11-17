@@ -9,7 +9,6 @@ import {
   sumQuestionMaxScore,
 } from './answer-normalizer.policy.js';
 import {
-  AutoGradingPolicy,
   evaluateQuestionAnswer,
   summarizeSubmissionAutoGrade,
 } from './auto-grading.policy.js';
@@ -64,8 +63,6 @@ describe('answer-normalizer.policy & auto-grading.policy (Slice 7.1 — DEC-037)
   });
 
   describe('evaluateQuestionAnswer across all QuestionTypes', () => {
-    const policy = new AutoGradingPolicy();
-
     it('grades SINGLE_CHOICE accurately', () => {
       const q = {
         id: 'q-sc',
@@ -79,7 +76,7 @@ describe('answer-normalizer.policy & auto-grading.policy (Slice 7.1 — DEC-037)
           correctOptionIds: ['a'],
         },
       };
-      expect(policy.evaluateQuestion(q, { selectedOptionIds: ['a'] })).toEqual({
+      expect(evaluateQuestionAnswer(q, { selectedOptionIds: ['a'] })).toEqual({
         questionId: 'q-sc',
         isObjective: true,
         isCorrect: true,

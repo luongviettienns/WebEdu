@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { ClassAssignmentsTab } from '@/features/assignments/components/ClassAssignmentsTab';
 import { ClassAttendanceMatrixTab } from '@/features/attendance/components/ClassAttendanceMatrixTab';
 import {
@@ -23,6 +23,14 @@ import { ConfirmDialog } from '@/features/common/components/ConfirmDialog';
 import { ClassProgressResultsTab } from '@/features/progress/components/ClassProgressResultsTab';
 import { notifyPendingEnrollmentUpdated } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage } from '@/lib/api-client';
+
+const CLASS_TABS = [
+  ['info', 'Thông tin & Học viên'],
+  ['sessions', 'Lịch học'],
+  ['attendance', 'Điểm danh'],
+  ['assignments', 'Bài tập & Kiểm tra'],
+  ['progress', 'Tiến độ & Kết quả'],
+] as const;
 
 export interface ClassDetailViewProps {
   detail: ClassDetail;
@@ -59,11 +67,56 @@ export function ClassDetailView({
   const [editWarning, setEditWarning] = useState('');
   const [transferTarget, setTransferTarget] = useState<ClassEnrollmentItem | null>(null);
   const [dropTarget, setDropTarget] = useState<ClassEnrollmentItem | null>(null);
-  const [activeTab, setActiveTab] = useState<'info' | 'sessions' | 'attendance' | 'assignments' | 'progress'>('info');
+  const [activeTab, setActiveTab] = useState<(typeof CLASS_TABS)[number][0]>('info');
+  const tabsId = useId();
   const activeScheduleWarning = detail.scheduleConflictWarning || editWarning;
   const canMarkAttendance =
     permissions.assignedRoles.includes('ADMIN') ||
     (!permissions.isReadOnly && permissions.effectiveRole === 'TEACHER');
+
+  const panels = {
+    info: (
+      <>
+        <ClassSummary detail={detail} />
+
+        <ClassStudentsTable
+          detail={detail}
+          includeInactive={includeInactiveEnrollments}
+          onToggleIncludeInactive={onToggleIncludeInactive}
+          canManageEnrollments={permissions.canManageEnrollments}
+          onTransfer={setTransferTarget}
+          onDrop={setDropTarget}
+        />
+
+        <ClassTeacherHistory detail={detail} />
+      </>
+    ),
+    sessions: (
+      <ClassSessionsTab
+        detail={detail}
+        canMutateSchedule={permissions.canEditClass}
+        canViewChangeLogs={
+          permissions.assignedRoles.includes('ADMIN') ||
+          permissions.assignedRoles.includes('SUPERADMIN')
+        }
+        onClassChanged={(msg) => onRefresh(msg)}
+      />
+    ),
+    attendance: (
+      <ClassAttendanceMatrixTab classId={detail.id} canMarkAttendance={canMarkAttendance} />
+    ),
+    assignments: (
+      <ClassAssignmentsTab
+        classId={detail.id}
+        classCode={detail.code}
+        courseId={detail.courseId}
+        courseName={detail.course.name}
+        classStatus={detail.status}
+        canAssign={canMarkAttendance}
+      />
+    ),
+    progress: <ClassProgressResultsTab classId={detail.id} />,
+  };
 
   return (
     <div className="space-y-6">
@@ -92,21 +145,31 @@ export function ClassDetailView({
         aria-label="Phân mục lớp học"
         className="flex flex-wrap gap-1 border-b border-[var(--line)]"
       >
-        {(
-          [
-            ['info', 'Thông tin & Học viên'],
-            ['sessions', 'Lịch học'],
-            ['attendance', 'Điểm danh'],
-            ['assignments', 'Bài tập & Kiểm tra'],
-            ['progress', 'Tiến độ & Kết quả'],
-          ] as const
-        ).map(([key, label]) => (
+        {CLASS_TABS.map(([key, label], index) => (
           <button
             key={key}
+            id={`${tabsId}-${key}-tab`}
             type="button"
             role="tab"
+            aria-controls={`${tabsId}-${key}-panel`}
             aria-selected={activeTab === key}
+            tabIndex={activeTab === key ? 0 : -1}
             onClick={() => setActiveTab(key)}
+            onKeyDown={(event) => {
+              const last = CLASS_TABS.length - 1;
+              let next: number;
+              switch (event.key) {
+                case 'ArrowRight': next = index === last ? 0 : index + 1; break;
+                case 'ArrowLeft': next = index === 0 ? last : index - 1; break;
+                case 'Home': next = 0; break;
+                case 'End': next = last; break;
+                default: return;
+              }
+              event.preventDefault();
+              const [nextTab] = CLASS_TABS[next]!;
+              setActiveTab(nextTab);
+              document.getElementById(`${tabsId}-${nextTab}-tab`)?.focus();
+            }}
             className={`border-b-2 px-4 py-2.5 text-xs font-semibold transition-colors ${
               activeTab === key
                 ? 'border-[var(--red)] text-[var(--red)]'
@@ -118,51 +181,19 @@ export function ClassDetailView({
         ))}
       </div>
 
-      {activeTab === 'info' ? (
-        <>
-          <ClassSummary detail={detail} />
-
-          <ClassStudentsTable
-            detail={detail}
-            includeInactive={includeInactiveEnrollments}
-            onToggleIncludeInactive={onToggleIncludeInactive}
-            canManageEnrollments={permissions.canManageEnrollments}
-            onTransfer={setTransferTarget}
-            onDrop={setDropTarget}
-          />
-
-          <ClassTeacherHistory detail={detail} />
-        </>
-      ) : null}
-
-      {activeTab === 'sessions' ? (
-        <ClassSessionsTab
-          detail={detail}
-          canMutateSchedule={permissions.canEditClass}
-          canViewChangeLogs={
-            permissions.assignedRoles.includes('ADMIN') ||
-            permissions.assignedRoles.includes('SUPERADMIN')
-          }
-          onClassChanged={(msg) => onRefresh(msg)}
-        />
-      ) : null}
-
-      {activeTab === 'attendance' ? (
-        <ClassAttendanceMatrixTab classId={detail.id} canMarkAttendance={canMarkAttendance} />
-      ) : null}
-
-      {activeTab === 'assignments' ? (
-        <ClassAssignmentsTab
-          classId={detail.id}
-          classCode={detail.code}
-          courseId={detail.courseId}
-          courseName={detail.course.name}
-          classStatus={detail.status}
-          canAssign={canMarkAttendance}
-        />
-      ) : null}
-
-      {activeTab === 'progress' ? <ClassProgressResultsTab classId={detail.id} /> : null}
+      {CLASS_TABS.map(([key]) => (
+        <div
+          key={key}
+          id={`${tabsId}-${key}-panel`}
+          role="tabpanel"
+          aria-labelledby={`${tabsId}-${key}-tab`}
+          hidden={key !== activeTab}
+          tabIndex={0}
+          className="space-y-6"
+        >
+          {key === activeTab && panels[key]}
+        </div>
+      ))}
 
       {permissions.canEditClass ? (
         <ClassFormModal

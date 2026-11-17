@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
+import { assertSafeDocxZip } from '../policies/media-upload.policy.js';
 import {
   cloneAssessmentFiles,
   copyStoredFile,
@@ -153,6 +154,17 @@ function buildMinimalZip(entries: Array<{ name: string; data: Buffer }>): Buffer
 
   return Buffer.concat([...localParts, centralDir, eocd]);
 }
+
+it('limits DOCX decompression to the verified entry size before extraction', async () => {
+  const zip = buildMinimalZip([{ name: 'word/document.xml', data: Buffer.alloc(128 * 1024, 97) }]);
+  await expect(assertSafeDocxZip(zip)).resolves.toBeUndefined();
+  const ambiguousDirectory = Buffer.concat([zip, Buffer.from([0x50, 0x4b, 0x05, 0x06])]);
+  ambiguousDirectory.writeUInt16LE(4, zip.length - 2);
+  await expect(assertSafeDocxZip(ambiguousDirectory)).rejects.toThrow(BadRequestException);
+  const centralOffset = zip.readUInt32LE(zip.length - 6);
+  zip.writeUInt32LE(1, centralOffset + 24);
+  await expect(assertSafeDocxZip(zip)).rejects.toThrow(BadRequestException);
+});
 
 function buildDocxWithImage(imageBytes: Buffer): Buffer {
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

@@ -1,4 +1,3 @@
-import { Injectable } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
 import { isMultipleChoiceOptionPayload } from '../../assignments/policies/submission-payload.util.js';
 import type {
@@ -203,21 +202,4 @@ function gradeHybridMediaQuestion(
   }
 
   return { questionId, isObjective: false, isCorrect: null, earnedPoints: null };
-}
-
-@Injectable()
-export class AutoGradingPolicy {
-  evaluateQuestion(
-    question: Pick<QuestionForGrading, 'id' | 'type' | 'points' | 'payload'>,
-    answerPayload: unknown,
-  ): EvaluatedQuestionGrade {
-    return evaluateQuestionAnswer(question, answerPayload);
-  }
-
-  summarizeSubmission(
-    questions: ReadonlyArray<Pick<QuestionForGrading, 'id' | 'type' | 'points' | 'payload'>>,
-    answerMap: ReadonlyMap<string, unknown>,
-  ): SubmissionAutoGradeSummary {
-    return summarizeSubmissionAutoGrade(questions, answerMap);
-  }
 }

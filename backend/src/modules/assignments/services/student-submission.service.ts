@@ -5,7 +5,8 @@ import {
   NotFoundException,
   StreamableFile,
 } from '@nestjs/common';
-import { EnrollmentStatus, SubmissionStatus } from '@prisma/client';
+import { ClassStatus, EnrollmentStatus, SubmissionStatus } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
@@ -20,7 +21,7 @@ import {
   resolveEffectiveDueAt,
   toStudentAssignmentListItemDto,
 } from '../mappers/assignment.mapper.js';
-import { AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
+import { assertAssignmentClassOpen, AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import {
   SUBMIT_GRACE_MS,
@@ -33,9 +34,10 @@ import {
   loadAssignmentForMediaStream,
   loadAssignmentForSession,
   lockAndFindActiveSubmission,
+  lockStudentAssignment,
   recordListeningStreamQuota,
-  recoverSessionAfterUniqueConflict,
 } from './submission-session.util.js';
+import { tickSubmissionTimer } from './submission-timer.util.js';
 
 @Injectable()
 export class StudentSubmissionService {
@@ -66,7 +68,7 @@ export class StudentSubmissionService {
         assessment: {
           select: { title: true, type: true, questions: { select: { points: true } } },
         },
-        class: { select: { code: true, course: { select: { name: true } } } },
+        class: { select: { code: true, status: true, course: { select: { name: true } } } },
       },
     });
     if (assignments.length === 0) return { items: [] };
@@ -82,64 +84,69 @@ export class StudentSubmissionService {
 
     const subMap = new Map(activeSubmissions.map((s) => [s.classAssignmentId, s]));
     const now = new Date();
-    return {
-      items: assignments.map((assignment) => {
-        const sub = subMap.get(assignment.id) ?? null;
-        return toStudentAssignmentListItemDto(
-          assignment,
-          sub,
-          sub ? countNonEmptyAnswers(sub.answers) : 0,
-          now,
-        );
-      }),
-    };
+    const items: StudentAssignmentListItemDto[] = [];
+    for (const assignment of assignments) {
+      let sub = subMap.get(assignment.id) ?? null;
+      if (sub?.status === SubmissionStatus.IN_PROGRESS &&
+          isDraftExpired(assignment, sub, now)) {
+        sub = await this.finalizeExpiredReadDraft(assignment.id, actor.id, now);
+      }
+      items.push(toStudentAssignmentListItemDto(
+        assignment, sub, sub ? countNonEmptyAnswers(sub.answers) : 0, now,
+      ));
+    }
+    return { items };
   }
 
   async startOrResume(
     assignmentId: string,
     actor: AuthenticatedUser,
+    timerClientId?: string,
   ): Promise<StudentExamSessionDto> {
-    const assignment = await loadAssignmentForSession(this.prisma, assignmentId);
-    await this.accessPolicy.assertStudentEnrolledInClass(this.prisma, actor.id, assignment.classId);
-
-    try {
-      return await this.prisma.$transaction(async (tx) => {
-        let submission = await lockAndFindActiveSubmission(tx, assignmentId, actor.id);
-        const now = new Date();
-
-        if (!submission) {
-          if (isExpired(now, assignment.dueAt, null, 0)) {
-            throw new BadRequestException('Đã quá hạn nộp bài');
-          }
-          submission = await createInitialSubmission(tx, assignment, actor.id, now);
-        } else if (submission.status !== SubmissionStatus.IN_PROGRESS) {
-          throw new ConflictException('Bài tập đã được nộp');
-        } else {
-          const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
-          if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
-            submission = await autoSubmitExpiredSubmission(tx, assignment, submission.id, now);
-          }
+    const start = () => this.prisma.$transaction(async (tx) => {
+      const assignment = await this.loadOpenAssignmentForStudent(tx, assignmentId, actor.id);
+      let submission = await lockAndFindActiveSubmission(tx, assignmentId, actor.id);
+      const now = new Date();
+      if (!submission) {
+        if (isExpired(now, assignment.dueAt, null, 0)) {
+          throw new BadRequestException('Đã quá hạn nộp bài');
         }
-
-        return buildStudentExamSessionDto(
-          this.answerPolicy,
-          assignment,
-          submission,
-          now,
-          actor.id,
-        );
-      });
-    } catch (err) {
-      if (isPrismaUniqueError(err)) {
-        return recoverSessionAfterUniqueConflict(
-          this.prisma,
-          this.answerPolicy,
-          assignment,
-          actor.id,
-        );
+        submission = await createInitialSubmission(tx, assignment, actor.id, now);
+      } else if (submission.status !== SubmissionStatus.IN_PROGRESS) {
+        throw new ConflictException('Bài tập đã được nộp');
       }
+      return applySubmissionTickAndPersist(
+        tx, this.answerPolicy, assignment, submission, actor.id, now,
+        { forceSubmit: false, timerClientId: timerClientId ?? submission.id },
+      );
+    });
+    try {
+      return await start();
+    } catch (err) {
+      if (isPrismaUniqueError(err)) return start();
       throw err;
     }
+  }
+
+  private async loadOpenAssignmentForStudent(tx: Prisma.TransactionClient, assignmentId: string, studentId: string) {
+    await lockStudentAssignment(tx, assignmentId);
+    const assignment = await loadAssignmentForSession(tx, assignmentId);
+    await this.accessPolicy.assertStudentEnrolledInClass(tx, studentId, assignment.classId);
+    assertAssignmentClassOpen(assignment.class.status);
+    return assignment;
+  }
+
+  private async finalizeExpiredReadDraft(assignmentId: string, studentId: string, now: Date) {
+    return this.prisma.$transaction(async (tx) => {
+      await lockStudentAssignment(tx, assignmentId);
+      const assignment = await loadAssignmentForSession(tx, assignmentId);
+      await this.accessPolicy.assertStudentEnrolledInClass(tx, studentId, assignment.classId);
+      const submission = await lockAndFindActiveSubmission(tx, assignmentId, studentId);
+      if (submission?.status !== SubmissionStatus.IN_PROGRESS ||
+          !isDraftExpired(assignment, submission, now)) return submission;
+      const timer = tickSubmissionTimer(submission, assignment.effectiveDurationMinutes, now);
+      return autoSubmitExpiredSubmission(tx, assignment, submission.id, now, timer);
+    });
   }
 
   async autosave(
@@ -148,17 +155,15 @@ export class StudentSubmissionService {
     actor: AuthenticatedUser,
   ): Promise<StudentExamSessionDto> {
     await assertRateLimitNotExceeded(this.prisma, {
-      key: `autosave:${assignmentId}:${actor.id}`,
+      key: `${dto.answers.length ? 'autosave' : 'exam-timer'}:${assignmentId}:${actor.id}`,
       maxPoints: 30,
       windowMs: 60_000,
       blockDurationMs: 60_000,
       errorMessage: 'Thao tác lưu nháp quá nhanh. Vui lòng thử lại sau ít giây',
     });
 
-    const assignment = await loadAssignmentForSession(this.prisma, assignmentId);
-    await this.accessPolicy.assertStudentEnrolledInClass(this.prisma, actor.id, assignment.classId);
-
     return this.prisma.$transaction(async (tx) => {
+      const assignment = await this.loadOpenAssignmentForStudent(tx, assignmentId, actor.id);
       const submission = await lockAndFindActiveSubmission(tx, assignmentId, actor.id);
       if (!submission) {
         throw new NotFoundException('Chưa bắt đầu làm bài');
@@ -179,8 +184,9 @@ export class StudentSubmissionService {
         new Date(),
         {
           answers: dto.answers,
-          elapsedSeconds: dto.elapsedSeconds,
-          remainingSeconds: dto.remainingSeconds,
+          revision: dto.revision,
+          timerClientId: dto.timerClientId,
+          pauseTimer: dto.pauseTimer,
           forceSubmit: false,
         },
       );
@@ -200,10 +206,8 @@ export class StudentSubmissionService {
       errorMessage: 'Quá nhiều yêu cầu nộp bài. Vui lòng thử lại sau ít giây',
     });
 
-    const assignment = await loadAssignmentForSession(this.prisma, assignmentId);
-    await this.accessPolicy.assertStudentEnrolledInClass(this.prisma, actor.id, assignment.classId);
-
     return this.prisma.$transaction(async (tx) => {
+      const assignment = await this.loadOpenAssignmentForStudent(tx, assignmentId, actor.id);
       const submission = await lockAndFindActiveSubmission(tx, assignmentId, actor.id);
       if (!submission) {
         throw new NotFoundException('Chưa bắt đầu làm bài');
@@ -230,10 +234,8 @@ export class StudentSubmissionService {
         now,
         {
           answers: dto.answers,
-          elapsedSeconds: dto.elapsedSeconds,
-          remainingSeconds: dto.remainingSeconds,
+          revision: dto.revision,
           forceSubmit: true,
-          clientAutoSubmitted: dto.autoSubmitted,
         },
       );
     });
@@ -246,7 +248,7 @@ export class StudentSubmissionService {
     const assignment = await loadAssignmentForSession(this.prisma, assignmentId);
     await this.accessPolicy.assertStudentEnrolledInClass(this.prisma, actor.id, assignment.classId);
 
-    const submission = await this.prisma.submission.findFirst({
+    let submission = await this.prisma.submission.findFirst({
       where: {
         classAssignmentId: assignmentId,
         studentId: actor.id,
@@ -256,6 +258,10 @@ export class StudentSubmissionService {
       include: { answers: { orderBy: { updatedAt: 'asc' } } },
     });
 
+    const now = new Date();
+    if (submission?.status === SubmissionStatus.IN_PROGRESS && isDraftExpired(assignment, submission, now)) {
+      submission = await this.finalizeExpiredReadDraft(assignmentId, actor.id, now);
+    }
     if (!submission || submission.status === SubmissionStatus.IN_PROGRESS) {
       throw new BadRequestException('Bài tập chưa được nộp');
     }
@@ -264,7 +270,7 @@ export class StudentSubmissionService {
       this.answerPolicy,
       assignment,
       submission,
-      new Date(),
+      now,
       actor.id,
     );
   }
@@ -299,4 +305,16 @@ export class StudentSubmissionService {
       asset.mime,
     );
   }
+}
+
+function isDraftExpired(
+  assignment: { class: { status: ClassStatus }; effectiveDurationMinutes: number | null; dueAt: Date },
+  submission: Parameters<typeof tickSubmissionTimer>[0] & { dueAtOverride?: Date | null },
+  now: Date,
+): boolean {
+  if (assignment.class.status === ClassStatus.COMPLETED || assignment.class.status === ClassStatus.ARCHIVED) {
+    return false;
+  }
+  const { remainingSeconds } = tickSubmissionTimer(submission, assignment.effectiveDurationMinutes, now);
+  return isExpired(now, resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride), remainingSeconds);
 }

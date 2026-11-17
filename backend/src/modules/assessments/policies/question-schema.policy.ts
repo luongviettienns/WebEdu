@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { QuestionType } from '@prisma/client';
 import { isMultipleChoiceOptionPayload } from '../../assignments/policies/submission-payload.util.js';
+import { canBuildNormalizedOrdering } from '../../grading/policies/answer-normalizer.policy.js';
 
 type Option = { id: string; text: string; imageMediaId?: string };
 
@@ -40,11 +41,15 @@ export class QuestionSchemaPolicy {
       }
       case QuestionType.ORDERING: {
         const tokens = Array.isArray(p.tokens)
-          ? (p.tokens as unknown[]).filter((t) => typeof t === 'string' && t.trim())
+          ? (p.tokens as unknown[]).filter((t): t is string => typeof t === 'string' && !!t.trim())
           : [];
         if (tokens.length < 2) throw new BadRequestException('Câu sắp xếp cần ít nhất 2 mảnh từ');
         if (typeof p.correctSentence !== 'string' || !p.correctSentence.trim()) {
           throw new BadRequestException('Câu sắp xếp cần nhập câu đáp án đúng');
+        }
+        const preserveCase = p.caseSensitive === true || p.pinyinSensitive === true;
+        if (!canBuildNormalizedOrdering(tokens, p.correctSentence, { preserveCase })) {
+          throw new BadRequestException('Câu đúng phải ghép được từ tất cả mảnh từ. Hãy nhập các mảnh theo thứ tự đáp án nếu cần');
         }
         return;
       }

@@ -160,7 +160,9 @@ export class ClassProgressService {
       const academicInputs: AcademicAssignmentInput[] = assignmentMeta.map((assignment) => {
         const subs =
           submissionsByStudentAssignment.get(`${primary.studentId}:${assignment.id}`) ?? [];
-        const hasSubmission = subs.some((sub) => sub.status !== SubmissionStatus.SUPERSEDED);
+        const hasSubmission = subs.some(
+          (sub) => sub.status !== SubmissionStatus.SUPERSEDED && sub.submittedAt !== null,
+        );
         return {
           id: assignment.id,
           type: assignment.type,

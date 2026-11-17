@@ -29,10 +29,6 @@ export function hashPassword(plainText: string): Promise<string> {
   return bcrypt.hash(plainText, BCRYPT_ROUNDS);
 }
 
-export function hashPasswordSync(plainText: string): string {
-  return bcrypt.hashSync(plainText, BCRYPT_ROUNDS);
-}
-
 export function comparePassword(plainText: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plainText, hash);
 }

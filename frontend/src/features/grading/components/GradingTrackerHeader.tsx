@@ -21,7 +21,6 @@ interface GradingTrackerHeaderProps {
   isAdminView?: boolean;
   busyAction: string | null;
   pendingOverdueZero: PendingOverdueZeroTarget | null;
-  onBatchAiGrade: () => void;
   onConfirmAll: () => void;
   onPublishAllConfirmed: () => void;
   onRecordOverdueZeroAll: () => void;
@@ -35,7 +34,6 @@ export function GradingTrackerHeader({
   isAdminView = false,
   busyAction,
   pendingOverdueZero,
-  onBatchAiGrade,
   onConfirmAll,
   onPublishAllConfirmed,
   onRecordOverdueZeroAll,
@@ -106,21 +104,12 @@ export function GradingTrackerHeader({
             Bước 1 xác nhận điểm (GRADED — Học viên chưa thấy). Bước 2 công bố điểm (RETURNED).
             Học viên quá hạn chưa nộp được giữ nguyên, không tự gán 0 điểm (DEC-038).
           </p>
+          {assignment.canMutate && assignment.hasSubjectiveQuestions ? (
+            <p className="text-xs text-[var(--ink-2)]">Duyệt từng câu tự luận trong chi tiết bài trước khi gửi AI, hoặc chấm tay.</p>
+          ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {assignment.hasSubjectiveQuestions ? (
-            <button
-              id="btn-batch-ai-grade"
-              type="button"
-              disabled={Boolean(busyAction) || needsGradingTotal === 0}
-              onClick={onBatchAiGrade}
-              className="rounded-lg border border-[var(--amber)] bg-[var(--amber-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--amber)] hover:opacity-90 disabled:opacity-50"
-            >
-              {busyAction === 'batch-ai' ? 'Đang gợi ý AI...' : 'AI gợi ý chấm hàng loạt'}
-            </button>
-          ) : null}
-
+        {assignment.canMutate ? <div className="flex flex-wrap items-center gap-2.5">
           <button
             id="btn-confirm-all-grades"
             type="button"
@@ -158,7 +147,7 @@ export function GradingTrackerHeader({
                 : `Ghi 0 điểm quá hạn (${summary.overdueNotSubmittedCount})`}
             </button>
           ) : null}
-        </div>
+        </div> : <p className="text-xs font-semibold text-[var(--ink-2)]">Lớp đã đóng. Chỉ xem kết quả.</p>}
       </div>
 
       {pendingOverdueZero ? (

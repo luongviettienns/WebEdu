@@ -31,7 +31,7 @@ const UNVERIFIABLE_PII_PATTERNS: ReadonlyArray<{ label: string; regex: RegExp }>
   {
     label: 'tên cá nhân',
     regex: new RegExp(
-      `(?:${UB_START}(?:họ\\s+(?:và\\s+)?tên|tên\\s+(?:của\\s+)?(?:em|tôi|tớ|mình|con|cháu|bạn)\\s+là|(?:em|tôi|tớ|mình|con|cháu)\\s+(?:có\\s+)?tên\\s+(?:là\\s+)?\\p{L}+|my\\s+name\\s+is)${UB_END}|我叫\\s*[\\p{Script=Han}A-Za-z]|我姓\\s*[\\p{Script=Han}]|我的名字(?:是|叫)|(?:^|[\\n\\r;,])\\s*(?:họ\\s*(?:và\\s*)?tên|full\\s*name|student\\s*name|姓名)\\s*[:：])`,
+      `(?:${UB_START}(?:họ\\s+(?:và\\s+)?tên|tên\\s+(?:của\\s+)?(?:em|tôi|tớ|mình|con|cháu|bạn|bố|mẹ|ba|má|anh|chị|ông|bà)\\s+là|(?:em|tôi|tớ|mình|con|cháu|bố|mẹ|ba|má|anh|chị|ông|bà)(?:\\s+(?:của\\s+)?(?:em|tôi|tớ|mình))?\\s+(?:có\\s+)?tên\\s+(?:là\\s+)?\\p{L}+|my\\s+name\\s+is)${UB_END}|(?:我|我?爸爸|我?妈妈|我?哥哥|我?姐姐|我?弟弟|我?妹妹|我?爷爷|我?奶奶)叫\\s*[\\p{Script=Han}A-Za-z]|我姓\\s*[\\p{Script=Han}]|(?:我|我爸爸|我妈妈)(?:的)?名字(?:是|叫)|(?:^|[\\n\\r;,])\\s*(?:họ\\s*(?:và\\s*)?tên|full\\s*name|student\\s*name|姓名)\\s*[:：])`,
       'imu',
     ),
   },

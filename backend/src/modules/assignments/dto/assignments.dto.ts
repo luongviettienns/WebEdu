@@ -71,15 +71,29 @@ export class AutosaveSubmissionDto {
   @IsUUID()
   submissionId?: string;
 
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  revision?: number;
+
+  @IsOptional()
+  @IsUUID()
+  timerClientId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  pauseTimer?: boolean;
+
   @IsArray()
-  @ArrayMaxSize(200)
+  @ArrayMaxSize(1000, { message: 'Số lượng câu trả lời không được vượt quá 1000 câu' })
   @ValidateNested({ each: true })
   @Type(() => AutosaveAnswerItemDto)
   answers!: AutosaveAnswerItemDto[];
 
+  @IsOptional()
   @IsInt()
   @Min(0)
-  elapsedSeconds!: number;
+  elapsedSeconds?: number;
 
   @IsOptional()
   @IsInt()
@@ -93,8 +107,13 @@ export class SubmitSubmissionDto {
   submissionId?: string;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  revision?: number;
+
+  @IsOptional()
   @IsArray()
-  @ArrayMaxSize(200)
+  @ArrayMaxSize(1000, { message: 'Số lượng câu trả lời không được vượt quá 1000 câu' })
   @ValidateNested({ each: true })
   @Type(() => AutosaveAnswerItemDto)
   answers?: AutosaveAnswerItemDto[];

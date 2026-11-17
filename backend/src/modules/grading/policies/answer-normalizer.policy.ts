@@ -77,3 +77,35 @@ export function matchesNormalizedOrdering(
   const normStudentTight = normalizeAnswerText(orderedTokens.join(''), options);
   return normStudentSpaced === normCorrectSpaced || normStudentTight === normCorrectSpaced;
 }
+
+export function canBuildNormalizedOrdering(
+  tokens: readonly string[],
+  correctSentence: string,
+  options?: NormalizeAnswerOptions,
+): boolean {
+  if (matchesNormalizedOrdering(tokens, correctSentence, options)) return true;
+  const target = normalizeAnswerText(correctSentence, options);
+  // shortcut: cap ambiguous shuffled input; enter the pieces in answer order if the search budget is exhausted.
+  if (!target || tokens.length > 200) return false;
+  const counts = new Map<string, number>();
+  for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
+  const ordered: string[] = [];
+  let remainingChecks = 10_000;
+  const search = (separator: string): boolean => {
+    if (ordered.length === tokens.length) return matchesNormalizedOrdering(ordered, correctSentence, options);
+    for (const [token, count] of counts) {
+      if (!count) continue;
+      if (--remainingChecks < 0) return false;
+      ordered.push(token);
+      const prefix = normalizeAnswerText(ordered.join(separator), options);
+      if (target.startsWith(prefix)) {
+        counts.set(token, count - 1);
+        if (search(separator)) return true;
+        counts.set(token, count);
+      }
+      ordered.pop();
+    }
+    return false;
+  };
+  return search(/\s/u.test(target) ? ' ' : '');
+}

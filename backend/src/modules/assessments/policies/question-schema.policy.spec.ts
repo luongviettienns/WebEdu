@@ -5,6 +5,16 @@ import { QuestionSchemaPolicy } from './question-schema.policy.js';
 describe('QuestionSchemaPolicy (Task 5.2 TDD)', () => {
   const policy = new QuestionSchemaPolicy();
 
+  it('requires the correct sentence to use all the pieces, including repeats', () => {
+    const validate = (tokens: string[], correctSentence: string) =>
+      policy.validatePayload(QuestionType.ORDERING, { tokens, correctSentence });
+    expect(() => validate(['学习', '我'], '我学习。')).not.toThrow();
+    expect(() => validate(['xī', 'xīxī', 'xī'], 'xīxī xī xī')).not.toThrow();
+    expect(() => validate(['我', '学习'], '你好')).toThrow(BadRequestException);
+    expect(() => validate(['ab', 'c'], 'acb')).toThrow(BadRequestException);
+    expect(() => validate(['我', '我'], '我')).toThrow(BadRequestException);
+  });
+
   it.each([
     [
       QuestionType.SINGLE_CHOICE,

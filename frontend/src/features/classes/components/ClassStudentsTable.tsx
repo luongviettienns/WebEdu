@@ -84,8 +84,12 @@ export function ClassStudentsTable({
                       {enr.reason ? <div className="mt-0.5 text-xs text-[var(--ink-2)]">Ghi chú: {enr.reason}</div> : null}
                     </td>
                     <td className="num px-3.5 py-3 text-xs text-[var(--ink-2)]">
-                      <div>{enr.studentPhone}</div>
-                      <div>{enr.studentEmail}</div>
+                      {enr.studentPhone || enr.studentEmail ? (
+                        <>
+                          <div>{enr.studentPhone}</div>
+                          <div>{enr.studentEmail}</div>
+                        </>
+                      ) : '—'}
                     </td>
                     <td className="num px-3.5 py-3 text-xs font-medium text-[var(--ink)]">
                       {formatDateDdMmYyyy(enr.enrolledDate)}
@@ -100,7 +104,7 @@ export function ClassStudentsTable({
                               : 'font-medium text-[var(--ink)]'
                           }
                         >
-                          {absences} buổi
+                          {enr.absencesCount === null ? '—' : `${absences} buổi`}
                         </span>
                         {isAbsenceWarning ? (
                           <span className="inline-flex items-center rounded bg-[var(--red-soft)] px-1.5 py-0.5 text-[11px] font-semibold text-[var(--red-ink)]">

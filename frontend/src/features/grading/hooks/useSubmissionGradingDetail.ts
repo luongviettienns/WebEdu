@@ -6,6 +6,7 @@ import {
   getSubmissionGradingDetail,
   requestAiEssaySuggestion,
   saveManualGrade,
+  type AiEssayReviewInput,
   type TeacherSubmissionGradingDetailDto,
 } from '@/features/grading/api/grading.api';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -192,13 +193,13 @@ export function useSubmissionGradingDetail(
     }
   };
 
-  const handleRequestAi = async (questionId?: string) => {
-    if (!activeDetail) return;
+  const handleRequestAi = async (questionId: string, reviewedInput: AiEssayReviewInput) => {
+    if (!activeDetail || busy) return false;
     setError('');
     setNotice('');
-    setBusy(questionId ? `ai-${questionId}` : 'ai-all');
+    setBusy(`ai-${questionId}`);
     try {
-      const res = await requestAiEssaySuggestion(activeDetail.submission.id, questionId);
+      const res = await requestAiEssaySuggestion(activeDetail.submission.id, questionId, reviewedInput);
       const suggestionByQuestion = new Map(res.suggestions.map((s) => [s.questionId, s]));
       setDetail((prev) => {
         if (!prev || prev.submission.id !== res.submissionId) return prev;
@@ -224,8 +225,10 @@ export function useSubmissionGradingDetail(
       });
       setNotice('Đã tạo gợi ý AI chấm tự luận (Nháp nội bộ).');
       onChanged();
+      return true;
     } catch (err) {
       setError(extractErrorMessage(err, 'Không thể gọi AI gợi ý chấm'));
+      return false;
     } finally {
       setBusy(null);
     }

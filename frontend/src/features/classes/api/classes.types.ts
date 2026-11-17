@@ -51,13 +51,13 @@ export interface ClassEnrollmentItem {
   id: string;
   studentId: string;
   studentFullName: string;
-  studentEmail: string;
-  studentPhone: string;
+  studentEmail: string | null;
+  studentPhone: string | null;
   status: EnrollmentStatus;
   enrolledDate: string;
   leftDate: string | null;
   reason: string | null;
-  absencesCount?: number;
+  absencesCount?: number | null;
 }
 export type ClassEnrollmentItemDto = ClassEnrollmentItem;
 

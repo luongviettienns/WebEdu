@@ -181,14 +181,14 @@ Toàn bộ endpoints dưới đây áp dụng `@Roles(Role.ADMIN, Role.TEACHER)`
 | 84 | `PUT` | `/system-settings/ai-grading` | `SUPERADMIN` | `200 OK` — Lưu cấu hình AI grading (SSRF guard, mã hóa API key) |
 | 85 | `POST` | `/system-settings/ai-grading/test` | `SUPERADMIN` | `200 OK` — Kiểm tra kết nối AI provider |
 | 86 | `GET` | `/assignments/:assignmentId/grading-tracker` | `ADMIN`, `TEACHER` | `200 OK` — Bảng theo dõi chấm điểm và danh sách quá hạn |
-| 87 | `POST` | `/assignments/:assignmentId/overdue-zero` | `ADMIN`, `TEACHER` | `200 OK` — Ghi nhận 0 điểm quá hạn chưa nộp (`DEC-038`) |
-| 88 | `POST` | `/assignments/:assignmentId/ai-grade` | `ADMIN`, `TEACHER` | `200 OK` — AI gợi ý chấm nháp hàng loạt (Zero-PII) |
+| 87 | `POST` | `/assignments/:assignmentId/overdue-zero` | `ADMIN`, `TEACHER` | `200 OK` — Ghi 0 cho học viên thuộc phạm vi giao bài và chưa bắt đầu làm. Chốt bản nháp quá hạn thành bài nộp trước khi xét |
+| 88 | `POST` | `/assignments/:assignmentId/ai-grade` | `ADMIN`, `TEACHER` | `200 OK` — Chỉ gửi nội dung trong `reviews` đã qua duyệt từng câu, trả lỗi theo bài nếu thiếu review |
 | 89 | `POST` | `/assignments/:assignmentId/confirm-grades` | `ADMIN`, `TEACHER` | `200 OK` — Xác nhận hàng loạt sang `GRADED` |
 | 90 | `POST` | `/assignments/:assignmentId/publish-grades` | `ADMIN`, `TEACHER` | `200 OK` — Công bố điểm hàng loạt `GRADED -> RETURNED` |
 | 91 | `GET` | `/assignments/:assignmentId/published-result` | `STUDENT` | `200 OK` — Kết quả đã công bố của học viên (Zero-Leak) |
 | 92 | `GET` | `/submissions/:submissionId/grading-detail` | `ADMIN`, `TEACHER` | `200 OK` — Chi tiết chấm bài, gợi ý AI & lịch sử sửa điểm |
 | 93 | `POST` | `/submissions/:submissionId/auto-grade` | `ADMIN`, `TEACHER` | `200 OK` — Chấm tự động câu hỏi khách quan |
-| 94 | `POST` | `/submissions/:submissionId/ai-grade` | `ADMIN`, `TEACHER` | `200 OK` — AI gợi ý chấm nháp 1 bài nộp |
+| 94 | `POST` | `/submissions/:submissionId/ai-grade` | `ADMIN`, `TEACHER` | `200 OK` — Gợi ý nháp cho câu tự luận có `questionId` và `reviewedInput` đã bỏ thông tin định danh |
 | 95 | `PATCH` | `/submissions/:submissionId/manual-grade` | `ADMIN`, `TEACHER` | `200 OK` — Chấm thủ công câu tự luận & nhận xét |
 | 96 | `POST` | `/submissions/:submissionId/confirm-grade` | `ADMIN`, `TEACHER` | `200 OK` — Xác nhận 1 bài sang `GRADED` |
 | 97 | `PATCH` | `/submissions/:submissionId/adjust-grade` | `ADMIN`, `TEACHER` | `200 OK` — Điều chỉnh điểm sau xác nhận/công bố kèm lý do |

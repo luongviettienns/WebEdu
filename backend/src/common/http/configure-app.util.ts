@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import { AllExceptionsFilter } from '../filters/all-exceptions.filter.js';
+import { protectedJsonParser } from './protected-json-body.interceptor.js';
 
 export const DEFAULT_JSON_BODY_LIMIT = '100kb';
 export const LOGO_UPLOAD_JSON_BODY_LIMIT = '4mb';
@@ -32,6 +33,7 @@ export function configureAppSecurityAndPipes(
   const logoUploadJsonParser = express.json({ limit: LOGO_UPLOAD_JSON_BODY_LIMIT });
   app.use((req: Request, res: Response, next: NextFunction) => {
     const normalizedPath = req.path.replace(/\/+$/, '') || '/';
+    if (protectedJsonParser(req.method, normalizedPath)) return next();
     if (req.method.toUpperCase() === 'PUT' && normalizedPath === LOGO_UPLOAD_PATH) {
       return logoUploadJsonParser(req, res, next);
     }

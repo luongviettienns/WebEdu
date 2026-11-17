@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import type { MailService, VerificationCodePurpose } from '../mail/mail.service.js';
+import type { MailService } from '../mail/mail.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import { EMAIL_REGEX, normalizeEmail } from '../utils/contact-validation.util.js';
 import {
@@ -22,11 +22,10 @@ interface AtomicVerifyRow {
   verified_at: Date | null;
 }
 
-export interface IssueEmailVerificationOtpParams {
+export type IssueEmailVerificationOtpParams = {
   prisma: PrismaService;
   mailService: MailService;
   rawEmail: string;
-  purpose: VerificationCodePurpose;
   clientIp?: string;
   ipRateLimitKeyPrefix?: string;
   cooldownKeyPrefix?: string;
@@ -39,7 +38,7 @@ export interface IssueEmailVerificationOtpParams {
   };
   duplicateCheckWhere?: Prisma.UserWhereInput;
   duplicateErrorMessage?: string;
-}
+} & ({ purpose: 'registration'; accountId?: never } | { purpose: 'email_change'; accountId: string });
 
 /**
  * Shared 6-digit email OTP issuance helper: validates syntax, applies IP/custom/cooldown
@@ -100,6 +99,7 @@ export async function issueEmailVerificationOtp(
   const createdVerification = await params.prisma.emailVerification.create({
     data: {
       email,
+      scope: verificationScope(params.accountId),
       codeHash,
       expiresAt,
     },
@@ -131,13 +131,13 @@ export async function issueEmailVerificationOtp(
 }
 
 /**
- * Atomically checks and consumes the latest active email OTP for `email`.
- * SQL parameter positions are kept compatible with existing registration tests.
+ * Only the latest issuance for this email and operation can be consumed.
  */
 export async function verifyEmailVerificationCodeOrThrow(
   prisma: PrismaService,
   email: string,
   code?: string,
+  accountId?: string,
 ): Promise<void> {
   const normalizedEmail = normalizeEmail(email ?? '');
   const trimmedCode = (code ?? '').trim();
@@ -155,10 +155,8 @@ export async function verifyEmailVerificationCodeOrThrow(
     WHERE "id" = (
       SELECT "id"
       FROM "email_verifications"
-      WHERE "email" = ${normalizedEmail}
-        AND "verified_at" IS NULL
-        AND "expires_at" > ${now}
-      ORDER BY "created_at" DESC
+      WHERE "email" = ${normalizedEmail} AND "scope" = ${verificationScope(accountId)}
+      ORDER BY "created_at" DESC, "id" DESC
       LIMIT 1
     )
     AND "attempts" < ${MAX_OTP_ATTEMPTS}
@@ -179,6 +177,10 @@ export async function verifyEmailVerificationCodeOrThrow(
   }
 }
 
+function verificationScope(accountId?: string): string {
+  return accountId === undefined ? 'registration' : `email_change:${accountId}`;
+}
+
 /** Issues an email-change OTP with IP + per-user rate limits, duplicate check, and 60s cooldown. */
 export async function issueProfileEmailChangeOtp(
   prisma: PrismaService,
@@ -192,6 +194,7 @@ export async function issueProfileEmailChangeOtp(
     mailService,
     rawEmail: newEmail,
     purpose: 'email_change',
+    accountId: userId,
     clientIp,
     ipRateLimitKeyPrefix: 'profile-email-otp:ip',
     cooldownKeyPrefix: 'email-change-otp',

@@ -3,9 +3,8 @@ import { EnrollmentStatus, GradingStatus, Prisma, QuestionType, SubmissionStatus
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
-import { resolveEffectiveDueAt } from '../../assignments/mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
-import { isSubmissionOverdueForZero } from '../../assignments/services/submission-session.util.js';
+import { isAssignmentEligibleForEnrollment } from '../../progress/policies/grade-calculation.policy.js';
 import type { SubmissionBatchSelectionDto } from '../dto/grading.dto.js';
 import type {
   AssignmentScoresPublishedEvent,
@@ -199,7 +198,7 @@ export class GradePublicationService {
       await lockClassAssignmentRowTx(tx, assignmentId);
       const assignment = await tx.classAssignment.findUnique({
         where: { id: assignmentId },
-        select: { id: true, classId: true, dueAt: true },
+        select: { id: true, classId: true, assignedAt: true, dueAt: true },
       });
       if (!assignment) throw new NotFoundException('Không tìm thấy bài giao');
 
@@ -211,20 +210,24 @@ export class GradePublicationService {
           classId: assignment.classId,
           status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
         },
-        select: { studentId: true },
+        select: { studentId: true, enrolledDate: true, leftDate: true },
       });
       const enrolledIds = new Set(enrollments.map((e) => e.studentId));
-      const activeSubmissions = await tx.submission.findMany({
-        where: { classAssignmentId: assignmentId, status: { not: SubmissionStatus.SUPERSEDED } },
+      const eligibleIds = new Set(
+        enrollments
+          .filter((e) => isAssignmentEligibleForEnrollment(assignment, e, false))
+          .map((e) => e.studentId),
+      );
+      const submissions = await tx.submission.findMany({
+        where: { classAssignmentId: assignmentId },
         orderBy: { id: 'asc' },
         select: {
           id: true,
           studentId: true,
           status: true,
-          dueAtOverride: true,
-          remainingSeconds: true,
         },
       });
+      const activeSubmissions = submissions.filter((sub) => sub.status !== SubmissionStatus.SUPERSEDED);
 
       const targets = requestedIds
         ? activeSubmissions.filter((sub) => requestedIds.includes(sub.id))
@@ -258,12 +261,10 @@ export class GradePublicationService {
 
       const publishedIds = publishedRows.map((row) => row.id);
       const studentIds = [...new Set(publishedRows.map((row) => row.studentId))];
-      const activeByStudent = new Map(activeSubmissions.map((sub) => [sub.studentId, sub]));
-      const overdueUntouchedCount = [...enrolledIds].filter((studentId) => {
-        const sub = activeByStudent.get(studentId) ?? null;
-        const effectiveDue = resolveEffectiveDueAt(assignment.dueAt, sub?.dueAtOverride);
-        return isSubmissionOverdueForZero(now, effectiveDue, sub);
-      }).length;
+      const attemptedIds = new Set(submissions.map((sub) => sub.studentId));
+      const overdueUntouchedCount = now > assignment.dueAt
+        ? [...eligibleIds].filter((studentId) => !attemptedIds.has(studentId)).length
+        : 0;
 
       await writeAuditLog(tx, actor, {
         action: 'ASSIGNMENT_GRADES_PUBLISHED',

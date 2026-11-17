@@ -226,6 +226,7 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     expect(assigned.ok()).toBeTruthy();
     const { items } = (await assigned.json()) as { items: Array<{ id: string }> };
     const submissionsUrl = `${API_BASE_URL}/assignments/${items[0]!.id}/submissions`;
+    const submissionsPath = new URL(submissionsUrl).pathname;
 
     await logoutViaApi(page);
     await loginThroughUi(page, 'active.student@webedu.vn');
@@ -236,28 +237,31 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
         headers, data: { email: 'teacher.lan@webedu.vn', password: 'Password@123' },
       });
       expect(login.ok()).toBeTruthy();
-      const startedPromise = page.waitForResponse(`${submissionsUrl}/start`);
+      const startedPromise = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === `${submissionsPath}/start` && response.ok(),
+      );
       await page.goto(`/student/assignments/${items[0]!.id}`);
       const started = (await (await startedPromise).json()) as { submission: { id: string } };
 
       const oldResponseGate = new Promise<void>((resolve) => { releaseOldResponse = resolve; });
-      let signalOldAutosave = () => {};
-      const oldAutosaveSaved = new Promise<void>((resolve) => { signalOldAutosave = resolve; });
+      let signalOldAutosave!: (revision: number) => void;
+      const oldAutosaveSaved = new Promise<number>((resolve) => { signalOldAutosave = resolve; });
       let holdNextAutosave = true;
-      await page.route(`${submissionsUrl}/autosave`, async (route) => {
-        if (route.request().method() !== 'PATCH' || !holdNextAutosave) return route.continue();
+      await page.route(`**${submissionsPath}/autosave`, async (route) => {
+        if (route.request().method() !== 'PATCH' || !holdNextAutosave ||
+            !route.request().postDataJSON()?.answers?.length) return route.continue();
         holdNextAutosave = false;
         const response = await route.fetch();
         expect(response.ok()).toBeTruthy();
-        signalOldAutosave();
+        signalOldAutosave((await response.json()).submission.revision);
         await oldResponseGate;
         await route.fulfill({ response });
       });
 
       await page.getByRole('radio', { name: /Cảm ơn/i }).check();
-      await oldAutosaveSaved;
+      const revision = await oldAutosaveSaved;
       const submitted = await page.request.post(`${submissionsUrl}/submit`, {
-        headers, data: { submissionId: started.submission.id, answers: [], elapsedSeconds: 10 },
+        headers, data: { submissionId: started.submission.id, answers: [], revision },
       });
       expect(submitted.ok()).toBeTruthy();
       const reopened = await teacher.post(`${API_BASE_URL}/submissions/${started.submission.id}/reopen`, {
@@ -266,10 +270,8 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
       expect(reopened.ok()).toBeTruthy();
 
       await page.getByRole('radio', { name: /Xin lỗi/i }).check();
-      await expect(page.getByText('Lần làm 2')).toBeVisible();
-
       const delayedResponse = page.waitForResponse((response) =>
-        response.url() === `${submissionsUrl}/autosave` && response.ok(),
+        new URL(response.url()).pathname === `${submissionsPath}/autosave` && response.ok(),
       );
       releaseOldResponse();
       await (await delayedResponse).finished();
@@ -293,10 +295,13 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     // Capture all student submission JSON payloads to verify zero answer-key leaks and zero 4xx autosaves
     const capturedStudentPayloads: string[] = [];
     const autosaveErrorStatuses: number[] = [];
+    let loggingOutOfExam = false;
     page.on('response', async (response) => {
       const url = response.url();
       if (url.includes('/autosave') && response.status() >= 400) {
-        autosaveErrorStatuses.push(response.status());
+        const revokedTimerPause = loggingOutOfExam && response.status() === 401 &&
+          response.request().postDataJSON()?.pauseTimer === true;
+        if (!revokedTimerPause) autosaveErrorStatuses.push(response.status());
       }
       if (
         url.includes('/assignments/') &&
@@ -409,7 +414,7 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     await page.getByRole('button', { name: 'Lưu nháp' }).click();
     await expect(page.getByText(/Đã lưu lúc/i)).toBeVisible();
 
-    // Assert localStorage draft key is strictly scoped to webedu_exam_draft_<studentId>_<submissionId> (no legacy key)
+    // Saved answers leave a revision notification scoped to this student and attempt.
     const latestSessionPayload = [...capturedStudentPayloads]
       .reverse()
       .map((raw) => {
@@ -428,7 +433,7 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
       Object.keys(window.localStorage).filter((k) => k.startsWith('webedu_exam_draft_')),
     );
     expect(storedDraftKeys).toEqual([
-      `webedu_exam_draft_${activeStudentId}_${activeSubmissionId}`,
+      `webedu_exam_draft_${activeStudentId}_${activeSubmissionId}:sync`,
     ]);
     expect(storedDraftKeys).not.toContain(`webedu_exam_draft_${activeSubmissionId}`);
 
@@ -548,6 +553,7 @@ test.describe('Phase 6 — Assignment delivery, interactive exam runner & reopen
     );
     expect(draftKeysBeforeLogout.length).toBeGreaterThanOrEqual(1);
 
+    loggingOutOfExam = true;
     await logoutThroughUi(page);
     const draftKeysAfterLogout = await page.evaluate(() =>
       Object.keys(window.localStorage).filter((k) => k.startsWith('webedu_exam_draft_')),

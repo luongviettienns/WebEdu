@@ -61,7 +61,7 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
         </p>
       </div>
 
-      <div role="tablist" aria-label="Lọc bài tập" className="flex flex-wrap gap-2">
+      <div role="group" aria-label="Lọc bài tập" className="flex flex-wrap gap-2">
         {(
           [
             ['all', `Tất cả (${items.length})`],
@@ -72,8 +72,7 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
           <button
             key={key}
             type="button"
-            role="tab"
-            aria-selected={filter === key}
+            aria-pressed={filter === key}
             onClick={() => setFilter(key)}
             className={`rounded-lg border px-3.5 py-2 text-xs font-semibold transition-colors ${
               filter === key

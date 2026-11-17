@@ -6,6 +6,12 @@ import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 export type DbClient = Prisma.TransactionClient | PrismaService;
 export type AssignmentActor = Pick<AuthenticatedUser, 'id' | 'roles'>;
 
+export function assertAssignmentClassOpen(status: ClassStatus): void {
+  if (status === ClassStatus.COMPLETED || status === ClassStatus.ARCHIVED) {
+    throw new ForbiddenException('Lớp đã kết thúc hoặc lưu trữ, chỉ có thể xem bài tập');
+  }
+}
+
 export interface AssessmentVisibilityRow {
   id: string;
   createdById: string;
@@ -51,12 +57,14 @@ export class AssignmentAccessPolicy {
     actor: AssignmentActor,
     classId: string,
   ): Promise<ClassAccessRecord> {
-    return this.assertCurrentTeacherOrAdmin(
+    const cls = await this.assertCurrentTeacherOrAdmin(
       db,
       actor,
       classId,
       'Bạn không có quyền thao tác bài tập của lớp này',
     );
+    assertAssignmentClassOpen(cls.status);
+    return cls;
   }
 
   async assertTeacherOrAdminCanReadClass(

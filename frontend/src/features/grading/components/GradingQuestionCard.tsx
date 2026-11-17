@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { QUESTION_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
 import { StatusTag } from '@/features/common/components/StatusTag';
-import type { TeacherGradingQuestionDetailDto } from '@/features/grading/api/grading.api';
+import type { AiEssayReviewInput, TeacherGradingQuestionDetailDto } from '@/features/grading/api/grading.api';
 import { SelectedOptionImages } from '@/features/grading/components/SelectedOptionImages';
 import {
   extractSelectedOptionItems,
@@ -20,7 +20,7 @@ interface GradingQuestionCardProps {
   aiLoading: boolean;
   onScoreChange: (value: string) => void;
   onCommentChange: (value: string) => void;
-  onRequestAi: () => void;
+  onRequestAi: (review: AiEssayReviewInput) => Promise<boolean>;
   onApplyAi: (suggestedPoints: number, aiFeedback: string | null) => void;
 }
 
@@ -36,6 +36,8 @@ export function GradingQuestionCard({
   onRequestAi,
   onApplyAi,
 }: GradingQuestionCardProps) {
+  const [review, setReview] = useState<AiEssayReviewInput | null>(null);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const { studentAnswer, questionPayload, isObjective } = question;
   const studentText = formatAnswerPayloadText(
     question.type,
@@ -55,6 +57,17 @@ export function GradingQuestionCard({
     typeof questionPayload.rubric === 'string' && questionPayload.rubric.trim()
       ? questionPayload.rubric.trim()
       : null;
+  const reviewId = `ai-review-${question.questionId}`;
+  const openReview = () => {
+    const clean = (value: unknown) => typeof value === 'string' ? value.trim().normalize('NFKC') : '';
+    setReviewConfirmed(false);
+    setReview({
+      prompt: clean(question.prompt),
+      sampleAnswer: clean(questionPayload.sampleAnswer),
+      rubric: clean(questionPayload.rubric),
+      studentAnswer: clean(studentAnswer.answerPayload.text),
+    });
+  };
 
   return (
     <article
@@ -107,7 +120,7 @@ export function GradingQuestionCard({
         </div>
       </div>
 
-      {!isObjective ? (
+      {question.type === 'ESSAY' ? (
         <div className="rounded-xl border border-[var(--blue)]/25 bg-[var(--blue-soft)]/50 p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-bold text-[var(--blue)]">
@@ -118,10 +131,12 @@ export function GradingQuestionCard({
                 <button
                   type="button"
                   disabled={aiLoading}
-                  onClick={onRequestAi}
+                  aria-expanded={review !== null}
+                  aria-controls={review ? reviewId : undefined}
+                  onClick={review ? () => setReview(null) : openReview}
                   className="rounded-md border border-[var(--blue)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--blue-soft)] disabled:opacity-50"
                 >
-                  {aiLoading ? 'Đang hỏi AI...' : 'Gợi ý chấm bằng AI'}
+                  {review ? 'Đóng phần duyệt' : 'Gợi ý chấm bằng AI'}
                 </button>
                 {studentAnswer.aiSuggestedPoints !== null ? (
                   <button
@@ -137,6 +152,36 @@ export function GradingQuestionCard({
               </div>
             ) : null}
           </div>
+
+          {review && canEditManually ? (
+            <fieldset id={reviewId} disabled={aiLoading} className="mt-3 space-y-2">
+              <legend className="text-xs font-bold">Nội dung gửi cho nhà cung cấp AI</legend>
+              <p className="text-xs">Loại tên, địa chỉ và thông tin nhận dạng, giữ nguyên nội dung cần chấm. Điểm tối đa gửi đi là {question.points}.</p>
+              {([
+                ['prompt', 'Câu hỏi gửi AI'], ['studentAnswer', 'Bài làm gửi AI'],
+                ['sampleAnswer', 'Đáp án mẫu gửi AI'], ['rubric', 'Hướng dẫn chấm gửi AI'],
+              ] as const).map(([field, label]) => (
+                <label key={field} className="block text-xs font-semibold">
+                  {label}
+                  <textarea value={review[field]} rows={2} maxLength={50_000}
+                    className="mt-1 block w-full rounded-md border border-[var(--line-2)] bg-white p-2"
+                    onChange={(event) => {
+                      setReview({ ...review, [field]: event.target.value });
+                      setReviewConfirmed(false);
+                    }} />
+                </label>
+              ))}
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} />
+                Tôi đã duyệt và loại thông tin định danh khỏi nội dung này
+              </label>
+              <button type="button" disabled={!reviewConfirmed}
+                onClick={async () => { if (await onRequestAi(review)) setReview(null); }}
+                className="rounded-md bg-[var(--blue)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                {aiLoading ? 'Đang hỏi AI...' : 'Gửi nội dung đã duyệt'}
+              </button>
+            </fieldset>
+          ) : null}
 
           {studentAnswer.aiSuggestedPoints !== null || studentAnswer.aiFeedback ? (
             <div className="mt-2 space-y-1 text-xs text-[var(--ink)]">

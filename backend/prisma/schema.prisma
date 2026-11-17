@@ -251,13 +251,14 @@ model EmailRateLimit {
 model EmailVerification {
   id         String    @id @default(uuid())
   email      String    @db.VarChar(255)
+  scope      String    @default("registration") @db.VarChar(80)
   codeHash   String    @map("code_hash") @db.VarChar(128)
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
   attempts   Int       @default(0)
   verifiedAt DateTime? @map("verified_at") @db.Timestamptz(3)
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  @@index([email, createdAt(sort: Desc)])
+  @@index([email, scope, createdAt(sort: Desc)])
   @@index([expiresAt])
   @@map("email_verifications")
 }
@@ -611,6 +612,10 @@ model Submission {
   startedAt         DateTime         @default(now()) @map("started_at") @db.Timestamptz(3)
   lastSavedAt       DateTime         @default(now()) @map("last_saved_at") @db.Timestamptz(3)
   lastSyncedAt      DateTime         @default(now()) @map("last_synced_at") @db.Timestamptz(3)
+  revision          Int              @default(0)
+  timerAccountedAt  DateTime?        @map("timer_accounted_at") @db.Timestamptz(3)
+  timerLeaseUntil   DateTime?        @map("timer_lease_until") @db.Timestamptz(3)
+  timerClientId     String?          @map("timer_client_id")
   elapsedSeconds    Int              @default(0) @map("elapsed_seconds")
   remainingSeconds  Int?             @map("remaining_seconds")
   dueAtOverride     DateTime?        @map("due_at_override") @db.Timestamptz(3)

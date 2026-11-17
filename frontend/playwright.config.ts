@@ -53,10 +53,7 @@ export default defineConfig({
       url: `http://localhost:${PORT}/login`,
       reuseExistingServer: false,
       timeout: 60_000,
-      env: {
-        PORT: PORT,
-        NEXT_PUBLIC_API_URL: 'http://localhost:3001/api/v1',
-      },
+      env: { PORT },
     },
   ],
 });

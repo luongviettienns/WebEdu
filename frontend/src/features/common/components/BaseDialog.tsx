@@ -18,6 +18,7 @@ export interface BaseDialogProps {
   onClose: () => void;
   /** Khi đang gửi dữ liệu: khóa Escape/nút Đóng/click nền để tránh đóng giữa chừng. */
   busy?: boolean;
+  dismissible?: boolean;
   maxWidthClass?: string;
   children: React.ReactNode;
 }
@@ -55,7 +56,7 @@ export function useDialogFocusTrap(
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!panelRef.current) return;
+      if (!panelRef.current || panelRef.current.closest('[inert]')) return;
       if (event.key === 'Escape') {
         event.stopPropagation();
         if (!busyRef.current) onCloseRef.current();
@@ -103,18 +104,19 @@ export function BaseDialog({
   title,
   onClose,
   busy = false,
+  dismissible = true,
   maxWidthClass = 'max-w-lg',
   children,
 }: BaseDialogProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  useDialogFocusTrap(panelRef, onClose, busy);
+  useDialogFocusTrap(panelRef, onClose, busy || !dismissible);
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-[#1C2320]/50 p-0 backdrop-blur-xs sm:items-center sm:p-4"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onClose();
+        if (event.target === event.currentTarget && !busy && dismissible) onClose();
       }}
     >
       <div
@@ -134,7 +136,7 @@ export function BaseDialog({
               {title}
             </h2>
           </div>
-          <button
+          {dismissible ? <button
             type="button"
             data-dialog-close
             disabled={busy}
@@ -142,7 +144,7 @@ export function BaseDialog({
             className="rounded-md px-2 py-1 text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)] disabled:opacity-50"
           >
             Đóng
-          </button>
+          </button> : null}
         </div>
         {children}
       </div>

@@ -78,7 +78,7 @@ describe('Phase 5 policies and mapper coverage', () => {
     });
   });
 
-  it('checks audio magic headers, size bounds, zip bombs, and filename decoding', () => {
+  it('checks audio magic headers, size bounds, zip bombs, and filename decoding', async () => {
     expect(() => assertSafeUpload(Buffer.alloc(0), 'empty.png')).toThrow(BadRequestException);
     expect(() => assertSafeUpload(Buffer.alloc(20 * 1024 * 1024 + 1, 0xff), 'big.png')).toThrow(BadRequestException);
     expect(assertSafeUpload(Buffer.from('ID3xxxx'), 'a.mp3')).toEqual({ mime: 'audio/mpeg' });
@@ -87,11 +87,11 @@ describe('Phase 5 policies and mapper coverage', () => {
     expect(assertSafeUpload(Buffer.from([0, 0, 0, 20, 0x66, 0x74, 0x79, 0x70]), 'd.m4a')).toEqual({ mime: 'audio/mp4' });
     expect(() => assertSafeUpload(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0]), 'wrong.jpg')).toThrow(BadRequestException);
 
-    expect(() => assertSafeDocxZip(Buffer.from('short'))).toThrow(BadRequestException);
-    expect(() => assertSafeDocxZip(makeZipEocd([20], 501))).toThrow(BadRequestException);
-    expect(() => assertSafeDocxZip(makeZipEocd([21 * 1024 * 1024]))).toThrow(BadRequestException);
-    expect(() => assertSafeDocxZip(makeZipEocd(Array(5).fill(19 * 1024 * 1024)))).toThrow(BadRequestException);
-    expect(() => assertSafeDocxZip(makeZipEocd([100], 0xffff))).toThrow(BadRequestException);
+    await expect(assertSafeDocxZip(Buffer.from('short'))).rejects.toThrow(BadRequestException);
+    await expect(assertSafeDocxZip(makeZipEocd([20], 501))).rejects.toThrow(BadRequestException);
+    await expect(assertSafeDocxZip(makeZipEocd([21 * 1024 * 1024]))).rejects.toThrow(BadRequestException);
+    await expect(assertSafeDocxZip(makeZipEocd(Array(5).fill(19 * 1024 * 1024)))).rejects.toThrow(BadRequestException);
+    await expect(assertSafeDocxZip(makeZipEocd([100], 0xffff))).rejects.toThrow(BadRequestException);
     expect(decodeUploadFilename(Buffer.from('Đề HSK1.docx', 'utf8').toString('latin1'))).toBe('Đề HSK1.docx');
     expect(decodeUploadFilename('Đề HSK1.docx')).toBe('Đề HSK1.docx');
   });

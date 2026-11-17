@@ -218,9 +218,9 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     return { prisma, tx, service };
   }
 
-  it('sends strictly Zero-PII payload, handles empty essays without calling provider, and saves draft without writing earnedPoints/totalScore', async () => {
+  it('requires teacher-reviewed Zero-PII payload, handles empty essays without calling provider, and saves draft without writing earnedPoints/totalScore', async () => {
     const { prisma, tx, service } = setupService();
-    prisma.submission.findUnique.mockResolvedValueOnce({
+    const setupSubmission = () => ({
       id: 'sub-1',
       status: SubmissionStatus.SUBMITTED_WAITING,
       gradingStatus: GradingStatus.NONE,
@@ -245,7 +245,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         },
       },
       answers: [
-        { questionId: 'q-essay-1', answerPayload: { text: '我很喜欢学习汉语，liên hệ sv@webedu.vn' } },
+        { questionId: 'q-essay-1', answerPayload: { text: '我爸爸叫王建国，我很喜欢学习汉语，liên hệ sv@webedu.vn' } },
         { questionId: 'q-essay-empty', answerPayload: { text: '   ' } },
       ],
     });
@@ -262,10 +262,52 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         ),
     );
 
+    // Unreviewed call rejected without calling AI provider
+    prisma.submission.findUnique.mockResolvedValueOnce(setupSubmission());
+    await expect(
+      service.suggestEssayGradesForSubmission(
+        'sub-1',
+        makeTeacher(),
+        undefined,
+        fetchMock as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Unsanitized relative name ("我爸爸叫王建国") inside reviewedInput also rejected before calling provider
+    prisma.submission.findUnique.mockResolvedValueOnce(setupSubmission());
+    await expect(
+      service.suggestEssayGradesForSubmission(
+        'sub-1',
+        makeTeacher(),
+        {
+          questionId: 'q-essay-1',
+          reviewedInput: {
+            prompt: 'Viết đoạn văn ngắn về học tiếng Trung',
+            sampleAnswer: '我喜欢学汉语。',
+            rubric: 'Đúng chủ đề',
+            studentAnswer: '我爸爸叫王建国，我很喜欢学习汉语。',
+          },
+        },
+        fetchMock as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow(ZeroPiiManualGradingRequiredException);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Teacher-reviewed + scrubbed input succeeds and never leaks raw PII
+    prisma.submission.findUnique.mockResolvedValueOnce(setupSubmission());
     const res = await service.suggestEssayGradesForSubmission(
       'sub-1',
       makeTeacher(),
-      undefined,
+      {
+        questionId: 'q-essay-1',
+        reviewedInput: {
+          prompt: 'Viết đoạn văn ngắn về học tiếng Trung (email mẫu [REDACTED_EMAIL])',
+          sampleAnswer: '我喜欢学汉语。',
+          rubric: 'Đúng chủ đề, SĐT liên hệ [REDACTED_PHONE]',
+          studentAnswer: '我很喜欢学习汉语, liên hệ [REDACTED_EMAIL]',
+        },
+      },
       fetchMock as unknown as typeof fetch,
     );
 
@@ -279,6 +321,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     expect(reqBody).not.toContain('sv@webedu.vn');
     expect(reqBody).not.toContain('gv@webedu.vn');
     expect(reqBody).not.toContain('Nguyễn Minh An');
+    expect(reqBody).not.toContain('王建国');
     expect(reqBody).not.toContain('sub-1');
 
     // Never writes PENDING_AI directly before calling provider
@@ -293,6 +336,18 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
         aiFeedback: 'Câu tự nhiên',
         skippedEmpty: false,
       },
+    ]);
+
+    // Empty essay returns 0 without requiring AI call
+    prisma.submission.findUnique.mockResolvedValueOnce(setupSubmission());
+    const emptyRes = await service.suggestEssayGradesForSubmission(
+      'sub-1',
+      makeTeacher(),
+      { questionId: 'q-essay-empty' },
+      fetchMock as unknown as typeof fetch,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(emptyRes.suggestions).toEqual([
       {
         questionId: 'q-essay-empty',
         maxPoints: 2,
@@ -319,6 +374,8 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
       { field: 'sampleAnswer', input: { prompt: 'Viết câu tiếng Trung', maxPoints: 5, sampleAnswer: '我叫王明。', rubric: null, studentAnswer: '我学习汉语。' } },
       { field: 'rubric', input: { prompt: 'Viết câu', maxPoints: 5, sampleAnswer: null, rubric: 'Đúng địa chỉ nhà: số nhà 12 ngõ 4 Hà Nội', studentAnswer: '我喜欢喝茶。' } },
       { field: 'studentAnswer', input: { prompt: 'Viết câu ngắn', maxPoints: 5, sampleAnswer: null, rubric: null, studentAnswer: 'Tôi tên là Trần Văn Nam, rất thích học tiếng Trung.' } },
+      { field: 'studentAnswer_father_cn', input: { prompt: 'Viết câu ngắn', maxPoints: 5, sampleAnswer: null, rubric: null, studentAnswer: '我爸爸叫王建国，是老师。' } },
+      { field: 'studentAnswer_father_vi', input: { prompt: 'Viết câu ngắn', maxPoints: 5, sampleAnswer: null, rubric: null, studentAnswer: 'Bố em tên là Trần Văn Bình, làm kỹ sư.' } },
     ];
 
     for (const testCase of cases) {
@@ -391,7 +448,10 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
       service.suggestEssayGradesForSubmission(
         'sub-race',
         makeTeacher(),
-        undefined,
+        {
+          questionId: 'q-1',
+          reviewedInput: { prompt: 'Viết câu', sampleAnswer: '', rubric: '', studentAnswer: '我喜欢喝茶。' },
+        },
         okFetch as unknown as typeof fetch,
       ),
     ).rejects.toThrow(ConflictException);
@@ -415,7 +475,10 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
       service.suggestEssayGradesForSubmission(
         'sub-1',
         makeTeacher(),
-        undefined,
+        {
+          questionId: 'q-1',
+          reviewedInput: { prompt: 'Tự luận', sampleAnswer: '', rubric: '', studentAnswer: '我每天学汉语。' },
+        },
         failingFetch as unknown as typeof fetch,
       ),
     ).rejects.toThrow(BadGatewayException);
@@ -452,14 +515,14 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('Issue #11: suggests essay grades in batch and isolates per-submission failures cleanly', async () => {
+  it('Issue #11: suggests essay grades in batch for reviewed submissions and routes unreviewed submissions to manual grading', async () => {
     const { prisma, tx, service } = setupService();
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
       assessment: { questions: [{ id: 'q-1' }] },
     });
-    prisma.submission.findMany.mockResolvedValueOnce([{ id: 'sub-ok' }]);
+    prisma.submission.findMany.mockResolvedValueOnce([{ id: 'sub-ok' }, { id: 'sub-unreviewed' }]);
     prisma.submission.findUnique.mockResolvedValueOnce({
       id: 'sub-ok',
       status: SubmissionStatus.SUBMITTED_WAITING,
@@ -482,21 +545,35 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     );
     const batchRes = await service.suggestEssayGradesForAssignmentBatch(
       'assign-1',
-      { submissionIds: ['sub-ok', 'sub-foreign'] },
+      {
+        submissionIds: ['sub-ok', 'sub-unreviewed', 'sub-foreign'],
+        reviews: [
+          {
+            submissionId: 'sub-ok',
+            questionId: 'q-1',
+            reviewedInput: { prompt: 'Viết câu về sách', sampleAnswer: '', rubric: '', studentAnswer: '我喜欢看书。' },
+          },
+        ],
+      },
       makeTeacher(),
       okFetch as unknown as typeof fetch,
     );
     expect(batchRes).toEqual({
       assignmentId: 'assign-1',
-      requestedCount: 2,
+      requestedCount: 3,
       succeededCount: 1,
-      failedCount: 1,
+      failedCount: 2,
       results: [
         {
           submissionId: 'sub-ok',
           ok: true,
           gradingStatus: GradingStatus.AI_DRAFT_READY,
           suggestedCount: 1,
+        },
+        {
+          submissionId: 'sub-unreviewed',
+          ok: false,
+          error: 'Cần duyệt nội dung câu tự luận hoặc chấm tay',
         },
         {
           submissionId: 'sub-foreign',
@@ -507,7 +584,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     });
   });
 
-  it('suggests only missing questions when selecting a submission for an implicit batch', async () => {
+  it('suggests only missing questions when selecting a reviewed submission for an implicit batch', async () => {
     const { prisma, tx, service } = setupService();
     const questions = ['q-1', 'q-2'].map((id) => ({
       id, prompt: 'Viết câu về sách', points: 5, payload: {},
@@ -515,7 +592,7 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1', classId: 'cls-1', assessment: { questions },
     });
-    prisma.submission.findMany.mockResolvedValueOnce([{ id: 'sub-1', answers: [{ questionId: 'q-1' }] }]);
+    prisma.submission.findMany.mockResolvedValueOnce([{ id: 'sub-1' }]);
     prisma.submission.findUnique.mockResolvedValueOnce({
       id: 'sub-1',
       status: SubmissionStatus.SUBMITTED_WAITING,
@@ -530,7 +607,20 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
       choices: [{ message: { content: '{"suggestedPoints": 4.5, "feedback": "Tốt"}' } }],
     }));
 
-    const result = await service.suggestEssayGradesForAssignmentBatch('assign-1', undefined, makeTeacher(), fetchMock);
+    const result = await service.suggestEssayGradesForAssignmentBatch(
+      'assign-1',
+      {
+        reviews: [
+          {
+            submissionId: 'sub-1',
+            questionId: 'q-2',
+            reviewedInput: { prompt: 'Viết câu về sách', sampleAnswer: '', rubric: '', studentAnswer: '我喜欢看书。' },
+          },
+        ],
+      },
+      makeTeacher(),
+      fetchMock,
+    );
 
     expect(result.results).toEqual([{
       submissionId: 'sub-1', ok: true, gradingStatus: GradingStatus.AI_DRAFT_READY, suggestedCount: 1,
@@ -566,7 +656,19 @@ describe('AiEssayGradingService & Multi-Provider Adapter (Slice 7.2 — FUNC-057
     });
 
     try {
-      const batch = await service.suggestEssayGradesForAssignmentBatch('assign-1', { submissionIds }, makeTeacher(), fetchMock);
+      const batch = await service.suggestEssayGradesForAssignmentBatch(
+        'assign-1',
+        {
+          submissionIds,
+          reviews: submissionIds.map((submissionId) => ({
+            submissionId,
+            questionId: 'q-1',
+            reviewedInput: { prompt: 'Viết câu về sách', sampleAnswer: '', rubric: '', studentAnswer: '我喜欢看书。' },
+          })),
+        },
+        makeTeacher(),
+        fetchMock,
+      );
       expect(batch).toMatchObject({ requestedCount: 3, succeededCount: 2, failedCount: 1 });
       expect(batch.results[2]).toMatchObject({ submissionId: 'sub-3', ok: false, error: expect.stringContaining('thử lại') });
       expect(tx.submissionAnswer.upsert).toHaveBeenCalledTimes(2);

@@ -417,7 +417,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       expect(startText).not.toContain(secret);
     }
     const startedSession = startRes.body as {
-      submission: { id: string; status: string; remainingSeconds: number };
+      submission: { id: string; status: string; remainingSeconds: number; revision: number };
       questions: Array<{ id: string; type: string; tokens?: string[] }>;
     };
     expect(startedSession.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
@@ -431,10 +431,11 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       .expect(200);
     expect(mediaRes.headers['x-content-type-options']).toBe('nosniff');
 
-    // Scenario 3: Autosave answers + monotonic timer + maxListens enforcement
+    // Scenario 3: Autosave edits guards the revision and ignores client clocks.
     const save1 = await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
+        revision: startedSession.submission.revision,
         elapsedSeconds: 45,
         remainingSeconds: 1755,
         answers: [
@@ -449,32 +450,46 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       })
       .expect(200);
     const saved1 = save1.body as {
-      submission: { elapsedSeconds: number; remainingSeconds: number };
+      submission: { elapsedSeconds: number; remainingSeconds: number; revision: number };
       answers: Array<{ questionId: string }>;
     };
-    expect(saved1.submission.elapsedSeconds).toBe(45);
-    expect(saved1.submission.remainingSeconds).toBe(1755);
+    expect(saved1.submission.elapsedSeconds).toBeLessThan(45);
+    expect(saved1.submission.remainingSeconds).toBeGreaterThan(1755);
+    expect(saved1.submission.revision).toBe(startedSession.submission.revision + 1);
     expect(saved1.answers).toHaveLength(3);
 
-    // Clock rollback attempt stays monotonic (45 & 1755)
+    // A delayed request from the old revision cannot restore an obsolete answer.
+    await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({
+        revision: startedSession.submission.revision,
+        answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['b'] } }],
+      })
+      .expect(409);
+
     const saveClamped = await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
+        revision: saved1.submission.revision,
         elapsedSeconds: 10,
         remainingSeconds: 1795,
         answers: [{ questionId: questionIds.essay, answerPayload: { text: '我叫安' } }],
       })
       .expect(200);
     const clampedBody = saveClamped.body as {
-      submission: { elapsedSeconds: number; remainingSeconds: number };
+      submission: { elapsedSeconds: number; remainingSeconds: number; revision: number };
+      answers: Array<{ questionId: string; answerPayload: unknown }>;
     };
-    expect(clampedBody.submission.elapsedSeconds).toBe(45);
-    expect(clampedBody.submission.remainingSeconds).toBe(1755);
+    expect(clampedBody.submission.elapsedSeconds).toBeGreaterThanOrEqual(saved1.submission.elapsedSeconds);
+    expect(clampedBody.submission.remainingSeconds).toBeLessThanOrEqual(saved1.submission.remainingSeconds);
+    expect(clampedBody.answers.find(({ questionId }) => questionId === questionIds.single)?.answerPayload)
+      .toEqual({ selectedOptionIds: ['a'] });
 
     // Exceeding maxListens (2 -> 3) returns 400
     await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
+        revision: clampedBody.submission.revision,
         elapsedSeconds: 50,
         remainingSeconds: 1750,
         answers: [
@@ -505,7 +520,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       Array.from({ length: 5 }, () =>
         studentClient
           .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
-          .send({ elapsedSeconds: 60, remainingSeconds: 1740 }),
+          .send({ revision: clampedBody.submission.revision }),
       ),
     );
     const statuses = submitResults.map((r) => r.status);
@@ -622,8 +637,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
       .send({
         submissionId: attempt2Body.submission.id,
-        elapsedSeconds: 120,
-        remainingSeconds: 1680,
+        revision: attempt2Body.submission.revision,
         answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['b'] } }],
       })
       .expect(200);
@@ -638,7 +652,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     expect('reopenReason' in finalSession.submission).toBe(false);
   });
 
-  it('Scenario 7: Timer expiry (autosave with remainingSeconds: 0) triggers automatic submission', async () => {
+  it('Scenario 7: Only server timer expiry triggers automatic submission', async () => {
     const { assessmentId } = await buildPublishedAll7TypesAssessment();
     const futureDue = new Date(Date.now() + 86_400_000).toISOString();
     const assignRes = await teacherClient
@@ -647,7 +661,23 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       .expect(201);
     const assignmentId = (assignRes.body as { items: Array<{ id: string }> }).items[0]!.id;
 
-    await studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
+    const started = await studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
+    const submissionId = (started.body as { submission: { id: string } }).submission.id;
+    const forged = await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({ elapsedSeconds: 1800, remainingSeconds: 0, answers: [] })
+      .expect(200);
+    expect(forged.body.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
+    const now = Date.now();
+    await harness.prisma.submission.update({
+      where: { id: submissionId },
+      data: {
+        elapsedSeconds: 1795,
+        remainingSeconds: 5,
+        timerAccountedAt: new Date(now - 10_000),
+        timerLeaseUntil: new Date(now + 5_000),
+      },
+    });
 
     const expiredRes = await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
@@ -660,6 +690,56 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     expect(body.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
     expect(body.submission.autoSubmitted).toBe(true);
     expect(body.submission.remainingSeconds).toBe(0);
+  });
+
+  it('automatically submits an expired saved draft when the student returns to their list', async () => {
+    const { assessmentId, questionIds } = await buildPublishedAll7TypesAssessment();
+    const assigned = await teacherClient.post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: new Date(Date.now() + 3_600_000).toISOString() }).expect(201);
+    const assignmentId = assigned.body.items[0].id as string;
+    const endpoint = `/api/v1/assignments/${assignmentId}/submissions`;
+    const started = await studentClient.post(`${endpoint}/start`).expect(200);
+    await studentClient.patch(`${endpoint}/autosave`).send({
+      submissionId: started.body.submission.id,
+      revision: started.body.submission.revision,
+      answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }],
+    }).expect(200);
+    await harness.prisma.classAssignment.update({
+      where: { id: assignmentId }, data: { dueAt: new Date(Date.now() - 120_000) },
+    });
+
+    const listed = await studentClient.get('/api/v1/assignments/me').expect(200);
+    expect(listed.body.items[0]).toMatchObject({ status: SubmissionStatus.SUBMITTED_WAITING, autoSubmitted: true });
+    const review = await studentClient.get(`${endpoint}/me`).expect(200);
+    expect(review.body.answers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }),
+    ]));
+  });
+
+  it('keeps completed classes read-only for assignment and student mutations', async () => {
+    const { assessmentId, questionIds } = await buildPublishedAll7TypesAssessment();
+    const futureDue = new Date(Date.now() + 3_600_000).toISOString();
+    const assigned = await teacherClient.post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue }).expect(201);
+    const assignmentId = assigned.body.items[0].id as string;
+    const endpoint = `/api/v1/assignments/${assignmentId}/submissions`;
+    const started = await studentClient.post(`${endpoint}/start`).expect(200);
+    await harness.prisma.class.update({ where: { id: classId }, data: { status: ClassStatus.COMPLETED } });
+    await teacherClient.post(`/api/v1/assessments/${assessmentId}/assign`)
+      .send({ classIds: [classId], dueAt: futureDue }).expect(403);
+    await studentClient.post(`${endpoint}/start`).expect(403);
+    const update = {
+      submissionId: started.body.submission.id, revision: started.body.submission.revision,
+      answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }],
+    };
+    await studentClient.patch(`${endpoint}/autosave`).send(update).expect(403);
+    await studentClient.post(`${endpoint}/submit`).send(update).expect(403);
+    await teacherClient.get(endpoint).expect(200);
+    const draft = await harness.prisma.submission.findUniqueOrThrow({
+      where: { id: started.body.submission.id }, include: { answers: true },
+    });
+    expect(draft.status).toBe(SubmissionStatus.IN_PROGRESS);
+    expect(draft.answers).toHaveLength(0);
   });
 
   it('Scenario 9 (Audit #13.1): Reopening Student A with future +07:00 newDueAt keeps classAssignment.dueAt immutable and preserves Student B overdue block', async () => {
@@ -694,8 +774,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     await studentClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
       .send({
-        elapsedSeconds: 30,
-        remainingSeconds: 1770,
+        revision: 0,
         answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }],
       })
       .expect(200);
@@ -735,18 +814,17 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     expect(itemA?.isOverdue).toBe(false);
 
     await studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
-    await studentClient
+    const savedA2 = await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
         submissionId: reopenedSub.id,
-        elapsedSeconds: 45,
-        remainingSeconds: 1755,
+        revision: reopenedSub.revision,
         answers: [{ questionId: questionIds.fill, answerPayload: { text: '是' } }],
       })
       .expect(200);
     await studentClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
-      .send({ submissionId: reopenedSub.id, elapsedSeconds: 60, remainingSeconds: 1740 })
+      .send({ submissionId: reopenedSub.id, revision: savedA2.body.submission.revision })
       .expect(200);
 
     // Student B still sees isOverdue=true and receives 400 on POST /start
@@ -814,7 +892,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     await studentClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
       .send({
-        elapsedSeconds: 10,
+        revision: 0,
         answers: [
           { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } },
           { questionId: questionIds.fill, answerPayload: { text: '是' } },
@@ -1005,8 +1083,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     const staleAutosaveRes = await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
-        elapsedSeconds: 20,
-        remainingSeconds: 1780,
+        revision: 0,
         answers: [
           {
             questionId: questionIds.listening,
@@ -1095,22 +1172,21 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
       .expect(200);
     const submissionId = (startRes.body as { submission: { id: string } }).submission.id;
 
-    // Autosave with 201 entries -> 400 (ArrayMaxSize(200))
+    // Autosave with more answers than the assessment contains is rejected.
     const oversizedAnswers = Array.from({ length: 201 }, () => ({
       questionId: questionIds.single,
       answerPayload: { selectedOptionIds: ['a'] },
     }));
     await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
-      .send({ elapsedSeconds: 10, remainingSeconds: 1790, answers: oversizedAnswers })
+      .send({ revision: 0, answers: oversizedAnswers })
       .expect(400);
 
     // Autosave with duplicate questionId -> 400
     await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
-        elapsedSeconds: 12,
-        remainingSeconds: 1788,
+        revision: 0,
         answers: [
           { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } },
           { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['b'] } },
@@ -1121,7 +1197,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     // Submit so teacher reopen can be tested with offset-less newDueAt -> 400
     await studentClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
-      .send({ elapsedSeconds: 20, remainingSeconds: 1780 })
+      .send({ revision: 0 })
       .expect(200);
 
     await teacherClient
@@ -1199,7 +1275,7 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     );
   });
 
-  it('Scenario 14: Caps forged elapsedSeconds=999999999 in DB and avoids unkeyed SHA-256 ORDERING shuffle', async () => {
+  it('Scenario 14: Accounts only for the server lease across a lost connection and keeps ORDERING keyed', async () => {
     const tokens = ['我', '今天', '早上', '在', '图书馆', '学', '汉语', '语法'];
     const createRes = await teacherClient
       .post('/api/v1/assessments')
@@ -1272,48 +1348,32 @@ describe('Phase 6 Assignment Delivery, Exam Taking & Reopen E2E (Real PostgreSQL
     );
     expect(orderingQ?.tokens).not.toEqual(computeUnkeyedSha256Shuffle(orderingQuestionId));
 
-    const cappedStepRes = await studentClient
-      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
-      .send({ answers: [], elapsedSeconds: 999_999_999 })
-      .expect(200);
-    const cappedStepBody = cappedStepRes.body as {
-      submission: { elapsedSeconds: number; remainingSeconds: number | null };
-    };
-    expect(cappedStepBody.submission.elapsedSeconds).toBe(120);
-
-    const dbAfterStep = await harness.prisma.submission.findUniqueOrThrow({
-      where: { id: started.submission.id },
-    });
-    expect(dbAfterStep.elapsedSeconds).toBe(120);
-
+    const offlineAt = Date.now() - 180_000;
     await harness.prisma.submission.update({
       where: { id: started.submission.id },
-      data: { elapsedSeconds: 1750, remainingSeconds: 50 },
+      data: {
+        elapsedSeconds: 1680,
+        remainingSeconds: 120,
+        timerAccountedAt: new Date(offlineAt),
+        timerLeaseUntil: new Date(offlineAt + 15_000),
+      },
     });
-
-    const cappedMaxRes = await studentClient
+    const resumed = await studentClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
-      .send({ answers: [], elapsedSeconds: 999_999_999 })
+      .send({ answers: [], timerClientId: started.submission.id, elapsedSeconds: 999_999_999 })
       .expect(200);
-    const cappedMaxBody = cappedMaxRes.body as {
-      submission: {
-        elapsedSeconds: number;
-        remainingSeconds: number | null;
-        autoSubmitted: boolean;
-        status: string;
-      };
-    };
-    expect(cappedMaxBody.submission.elapsedSeconds).toBe(1800);
-    expect(cappedMaxBody.submission.remainingSeconds).toBe(0);
-    expect(cappedMaxBody.submission.autoSubmitted).toBe(true);
-    expect(cappedMaxBody.submission.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
-
-    const dbAfterMax = await harness.prisma.submission.findUniqueOrThrow({
+    expect(resumed.body.submission).toMatchObject({
+      status: SubmissionStatus.IN_PROGRESS, elapsedSeconds: 1695, remainingSeconds: 105,
+    });
+    const paused = await studentClient
+      .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
+      .send({ answers: [], timerClientId: started.submission.id, pauseTimer: true })
+      .expect(200);
+    const pausedRow = await harness.prisma.submission.findUniqueOrThrow({
       where: { id: started.submission.id },
     });
-    expect(dbAfterMax.elapsedSeconds).toBe(1800);
-    expect(dbAfterMax.remainingSeconds).toBe(0);
-    expect(dbAfterMax.autoSubmitted).toBe(true);
-    expect(dbAfterMax.status).toBe(SubmissionStatus.SUBMITTED_WAITING);
+    expect(pausedRow.timerLeaseUntil).toBeNull();
+    const review = await studentClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
+    expect(review.body.submission.remainingSeconds).toBe(paused.body.submission.remainingSeconds);
   });
 });

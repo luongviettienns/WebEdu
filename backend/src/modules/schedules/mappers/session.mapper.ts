@@ -129,7 +129,8 @@ export function toLessonSessionItemDto(
     entity.status === SessionStatus.COMPLETED &&
     (isAdmin || (isLeadTeacher && isWithinTeacherAttendanceWindow(entity.sessionDate, nowInstant)));
 
-  const canMutateSchedule = !isClosedClass && isAdmin && entity.status === SessionStatus.SCHEDULED;
+  const canMutateSchedule = !isClosedClass && isAdmin &&
+    (entity.status === SessionStatus.SCHEDULED || (isCancelled && !entity.makeupReplacement));
 
   const records = entity.attendanceRecords ?? [];
   let attendanceSummary: LessonSessionItemDto['attendanceSummary'] = null;

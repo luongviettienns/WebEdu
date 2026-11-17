@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { AssignmentsModule } from '../assignments/assignments.module.js';
 import { SystemSettingsModule } from '../system-settings/system-settings.module.js';
 import { GradingController } from './grading.controller.js';
-import { AutoGradingPolicy } from './policies/auto-grading.policy.js';
 import { PublishedGradesRepository } from './repositories/published-grades.repository.js';
 import { AiEssayGradingService } from './services/ai-essay-grading.service.js';
 import { AutoGradingService } from './services/auto-grading.service.js';
@@ -16,7 +15,6 @@ import { TeacherGradingService } from './services/teacher-grading.service.js';
   imports: [AssignmentsModule, SystemSettingsModule],
   controllers: [GradingController],
   providers: [
-    AutoGradingPolicy,
     AutoGradingService,
     AiEssayGradingService,
     GradingEventsService,
@@ -27,7 +25,6 @@ import { TeacherGradingService } from './services/teacher-grading.service.js';
     PublishedGradesRepository,
   ],
   exports: [
-    AutoGradingPolicy,
     AutoGradingService,
     AiEssayGradingService,
     GradingEventsService,

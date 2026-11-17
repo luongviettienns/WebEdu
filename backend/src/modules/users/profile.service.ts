@@ -152,7 +152,7 @@ export class ProfileService {
         },
       });
       if (dupPre) throw new ConflictException('Email/Số điện thoại đã được sử dụng');
-      await verifyEmailVerificationCodeOrThrow(this.prisma, candidateEmailPre, dto.verificationCode);
+      await verifyEmailVerificationCodeOrThrow(this.prisma, candidateEmailPre, dto.verificationCode, userId);
       preVerifiedOtpEmail = candidateEmailPre;
     }
 
@@ -177,7 +177,7 @@ export class ProfileService {
             await this.assertCurrentPasswordValid(dto.currentPassword, user.passwordHash);
           }
           if (preVerifiedOtpEmail !== nextEmail) {
-            await verifyEmailVerificationCodeOrThrow(this.prisma, nextEmail, dto.verificationCode);
+            await verifyEmailVerificationCodeOrThrow(this.prisma, nextEmail, dto.verificationCode, userId);
           }
         }
 

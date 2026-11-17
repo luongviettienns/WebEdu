@@ -369,7 +369,7 @@ describe('Phase 8 Dynamic Course Weights, Zero-Leak Progress & Admin Overview E2
       pointsPerQuestion: 10,
     });
 
-    // Student A submits MINI_TEST (10/20 = 5.0) & FINAL (20/20 -> wait: 1 correct + 1 wrong? Let's score 16/20 by setting q1=16, q2=4 or 20/20 -> let's adjust or use 2 questions of 10? Wait: 16/20 needs 16 + 4 or 10 + 6! Let's verify 10+10 = 20, 1 correct = 10/20 = 5.0, or adjust to 16/20 via adjust-grade or question points! Even better: test FINAL with 20/20 = 10 or adjust to 16/20!).
+    // Student A submits MINI_TEST (10/20) and FINAL (20/20 before teacher adjustment).
     const startMini = await studentAClient
       .post(`/api/v1/assignments/${mini1.assignmentId}/submissions/start`)
       .expect(200);
@@ -377,7 +377,8 @@ describe('Phase 8 Dynamic Course Weights, Zero-Leak Progress & Admin Overview E2
     await studentAClient
       .post(`/api/v1/assignments/${mini1.assignmentId}/submissions/submit`)
       .send({
-        elapsedSeconds: 30,
+        submissionId: subMiniAId,
+        revision: 0,
         answers: [
           { questionId: mini1.questionIds[0], answerPayload: { selectedOptionIds: ['a'] } }, // +10
           { questionId: mini1.questionIds[1], answerPayload: { selectedOptionIds: ['b'] } }, // +0 -> 10/20
@@ -392,7 +393,8 @@ describe('Phase 8 Dynamic Course Weights, Zero-Leak Progress & Admin Overview E2
     await studentAClient
       .post(`/api/v1/assignments/${final1.assignmentId}/submissions/submit`)
       .send({
-        elapsedSeconds: 45,
+        submissionId: subFinAId,
+        revision: 0,
         answers: [
           { questionId: final1.questionIds[0], answerPayload: { selectedOptionIds: ['a'] } }, // +10
           { questionId: final1.questionIds[1], answerPayload: { selectedOptionIds: ['a'] } }, // +10
@@ -532,7 +534,7 @@ describe('Phase 8 Dynamic Course Weights, Zero-Leak Progress & Admin Overview E2
     await studentAClient
       .post(`/api/v1/assignments/${hwBeforeB.assignmentId}/submissions/submit`)
       .send({
-        elapsedSeconds: 20,
+        revision: 0,
         answers: [{ questionId: hwBeforeB.questionIds[0], answerPayload: { selectedOptionIds: ['a'] } }],
       })
       .expect(200);

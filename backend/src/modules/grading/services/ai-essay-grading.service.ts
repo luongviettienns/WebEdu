@@ -28,6 +28,7 @@ import type {
   AiEssaySuggestionItemDto,
   AiGradeSubmissionResultDto,
 } from '../grading.types.js';
+import { sanitizeAndVerifyEssayDraftInput } from '../policies/ai-pii-guard.policy.js';
 import { GRADEABLE_ACTIVE_STATUSES } from '../policies/grading-workflow.policy.js';
 import {
   lockClassRowForSubmissionTx,
@@ -39,10 +40,6 @@ const BATCH_AI_CONCURRENCY = 4;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function readOptionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 @Injectable()
@@ -84,7 +81,7 @@ export class AiEssayGradingService {
                 questions: {
                   where: { type: QuestionType.ESSAY },
                   orderBy: { position: 'asc' },
-                  select: { id: true, prompt: true, points: true, payload: true },
+                  select: { id: true, points: true },
                 },
               },
             },
@@ -144,19 +141,30 @@ export class AiEssayGradingService {
         continue;
       }
 
-      const courseLevel = submission.classAssignment.assessment.course?.level ?? null;
-      const qPayload = isRecord(question.payload) ? question.payload : {};
+      if (!dto?.questionId || !dto.reviewedInput) {
+        throw new BadRequestException('Cần duyệt và loại thông tin định danh khỏi nội dung từng câu trước khi gửi AI');
+      }
+      const { prompt, sampleAnswer, rubric, studentAnswer: reviewedAnswer } = dto.reviewedInput;
+      if (!prompt.trim() || !reviewedAnswer.trim()) {
+        throw new BadRequestException('Câu hỏi hoặc bài làm đã duyệt đang trống. Vui lòng chấm tay');
+      }
+      const reviewed = {
+        prompt,
+        maxPoints: effectiveMaxPoints,
+        courseLevel: submission.classAssignment.assessment.course?.level ?? null,
+        sampleAnswer: sampleAnswer || null,
+        rubric: rubric || null,
+        studentAnswer: reviewedAnswer,
+      };
+      const checked = sanitizeAndVerifyEssayDraftInput(reviewed, transportOptions.forbiddenNames);
+      if (checked.prompt !== reviewed.prompt || checked.sampleAnswer !== reviewed.sampleAnswer ||
+          checked.rubric !== reviewed.rubric || checked.studentAnswer !== reviewed.studentAnswer) {
+        throw new BadRequestException('Nội dung còn dữ liệu cần chuẩn hóa hoặc loại định danh. Vui lòng duyệt lại hoặc chấm tay');
+      }
       const timeoutMs = Math.min(runtimeConfig.timeoutMs, requireAiRequestTime(deadline));
       const draft = await callAiProviderForEssayDraft(
         { ...runtimeConfig, timeoutMs },
-        {
-          prompt: question.prompt,
-          maxPoints: effectiveMaxPoints,
-          courseLevel,
-          sampleAnswer: readOptionalString(qPayload.sampleAnswer),
-          rubric: readOptionalString(qPayload.rubric),
-          studentAnswer,
-        },
+        reviewed,
         transportOptions,
       ).catch((error: unknown) => {
         requireAiRequestTime(deadline);
@@ -284,49 +292,38 @@ export class AiEssayGradingService {
 
     await this.loadEnabledAiConfig();
 
-    const requestedIds = [...new Set(dto?.submissionIds ?? [])];
-    if (requestedIds.length > MAX_BATCH_AI_SUBMISSIONS) {
+    const reviews = new Map(dto?.reviews?.map((item) => [item.submissionId, item]));
+    if (reviews.size !== (dto?.reviews?.length ?? 0)) {
+      throw new BadRequestException('Mỗi bài nộp chỉ được gửi một câu đã duyệt trong một lượt');
+    }
+    const requestedIds = [...new Set(dto?.submissionIds?.length ? dto.submissionIds : reviews.keys())];
+    if (requestedIds.length === 0) {
+      throw new BadRequestException('Cần duyệt từng câu trước khi gửi AI hàng loạt hoặc chấm tay');
+    }
+    if (requestedIds.length > MAX_BATCH_AI_SUBMISSIONS || reviews.size > MAX_BATCH_AI_SUBMISSIONS) {
       throw new BadRequestException(`Mỗi lượt chấm AI hàng loạt tối đa ${MAX_BATCH_AI_SUBMISSIONS} bài nộp`);
     }
-
-    let targetIds: string[];
-    let validAssignmentSet: Set<string> | null = null;
-    if (requestedIds.length > 0) {
-      const ownedSubmissions = await this.prisma.submission.findMany({
-        where: { classAssignmentId: assignmentId, id: { in: requestedIds } },
-        select: { id: true },
-      });
-      validAssignmentSet = new Set(ownedSubmissions.map((s) => s.id));
-      targetIds = requestedIds;
-    } else {
-      const targetQuestionIds = dto?.questionId ? [dto.questionId] : essayIds;
-      const candidateSubmissions = await this.prisma.submission.findMany({
-        where: {
-          classAssignmentId: assignmentId,
-          status: { in: [...GRADEABLE_ACTIVE_STATUSES] },
-          OR: targetQuestionIds.map((questionId) => ({
-            answers: { none: { questionId, aiSuggestedPoints: { not: null } } },
-          })),
-        },
-        orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
-        take: MAX_BATCH_AI_SUBMISSIONS,
-        select: { id: true },
-      });
-      targetIds = candidateSubmissions.map((s) => s.id);
-    }
-
-    const results = await runInBoundedChunks(targetIds, BATCH_AI_CONCURRENCY, async (submissionId): Promise<AiBatchSuggestGradeItemDto> => {
-      if (validAssignmentSet && !validAssignmentSet.has(submissionId)) {
+    const ownedSubmissions = await this.prisma.submission.findMany({
+      where: { classAssignmentId: assignmentId, id: { in: requestedIds } },
+      select: { id: true },
+    });
+    const validAssignmentSet = new Set(ownedSubmissions.map((s) => s.id));
+    const results = await runInBoundedChunks(requestedIds, BATCH_AI_CONCURRENCY, async (submissionId): Promise<AiBatchSuggestGradeItemDto> => {
+      if (!validAssignmentSet.has(submissionId)) {
         return { submissionId, ok: false, error: 'Bài nộp không thuộc bài giao này hoặc không tồn tại' };
+      }
+      const review = reviews.get(submissionId);
+      if (!review || (dto?.questionId && review.questionId !== dto.questionId)) {
+        return { submissionId, ok: false, error: 'Cần duyệt nội dung câu tự luận hoặc chấm tay' };
       }
       try {
         requireAiRequestTime(deadline);
         const res = await this.suggestEssayGradesForSubmission(
           submissionId,
           actor,
-          dto?.questionId ? { questionId: dto.questionId } : undefined,
+          review,
           fetchImpl,
-          requestedIds.length === 0,
+          !dto?.submissionIds?.length,
           deadline,
         );
         return { submissionId, ok: true, gradingStatus: res.gradingStatus, suggestedCount: res.suggestions.length };

@@ -4,10 +4,12 @@ import {
   ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsDefined,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -44,11 +46,51 @@ const parseStrictNumberInput = ({ value }: { value: unknown }): unknown => {
   return value;
 };
 
+export class ReviewedAiEssayDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(50_000)
+  prompt!: string;
+
+  @IsString()
+  @MaxLength(50_000)
+  sampleAnswer!: string;
+
+  @IsString()
+  @MaxLength(50_000)
+  rubric!: string;
+
+  @IsString()
+  @MaxLength(50_000)
+  studentAnswer!: string;
+}
+
 export class AiGradeSubmissionDto {
-  @ApiPropertyOptional({ description: 'Chỉ gợi ý cho 1 câu tự luận cụ thể (tùy chọn)' })
+  @ApiPropertyOptional({ description: 'Câu tự luận đã duyệt nội dung' })
   @IsOptional()
   @IsUUID()
   questionId?: string;
+
+  @ApiPropertyOptional({ type: ReviewedAiEssayDto, description: 'Văn bản giáo viên đã duyệt và loại thông tin định danh trước khi gửi AI' })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ReviewedAiEssayDto)
+  reviewedInput?: ReviewedAiEssayDto;
+}
+
+export class ReviewedAiBatchItemDto {
+  @IsUUID()
+  submissionId!: string;
+
+  @IsUUID()
+  questionId!: string;
+
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ReviewedAiEssayDto)
+  reviewedInput!: ReviewedAiEssayDto;
 }
 
 export class GradingTrackerQueryDto implements PaginationInput {
@@ -180,6 +222,13 @@ export class AiSuggestBatchGradeDto {
   @IsOptional()
   @IsUUID()
   questionId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => ReviewedAiBatchItemDto)
+  reviews?: ReviewedAiBatchItemDto[];
 }
 
 export class AdjustGradeAnswerItemDto {

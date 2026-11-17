@@ -3,9 +3,9 @@
 import React, { useState } from 'react';
 import {
   QUESTION_TYPE_LABELS,
-  emptyPayload,
   type QuestionType,
 } from '@/features/assessments/api/assessments.api';
+import { emptyPayload } from '@/features/assessments/utils/question-payload';
 import type { MediaItem } from '@/features/assessments/components/MediaAttach';
 import { QuestionTypeFields } from '@/features/assessments/components/QuestionTypeFields';
 

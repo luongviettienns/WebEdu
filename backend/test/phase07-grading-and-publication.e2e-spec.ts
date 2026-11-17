@@ -246,11 +246,12 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
     const startRes = await studentAClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/start`)
       .expect(200);
-    const submissionAId = (startRes.body as { submission: { id: string } }).submission.id;
+    const { id: submissionAId, revision: revisionA } = startRes.body.submission as { id: string; revision: number };
 
     await studentAClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
       .send({
+        revision: revisionA,
         elapsedSeconds: 120,
         answers: [
           { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } },
@@ -291,6 +292,15 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
     expect(stuARow.autoScore).toBe(5);
     expect(stuARow.ungradedSubjectiveCount).toBe(1);
     expect(stuARow.canConfirm).toBe(false);
+
+    const pageOne = await teacherClient.get(`/api/v1/assignments/${assignmentId}/grading-tracker?status=NEEDS_GRADING&limit=1`).expect(200);
+    expect(pageOne.body).toMatchObject({
+      total: 1,
+      summary: { totalStudents: 2, submittedWaitingCount: 1 },
+      students: [{ studentId: studentAId }],
+    });
+    const pastEnd = await teacherClient.get(`/api/v1/assignments/${assignmentId}/grading-tracker?status=NEEDS_GRADING&limit=1&page=2`).expect(200);
+    expect(pastEnd.body).toMatchObject({ total: 1, students: [] });
 
     // Seed AI draft suggestion on Student A's essay to test applyAiSuggestion + non-leak
     await harness.prisma.submissionAnswer.update({
@@ -418,12 +428,19 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
       reason: 'Admin phúc khảo cộng 0.5đ phần diễn đạt',
     });
 
-    // 9. Explicit overdue-zero action records 0 points for Student B -> publish reveals 0 points
+    // 9. A learner enrolled after the deadline remains untouched by overdue-zero.
+    const lateStudent = await seedAndLoginUser('hv.late.p7@webedu.vn', [Role.STUDENT], '0907000007', 'Học viên vào muộn');
+    await harness.prisma.enrollment.create({
+      data: { classId, studentId: lateStudent.id, status: EnrollmentStatus.ACTIVE, enrolledDate: new Date() },
+    });
+    await teacherClient.post(`/api/v1/assignments/${assignmentId}/overdue-zero`)
+      .send({ studentIds: [lateStudent.id] }).expect(400);
     const zeroRes = await teacherClient
       .post(`/api/v1/assignments/${assignmentId}/overdue-zero`)
-      .send({ studentIds: [studentBId], reason: 'Không nộp bài sau hạn' })
+      .send({ reason: 'Không nộp bài sau hạn' })
       .expect(200);
-    expect((zeroRes.body as { recordedCount: number }).recordedCount).toBe(1);
+    expect(zeroRes.body).toMatchObject({ recordedCount: 1, recordedStudentIds: [studentBId] });
+    expect(await harness.prisma.submission.count({ where: { classAssignmentId: assignmentId, studentId: lateStudent.id } })).toBe(0);
 
     await teacherClient.post(`/api/v1/assignments/${assignmentId}/publish-grades`).send({}).expect(200);
     const studentBResult = await studentBClient
@@ -552,10 +569,11 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
     const piiStart = await studentAClient
       .post(`/api/v1/assignments/${piiAssignId}/submissions/start`)
       .expect(200);
-    const piiSubId = (piiStart.body as { submission: { id: string } }).submission.id;
+    const { id: piiSubId, revision: piiRevision } = piiStart.body.submission as { id: string; revision: number };
     await studentAClient
       .post(`/api/v1/assignments/${piiAssignId}/submissions/submit`)
       .send({
+        revision: piiRevision,
         elapsedSeconds: 20,
         answers: [{ questionId: piiQId, answerPayload: { text: '我叫小王。' } }],
       })
@@ -566,7 +584,13 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
       .send({ enabled: true, provider: 'OPENAI', apiKey: 'sk-dummy-active-1234' })
       .expect(200);
 
-    await teacherClient.post(`/api/v1/submissions/${piiSubId}/ai-grade`).send({}).expect(400);
+    await teacherClient.post(`/api/v1/submissions/${piiSubId}/ai-grade`).send({ questionId: piiQId }).expect(400);
+    await teacherClient.post(`/api/v1/submissions/${piiSubId}/ai-grade`).send({
+      questionId: piiQId,
+      reviewedInput: {
+        prompt: 'Viết một đoạn văn tiếng Trung', rubric: 'HSK1', sampleAnswer: '', studentAnswer: '我叫小王。',
+      },
+    }).expect(400);
     const piiSubDb = await harness.prisma.submission.findUnique({ where: { id: piiSubId } });
     expect(piiSubDb?.gradingStatus).toBe(GradingStatus.NONE);
 
@@ -574,10 +598,11 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
     const { assignmentId, questionIds } = await createAndAssignMixedAssessment();
 
     const startA = await studentAClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
-    const subAId = (startA.body as { submission: { id: string } }).submission.id;
+    const { id: subAId, revision: subARevision } = startA.body.submission as { id: string; revision: number };
     await studentAClient
       .post(`/api/v1/assignments/${assignmentId}/submissions/submit`)
       .send({
+        revision: subARevision,
         elapsedSeconds: 60,
         answers: [
           { questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } },
@@ -642,7 +667,12 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
     await teacherClient.post(`/api/v1/submissions/${subAId}/ai-grade`).send({}).expect(409);
     const batchGradRes = await teacherClient
       .post(`/api/v1/assignments/${assignmentId}/ai-grade`)
-      .send({ submissionIds: [subAId] })
+      .send({
+        reviews: [{
+          submissionId: subAId, questionId: questionIds.essay,
+          reviewedInput: { prompt: 'Thói quen đọc sách', studentAnswer: '我每天下午都看书。', rubric: 'HSK1', sampleAnswer: '' },
+        }],
+      })
       .expect(200);
     expect(batchGradRes.body).toMatchObject({
       requestedCount: 1,
@@ -650,11 +680,35 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
       failedCount: 1,
     });
 
-    // Student B autosaves correct objective answer, never submits; assign dueAt expires -> overdue-zero zeroes submission & answers (#8)
-    await studentBClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
+    const timedLearner = await seedAndLoginUser('hv.timer.p7@webedu.vn', [Role.STUDENT], '0907000008', 'Học viên hết giờ');
+    await harness.prisma.enrollment.create({
+      data: { classId, studentId: timedLearner.id, status: EnrollmentStatus.ACTIVE, enrolledDate: new Date() },
+    });
+    const timedStart = await timedLearner.client.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
+    await timedLearner.client.patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`).send({
+      revision: timedStart.body.submission.revision,
+      answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }],
+    }).expect(200);
+    const timedSubmissionId = timedStart.body.submission.id as string;
+    const tickAt = Date.now();
+    await harness.prisma.submission.update({
+      where: { id: timedSubmissionId },
+      data: {
+        elapsedSeconds: 1795, remainingSeconds: 5, timerAccountedAt: new Date(tickAt - 20_000),
+        timerLeaseUntil: new Date(tickAt - 5_000),
+      },
+    });
+    await teacherClient.get(`/api/v1/assignments/${assignmentId}/grading-tracker`).expect(200);
+    expect(await harness.prisma.submission.findUnique({ where: { id: timedSubmissionId } })).toMatchObject({
+      status: SubmissionStatus.SUBMITTED_WAITING, remainingSeconds: 0, autoSubmitted: true, autoScore: 2,
+    });
+
+    // Student B saves a correct objective answer and closes the page before the deadline.
+    const startB = await studentBClient.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
     await studentBClient
       .patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`)
       .send({
+        revision: startB.body.submission.revision,
         elapsedSeconds: 30,
         remainingSeconds: 1700,
         answers: [{ questionId: questionIds.single, answerPayload: { selectedOptionIds: ['a'] } }],
@@ -666,26 +720,24 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
       data: { dueAt: new Date(Date.now() - 86_400_000) },
     });
 
-    // Overdue-zero refuses already submitted Student A (409), succeeds for Student B
+    // A late zero request finalizes the saved draft instead of erasing its credit.
+    await teacherClient
+      .post(`/api/v1/assignments/${assignmentId}/overdue-zero`)
+      .send({ studentIds: [studentBId], reason: 'Quá hạn chưa nộp' })
+      .expect(409);
     await teacherClient
       .post(`/api/v1/assignments/${assignmentId}/overdue-zero`)
       .send({ studentIds: [studentAId] })
       .expect(409);
-    const overdueRes = await teacherClient
-      .post(`/api/v1/assignments/${assignmentId}/overdue-zero`)
-      .send({ studentIds: [studentBId], reason: 'Quá hạn chưa nộp' })
-      .expect(200);
-    expect((overdueRes.body as { recordedCount: number }).recordedCount).toBe(1);
 
     const subBDb = await harness.prisma.submission.findFirst({
       where: { classAssignmentId: assignmentId, studentId: studentBId },
       include: { answers: true },
     });
-    expect(subBDb?.status).toBe(SubmissionStatus.GRADED);
-    expect(Number(subBDb?.totalScore)).toBe(0);
+    expect(subBDb).toMatchObject({ status: SubmissionStatus.SUBMITTED_WAITING, autoSubmitted: true, autoScore: 2, totalScore: null });
     const stuBSingleAns = subBDb?.answers.find((a) => a.questionId === questionIds.single);
-    expect(Number(stuBSingleAns?.earnedPoints)).toBe(0);
-    expect(stuBSingleAns?.teacherEdited).toBe(true);
+    expect(Number(stuBSingleAns?.earnedPoints)).toBe(2);
+    expect(stuBSingleAns?.teacherEdited).toBe(false);
     expect(stuBSingleAns?.answerPayload).toEqual({ selectedOptionIds: ['a'] });
 
     // Two concurrent transactions (#4b): Tx2 holds class_assignment lock and marks subBId SUPERSEDED (simulating reopen), publish-grades only transitions subAId
@@ -771,5 +823,14 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
       })
       .expect(200);
     expect(commentRes.body).toMatchObject({ totalScore: 8.5, auditLogsCreated: 0 });
+
+    await harness.prisma.class.update({ where: { id: classId }, data: { status: ClassStatus.COMPLETED } });
+    await teacherClient.patch(`/api/v1/submissions/${subAId}/adjust-grade`)
+      .send({ reason: 'Sửa sau khi đóng lớp', answers: [{ questionId: questionIds.essay, earnedPoints: 2 }] })
+      .expect(403);
+    await teacherClient.post(`/api/v1/assignments/${assignmentId}/publish-grades`).send({}).expect(403);
+    const closedTracker = await teacherClient.get(`/api/v1/assignments/${assignmentId}/grading-tracker`).expect(200);
+    expect(closedTracker.body.assignment.canMutate).toBe(false);
+    expect(await harness.prisma.submission.findUnique({ where: { id: subAId } })).toMatchObject({ totalScore: 8.5, status: SubmissionStatus.RETURNED });
   });
 });

@@ -15,6 +15,7 @@ const BACKEND_MODULE_PART_MAX_LOC = 250;
 const FRONTEND_PAGE_MAX_LOC = 250;
 const FRONTEND_HOOK_MAX_LOC = 300;
 const FRONTEND_COMPONENT_MAX_LOC = 300;
+const FRONTEND_API_MAX_LOC = 300;
 
 const IGNORED_DIRS = new Set(['node_modules', 'dist', '.next', 'coverage', '.git']);
 
@@ -92,6 +93,14 @@ const checks = [
     files: scanDir(
       path.join(ROOT, 'frontend', 'src', 'features'),
       (p) => /\/components\/[^/]+\.tsx$/.test(p) && !isTestFile(p),
+    ),
+  },
+  {
+    label: 'Frontend Feature API Modules',
+    maxLoc: FRONTEND_API_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'frontend', 'src', 'features'),
+      (p) => /\/api\/.*\.ts$/.test(p) && !isTestFile(p),
     ),
   },
 ];

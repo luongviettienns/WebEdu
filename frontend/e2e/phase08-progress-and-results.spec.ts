@@ -160,7 +160,7 @@ async function submitObjectiveAnswers(
     { headers: { Origin: origin } },
   );
   expect(startRes.ok(), `Start submission failed: ${startRes.status()}`).toBeTruthy();
-  const started = (await startRes.json()) as { submission: { id: string } };
+  const started = (await startRes.json()) as { submission: { id: string; revision: number } };
 
   const submitRes = await page.request.post(
     `${API_BASE_URL}/assignments/${assignmentId}/submissions/submit`,
@@ -168,11 +168,11 @@ async function submitObjectiveAnswers(
       headers: { Origin: origin },
       data: {
         submissionId: started.submission.id,
+        revision: started.submission.revision,
         answers: answers.map((a) => ({
           questionId: a.questionId,
           answerPayload: { selectedOptionIds: [a.optionId] },
         })),
-        elapsedSeconds: 30,
       },
     },
   );
@@ -532,7 +532,14 @@ test.describe('Phase 8 — Grading Formula, Progress Tracking, Zero-Leak & Admin
     await logoutViaApi(page);
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
     await page.goto(`/teacher/classes/${hsk2ClassId}`);
-    await page.getByRole('tab', { name: 'Tiến độ & Kết quả' }).click();
+    const infoTab = page.getByRole('tab', { name: 'Thông tin & Học viên' });
+    const resultsTab = page.getByRole('tab', { name: 'Tiến độ & Kết quả' });
+    await expect(infoTab).toHaveAttribute('tabindex', '0');
+    await expect(resultsTab).toHaveAttribute('tabindex', '-1');
+    await infoTab.press('ArrowLeft');
+    await expect(resultsTab).toBeFocused();
+    await expect(resultsTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel', { name: 'Tiến độ & Kết quả' })).toBeVisible();
 
     const progressTable = page.getByTestId('class-progress-table');
     const studentProgressRow = progressTable.locator('tbody tr', { hasText: 'Phạm Gia Huy' });

@@ -1,220 +1,26 @@
 import {
+  buildQueryString,
   API_BASE_URL,
   requestJson,
   type RequestOptions,
 } from '@/lib/api-client';
-import type { AssessmentType, QuestionType } from '@/features/assessments/api/assessments.api';
 import type { StatusTagTone } from '@/features/common/components/StatusTag';
 
-export type SubmissionStatus =
-  | 'IN_PROGRESS'
-  | 'SUBMITTED_WAITING'
-  | 'AUTO_GRADED_PENDING_REVIEW'
-  | 'GRADED'
-  | 'RETURNED'
-  | 'SUPERSEDED';
+import type {
+  AssignmentDisplayStatus,
+  StudentAnswerPayload,
+  ClassAssignmentSummaryDto,
+  StudentAssignmentListItemDto,
+  StudentExamSessionDto,
+  TeacherAssignmentSubmissionsDto,
+  TeacherTrackerStudentRowDto,
+  AssignAssessmentPayload,
+  AutosavePayload,
+  SubmitPayload,
+  ReopenSubmissionPayload,
+} from './assignments.types';
 
-export type AssignmentDisplayStatus = 'NOT_STARTED' | SubmissionStatus;
-
-export interface OptionAnswerPayload {
-  selectedOptionIds: string[];
-}
-
-export interface TextAnswerPayload {
-  text: string;
-}
-
-export interface OrderingAnswerPayload {
-  orderedTokens: string[];
-}
-
-export type EmptyAnswerPayload = Record<string, never>;
-
-export type StudentAnswerPayload =
-  | OptionAnswerPayload
-  | TextAnswerPayload
-  | OrderingAnswerPayload
-  | EmptyAnswerPayload;
-
-export interface ClassAssignmentStatsDto {
-  totalStudents: number;
-  notStartedCount: number;
-  inProgressCount: number;
-  submittedWaitingCount: number;
-  gradedCount: number;
-}
-
-export interface ClassAssignmentSummaryDto {
-  id: string;
-  assessmentId: string;
-  assessmentTitle: string;
-  assessmentType: AssessmentType;
-  description: string;
-  courseId: string;
-  classId: string;
-  classCode: string;
-  className: string;
-  sessionId: string | null;
-  assignedById: string;
-  assignedByName: string;
-  assignedAt: string;
-  dueAt: string;
-  effectiveDurationMinutes: number | null;
-  instructions: string | null;
-  questionCount: number;
-  totalPoints: number;
-  stats?: ClassAssignmentStatsDto;
-}
-
-export interface StudentAssignmentListItemDto {
-  assignmentId: string;
-  assessmentId: string;
-  assessmentTitle: string;
-  assessmentType: AssessmentType;
-  classId: string;
-  classCode: string;
-  className: string;
-  assignedAt: string;
-  dueAt: string;
-  effectiveDurationMinutes: number | null;
-  instructions: string | null;
-  questionCount: number;
-  totalPoints: number;
-  isOverdue: boolean;
-  submissionId: string | null;
-  attemptNumber: number;
-  status: AssignmentDisplayStatus;
-  displayStatusLabel: string;
-  remainingSeconds: number | null;
-  elapsedSeconds: number;
-  answeredCount: number;
-  lastSavedAt: string | null;
-  submittedAt: string | null;
-  autoSubmitted: boolean;
-  autoScore: number | null;
-  totalScore: number | null;
-  teacherFeedback: string | null;
-}
-
-export interface SanitizedOptionDto {
-  id: string;
-  text: string;
-  imageMediaId?: string;
-}
-
-export interface SanitizedQuestionDto {
-  id: string;
-  position: number;
-  type: QuestionType;
-  prompt: string;
-  points: number;
-  options?: SanitizedOptionDto[];
-  tokens?: string[];
-  maxLength?: number;
-  mediaId?: string;
-  maxListens?: number;
-  caption?: string;
-  multiple?: boolean;
-}
-
-export interface StudentSubmissionAnswerDto {
-  questionId: string;
-  answerPayload: StudentAnswerPayload;
-  audioPlayCount: number;
-  updatedAt: string;
-}
-
-export interface StudentExamSessionDto {
-  assignment: StudentAssignmentListItemDto;
-  submission: {
-    id: string;
-    studentId: string;
-    attemptNumber: number;
-    status: SubmissionStatus;
-    displayStatusLabel: string;
-    startedAt: string;
-    lastSavedAt: string;
-    lastSyncedAt: string;
-    elapsedSeconds: number;
-    remainingSeconds: number | null;
-    submittedAt: string | null;
-    autoSubmitted: boolean;
-    dueAtOverride: string | null;
-  };
-  questions: SanitizedQuestionDto[];
-  answers: StudentSubmissionAnswerDto[];
-}
-
-export interface SupersededAttemptDto {
-  submissionId: string;
-  attemptNumber: number;
-  submittedAt: string | null;
-  reopenedAt: string | null;
-  reopenReason: string | null;
-}
-
-export interface TeacherTrackerStudentRowDto {
-  studentId: string;
-  fullName: string;
-  email: string;
-  submissionId: string | null;
-  attemptNumber: number;
-  status: AssignmentDisplayStatus;
-  displayStatusLabel: string;
-  answeredCount: number;
-  questionCount: number;
-  startedAt: string | null;
-  lastSavedAt: string | null;
-  submittedAt: string | null;
-  autoSubmitted: boolean;
-  elapsedSeconds: number;
-  remainingSeconds: number | null;
-  dueAtOverride: string | null;
-  canReopen: boolean;
-  reopenCount: number;
-  supersededAttempts: SupersededAttemptDto[];
-}
-
-export interface TeacherAssignmentSubmissionsDto {
-  assignment: ClassAssignmentSummaryDto;
-  students: TeacherTrackerStudentRowDto[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
-export interface AssignAssessmentPayload {
-  classIds: string[];
-  dueAt: string;
-  instructions?: string;
-  sessionId?: string;
-}
-
-export interface AutosaveAnswerItemPayload {
-  questionId: string;
-  answerPayload: StudentAnswerPayload;
-  audioPlayCount?: number;
-}
-
-export interface AutosavePayload {
-  submissionId?: string;
-  answers: AutosaveAnswerItemPayload[];
-  elapsedSeconds: number;
-  remainingSeconds?: number | null;
-}
-
-export interface SubmitPayload {
-  submissionId?: string;
-  answers?: AutosaveAnswerItemPayload[];
-  elapsedSeconds?: number;
-  remainingSeconds?: number | null;
-  autoSubmitted?: boolean;
-}
-
-export interface ReopenSubmissionPayload {
-  reason: string;
-  newDueAt?: string;
-}
+export type * from './assignments.types';
 
 export const ASSIGNMENT_DISPLAY_STATUS_LABELS: Record<AssignmentDisplayStatus, string> = {
   NOT_STARTED: 'Chưa làm',
@@ -334,10 +140,10 @@ export async function getMyAssignments(
 
 export async function startOrResumeAssignment(
   assignmentId: string,
-  options?: RequestOptions,
+  options?: RequestOptions & { timerClientId?: string },
 ): Promise<StudentExamSessionDto> {
   return requestJson<StudentExamSessionDto>(
-    `/assignments/${encodeURIComponent(assignmentId)}/submissions/start`,
+    `/assignments/${encodeURIComponent(assignmentId)}/submissions/start${buildQueryString({ timerClientId: options?.timerClientId })}`,
     {
       method: 'POST',
       signal: options?.signal,
@@ -348,12 +154,14 @@ export async function startOrResumeAssignment(
 export async function autosaveAssignment(
   assignmentId: string,
   payload: AutosavePayload,
+  keepalive = false,
 ): Promise<StudentExamSessionDto> {
   return requestJson<StudentExamSessionDto>(
     `/assignments/${encodeURIComponent(assignmentId)}/submissions/autosave`,
     {
       method: 'PATCH',
       body: JSON.stringify(payload),
+      keepalive,
     },
   );
 }

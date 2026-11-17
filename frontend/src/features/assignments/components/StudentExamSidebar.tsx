@@ -45,7 +45,10 @@ export function StudentExamSidebar({
 
   let saveLabel = 'Sẵn sàng lưu tự động';
   let saveToneCls = 'text-[var(--ink-2)] bg-[var(--surface-2)]';
-  if (isOffline || saveState === 'offline') {
+  if (saveState === 'memory-only') {
+    saveLabel = 'Bản nháp chưa lưu trên thiết bị';
+    saveToneCls = 'text-[var(--red-ink)] bg-[var(--red-soft)]';
+  } else if (isOffline || saveState === 'offline') {
     saveLabel = 'Ngoại tuyến - đã lưu cục bộ';
     saveToneCls = 'text-[var(--amber)] bg-[var(--amber-soft)]';
   } else if (saveState === 'saving') {

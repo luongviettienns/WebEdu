@@ -13,6 +13,8 @@ interface PortalSidebarProps {
   pendingCount: number;
   preferredRoleView?: 'ADMIN' | 'TEACHER';
   onSwitchRoleView?: (role: 'ADMIN' | 'TEACHER') => void;
+  onLogout: () => void;
+  loggingOut: boolean;
 }
 
 export function PortalSidebar({
@@ -20,6 +22,8 @@ export function PortalSidebar({
   pendingCount,
   preferredRoleView = 'ADMIN',
   onSwitchRoleView,
+  onLogout,
+  loggingOut,
 }: PortalSidebarProps) {
   const pathname = usePathname() ?? '';
   const activeRoleView = resolveActiveRoleView(
@@ -41,6 +45,8 @@ export function PortalSidebar({
         user={user}
         activeRoleView={activeRoleView}
         onSwitchRoleView={onSwitchRoleView}
+        onLogout={onLogout}
+        loggingOut={loggingOut}
       />
     </aside>
   );

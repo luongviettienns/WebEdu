@@ -117,13 +117,13 @@ export function computeStudentAcademicSummary(
           homeworkSubmittedCount += 1;
         }
       }
-      if (returned && validMaxScore) {
+      if (returned && validMaxScore && (assignment.isEligible || returned.submittedAt !== null)) {
         homeworkScores.push(normalizeExactScore10(returned.totalScore!, assignment.maxScore));
       }
       continue;
     }
 
-    if (!returned || !validMaxScore) continue;
+    if (!returned || !validMaxScore || (!assignment.isEligible && returned.submittedAt === null)) continue;
     const score10 = normalizeExactScore10(returned.totalScore!, assignment.maxScore);
     if (assignment.type === AssessmentType.MINI_TEST) {
       miniTestScores.push(score10);

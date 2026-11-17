@@ -4,9 +4,11 @@ import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { getDisplayStatusLabel } from '../../assignments/mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
+import { isAssignmentEligibleForAnyEnrollment } from '../../progress/policies/grade-calculation.policy.js';
 import type { StudentPublishedResultResponseDto } from '../grading.types.js';
 import { toPublishedStudentQuestionResult } from '../mappers/grading-result.mapper.js';
 import { sumQuestionMaxScore } from '../policies/answer-normalizer.policy.js';
+import { CONFIRMED_OR_PUBLISHED_STATUSES } from '../policies/grading-workflow.policy.js';
 
 @Injectable()
 export class PublishedGradesRepository {
@@ -82,7 +84,13 @@ export class PublishedGradesRepository {
     });
 
     const className = assignment.class.course?.name ?? assignment.class.code;
-    if (!submission) {
+    const ineligibleZero = submission?.submittedAt === null &&
+      CONFIRMED_OR_PUBLISHED_STATUSES.has(submission.status) &&
+      !isAssignmentEligibleForAnyEnrollment(assignment, await this.prisma.enrollment.findMany({
+        where: { classId: assignment.classId, studentId: actor.id },
+        select: { enrolledDate: true, leftDate: true },
+      }), false);
+    if (!submission || ineligibleZero) {
       return {
         assignmentId: assignment.id,
         assessmentTitle: assignment.assessment.title,

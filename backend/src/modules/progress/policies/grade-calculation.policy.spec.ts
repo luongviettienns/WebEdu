@@ -427,4 +427,51 @@ describe('grade-calculation.policy', () => {
       ),
     ).toBe(true);
   });
+
+  it('ignores unsubmitted overdue-zero RETURNED (submittedAt: null) when student enrolled outside assignment window (isEligible: false)', () => {
+    const summary = computeStudentAcademicSummary({
+      formula: { miniTestWeight: 50, midtermWeight: 0, finalWeight: 50, passingScore: 5.0 },
+      assignments: [
+        {
+          id: 'hw-late-zero',
+          type: AssessmentType.HOMEWORK,
+          maxScore: 10,
+          isEligible: false,
+          submissions: [{ status: SubmissionStatus.RETURNED, totalScore: 0, submittedAt: null }],
+        },
+        {
+          id: 'mt-late-zero',
+          type: AssessmentType.MINI_TEST,
+          maxScore: 10,
+          isEligible: false,
+          submissions: [{ status: SubmissionStatus.RETURNED, totalScore: 0, submittedAt: null }],
+        },
+        {
+          id: 'mt-eligible',
+          type: AssessmentType.MINI_TEST,
+          maxScore: 10,
+          isEligible: true,
+          submissions: [{ status: SubmissionStatus.RETURNED, totalScore: 8, submittedAt: new Date() }],
+        },
+        {
+          id: 'fin-1',
+          type: AssessmentType.FINAL,
+          maxScore: 10,
+          isEligible: true,
+          submissions: [{ status: SubmissionStatus.RETURNED, totalScore: 8, submittedAt: new Date() }],
+        },
+      ],
+    });
+
+    expect(summary.miniTestCount).toBe(1);
+    expect(summary.miniTestAvg).toBe(8.0);
+    expect(summary.finalScore).toBe(8.0);
+    expect(summary.passStatus).toBe('PASSED');
+    expect(summary.homeworkStats).toEqual({
+      submittedCount: 0,
+      givenCount: 0,
+      submissionRatePercent: null,
+      averageScore10: null,
+    });
+  });
 });

@@ -82,7 +82,7 @@ describe('AssignmentsController', () => {
     );
 
     await ctrl.startOrResume(student, 'assign-1');
-    expect(submissions.startOrResume).toHaveBeenCalledWith('assign-1', student);
+    expect(submissions.startOrResume).toHaveBeenCalledWith('assign-1', student, undefined);
 
     await ctrl.autosave(student, 'assign-1', { answers: [], elapsedSeconds: 10 });
     expect(submissions.autosave).toHaveBeenCalledWith(
@@ -132,7 +132,12 @@ describe('AssignmentsController', () => {
     );
   });
 
-  it('rejects timezone-less ISO dates and oversized answers (>200) via DTO validation', async () => {
+  it('allows ten learners sharing an IP to save and keep their timers active', () => {
+    const handler = Object.getOwnPropertyDescriptor(AssignmentsController.prototype, 'autosave')?.value as object;
+    expect(Reflect.getMetadata('THROTTLER:LIMITdefault', handler)).toBeGreaterThanOrEqual(10 * (30 + 30));
+  });
+
+  it('rejects timezone-less ISO dates and oversized answers (>1000) via DTO validation', async () => {
     const invalidAssign = plainToInstance(AssignAssessmentDto, {
       classIds: ['11111111-1111-4111-8111-111111111111'],
       dueAt: '2026-12-01T10:00:00',
@@ -169,7 +174,7 @@ describe('AssignmentsController', () => {
     });
     expect(await validate(validReopenLowerZ)).toHaveLength(0);
 
-    const oversizedAnswers = Array.from({ length: 201 }, () => ({
+    const oversizedAnswers = Array.from({ length: 1001 }, () => ({
       questionId: '11111111-1111-4111-8111-111111111111',
       answerPayload: { text: 'a' },
     }));

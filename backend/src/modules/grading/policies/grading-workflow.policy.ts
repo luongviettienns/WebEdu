@@ -1,10 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma, QuestionType, SubmissionStatus } from '@prisma/client';
-import type {
-  GradingTrackerStatusFilter,
-  GradingTrackerStudentRowDto,
-  QuestionForGrading,
-} from '../grading.types.js';
+import type { QuestionForGrading } from '../grading.types.js';
 import { roundGradeTotal, roundToQuarter } from './answer-normalizer.policy.js';
 import { evaluateQuestionAnswer, summarizeSubmissionAutoGrade } from './auto-grading.policy.js';
 
@@ -167,31 +163,6 @@ export function resolveNavNeighbors(
     nextSubmissionId:
       idx < orderedSubmissionIds.length - 1 ? orderedSubmissionIds[idx + 1]! : null,
   };
-}
-
-export function matchesTrackerFilter(
-  row: GradingTrackerStudentRowDto,
-  filter: GradingTrackerStatusFilter,
-): boolean {
-  switch (filter) {
-    case 'ALL':
-      return true;
-    case 'NEEDS_GRADING':
-      return (
-        row.status === SubmissionStatus.SUBMITTED_WAITING ||
-        row.status === SubmissionStatus.AUTO_GRADED_PENDING_REVIEW
-      );
-    case 'CONFIRMED':
-      return row.status === SubmissionStatus.GRADED;
-    case 'PUBLISHED':
-      return row.status === SubmissionStatus.RETURNED;
-    case 'OVERDUE_NOT_SUBMITTED':
-      return row.isOverdueNotSubmitted;
-    case 'NOT_STARTED':
-      return row.status === 'NOT_STARTED';
-    case 'IN_PROGRESS':
-      return row.status === SubmissionStatus.IN_PROGRESS;
-  }
 }
 
 export const GRADEABLE_ACTIVE_STATUSES = new Set<SubmissionStatus>([

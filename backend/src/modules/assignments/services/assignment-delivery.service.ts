@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import {
   AssessmentStatus,
-  ClassStatus,
   EnrollmentStatus,
   GradingStatus,
   Prisma,
@@ -72,9 +71,6 @@ export class AssignmentDeliveryService {
         const cls = await this.accessPolicy.assertTeacherOrAdminCanAccessClass(tx, actor, cid);
         if (cls.courseId !== visible.courseId) {
           throw new BadRequestException('Lớp học không thuộc khóa học của đề này');
-        }
-        if (cls.status === ClassStatus.COMPLETED || cls.status === ClassStatus.ARCHIVED) {
-          throw new BadRequestException('Không thể giao bài cho lớp đã kết thúc hoặc lưu trữ');
         }
       }
 
@@ -206,6 +202,12 @@ export class AssignmentDeliveryService {
     const newDueAt = dto.newDueAt ? parseRequiredOffsetIsoDate(dto.newDueAt, 'Hạn nộp mới') : null;
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT c.id FROM "classes" c
+        JOIN "class_assignments" ca ON ca.class_id = c.id
+        JOIN "submissions" s ON s.class_assignment_id = ca.id
+        WHERE s.id = ${submissionId} FOR SHARE OF c
+      `;
       await tx.$queryRaw`
         SELECT id FROM "class_assignments"
         WHERE id = (SELECT class_assignment_id FROM "submissions" WHERE id = ${submissionId})

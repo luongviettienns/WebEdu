@@ -27,6 +27,7 @@ describe('PublishedGradesRepository (Zero-Leak Gate FUNC-063)', () => {
       classAssignment: { findUnique: vi.fn() },
       enrollment: {
         findFirst: vi.fn(async (): Promise<{ id: string } | null> => ({ id: 'enr-1' })),
+        findMany: vi.fn(),
       },
       submission: { findFirst: vi.fn() },
     };
@@ -37,6 +38,7 @@ describe('PublishedGradesRepository (Zero-Leak Gate FUNC-063)', () => {
   const assignmentFixture = {
     id: 'assign-1',
     classId: 'cls-1',
+    assignedAt: new Date('2026-11-13T00:00:00.000Z'),
     dueAt: new Date('2026-11-20T16:59:59.000Z'),
     class: { code: 'HSK1-K26-01', course: { name: 'HSK 1' } },
     assessment: {
@@ -167,5 +169,18 @@ describe('PublishedGradesRepository (Zero-Leak Gate FUNC-063)', () => {
     prisma.classAssignment.findUnique.mockResolvedValueOnce(assignmentFixture);
     prisma.enrollment.findFirst.mockResolvedValueOnce(null);
     await expect(repo.getStudentPublishedResult('assign-1', student)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('hides an older published zero for an assignment outside the student enrollment', async () => {
+    const { prisma, repo } = setupMocks();
+    prisma.classAssignment.findUnique.mockResolvedValueOnce(assignmentFixture);
+    prisma.submission.findFirst.mockResolvedValueOnce({
+      status: SubmissionStatus.RETURNED, submittedAt: null, totalScore: 0,
+    });
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { enrolledDate: new Date('2026-11-21T00:00:00.000Z'), leftDate: null },
+    ]);
+    const result = await repo.getStudentPublishedResult('assign-1', student);
+    expect(result).toMatchObject({ isPublished: false, status: 'NOT_STARTED', result: null });
   });
 });

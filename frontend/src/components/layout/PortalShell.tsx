@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import React, { Suspense, useCallback, useRef, useState } from 'react';
-import { logoutUser } from '@/features/auth/api/auth.api';
+import { getCurrentUser, logoutUser } from '@/features/auth/api/auth.api';
 import { PortalSessionContext, usePortalIdentity } from '@/features/auth/hooks/usePortalSession';
 import { IdleTimeoutWarningModal } from '@/features/auth/components/IdleTimeoutWarningModal';
 import { useIdleTimeout } from '@/features/auth/hooks/useIdleTimeout';
@@ -17,6 +17,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const { user } = session;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutFailed, setLogoutFailed] = useState(false);
   const [preferredRoleView, setPreferredRoleView] = useState<'ADMIN' | 'TEACHER'>('ADMIN');
   const loggingOutRef = useRef(false);
 
@@ -25,10 +26,14 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       if (loggingOutRef.current) return;
       loggingOutRef.current = true;
       setLoggingOut(true);
+      setLogoutFailed(false);
       try {
-        await logoutUser().catch(() => undefined);
-      } finally {
+        await logoutUser();
         router.replace(redirectUrl);
+      } catch {
+        loggingOutRef.current = false;
+        setLoggingOut(false);
+        setLogoutFailed(true);
       }
     },
     [router],
@@ -42,11 +47,21 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     void executeLogout('/login');
   }, [executeLogout]);
 
-  const isAuthenticated = session.status === 'authorized';
-  const { remainingSeconds, markActive } = useIdleTimeout(
-    isAuthenticated,
+  const { handleApiAuthError } = session;
+  const keepAlive = useCallback(async () => {
+    try {
+      await getCurrentUser({ signal: AbortSignal.timeout(10_000) });
+    } catch (error) {
+      handleApiAuthError(error);
+      throw error;
+    }
+  }, [handleApiAuthError]);
+  const { checkingIdle, remainingSeconds, markActive, continuing, continueFailed } = useIdleTimeout(
+    session.status === 'authorized' ? user?.id : undefined,
     handleIdleExpire,
+    keepAlive,
   );
+  const logoutError = logoutFailed ? 'Không thể đăng xuất. Vui lòng thử lại.' : '';
 
   const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
   const hasAdminTeacherSwitch = Boolean(
@@ -65,47 +80,62 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[var(--paper)]">
-      <Suspense fallback={null}>
-        <PortalSidebar
-          user={user}
-          pendingCount={pendingCount}
-          preferredRoleView={preferredRoleView}
-          onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
-        />
-        <MobileNavDrawer
-          open={mobileMenuOpen}
-          onClose={() => setMobileMenuOpen(false)}
-          user={user}
-          pendingCount={pendingCount}
-          preferredRoleView={preferredRoleView}
-          onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
-        />
-      </Suspense>
-
-      {/* Right Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+      <div className={checkingIdle || remainingSeconds === 0 ? 'hidden' : 'contents'} inert={remainingSeconds !== null}>
         <Suspense fallback={null}>
-          <PortalTopbar
+          <PortalSidebar
             user={user}
+            pendingCount={pendingCount}
             preferredRoleView={preferredRoleView}
-            onOpenMobileMenu={() => setMobileMenuOpen(true)}
+            onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
+            onLogout={handleManualLogout}
+            loggingOut={loggingOut}
+          />
+          <MobileNavDrawer
+            open={mobileMenuOpen && remainingSeconds === null}
+            onClose={() => setMobileMenuOpen(false)}
+            user={user}
+            pendingCount={pendingCount}
+            preferredRoleView={preferredRoleView}
+            onSwitchRoleView={hasAdminTeacherSwitch ? handleSwitchRoleView : undefined}
+            onLogout={handleManualLogout}
+            loggingOut={loggingOut}
           />
         </Suspense>
-        <div
-          tabIndex={0}
-          className="portal-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable] focus:outline-none"
-        >
-          <main className="p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
-            <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>
-          </main>
+        <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+          <Suspense fallback={null}>
+            <PortalTopbar
+              user={user}
+              preferredRoleView={preferredRoleView}
+              onOpenMobileMenu={() => setMobileMenuOpen(true)}
+            />
+          </Suspense>
+          <div
+            tabIndex={0}
+            className="portal-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable] focus:outline-none"
+          >
+            <main className="p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
+              <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>
+            </main>
+          </div>
         </div>
       </div>
 
+      {logoutError && remainingSeconds === null ? (
+        <p role="alert" className="fixed left-4 right-4 top-4 z-[60] rounded-lg border border-[var(--red)] bg-[var(--red-soft)] p-3 text-sm font-semibold text-[var(--red-ink)] sm:left-auto">
+          {logoutError}
+        </p>
+      ) : null}
+
       <IdleTimeoutWarningModal
+        key={remainingSeconds === 0 ? 'expired' : 'warning'}
         remainingSeconds={remainingSeconds}
         onContinue={markActive}
-        onLogoutNow={handleManualLogout}
+        onLogoutNow={remainingSeconds === 0 ? handleIdleExpire : handleManualLogout}
         loggingOut={loggingOut}
+        continuing={continuing}
+        actionError={logoutError || (remainingSeconds !== 0 && continueFailed
+          ? 'Không thể tiếp tục phiên làm việc. Vui lòng thử lại.'
+          : '')}
       />
     </div>
   );

@@ -135,13 +135,6 @@ export async function zeroOutSubmissionAnswersTx(
     aiFeedback: null,
     teacherEdited: true,
   };
-  await tx.submissionAnswer.updateMany({
-    where: {
-      submissionId: { in: [...submissionIds] },
-      questionId: { in: questions.map(({ id }) => id) },
-    },
-    data: grade,
-  });
   await tx.submissionAnswer.createMany({
     data: submissionIds.flatMap((submissionId) =>
       questions.map(({ id: questionId }) => ({ submissionId, questionId, answerPayload: {}, ...grade })),

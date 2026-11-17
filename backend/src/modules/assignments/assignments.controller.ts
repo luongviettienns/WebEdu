@@ -10,11 +10,14 @@ import {
   Patch,
   Post,
   Query,
+  UseInterceptors,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { ProtectedJsonBodyInterceptor } from '../../common/http/protected-json-body.interceptor.js';
 import {
   AssignAssessmentDto,
   AutosaveSubmissionDto,
@@ -73,11 +76,14 @@ export class AssignmentsController {
   startOrResume(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
+    @Query('timerClientId', new ParseUUIDPipe({ optional: true })) timerClientId?: string,
   ) {
-    return this.submissions.startOrResume(assignmentId, actor);
+    return this.submissions.startOrResume(assignmentId, actor, timerClientId);
   }
 
   @Patch('assignments/:assignmentId/submissions/autosave')
+  @Throttle({ default: { limit: 1200, ttl: 60_000 } })
+  @UseInterceptors(ProtectedJsonBodyInterceptor)
   @Roles(Role.STUDENT)
   autosave(
     @CurrentUser() actor: AuthenticatedUser,
@@ -88,6 +94,7 @@ export class AssignmentsController {
   }
 
   @Post('assignments/:assignmentId/submissions/submit')
+  @UseInterceptors(ProtectedJsonBodyInterceptor)
   @Roles(Role.STUDENT)
   @HttpCode(HttpStatus.OK)
   submit(

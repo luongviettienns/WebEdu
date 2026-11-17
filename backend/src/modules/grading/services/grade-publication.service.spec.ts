@@ -150,15 +150,20 @@ describe('GradePublicationService (Slice 7.4)', () => {
     });
 
     const pastDue = new Date(Date.now() - 86_400_000);
+    const assignedAt = new Date(pastDue.getTime() - 7 * 86_400_000);
+    const enrolledBefore = new Date(assignedAt.getTime() - 86_400_000);
+    const enrolledAfter = new Date(pastDue.getTime() + 86_400_000);
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: pastDue,
     });
     prisma.enrollment.findMany.mockResolvedValueOnce([
-      { studentId: 'stu-graded' },
-      { studentId: 'stu-ungraded' },
-      { studentId: 'stu-overdue' },
+      { studentId: 'stu-graded', enrolledDate: enrolledBefore, leftDate: null },
+      { studentId: 'stu-ungraded', enrolledDate: enrolledBefore, leftDate: null },
+      { studentId: 'stu-overdue', enrolledDate: enrolledBefore, leftDate: null },
+      { studentId: 'stu-late', enrolledDate: enrolledAfter, leftDate: null },
     ]);
     prisma.submission.findMany.mockResolvedValueOnce([
       { id: 'sub-graded', studentId: 'stu-graded', status: SubmissionStatus.GRADED, dueAtOverride: null },
@@ -181,9 +186,12 @@ describe('GradePublicationService (Slice 7.4)', () => {
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt,
       dueAt: pastDue,
     });
-    prisma.enrollment.findMany.mockResolvedValueOnce([{ studentId: 'stu-ungraded' }]);
+    prisma.enrollment.findMany.mockResolvedValueOnce([
+      { studentId: 'stu-ungraded', enrolledDate: enrolledBefore, leftDate: null },
+    ]);
     prisma.submission.findMany.mockResolvedValueOnce([
       { id: 'sub-ungraded', studentId: 'stu-ungraded', status: SubmissionStatus.SUBMITTED_WAITING, dueAtOverride: null },
     ]);
@@ -232,11 +240,12 @@ describe('GradePublicationService (Slice 7.4)', () => {
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
+      assignedAt: new Date(Date.now() - 8 * 86_400_000),
       dueAt: new Date(Date.now() - 86_400_000),
     });
     prisma.enrollment.findMany.mockResolvedValueOnce([
-      { studentId: 'stu-1' },
-      { studentId: 'stu-2' },
+      { studentId: 'stu-1', enrolledDate: new Date('2026-01-01T00:00:00.000Z'), leftDate: null },
+      { studentId: 'stu-2', enrolledDate: new Date('2026-01-01T00:00:00.000Z'), leftDate: null },
     ]);
     prisma.submission.findMany
       .mockResolvedValueOnce([

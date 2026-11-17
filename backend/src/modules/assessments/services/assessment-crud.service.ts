@@ -17,6 +17,7 @@ import {
   type AssessmentActor,
 } from '../policies/assessment-access.policy.js';
 import { QuestionSchemaPolicy } from '../policies/question-schema.policy.js';
+import { MAX_ASSESSMENT_QUESTIONS } from '../assessments.types.js';
 import { assertSafeUpload } from '../policies/media-upload.policy.js';
 import {
   cloneAssessmentFiles,
@@ -239,6 +240,9 @@ export class AssessmentCrudService {
       }
       if (existing.questions.length === 0) {
         throw new BadRequestException('Đề cần ít nhất 1 câu hỏi trước khi phát hành');
+      }
+      if (existing.questions.length > MAX_ASSESSMENT_QUESTIONS) {
+        throw new BadRequestException(`Đề vượt quá ${MAX_ASSESSMENT_QUESTIONS} câu`);
       }
       if (existing.questions.some((q) => q.needsReview)) {
         throw new BadRequestException('Còn câu hỏi cần kiểm tra, chưa thể phát hành');

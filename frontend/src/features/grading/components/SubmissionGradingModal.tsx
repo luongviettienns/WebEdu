@@ -136,10 +136,10 @@ export function SubmissionGradingModal({
                     scoreValue={g.scores[q.questionId] ?? ''}
                     commentValue={g.comments[q.questionId] ?? ''}
                     canEditManually={Boolean(canEditManually)}
-                    aiLoading={g.busy === `ai-${q.questionId}` || g.busy === 'ai-all'}
+                    aiLoading={g.busy === `ai-${q.questionId}`}
                     onScoreChange={(v) => g.setScores((p) => ({ ...p, [q.questionId]: v }))}
                     onCommentChange={(v) => g.setComments((p) => ({ ...p, [q.questionId]: v }))}
-                    onRequestAi={() => void g.handleRequestAi(q.questionId)}
+                    onRequestAi={(review) => g.handleRequestAi(q.questionId, review)}
                     onApplyAi={(pts, fb) => {
                       g.setScores((p) => ({ ...p, [q.questionId]: String(pts) }));
                       if (fb) g.setComments((p) => ({ ...p, [q.questionId]: fb }));
@@ -174,16 +174,6 @@ export function SubmissionGradingModal({
         {detail ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] bg-white px-5 py-3.5">
             <div className="flex flex-wrap gap-2">
-              {canEditManually && detail.assignment.hasSubjectiveQuestions ? (
-                <button
-                  type="button"
-                  disabled={Boolean(g.busy)}
-                  onClick={() => void g.handleRequestAi()}
-                  className="rounded-lg border border-[var(--blue)] bg-white px-3 py-2 text-xs font-semibold text-[var(--blue)] hover:bg-[var(--blue-soft)] disabled:opacity-50"
-                >
-                  {g.busy === 'ai-all' ? 'Đang hỏi AI...' : 'Gợi ý AI toàn bài'}
-                </button>
-              ) : null}
               {canAdjust ? (
                 <button
                   id="btn-open-adjust-grade"

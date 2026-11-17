@@ -220,13 +220,14 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
       headers: { Origin: origin },
     });
     expect(startRes.ok(), `Student start failed: ${startRes.status()}`).toBeTruthy();
-    const started = (await startRes.json()) as { submission: { id: string } };
+    const started = (await startRes.json()) as { submission: { id: string; revision: number } };
     const submitRes = await page.request.post(
       `${API_BASE_URL}/assignments/${assignmentId}/submissions/submit`,
       {
         headers: { Origin: origin },
         data: {
           submissionId: started.submission.id,
+          revision: started.submission.revision,
           answers: [
             { questionId: q1.id, answerPayload: { selectedOptionIds: ['a'] } },
             { questionId: q2.id, answerPayload: { text: '我周末喜欢去图书馆看中文书。' } },
@@ -247,7 +248,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await page.goto(`/teacher/assignments/${assignmentId}/grading`);
 
     await expect(page.getByRole('heading', { name: 'Kiểm tra HSK2 Chấm Tự luận E2E' })).toBeVisible();
-    await expect(page.locator('#btn-batch-ai-grade')).toBeVisible();
+    await expect(page.getByText(/Duyệt từng câu tự luận trong chi tiết bài/)).toBeVisible();
     await assertZeroSeriousAxe(page, 'teacher-grading-workspace');
 
     const stu1Row = page.locator('tr[data-student-email="active.student@webedu.vn"]');
@@ -255,6 +256,36 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
 
     const gradingDialog = page.getByRole('dialog', { name: 'Chấm bài nộp học viên' });
     await expect(gradingDialog).toBeVisible();
+
+    const aiRoute = `**/api/v1/submissions/${started.submission.id}/ai-grade`;
+    const aiRequests: unknown[] = [];
+    await page.route(aiRoute, async (route) => {
+      aiRequests.push(route.request().postDataJSON());
+      await route.fulfill({ json: {
+        submissionId: started.submission.id,
+        gradingStatus: 'AI_DRAFT_READY',
+        suggestions: [{ questionId: q2.id, aiSuggestedPoints: 5, aiFeedback: 'Gợi ý kiểm thử' }],
+      } });
+    });
+    await gradingDialog.getByRole('button', { name: 'Gợi ý chấm bằng AI' }).click();
+    const sendReview = gradingDialog.getByRole('button', { name: 'Gửi nội dung đã duyệt' });
+    const reviewed = gradingDialog.getByRole('checkbox', { name: /Tôi đã duyệt/ });
+    const essay = gradingDialog.getByRole('textbox', { name: 'Bài làm gửi AI' });
+    await expect(essay).toHaveValue('我周末喜欢去图书馆看中文书。');
+    await expect(sendReview).toBeDisabled();
+    expect(aiRequests).toHaveLength(0);
+    await reviewed.check();
+    await essay.fill('我周末看中文书。');
+    await expect(sendReview).toBeDisabled();
+    await reviewed.check();
+    await sendReview.click();
+    await expect(gradingDialog.getByText(/Đã tạo gợi ý AI/)).toBeVisible();
+    expect(aiRequests).toEqual([expect.objectContaining({
+      questionId: q2.id,
+      reviewedInput: expect.objectContaining({ studentAnswer: '我周末看中文书。' }),
+    })]);
+    await page.unroute(aiRoute);
+
     await gradingDialog.locator(`#score-${q2.id}`).fill('5.5');
     await gradingDialog.locator(`#comment-${q2.id}`).fill('Câu viết tự nhiên, đúng ngữ pháp');
     await gradingDialog.locator('#submission-teacher-feedback').fill('Hoàn thành rất tốt!');
@@ -293,7 +324,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await page.locator('#btn-publish-confirmed-grades').click();
     await expect(page.getByText(/Đã công bố điểm cho 1 bài/i)).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Quá hạn chưa nộp' }).click();
+    await page.getByRole('button', { name: 'Quá hạn chưa nộp' }).click();
     const stu2Row = page.locator('tr[data-student-email="lockout.desktop@webedu.vn"]');
     await expect(stu2Row.getByText('Quá hạn chưa nộp')).toBeVisible();
     await stu2Row.getByRole('button', { name: 'Ghi 0 điểm' }).click();
@@ -302,7 +333,7 @@ test.describe('Phase 7 — AI Config, Grading Console, 2-Step Publication & Zero
     await zeroDialog.getByRole('button', { name: 'Xác nhận ghi 0 điểm' }).click();
     await expect(page.getByText(/Đã ghi nhận 0 điểm cho học viên/i)).toBeVisible();
 
-    await page.getByRole('tab', { name: 'Đã công bố' }).click();
+    await page.getByRole('button', { name: 'Đã công bố' }).click();
     await page
       .locator('tr[data-student-email="active.student@webedu.vn"]')
       .getByRole('button', { name: 'Xem / Sửa điểm' })

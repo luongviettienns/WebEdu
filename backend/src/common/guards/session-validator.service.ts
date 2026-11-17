@@ -59,15 +59,17 @@ export class SessionValidatorService {
       userRecord.lastActivityAt &&
       now.getTime() - userRecord.lastActivityAt.getTime() > IDLE_TIMEOUT_MS
     ) {
-      await this.prisma.user.updateMany({
+      const revoked = await this.prisma.user.updateMany({
         where: {
           id: userRecord.id,
           tokenVersion: userRecord.tokenVersion,
+          lastActivityAt: userRecord.lastActivityAt,
         },
         data: {
           tokenVersion: { increment: 1 },
         },
       });
+      if (revoked.count === 0) return this.validateSession(token);
       throw new UnauthorizedException(
         'Phiên đăng nhập đã hết hạn do không hoạt động quá 60 phút',
       );

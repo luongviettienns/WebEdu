@@ -12,7 +12,7 @@ import {
 } from '@/features/grading/utils/grading-status';
 import { formatDateTimeVn } from '@/lib/utils/date';
 
-const FILTER_TABS: readonly { key: GradingTrackerFilter; label: string }[] = [
+const FILTERS: readonly { key: GradingTrackerFilter; label: string }[] = [
   { key: 'ALL', label: 'Tất cả' },
   { key: 'NEEDS_GRADING', label: 'Cần chấm' },
   { key: 'CONFIRMED', label: 'Đã xác nhận (Chưa công bố)' },
@@ -45,21 +45,20 @@ export function GradingTrackerTable({
 }: GradingTrackerTableProps) {
   return (
     <div className="space-y-4">
-      <div role="tablist" aria-label="Lọc trạng thái chấm bài" className="flex flex-wrap gap-2">
-        {FILTER_TABS.map((tab) => (
+      <div role="group" aria-label="Lọc trạng thái chấm bài" className="flex flex-wrap gap-2">
+        {FILTERS.map(({ key, label }) => (
           <button
-            key={tab.key}
+            key={key}
             type="button"
-            role="tab"
-            aria-selected={filter === tab.key}
-            onClick={() => onFilterChange(tab.key)}
+            aria-pressed={filter === key}
+            onClick={() => onFilterChange(key)}
             className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-              filter === tab.key
+              filter === key
                 ? 'border-[var(--red)] bg-[var(--red)] text-white'
                 : 'border-[var(--line-2)] bg-white text-[var(--ink-2)] hover:bg-[var(--hover)]'
             }`}
           >
-            {tab.label}
+            {label}
           </button>
         ))}
       </div>

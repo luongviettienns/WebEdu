@@ -22,6 +22,7 @@ describe('ProfileService (FUNC-078)', () => {
   let emailVerifications: Array<{
     id: string;
     email: string;
+    scope: string;
     codeHash: string;
     expiresAt: Date;
     attempts: number;
@@ -95,16 +96,12 @@ describe('ProfileService (FUNC-078)', () => {
           const inputHash = String(values[0]);
           const now = values[1] as Date;
           const email = String(values[2]);
+          const scope = String(values[3]);
           const maxAttempts = Number(values[4]);
           const candidate = [...emailVerifications]
             .reverse()
-            .find(
-              (ev) =>
-                ev.email === email &&
-                ev.verifiedAt === null &&
-                ev.expiresAt > now,
-            );
-          if (!candidate || candidate.attempts >= maxAttempts) {
+            .find((ev) => ev.email === email && ev.scope === scope);
+          if (!candidate || candidate.verifiedAt || candidate.expiresAt <= now || candidate.attempts >= maxAttempts) {
             return [];
           }
           candidate.attempts += 1;
@@ -147,11 +144,12 @@ describe('ProfileService (FUNC-078)', () => {
           async ({
             data,
           }: {
-            data: { email: string; codeHash: string; expiresAt: Date };
+            data: { email: string; scope: string; codeHash: string; expiresAt: Date };
           }) => {
             const row = {
               id: `ev-${emailVerifications.length + 1}`,
               email: data.email,
+              scope: data.scope,
               codeHash: data.codeHash,
               expiresAt: data.expiresAt,
               attempts: 0,

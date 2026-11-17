@@ -1,9 +1,11 @@
 import {
   fetchApi,
+  isUnauthorizedError,
   purgeLegacyWebStorageTokens,
   type RequestOptions,
 } from '@/lib/api-client';
 import type { Role, UserStatus } from '@/types/user';
+import { recordSessionActivity } from '@/features/auth/utils/session-activity';
 
 export interface AuthUserDto {
   id: string;
@@ -90,10 +92,12 @@ export async function loginWithEmail(
   payload: LoginPayload,
 ): Promise<LoginResponse> {
   purgeLegacyWebStorageTokens();
-  return fetchApi<LoginResponse>('/auth/login', {
+  const result = await fetchApi<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+  recordSessionActivity(result.user.id);
+  return result;
 }
 
 export async function getCurrentUser(
@@ -105,14 +109,15 @@ export async function getCurrentUser(
   });
 }
 
-export async function logoutUser(): Promise<{ message: string }> {
+export async function logoutUser(): Promise<void> {
   try {
-    return await fetchApi<{ message: string }>('/auth/logout', {
+    await fetchApi('/auth/logout', {
       method: 'POST',
     });
-  } finally {
-    purgeLegacyWebStorageTokens();
+  } catch (error) {
+    if (!isUnauthorizedError(error)) throw error;
   }
+  purgeLegacyWebStorageTokens();
 }
 
 export async function requestPasswordReset(

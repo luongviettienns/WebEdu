@@ -1,5 +1,7 @@
 import type { AssessmentStatus, AssessmentType, QuestionType } from '@prisma/client';
 
+export const MAX_ASSESSMENT_QUESTIONS = 200;
+
 export interface TeacherQuestionDto {
   id: string;
   type: QuestionType;

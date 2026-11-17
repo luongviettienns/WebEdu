@@ -119,6 +119,64 @@ describe('Phase 5 assessments hardening (real PostgreSQL, HTTP)', () => {
     return (res.body as { questions: Array<{ position: number }> }).questions.map((q) => q.position);
   }
 
+  it('rejects the 201st question and an oversized legacy draft at publication', async () => {
+    const teacher = await user('limit@webedu.vn', [Role.TEACHER], '0901000008');
+    const assessmentId = await createDraft(teacher);
+    const item = choice();
+    await harness.prisma.question.createMany({
+      data: Array.from({ length: 200 }, (_, index) => ({
+        ...item, type: 'SINGLE_CHOICE', assessmentId, position: index + 1,
+      })),
+    });
+    await teacher.post(`/api/v1/assessments/${assessmentId}/questions`).send(item).expect(400);
+    await harness.prisma.question.create({ data: { ...item, type: 'SINGLE_CHOICE', assessmentId, position: 201 } });
+    await teacher.post(`/api/v1/assessments/${assessmentId}/publish`).expect(400);
+    expect(await harness.prisma.assessment.findUnique({ where: { id: assessmentId } }))
+      .toMatchObject({ status: 'DRAFT' });
+  });
+
+  it('accepts a long Chinese essay and more than 200 answers on a previously published assessment', async () => {
+    const teacher = await user('writer-teacher@webedu.vn', [Role.TEACHER], '0901000008');
+    const student = await user('writer-student@webedu.vn', [Role.STUDENT], '0901000009');
+    const teacherRow = await harness.prisma.user.findUniqueOrThrow({ where: { email: 'writer-teacher@webedu.vn' } });
+    const studentRow = await harness.prisma.user.findUniqueOrThrow({ where: { email: 'writer-student@webedu.vn' } });
+    const cls = await harness.prisma.class.create({
+      data: { code: 'WRITING', courseId, teacherId: teacherRow.id, startDate: new Date(), status: 'ACTIVE' },
+    });
+    await harness.prisma.enrollment.create({
+      data: { classId: cls.id, studentId: studentRow.id, status: 'ACTIVE', enrolledDate: new Date() },
+    });
+    const assessmentId = await createDraft(teacher);
+    const essay = await teacher.post(`/api/v1/assessments/${assessmentId}/questions`).send({
+      type: 'ESSAY', prompt: '作文', payload: { maxLength: 50000, sampleAnswer: '你好' }, points: 1,
+    }).expect(201);
+    await teacher.post(`/api/v1/assessments/${assessmentId}/publish`).expect(201);
+    const legacyQuestions = await harness.prisma.question.createManyAndReturn({
+      data: Array.from({ length: 200 }, (_, index) => ({
+        ...choice(), type: 'SINGLE_CHOICE', assessmentId, position: index + 2,
+      })),
+      select: { id: true },
+    });
+    const assignment = await harness.prisma.classAssignment.create({
+      data: { assessmentId, classId: cls.id, assignedById: teacherRow.id, dueAt: new Date(Date.now() + 3_600_000) },
+    });
+    const endpoint = `/api/v1/assignments/${assignment.id}/submissions`;
+    const started = await student.post(`${endpoint}/start`).expect(200);
+    const text = '學'.repeat(40_000);
+    const answer = { questionId: essay.body.id, answerPayload: { text } };
+    const payload = {
+      submissionId: started.body.submission.id, revision: started.body.submission.revision,
+      answers: [answer, ...legacyQuestions.map(({ id }) => ({
+        questionId: id, answerPayload: { selectedOptionIds: ['a'] },
+      }))],
+    };
+    await request(server).patch(`${endpoint}/autosave`).send(payload).expect(401);
+    const saved = await student.patch(`${endpoint}/autosave`).send(payload).expect(200);
+    await student.post(`${endpoint}/submit`).send({ ...payload, revision: saved.body.submission.revision }).expect(200);
+    expect(await harness.prisma.submissionAnswer.findFirst({ where: { questionId: essay.body.id } }))
+      .toMatchObject({ answerPayload: { text } });
+  });
+
   it('isolates drafts per owner: other teachers and multi-role non-admins can neither read nor mutate; Admin can', async () => {
     const owner = await user('owner@webedu.vn', [Role.TEACHER], '0901000001');
     const other = await user('other@webedu.vn', [Role.TEACHER], '0901000002');

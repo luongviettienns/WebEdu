@@ -11,7 +11,7 @@ import {
 } from '../policies/payload-media.util.js';
 import { QuestionSchemaPolicy } from '../policies/question-schema.policy.js';
 import { toTeacherQuestionDto } from '../mappers/assessment.mapper.js';
-import type { TeacherQuestionDto } from '../assessments.types.js';
+import { MAX_ASSESSMENT_QUESTIONS, type TeacherQuestionDto } from '../assessments.types.js';
 import type {
   CreateQuestionDto,
   ReorderQuestionsDto,
@@ -35,11 +35,15 @@ export class QuestionCrudService {
       await this.lockEditable(tx, assessmentId, actor);
       await this.assertMediaOwned(tx, assessmentId, dto.type, dto.payload);
       const max = await tx.question.aggregate({ where: { assessmentId }, _max: { position: true } });
+      const position = (max._max.position ?? 0) + 1;
+      if (position > MAX_ASSESSMENT_QUESTIONS) {
+        throw new BadRequestException(`Đề vượt quá ${MAX_ASSESSMENT_QUESTIONS} câu`);
+      }
       const created = await tx.question.create({
         data: {
           assessmentId,
           type: dto.type,
-          position: (max._max.position ?? 0) + 1,
+          position,
           prompt,
           payload: dto.payload as Prisma.InputJsonValue,
           points: dto.points,

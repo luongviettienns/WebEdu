@@ -25,7 +25,7 @@ describe('media-upload.policy (Task 5.1 TDD)', () => {
     expect(assertSafeUpload(mp3, 'listen.mp3')).toEqual({ mime: 'audio/mpeg' });
   });
 
-  it('rejects a docx zip whose uncompressed size is a bomb', () => {
+  it('rejects a docx zip whose uncompressed size is a bomb', async () => {
     const name = Buffer.from('a');
     const cd = Buffer.alloc(46 + name.length);
     cd.writeUInt32LE(0x02014b50, 0);
@@ -39,7 +39,7 @@ describe('media-upload.policy (Task 5.1 TDD)', () => {
     eocd.writeUInt32LE(cd.length, 12);
     eocd.writeUInt32LE(4, 16);
     const zip = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), cd, eocd]);
-    expect(() => assertSafeDocxZip(zip)).toThrow(BadRequestException);
+    await expect(assertSafeDocxZip(zip)).rejects.toThrow(BadRequestException);
   });
 
   it('detectSafeImageMime accepts PNG and JPEG magic bytes and rejects spoofed/unsupported payloads', () => {

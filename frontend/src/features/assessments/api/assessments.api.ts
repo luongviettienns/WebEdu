@@ -1,4 +1,5 @@
 import {
+  API_BASE_URL,
   ApiClientError,
   buildQueryString,
   requestJson,
@@ -13,116 +14,17 @@ import {
   type QuestionUpdatePatch,
 } from '@/features/assessments/utils/question-payload';
 
-export type AssessmentType = 'HOMEWORK' | 'MINI_TEST' | 'MIDTERM' | 'FINAL';
-export type AssessmentStatus = 'DRAFT' | 'PUBLISHED';
-export type QuestionType =
-  | 'SINGLE_CHOICE'
-  | 'MULTIPLE_CHOICE'
-  | 'FILL_BLANK'
-  | 'ORDERING'
-  | 'ESSAY'
-  | 'LISTENING'
-  | 'IMAGE_BASED';
+import type {
+  AssessmentType,
+  QuestionType,
+  TeacherQuestionDto,
+  TeacherAssessmentDto,
+  ImportResult,
+  ListAssessmentsParams,
+  AssessmentListResult,
+} from './assessments.types';
 
-export const ASSESSMENT_TYPE_LABELS: Record<AssessmentType, string> = {
-  HOMEWORK: 'BTVN',
-  MINI_TEST: 'Mini-test',
-  MIDTERM: 'Giữa kỳ',
-  FINAL: 'Cuối kỳ',
-};
-
-export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
-  SINGLE_CHOICE: 'Trắc nghiệm 1 đáp án',
-  MULTIPLE_CHOICE: 'Trắc nghiệm nhiều đáp án',
-  FILL_BLANK: 'Điền từ',
-  ORDERING: 'Sắp xếp',
-  ESSAY: 'Tự luận',
-  LISTENING: 'Nghe',
-  IMAGE_BASED: 'Kèm hình ảnh',
-};
-
-export interface TeacherQuestionDto {
-  id: string;
-  type: QuestionType;
-  position: number;
-  prompt: string;
-  payload: Record<string, unknown>;
-  points: number;
-  needsReview: boolean;
-}
-
-export interface TeacherAssessmentDto {
-  id: string;
-  title: string;
-  description?: string;
-  type: AssessmentType;
-  courseId: string;
-  durationMinutes: number | null;
-  status: AssessmentStatus;
-  isLocked: boolean;
-  originalFileName?: string | null;
-  assignedClassCount?: number;
-  totalPoints: number;
-  questionCount: number;
-  createdById: string;
-  createdByName?: string;
-  updatedAt: string;
-  questions?: TeacherQuestionDto[];
-  recognizedCount?: number;
-  needsReviewCount?: number;
-  summary?: string;
-}
-
-export interface ImportResult {
-  assessmentId: string;
-  recognizedCount: number;
-  needsReviewCount: number;
-  summary: string;
-}
-
-export interface ListAssessmentsParams {
-  type?: AssessmentType;
-  courseId?: string;
-  status?: AssessmentStatus;
-  search?: string;
-  page?: number;
-  limit?: number;
-}
-
-export interface AssessmentListResult {
-  items: TeacherAssessmentDto[];
-  total: number;
-  page: number;
-  limit: number;
-}
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
-
-export function emptyPayload(type: QuestionType): Record<string, unknown> {
-  if (type === 'SINGLE_CHOICE' || type === 'MULTIPLE_CHOICE') {
-    return {
-      options: [
-        { id: 'a', text: '' },
-        { id: 'b', text: '' },
-      ],
-      correctOptionIds: [],
-    };
-  }
-  if (type === 'FILL_BLANK') return { acceptedAnswers: [''] };
-  if (type === 'ORDERING') return { tokens: ['', ''], correctSentence: '' };
-  if (type === 'ESSAY') return { sampleAnswer: '', rubric: '' };
-  if (type === 'IMAGE_BASED') {
-    return {
-      mediaId: '',
-      options: [
-        { id: 'a', text: '' },
-        { id: 'b', text: '' },
-      ],
-      correctOptionIds: [],
-    };
-  }
-  return { mediaId: '' };
-}
+export * from './assessments.types';
 
 export async function listAssessments(
   params: ListAssessmentsParams = {},

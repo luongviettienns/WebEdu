@@ -10,7 +10,6 @@ import {
   getDraftStorageKey,
   MAX_CLOCK_SKEW_MS,
   MAX_ELAPSED_DELTA_SECONDS,
-  MAX_LOCAL_DRAFT_DRIFT_MS,
   mergeAudioPlayCounts,
   persistExamDraftSnapshot,
   purgePriorAttemptDrafts,
@@ -24,12 +23,13 @@ import {
 import {
   buildResolvedSessionSnapshot,
   buildSyncPayload,
-  reconcileAutosaveSnapshot,
-  resolveResumeSyncAction,
   tickCountdownSnapshot,
   type ExamSnapshotLike,
 } from '@/features/assignments/utils/exam-session-transport';
 import { purgeLegacyWebStorageTokens } from '@/lib/api-client';
+import {
+  mergePendingExamAnswers, pruneAcknowledgedExamDrafts, recoverPendingExamAnswers, storePendingExamAnswers,
+} from '@/features/assignments/utils/exam-pending-draft';
 
 class MemoryStorage implements Storage {
   private readonly store = new Map<string, string>();
@@ -193,6 +193,7 @@ function createSessionDto(overrides?: {
   lastSavedAt?: string;
   elapsedSeconds?: number;
   remainingSeconds?: number | null;
+  revision?: number;
   answers?: StudentExamSessionDto['answers'];
   questions?: SanitizedQuestionDto[];
 }): StudentExamSessionDto {
@@ -241,6 +242,7 @@ function createSessionDto(overrides?: {
       startedAt: '2026-11-14T09:58:00.000Z',
       lastSavedAt,
       lastSyncedAt: lastSavedAt,
+      revision: overrides?.revision ?? 0,
       elapsedSeconds: overrides?.elapsedSeconds ?? 120,
       remainingSeconds: overrides?.remainingSeconds !== undefined ? overrides.remainingSeconds : 1200,
       submittedAt: null,
@@ -276,8 +278,7 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     restoreGlobals();
   });
 
-  test('exports expected drift, clock skew, and elapsed delta constants', () => {
-    expect(MAX_LOCAL_DRAFT_DRIFT_MS).toBe(5 * 60 * 1000);
+  test('exports expected clock skew and legacy elapsed delta constants', () => {
     expect(MAX_CLOCK_SKEW_MS).toBe(5_000);
     expect(MAX_ELAPSED_DELTA_SECONDS).toBe(300);
   });
@@ -386,7 +387,7 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(invalidOrdering['q-multi']).toBeUndefined();
   });
 
-  test('resolveInitialSessionDraft rejects and wipes stale, >5min drifted, and future-dated drafts', () => {
+  test('resolveInitialSessionDraft preserves long offline edits and rejects stale or future-dated drafts', () => {
     const serverSavedAt = '2026-11-14T10:00:00.000Z';
     const serverSavedMs = new Date(serverSavedAt).getTime();
     const session = createSessionDto({ lastSavedAt: serverSavedAt });
@@ -405,9 +406,9 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(mockWin.localStorage.getItem('webedu_exam_draft_student-1_sub-1')).toBeNull();
     expect(readLocalDraft('sub-1', 'student-1')).toBeNull();
 
-    // 2. Drifted > 5 minutes past serverSavedMs must be rejected AND wiped
+    // 2. A same-attempt draft edited after six minutes offline must be kept.
     writeLocalDraft('sub-1', 'student-1', {
-      updatedAtMs: serverSavedMs + MAX_LOCAL_DRAFT_DRIFT_MS + 1,
+      updatedAtMs: serverSavedMs + 360_000,
       answers: { 'q-fill': { text: 'drifted' } },
       elapsedSeconds: 200,
       remainingSeconds: 1000,
@@ -416,11 +417,11 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     const driftRes = resolveInitialSessionDraft(
       session,
       'taking',
-      serverSavedMs + MAX_LOCAL_DRAFT_DRIFT_MS + 2_000,
+      serverSavedMs + 362_000,
     );
-    expect(driftRes.mergedFromLocal).toBe(false);
-    expect(driftRes.answers['q-fill']).toBeUndefined();
-    expect(mockWin.localStorage.getItem('webedu_exam_draft_student-1_sub-1')).toBeNull();
+    expect(driftRes.mergedFromLocal).toBe(true);
+    expect(driftRes.answers['q-fill']).toEqual({ text: 'drifted' });
+    expect(readLocalDraft('sub-1', 'student-1')).not.toBeNull();
 
     // 3. Future-dated tampered draft (> nowMs + MAX_CLOCK_SKEW_MS) must be rejected AND wiped
     writeLocalDraft('sub-1', 'student-1', {
@@ -586,47 +587,112 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(sanitizeAdoptedLocalDraft(downwardTampered, reviewSnap, nowMs)).toBeNull();
   });
 
-  test('reconcileAutosaveSnapshot merges timers and audioPlayCounts monotonically from server response', () => {
-    const session = createSessionDto({ elapsedSeconds: 150, remainingSeconds: 1150 });
-    const prevSnap: ExamSnapshotLike = {
-      session,
-      viewMode: 'taking',
-      answers: { 'q-single': { selectedOptionIds: ['opt-1'] } },
-      audioPlayCounts: { 'q-listen-opt': 2, 'q-listen-text': 0 },
-      elapsedSeconds: 140,
-      remainingSeconds: 1160,
-      timerAnchorMs: 1_763_114_500_000,
-      anchorElapsedSeconds: 130,
-      anchorRemainingSeconds: 1170,
+  test('recovers an older tab’s pending draft after six minutes and reconciles a lost acknowledgment', () => {
+    const initial = createSessionDto({ attemptNumber: 2, submissionId: 'sub-2' });
+    const answer = { text: 'offline' };
+    const pending = { 'q-fill': { base: {}, answer } };
+    const pendingKey = getDraftStorageKey('sub-2', 'student-1') + ':pending:older-tab';
+    mockWin.localStorage.setItem(pendingKey, JSON.stringify({
+      assignmentId: 'assign-1', savedAt: Date.now() - 360_000, pending,
+    }));
+    resolveInitialSessionDraft(initial, 'taking');
+    const recovered = recoverPendingExamAnswers(initial);
+    expect(recovered).toMatchObject({ pending, hasConflict: false });
+    expect(storePendingExamAnswers(initial, 'new-tab', recovered.pending)).toBe(true);
+    expect(mockWin.localStorage.getItem(pendingKey)).not.toBeNull();
+
+    const response = createSessionDto({
+      attemptNumber: 2,
+      submissionId: 'sub-2',
+      answers: [{ questionId: 'q-fill', answerPayload: answer, audioPlayCount: 0, updatedAt: '' }],
+    });
+    expect(mergePendingExamAnswers(response, recovered.pending)).toMatchObject({
+      pending: {}, hasConflict: false, answers: { 'q-fill': answer },
+    });
+    pruneAcknowledgedExamDrafts(response);
+    expect(mockWin.localStorage.getItem(pendingKey)).toBeNull();
+    expect(recoverPendingExamAnswers(response).pending).toEqual({});
+  });
+
+  test('merges separate tabs and retires only observed alternatives to an explicitly saved answer', () => {
+    const initial = createSessionDto({ answers: [] });
+    const prefix = getDraftStorageKey(initial.submission.id, initial.submission.studentId) + ':pending:';
+    const firstDraft = { 'q-fill': { base: {}, answer: { text: 'first tab' } } };
+    const choice = { selectedOptionIds: ['opt-2'] };
+    const selected = { text: 'second tab' };
+    const secondDraft = {
+      'q-fill': { base: {}, answer: selected },
+      'q-single': { base: {}, answer: choice },
     };
+    const put = (key: string, savedAt: number, pending: typeof secondDraft | typeof firstDraft) =>
+      mockWin.localStorage.setItem(prefix + key, JSON.stringify({ savedAt, pending }));
+    put('first', 10, firstDraft);
+    put('second', 20, secondDraft);
+    put('other', 10, firstDraft);
+    const recovered = recoverPendingExamAnswers(initial);
+    expect(recovered).toMatchObject({ pending: secondDraft, hasConflict: true });
 
+    put('other', 30, { 'q-fill': { base: {}, answer: { text: 'updated' } } });
+    const response = createSessionDto({
+      answers: [{ questionId: 'q-fill', answerPayload: selected, audioPlayCount: 0, updatedAt: '' }],
+    });
+    pruneAcknowledgedExamDrafts(response, {
+      drafts: recovered.sourceDrafts,
+      sent: [{ questionId: 'q-fill', answerPayload: selected }],
+      displayed: { 'q-fill': selected },
+    });
+    expect(mockWin.localStorage.getItem(prefix + 'first')).toBeNull();
+    expect(recoverPendingExamAnswers(response)).toMatchObject({
+      pending: {
+        'q-fill': { base: {}, answer: { text: 'updated' } },
+        'q-single': { base: {}, answer: choice },
+      },
+      hasConflict: false,
+    });
+  });
+
+  test('keeps the newer tab edit when an older response acknowledges the same answer', () => {
+    const answer = { text: 'reverted' };
+    const latest = createSessionDto({
+      revision: 2,
+      answers: [{ questionId: 'q-fill', answerPayload: { text: 'newer' }, audioPlayCount: 0, updatedAt: '' }],
+    });
+    const pending = { 'q-fill': { base: { text: 'newer' }, answer } };
+    expect(storePendingExamAnswers(latest, 'latest-tab', pending)).toBe(true);
+
+    pruneAcknowledgedExamDrafts(createSessionDto({
+      revision: 1,
+      answers: [{ questionId: 'q-fill', answerPayload: answer, audioPlayCount: 0, updatedAt: '' }],
+    }));
+    expect(recoverPendingExamAnswers(latest).pending).toEqual(pending);
+  });
+
+  test('reports a local write failure without erasing the prior durable draft', () => {
+    const session = createSessionDto();
+    const saved = { 'q-fill': { base: {}, answer: { text: 'durable' } } };
+    expect(storePendingExamAnswers(session, 'tab', saved)).toBe(true);
+    mockWin.localStorage.setItem = () => { throw new Error('Storage quota exceeded'); };
+    expect(storePendingExamAnswers(session, 'tab', {
+      'q-fill': { base: {}, answer: { text: 'in memory' } },
+    })).toBe(false);
+    expect(recoverPendingExamAnswers(session).pending).toEqual(saved);
+  });
+
+  test('keeps the local edit on same-question conflict and sends only selected pending answers', () => {
     const updated = createSessionDto({
-      elapsedSeconds: 180,
-      remainingSeconds: 1120,
-      answers: [
-        {
-          questionId: 'q-listen-opt',
-          answerPayload: { selectedOptionIds: ['lo-1'] },
-          audioPlayCount: 1,
-          updatedAt: '2026-11-14T10:03:00.000Z',
-        },
-        {
-          questionId: 'q-listen-text',
-          answerPayload: { text: 'ok' },
-          audioPlayCount: 1,
-          updatedAt: '2026-11-14T10:03:00.000Z',
-        },
-      ],
+      answers: [{ questionId: 'q-fill', answerPayload: { text: 'other tab' }, audioPlayCount: 0, updatedAt: '' }],
     });
-
-    const reconciled = reconcileAutosaveSnapshot(prevSnap, updated);
-    expect(reconciled.elapsedSeconds).toBe(180);
-    expect(reconciled.remainingSeconds).toBe(1120);
-    expect(reconciled.audioPlayCounts).toEqual({
-      'q-listen-opt': 2,
-      'q-listen-text': 1,
+    const local = { text: 'this tab' };
+    const merged = mergePendingExamAnswers(updated, { 'q-fill': { base: {}, answer: local } });
+    expect(merged).toMatchObject({ hasConflict: true, answers: { 'q-fill': local } });
+    const { snapshot } = buildResolvedSessionSnapshot(updated, 'taking');
+    const payload = buildSyncPayload({ ...snapshot, answers: merged.answers }, new Set(['q-fill']));
+    expect(payload).toMatchObject({
+      revision: updated.submission.revision,
+      answers: [{ questionId: 'q-fill', answerPayload: local }],
     });
-    expect(reconciled.answers).toEqual(prevSnap.answers);
+    expect(payload).not.toHaveProperty('elapsedSeconds');
+    expect(payload).not.toHaveProperty('remainingSeconds');
   });
 
   test('getAssignmentSubmissions appends page and limit query params cleanly and preserves active exam drafts across fetchApi calls', async () => {
@@ -675,7 +741,7 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(afterExpire).not.toBeNull();
     expect(afterExpire!.nextRemaining).toBe(0);
     expect(afterExpire!.nextSnap.remainingSeconds).toBe(0);
-    expect(afterExpire!.nextSnap.elapsedSeconds).toBe(195);
+    expect(afterExpire!.nextSnap.elapsedSeconds).toBe(180);
 
     // Untimed session returns null
     const untimedSnap: ExamSnapshotLike = {
@@ -684,51 +750,6 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
       anchorRemainingSeconds: null,
     };
     expect(tickCountdownSnapshot(untimedSnap, anchorMs + 45_000)).toBeNull();
-  });
-
-  test('resolveResumeSyncAction catches up wall-clock timers on reconnect before expiry and triggers auto-submit at 0', () => {
-    const anchorMs = 1_763_114_700_000;
-    const session = createSessionDto({ elapsedSeconds: 120, remainingSeconds: 60 });
-    const resolved = buildResolvedSessionSnapshot(session, 'taking', anchorMs);
-
-    // Offline for 45s -> handleOnline must tick elapsed/remaining before flushing autosave
-    const resumeUnexpired = resolveResumeSyncAction(resolved.snapshot, anchorMs + 45_000);
-    expect(resumeUnexpired.action).toBe('autosave');
-    if (resumeUnexpired.action !== 'autosave' || !resumeUnexpired.nextSnap) {
-      throw new Error('Expected autosave action with updated snapshot');
-    }
-    expect(resumeUnexpired.nextSnap.elapsedSeconds).toBe(165);
-    expect(resumeUnexpired.nextSnap.remainingSeconds).toBe(15);
-    expect(buildSyncPayload(resumeUnexpired.nextSnap)).toMatchObject({
-      elapsedSeconds: 165,
-      remainingSeconds: 15,
-    });
-
-    // Offline past deadline (+75s) -> must trigger auto-submit with remainingSeconds=0
-    const resumeExpired = resolveResumeSyncAction(resolved.snapshot, anchorMs + 75_000);
-    expect(resumeExpired.action).toBe('submit');
-    if (resumeExpired.action !== 'submit') {
-      throw new Error('Expected submit action when expired offline');
-    }
-    expect(resumeExpired.nextSnap.remainingSeconds).toBe(0);
-    expect(resumeExpired.nextSnap.elapsedSeconds).toBe(195);
-
-    // Untimed active attempt -> autosaves immediately with null nextSnap
-    const untimed = buildResolvedSessionSnapshot(
-      createSessionDto({ elapsedSeconds: 20, remainingSeconds: null }),
-      'taking',
-      anchorMs,
-    );
-    expect(resolveResumeSyncAction(untimed.snapshot, anchorMs + 45_000)).toEqual({
-      action: 'autosave',
-      nextSnap: null,
-    });
-
-    // Review mode -> ignored
-    const review = buildResolvedSessionSnapshot(session, 'review', anchorMs);
-    expect(resolveResumeSyncAction(review.snapshot, anchorMs + 45_000)).toEqual({
-      action: 'ignore',
-    });
   });
 
   test('purgePriorAttemptDrafts removes Attempt #1, legacy, and corrupt drafts for same assignment while preserving other assignments and Attempt #2', () => {

@@ -12,8 +12,7 @@ export interface ProblemDetails {
   [key: string]: unknown;
 }
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1';
+export const API_BASE_URL = '/api/v1';
 
 const LEGACY_ACCESS_TOKEN_STORAGE_KEY = 'webedu_access_token';
 const EXAM_DRAFT_STORAGE_PREFIX = 'webedu_exam_draft_';

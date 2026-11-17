@@ -16,6 +16,8 @@ interface MobileNavDrawerProps {
   pendingCount: number;
   preferredRoleView?: 'ADMIN' | 'TEACHER';
   onSwitchRoleView?: (role: 'ADMIN' | 'TEACHER') => void;
+  onLogout: () => void;
+  loggingOut: boolean;
 }
 
 export function MobileNavDrawer({
@@ -25,6 +27,8 @@ export function MobileNavDrawer({
   pendingCount,
   preferredRoleView = 'ADMIN',
   onSwitchRoleView,
+  onLogout,
+  loggingOut,
 }: MobileNavDrawerProps) {
   const pathname = usePathname() ?? '';
   const activeRoleView = resolveActiveRoleView(
@@ -87,6 +91,8 @@ export function MobileNavDrawer({
           user={user}
           activeRoleView={activeRoleView}
           onSwitchRoleView={onSwitchRoleView}
+          onLogout={onLogout}
+          loggingOut={loggingOut}
         />
       </div>
     </div>

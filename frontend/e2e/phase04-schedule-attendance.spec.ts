@@ -102,13 +102,18 @@ test.describe('Phase 4 Browser QA — Schedules, Attendance, 30% Warning & Audit
     await page.getByRole('button', { name: 'Xác nhận đổi lịch' }).click();
     await expect(page.getByText('Đã đổi lịch buổi học thành công.')).toBeVisible();
 
-    // Cancel session 2 with inline makeup session
+    // Cancel first, then arrange a makeup from the saved cancellation.
     await sessionsTable.locator('tbody tr', { hasText: 'Buổi 2' }).first().getByRole('button', { name: 'Chi tiết' }).click();
     await page.getByRole('button', { name: 'Hủy buổi' }).click();
-    await page.getByLabel(/Tạo buổi học bù ngay/i).check();
-    await page.locator('#cancel-mk-date').fill('2026-12-03');
     await page.getByRole('button', { name: 'Xác nhận hủy buổi' }).click();
     await expect(page.getByText('Đã hủy buổi học thành công.')).toBeVisible();
+    await sessionsTable.locator('tbody tr', { hasText: 'Đã hủy' }).first()
+      .getByRole('button', { name: 'Chi tiết' }).click();
+    await page.getByRole('button', { name: '+ Tạo buổi học bù' }).click();
+    const makeupDialog = page.getByRole('dialog', { name: 'Xếp lịch buổi học bù' });
+    await makeupDialog.getByLabel(/Ngày học/i).fill('2026-12-03');
+    await makeupDialog.getByRole('button', { name: 'Tạo buổi học bù', exact: true }).click();
+    await expect(page.getByText('Đã tạo buổi học bù thành công.')).toBeVisible();
 
     // Verify immutable change logs page
     await page.goto('/admin/schedule-logs');

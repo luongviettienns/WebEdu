@@ -16,10 +16,9 @@ import {
 import { toTeacherAssessmentDto } from '../mappers/assessment.mapper.js';
 import { extractDocx, extractPdf, persistMediaBytes, unlinkStoredFile } from './document-extract.js';
 import type { ImportAssessmentDto } from '../dto/import.dto.js';
-import type { TeacherAssessmentDto } from '../assessments.types.js';
+import { MAX_ASSESSMENT_QUESTIONS, type TeacherAssessmentDto } from '../assessments.types.js';
 
 const QUESTIONS_ORDERED = { orderBy: { position: 'asc' as const } };
-const MAX_IMPORT_QUESTIONS = 200;
 const MAX_IMPORT_IMAGES = 30;
 const MAX_IMPORT_IMAGE_BYTES = 5 * 1024 * 1024;
 const EXTRACT_TIMEOUT_MS = 15_000;
@@ -63,7 +62,6 @@ export class DocumentImportService {
       throw new BadRequestException('Chỉ hỗ trợ file .docx, .pdf tối đa 20MB');
     }
     const { mime } = assertSafeUpload(buffer, filename);
-    if (ext === 'docx') assertSafeDocxZip(buffer);
 
     if (this.activeExtracts >= MAX_CONCURRENT_EXTRACTS) {
       throw new HttpException(
@@ -75,6 +73,7 @@ export class DocumentImportService {
     this.activeExtracts += 1;
     let extracted: { text: string; images: ExtractedImage[] };
     try {
+      if (ext === 'docx') await assertSafeDocxZip(buffer);
       extracted = await withTimeout(
         ext === 'pdf'
           ? this.extractors.extractPdf(buffer, EXTRACT_TIMEOUT_MS)
@@ -99,8 +98,8 @@ export class DocumentImportService {
     if (parsed.length === 0) {
       throw new BadRequestException('Không nhận diện được câu hỏi nào');
     }
-    if (parsed.length > MAX_IMPORT_QUESTIONS) {
-      throw new BadRequestException('Đề vượt quá 200 câu');
+    if (parsed.length > MAX_ASSESSMENT_QUESTIONS) {
+      throw new BadRequestException(`Đề vượt quá ${MAX_ASSESSMENT_QUESTIONS} câu`);
     }
 
     assertActiveCourseRow(

@@ -44,10 +44,12 @@ async function loginThroughUi(
   page: Page,
   email: string,
   password = 'Password@123',
+  rememberMe = false,
 ): Promise<void> {
   await page.goto('/login');
   await page.getByLabel(/Email đăng nhập/i).fill(email);
   await page.locator('#login-password').fill(password);
+  if (rememberMe) await page.getByRole('checkbox', { name: 'Ghi nhớ đăng nhập' }).check();
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
 }
@@ -235,5 +237,75 @@ test.describe('Phase 2 Comprehensive UI Hardening — Accessibility, Error Resil
 
     expect(pageErrors).toEqual([]);
     expect(hydrationErrors).toEqual([]);
+  });
+
+  test('Hoạt động giữa hai tab và thử lại khi đăng xuất thất bại', async ({ page, context }, testInfo) => {
+    const start = new Date();
+    const minute = 60_000;
+    const draftKey = 'webedu_exam_draft_logout_regression';
+    const logoutRoute = '**/api/v1/auth/logout';
+    const sessionRoute = '**/api/v1/auth/me';
+    const profileHeading = 'Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản';
+    await context.clock.install({ time: start });
+    await loginThroughUi(page, 'active.student@webedu.vn', 'Password@123', true);
+    await page.goto('/profile');
+    await expect(page.getByRole('heading', { name: profileHeading })).toBeVisible();
+
+    const activeTab = await context.newPage();
+    await activeTab.goto('/profile');
+    await expect(activeTab.getByRole('heading', { name: profileHeading })).toBeVisible();
+    await activeTab.bringToFront();
+    await context.clock.fastForward(50 * minute);
+    await activeTab.keyboard.press('Escape');
+    await expect.poll(() => activeTab.evaluate(() => {
+      const key = Object.keys(localStorage).find((item) => item.startsWith('webedu_last_activity_'));
+      return key ? Number(localStorage.getItem(key)) : 0;
+    })).toBeGreaterThan(start.getTime() + 49 * minute);
+
+    await context.clock.fastForward(11 * minute);
+    await expect(page.getByTestId('idle-timeout-modal')).toBeHidden();
+    await expect(page.getByRole('heading', { name: profileHeading })).toBeVisible();
+    await expect(activeTab).toHaveURL(/\/profile/);
+
+    await page.bringToFront();
+    await context.clock.fastForward(46 * minute);
+    const warning = page.getByRole('dialog', { name: 'Phiên đăng nhập sắp hết hạn' });
+    const continueButton = warning.getByRole('button', { name: 'Tiếp tục phiên làm việc' });
+    await expect(warning).toBeVisible();
+    await page.route(sessionRoute, (route) => route.abort('failed'));
+    await continueButton.click();
+    await expect(warning.getByRole('alert')).toHaveText('Không thể tiếp tục phiên làm việc. Vui lòng thử lại.');
+    await page.unroute(sessionRoute);
+    await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/api/v1/auth/me') && response.ok()),
+      continueButton.click(),
+    ]);
+    await expect(warning).toBeHidden();
+
+    await page.evaluate((key) => localStorage.setItem(key, 'draft'), draftKey);
+    await context.route(logoutRoute, (route) => route.abort('failed'));
+    if (testInfo.project.name.includes('mobile')) {
+      await page.getByRole('button', { name: 'Mở menu' }).click();
+    }
+    const logoutButton = page.getByRole('button', { name: 'Đăng xuất', exact: true });
+    await logoutButton.click();
+    await expect(page.getByRole('alert').filter({
+      hasText: 'Không thể đăng xuất. Vui lòng thử lại.',
+    })).toBeVisible();
+    await expect(page).toHaveURL(/\/profile/);
+    expect((await context.cookies()).some(({ name }) => name === 'webedu_access_token')).toBe(true);
+    expect(await page.evaluate((key) => localStorage.getItem(key), draftKey)).toBe('draft');
+
+    await context.clock.fastForward(61 * minute);
+    const expiredDialog = page.getByRole('dialog', { name: 'Đã hết thời gian chờ' });
+    await expect(expiredDialog).toBeVisible();
+    await expect(page.locator('main')).toBeHidden();
+    await expect(expiredDialog.getByRole('alert')).toHaveText('Không thể đăng xuất. Vui lòng thử lại.');
+
+    await context.unroute(logoutRoute);
+    await expiredDialog.getByRole('button', { name: 'Đăng xuất ngay' }).click();
+    await expect(page).toHaveURL(/\/login\?reason=idle_timeout/);
+    expect((await context.cookies()).some(({ name }) => name === 'webedu_access_token')).toBe(false);
+    expect(await page.evaluate((key) => localStorage.getItem(key), draftKey)).toBeNull();
   });
 });

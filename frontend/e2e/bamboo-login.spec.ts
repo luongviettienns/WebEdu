@@ -52,7 +52,13 @@ test('login stays interactive when bamboo is running', async ({ page, isMobile }
     }
   });
   await page.route('**/api/v1/auth/login', route => route.fulfill({
-    json: { redirectTo: '/forgot-password' },
+    json: {
+      redirectTo: '/forgot-password', expiresIn: 3600,
+      user: {
+        id: 'bamboo-test', email: 'bamboo-test@webedu.vn', fullName: 'Bamboo Test',
+        phone: '0901000000', roles: ['STUDENT'], effectiveRole: 'STUDENT', status: 'ACTIVE',
+      },
+    },
   }));
   await page.goto('/login');
 

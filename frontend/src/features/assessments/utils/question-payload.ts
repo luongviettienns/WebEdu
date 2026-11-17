@@ -1,3 +1,5 @@
+import type { QuestionType } from '@/features/assessments/api/assessments.types';
+
 export type QuestionOption = {
   id: string;
   text: string;
@@ -289,4 +291,30 @@ export function computeAutoMatchedMediaUpdates(
     });
   }
   return updates;
+}
+
+export function emptyPayload(type: QuestionType): Record<string, unknown> {
+  if (type === 'SINGLE_CHOICE' || type === 'MULTIPLE_CHOICE') {
+    return {
+      options: [
+        { id: 'a', text: '' },
+        { id: 'b', text: '' },
+      ],
+      correctOptionIds: [],
+    };
+  }
+  if (type === 'FILL_BLANK') return { acceptedAnswers: [''] };
+  if (type === 'ORDERING') return { tokens: ['', ''], correctSentence: '' };
+  if (type === 'ESSAY') return { sampleAnswer: '', rubric: '' };
+  if (type === 'IMAGE_BASED') {
+    return {
+      mediaId: '',
+      options: [
+        { id: 'a', text: '' },
+        { id: 'b', text: '' },
+      ],
+      correctOptionIds: [],
+    };
+  }
+  return { mediaId: '' };
 }

@@ -87,7 +87,7 @@ export class TeacherGradingService {
     });
     if (!submission) throw new NotFoundException('Không tìm thấy bài nộp');
 
-    await this.accessPolicy.assertTeacherOrAdminCanReadClass(this.prisma, actor, submission.classAssignment.classId);
+    const cls = await this.accessPolicy.assertTeacherOrAdminCanReadClass(this.prisma, actor, submission.classAssignment.classId);
 
     if (submission.status === SubmissionStatus.IN_PROGRESS || submission.status === SubmissionStatus.SUPERSEDED) {
       throw new BadRequestException('Chỉ có thể xem chi tiết chấm bài cho bài đã nộp hoặc đã ghi nhận điểm');
@@ -138,7 +138,8 @@ export class TeacherGradingService {
         hasSubjectiveQuestions: scoreSummary.hasSubjectiveQuestions,
         ungradedSubjectiveCount: scoreSummary.ungradedSubjectiveCount,
       },
-      assignment: toGradingTrackerAssignmentDto(submission.classAssignment),
+      assignment: toGradingTrackerAssignmentDto(submission.classAssignment,
+        cls.status === 'ACTIVE' || cls.status === 'UPCOMING'),
       student: submission.student,
       questions: questions.map((q) => toTeacherGradingQuestionDetail(q, answerByQuestion.get(q.id))),
       auditLogs: submission.gradeAuditLogs.map(toGradeAuditLogItemDto),

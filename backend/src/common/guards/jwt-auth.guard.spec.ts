@@ -403,10 +403,32 @@ describe('JwtAuthGuard', () => {
       ),
     );
     expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
-      where: { id: 'u-idle', tokenVersion: 1 },
+      where: {
+        id: 'u-idle',
+        tokenVersion: 1,
+        lastActivityAt: new Date(fixedNow.getTime() - IDLE_TIMEOUT_MS - 1),
+      },
       data: { tokenVersion: { increment: 1 } },
     });
     expect(expiredCtx.clearCookie).toHaveBeenCalledTimes(1);
+
+    const activeUser = {
+      id: 'u-idle',
+      email: 'idle@webedu.vn',
+      fullName: 'Idle User',
+      phone: '0901234567',
+      roles: [Role.TEACHER, Role.ADMIN],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 1,
+      lastActivityAt: fixedNow,
+    };
+    prismaMock.user.findUnique
+      .mockResolvedValueOnce({ ...activeUser, lastActivityAt: new Date(fixedNow.getTime() - IDLE_TIMEOUT_MS - 1) })
+      .mockResolvedValueOnce(activeUser);
+    prismaMock.user.updateMany.mockResolvedValueOnce({ count: 0 });
+    const concurrentActivityCtx = createHttpContext({ cookies: { [AUTH_COOKIE_NAME]: token } });
+    await expect(guard.canActivate(concurrentActivityCtx.context)).resolves.toBe(true);
+    expect(concurrentActivityCtx.clearCookie).not.toHaveBeenCalled();
 
     // 2. Exact 60-minute boundary (elapsed === IDLE_TIMEOUT_MS) -> NOT expired, updates lastActivityAt
     prismaMock.user.findUnique.mockResolvedValueOnce({

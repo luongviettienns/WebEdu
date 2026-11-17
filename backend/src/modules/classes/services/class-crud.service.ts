@@ -3,7 +3,7 @@ import { ClassStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
-import { formatIsoDateUtc, isVnFutureDate, resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
+import { formatIsoDateUtc, isVnFutureDate, resolveVnCalendarDateForDb, resolveVnToday } from '../../../common/utils/timezone.util.js';
 import { syncTeacherActiveClassesCount } from '../../../common/policies/teacher-invariants.policy.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import type { CreateClassDto, UpdateClassDto } from '../dto/classes.dto.js';
@@ -90,11 +90,12 @@ export class ClassCrudService {
           include: CLASS_ITEM_INCLUDE,
         })) as unknown as ClassItemEntity;
 
+        const creationDate = resolveVnToday(cls.createdAt);
         await tx.classTeacherAssignment.create({
           data: {
             classId: cls.id,
             teacherId: dto.teacherId,
-            assignedFrom: startDate,
+            assignedFrom: startDate < creationDate ? startDate : creationDate,
             changedById: actor.id,
             reason: 'Phân công giáo viên khi khởi tạo lớp học',
           },

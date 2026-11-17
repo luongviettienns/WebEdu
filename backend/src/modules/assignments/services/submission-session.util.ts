@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import {
   AssessmentType,
+  ClassStatus,
   GradingStatus,
   Prisma,
   QuestionType,
@@ -25,9 +26,9 @@ import {
   evaluateQuestionAnswer,
 } from '../../grading/policies/auto-grading.policy.js';
 import { ensureObjectiveAnswersScoredTx } from '../../grading/policies/grading-workflow.policy.js';
+import { tickSubmissionTimer } from './submission-timer.util.js';
 
 export const AUDIO_LISTEN_WINDOW_MS = 2 * 60 * 1000;
-export const MAX_AUTOSAVE_ELAPSED_STEP_SECONDS = 120;
 export const SUBMIT_GRACE_MS = 60_000;
 
 export function isExpired(
@@ -39,25 +40,6 @@ export function isExpired(
   return (
     now.getTime() > effectiveDueAt.getTime() + graceMs ||
     (remainingSeconds !== null && remainingSeconds <= 0)
-  );
-}
-
-export function isSubmissionOverdueForZero(
-  now: Date,
-  effectiveDueAt: Date,
-  activeSubmission: {
-    status: SubmissionStatus;
-    remainingSeconds?: number | null;
-  } | null,
-): boolean {
-  if (now.getTime() <= effectiveDueAt.getTime()) return false;
-  if (!activeSubmission) return true;
-  if (activeSubmission.status !== SubmissionStatus.IN_PROGRESS) return false;
-  return isExpired(
-    now,
-    effectiveDueAt,
-    activeSubmission.remainingSeconds ?? null,
-    SUBMIT_GRACE_MS,
   );
 }
 
@@ -88,6 +70,10 @@ export interface SubmissionAnswerRow {
 
 export interface SubmissionWithAnswersRow extends StudentSubmissionRowInput {
   studentId?: string;
+  revision: number;
+  timerAccountedAt: Date | null;
+  timerLeaseUntil: Date | null;
+  timerClientId: string | null;
   startedAt: Date;
   lastSyncedAt: Date;
   answers: SubmissionAnswerRow[];
@@ -98,33 +84,6 @@ export function isPrismaUniqueError(err: unknown): boolean {
     return err.code === 'P2002';
   }
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'P2002';
-}
-
-export function computeNextTimers(
-  submission: { elapsedSeconds: number; remainingSeconds: number | null },
-  effectiveDurationMinutes: number | null,
-  dtoElapsed?: number,
-  dtoRemaining?: number | null,
-): { elapsedSeconds: number; remainingSeconds: number | null } {
-  const prevElapsed = Math.max(0, submission.elapsedSeconds);
-  const rawRequested =
-    typeof dtoElapsed === 'number' && Number.isFinite(dtoElapsed)
-      ? Math.max(0, Math.floor(dtoElapsed))
-      : prevElapsed;
-  let elapsedSeconds = Math.min(
-    Math.max(prevElapsed, rawRequested),
-    prevElapsed + MAX_AUTOSAVE_ELAPSED_STEP_SECONDS,
-  );
-  if (effectiveDurationMinutes === null) {
-    return { elapsedSeconds, remainingSeconds: null };
-  }
-  const maxSeconds = effectiveDurationMinutes * 60;
-  elapsedSeconds = Math.min(elapsedSeconds, maxSeconds);
-  const upperBound = Math.min(submission.remainingSeconds ?? maxSeconds, maxSeconds);
-  const maxByElapsed = Math.max(0, maxSeconds - elapsedSeconds);
-  const candidate = dtoRemaining ?? Math.min(upperBound, maxByElapsed);
-  const remainingSeconds = Math.max(0, Math.min(candidate, upperBound, maxByElapsed));
-  return { elapsedSeconds, remainingSeconds };
 }
 
 export async function validateAndUpsertAnswers(
@@ -207,11 +166,11 @@ export async function validateAndUpsertAnswers(
 export async function loadAssignmentForSession(
   db: DbClient,
   assignmentId: string,
-): Promise<AssignmentSessionRow> {
+): Promise<AssignmentSessionRow & { class: { status: ClassStatus } }> {
   const assignment = await db.classAssignment.findUnique({
     where: { id: assignmentId },
     include: {
-      class: { select: { code: true, course: { select: { name: true } } } },
+      class: { select: { code: true, status: true, course: { select: { name: true } } } },
       assessment: {
         select: {
           title: true,
@@ -249,6 +208,15 @@ export async function lockAndFindActiveSubmission(
   });
 }
 
+export async function lockStudentAssignment(tx: Prisma.TransactionClient, assignmentId: string): Promise<void> {
+  await tx.$queryRaw`
+    SELECT c.id FROM "classes" c
+    JOIN "class_assignments" ca ON ca.class_id = c.id
+    WHERE ca.id = ${assignmentId} FOR SHARE OF c
+  `;
+  await tx.$queryRaw`SELECT id FROM "class_assignments" WHERE id = ${assignmentId} FOR SHARE`;
+}
+
 export async function createInitialSubmission(
   tx: Prisma.TransactionClient,
   assignment: AssignmentSessionRow,
@@ -283,6 +251,7 @@ export async function autoSubmitExpiredSubmission(
   assignment: AssignmentSessionRow,
   submissionId: string,
   now: Date,
+  timers?: Pick<SubmissionWithAnswersRow, 'elapsedSeconds' | 'remainingSeconds'>,
 ) {
   const latestAnswers = await tx.submissionAnswer.findMany({
     where: { submissionId },
@@ -304,6 +273,11 @@ export async function autoSubmitExpiredSubmission(
   return tx.submission.update({
     where: { id: submissionId },
     data: {
+      elapsedSeconds: timers?.elapsedSeconds,
+      remainingSeconds: timers?.remainingSeconds,
+      timerAccountedAt: null,
+      timerLeaseUntil: null,
+      timerClientId: null,
       status: SubmissionStatus.SUBMITTED_WAITING,
       autoSubmitted: true,
       submittedAt: now,
@@ -324,18 +298,25 @@ export async function applySubmissionTickAndPersist(
   now: Date,
   params: {
     answers?: ReadonlyArray<AutosaveAnswerItemDto>;
-    elapsedSeconds?: number;
-    remainingSeconds?: number | null;
+    revision?: number;
+    timerClientId?: string;
+    pauseTimer?: boolean;
     forceSubmit: boolean;
-    clientAutoSubmitted?: boolean;
   },
 ): Promise<StudentExamSessionDto> {
   const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, submission.dueAtOverride);
-  if (isExpired(now, effectiveDueAt, submission.remainingSeconds, SUBMIT_GRACE_MS)) {
-    const updated = await autoSubmitExpiredSubmission(tx, assignment, submission.id, now);
+  const timers = tickSubmissionTimer(
+    submission, assignment.effectiveDurationMinutes, now, params.timerClientId, params.pauseTimer,
+  );
+  if (isExpired(now, effectiveDueAt, timers.remainingSeconds, SUBMIT_GRACE_MS)) {
+    const updated = await autoSubmitExpiredSubmission(tx, assignment, submission.id, now, timers);
     return buildStudentExamSessionDto(answerPolicy, assignment, updated, now, actorId);
   }
 
+  const hasAnswerEdits = Boolean(params.answers?.length);
+  if ((hasAnswerEdits || params.forceSubmit) && params.revision !== (submission.revision ?? 0)) {
+    throw new ConflictException('Bản nháp đã thay đổi. Vui lòng đồng bộ trước khi tiếp tục');
+  }
   if (params.answers?.length) {
     await validateAndUpsertAnswers(
       tx,
@@ -347,18 +328,8 @@ export async function applySubmissionTickAndPersist(
     );
   }
 
-  const timers = computeNextTimers(
-    submission,
-    assignment.effectiveDurationMinutes,
-    params.elapsedSeconds,
-    params.remainingSeconds,
-  );
-  const expired = isExpired(now, effectiveDueAt, timers.remainingSeconds, SUBMIT_GRACE_MS);
-  const shouldSubmit = params.forceSubmit || expired;
-  const autoSubmitted = Boolean(params.clientAutoSubmitted) || expired;
-
   let autoScore: number | undefined;
-  if (shouldSubmit) {
+  if (params.forceSubmit) {
     const latestAnswers = await tx.submissionAnswer.findMany({
       where: { submissionId: submission.id },
       select: {
@@ -382,14 +353,18 @@ export async function applySubmissionTickAndPersist(
   const updated = await tx.submission.update({
     where: { id: submission.id },
     data: {
-      elapsedSeconds: timers.elapsedSeconds,
-      remainingSeconds: timers.remainingSeconds,
-      lastSavedAt: now,
+      ...timers,
       lastSyncedAt: now,
-      ...(shouldSubmit
+      ...(hasAnswerEdits || params.forceSubmit
+        ? { revision: { increment: 1 }, lastSavedAt: now }
+        : {}),
+      ...(params.forceSubmit
         ? {
+            timerAccountedAt: null,
+            timerLeaseUntil: null,
+            timerClientId: null,
             status: SubmissionStatus.SUBMITTED_WAITING,
-            autoSubmitted,
+            autoSubmitted: false,
             submittedAt: now,
             autoScore,
           }
@@ -399,26 +374,6 @@ export async function applySubmissionTickAndPersist(
   });
 
   return buildStudentExamSessionDto(answerPolicy, assignment, updated, now, actorId);
-}
-
-export async function recoverSessionAfterUniqueConflict(
-  prisma: PrismaService,
-  answerPolicy: SubmissionAnswerPolicy,
-  assignment: AssignmentSessionRow,
-  studentId: string,
-): Promise<StudentExamSessionDto> {
-  return prisma.$transaction(async (tx) => {
-    let existing = await lockAndFindActiveSubmission(tx, assignment.id, studentId);
-    if (!existing || existing.status !== SubmissionStatus.IN_PROGRESS) {
-      throw new ConflictException('Bài tập đã được nộp');
-    }
-    const now = new Date();
-    const effectiveDueAt = resolveEffectiveDueAt(assignment.dueAt, existing.dueAtOverride);
-    if (isExpired(now, effectiveDueAt, existing.remainingSeconds, SUBMIT_GRACE_MS)) {
-      existing = await autoSubmitExpiredSubmission(tx, assignment, existing.id, now);
-    }
-    return buildStudentExamSessionDto(answerPolicy, assignment, existing, now, studentId);
-  });
 }
 
 export async function loadAssignmentForMediaStream(db: DbClient, assignmentId: string) {
@@ -521,6 +476,13 @@ export async function recordListeningStreamQuota(
   if (!question) throw new NotFoundException('Tệp nghe không thuộc câu hỏi này');
 
   await prisma.$transaction(async (tx) => {
+    await lockStudentAssignment(tx, assignmentId);
+    const assignment = await tx.classAssignment.findUnique({
+      where: { id: assignmentId },
+      select: { class: { select: { status: true } } },
+    });
+    if (assignment?.class?.status === ClassStatus.COMPLETED ||
+        assignment?.class?.status === ClassStatus.ARCHIVED) return;
     const submission = await lockAndFindActiveSubmission(tx, assignmentId, studentId);
     if (!submission) {
       throw new BadRequestException('Chưa bắt đầu làm bài');
@@ -554,6 +516,7 @@ export function buildStudentExamSessionDto(
       startedAt: submission.startedAt.toISOString(),
       lastSavedAt: submission.lastSavedAt.toISOString(),
       lastSyncedAt: submission.lastSyncedAt.toISOString(),
+      revision: submission.revision ?? 0,
       elapsedSeconds: submission.elapsedSeconds,
       remainingSeconds: submission.remainingSeconds,
       submittedAt: submission.submittedAt ? submission.submittedAt.toISOString() : null,

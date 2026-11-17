@@ -8,6 +8,7 @@ import {
   Role,
   UserStatus,
 } from '@prisma/client';
+import { formatIsoDateUtc, resolveVnToday } from '../src/common/utils/timezone.util.js';
 import {
   createRealE2eAppHarness,
   extractAuthCookie,
@@ -616,6 +617,19 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     expect(s1ClassAEnrollment?.leftDate).not.toBeNull();
     expect(s1ClassBEnrollment?.status).toBe(EnrollmentStatus.ACTIVE);
 
+    const rosterPath = `/api/v1/classes/${classA.body.id}?includeInactiveEnrollments=true`;
+    const [teacherRoster, adminRoster] = await Promise.all(
+      [teacher2Token, adminToken].map((token) =>
+        request(server).get(rosterPath).set('Authorization', `Bearer ${token}`).expect(200),
+      ),
+    );
+    const studentRow = (body: { enrollments: Array<{ studentId: string }> }) =>
+      body.enrollments.find((entry) => entry.studentId === student1.id);
+    expect(studentRow(teacherRoster.body)).toMatchObject({
+      status: 'TRANSFERRED', studentEmail: null, studentPhone: null, reason: null, absencesCount: null,
+    });
+    expect(studentRow(adminRoster.body)).toMatchObject({ studentEmail: student1.email, studentPhone: student1.phone });
+
     // 4. Class History Isolation (GET /api/v1/students/:id/class-history)
     for (const viewerToken of [student1Token, adminToken]) {
       const historyRes = await request(server)
@@ -682,6 +696,29 @@ describe('Phase 3 E2E — HSK Courses Catalog, Class Lifecycle, Enrollments, BOL
     expect(patchS2Notes.body.internalNotes).toBe(
       'Học viên bảo lưu sau 4 buổi tại lớp HSK1-K26-01',
     );
+  });
+
+  it('allows reassigning a teacher today before the first scheduled lesson', async () => {
+    const { server, adminToken, teacher1, teacher2 } = await seedActors();
+    const course = await harness.prisma.course.create({
+      data: { code: 'FUTURE', name: 'Future class', level: CourseLevel.HSK1 },
+    });
+    const today = resolveVnToday();
+    const tomorrow = new Date(today.getTime() + 86_400_000);
+    const created = await request(server)
+      .post('/api/v1/classes').set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'FUTURE-CLASS', courseId: course.id, teacherId: teacher1.id,
+        startDate: formatIsoDateUtc(tomorrow), scheduleDays: [1, 3, 5],
+        scheduleStartTime: '17:00', scheduleEndTime: '18:00', totalSessions: 8,
+      }).expect(201);
+    await request(server)
+      .patch(`/api/v1/classes/${created.body.id}`).set('Authorization', `Bearer ${adminToken}`)
+      .send({ teacherId: teacher2.id, teacherAssignedFrom: formatIsoDateUtc(today) }).expect(200);
+    const open = await harness.prisma.classTeacherAssignment.findFirstOrThrow({
+      where: { classId: created.body.id, assignedTo: null },
+    });
+    expect(open).toMatchObject({ teacherId: teacher2.id, assignedFrom: today });
   });
 
   it('Scenario 4: Complete Class (READ_ONLY) & 7-Day Reopen Window with partial student re-enrollment safety', async () => {

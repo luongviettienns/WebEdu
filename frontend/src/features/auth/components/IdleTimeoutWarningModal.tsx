@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BaseDialog } from '@/features/common/components/BaseDialog';
+import { BaseDialog, DialogError } from '@/features/common/components/BaseDialog';
 
 export interface IdleTimeoutWarningModalProps {
   /** Số giây còn lại trước khi tự động đăng xuất; null khi chưa đến ngưỡng cảnh báo. */
@@ -9,6 +9,8 @@ export interface IdleTimeoutWarningModalProps {
   onContinue: () => void;
   onLogoutNow: () => void;
   loggingOut?: boolean;
+  continuing?: boolean;
+  actionError?: string;
 }
 
 function formatCountdownMmSs(seconds: number): string {
@@ -23,21 +25,27 @@ export function IdleTimeoutWarningModal({
   onContinue,
   onLogoutNow,
   loggingOut = false,
+  continuing = false,
+  actionError = '',
 }: IdleTimeoutWarningModalProps) {
   if (remainingSeconds === null) {
     return null;
   }
+  const expired = remainingSeconds === 0;
 
   return (
     <BaseDialog
       eyebrow="安全提醒 · CẢNH BÁO BẢO MẬT"
-      title="Phiên đăng nhập sắp hết hạn"
+      title={expired ? 'Đã hết thời gian chờ' : 'Phiên đăng nhập sắp hết hạn'}
       onClose={onContinue}
-      busy={loggingOut}
+      busy={loggingOut || continuing}
+      dismissible={!expired}
       maxWidthClass="max-w-md"
     >
       <div data-testid="idle-timeout-modal" className="mt-4 space-y-4">
-        <div className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-4 text-sm leading-relaxed text-[var(--ink)]">
+        {expired ? (
+          <p className="text-sm text-[var(--ink-2)]">Phiên đã bị khóa trên trang này. Hãy đăng xuất để kết thúc phiên.</p>
+        ) : <div className="rounded-xl border border-[var(--amber)]/30 bg-[var(--amber-soft)] p-4 text-sm leading-relaxed text-[var(--ink)]">
           <p>
             Bạn chưa có thao tác mới trong thời gian dài. Để bảo vệ tài khoản,
             hệ thống sẽ tự động đăng xuất sau:
@@ -50,26 +58,28 @@ export function IdleTimeoutWarningModal({
               {formatCountdownMmSs(remainingSeconds)}
             </span>
           </div>
-        </div>
+        </div>}
 
-        <p className="text-xs text-[var(--ink-2)]">
+        {!expired ? <p className="text-xs text-[var(--ink-2)]">
           Chọn <strong>Tiếp tục phiên làm việc</strong> để giữ trạng thái đăng
           nhập hiện tại, hoặc đăng xuất ngay nếu bạn đã hoàn tất công việc.
-        </p>
+        </p> : null}
+
+        <DialogError message={actionError} />
 
         <div className="flex flex-col gap-2 border-t border-[var(--line)] pt-4 sm:flex-row-reverse sm:justify-start">
-          <button
+          {!expired ? <button
             type="button"
             onClick={onContinue}
-            disabled={loggingOut}
+            disabled={loggingOut || continuing}
             className="rounded-lg bg-[var(--jade)] px-4 py-2 text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50"
           >
-            Tiếp tục phiên làm việc
-          </button>
+            {continuing ? 'Đang xác nhận phiên...' : 'Tiếp tục phiên làm việc'}
+          </button> : null}
           <button
             type="button"
             onClick={onLogoutNow}
-            disabled={loggingOut}
+            disabled={loggingOut || continuing}
             className="rounded-lg border border-[var(--line-2)] bg-white px-4 py-2 text-sm font-semibold text-[var(--ink)] hover:bg-[var(--hover)] disabled:opacity-50"
           >
             {loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất ngay'}

@@ -5,7 +5,6 @@ import {
 } from '../../assignments/mappers/assignment.mapper.js';
 import type { AssignmentDisplayStatus } from '../../assignments/assignments.types.js';
 import { isRecord } from '../../assignments/policies/submission-payload.util.js';
-import { isSubmissionOverdueForZero } from '../../assignments/services/submission-session.util.js';
 import type {
   GradeAuditLogItemDto,
   GradingTrackerAssignmentDto,
@@ -48,17 +47,17 @@ export interface TrackerSubmissionInput {
   status: SubmissionStatus;
   gradingStatus: GradingStatus;
   dueAtOverride: Date | null;
-  remainingSeconds?: number | null;
   submittedAt: Date | null;
   autoSubmitted: boolean;
   autoScore: number | null;
   totalScore: number | null;
   gradeUpdatedAt: Date | null;
-  answers: TrackerSubmissionAnswerInput[];
+  answers: Array<Pick<TrackerSubmissionAnswerInput, 'questionId' | 'earnedPoints' | 'aiSuggestedPoints'>>;
 }
 
 export function toGradingTrackerAssignmentDto(
   row: TrackerAssignmentInput,
+  canMutate: boolean,
 ): GradingTrackerAssignmentDto {
   const questions = row.assessment.questions;
   return {
@@ -69,6 +68,7 @@ export function toGradingTrackerAssignmentDto(
     classId: row.classId,
     classCode: row.class.code,
     className: row.class.course?.name ?? row.class.code,
+    canMutate,
     dueAt: row.dueAt.toISOString(),
     totalPoints: sumQuestionMaxScore(questions),
     questionCount: questions.length,
@@ -81,11 +81,11 @@ export function toGradingTrackerStudentRow(
   activeSub: TrackerSubmissionInput | null,
   classDueAt: Date,
   questions: ReadonlyArray<QuestionForGrading>,
-  now: Date,
+  isOverdueNotSubmitted: boolean,
+  canMutate: boolean,
 ): GradingTrackerStudentRowDto {
   const status: AssignmentDisplayStatus = activeSub?.status ?? 'NOT_STARTED';
   const effectiveDueAt = resolveEffectiveDueAt(classDueAt, activeSub?.dueAtOverride);
-  const isOverdueNotSubmitted = isSubmissionOverdueForZero(now, effectiveDueAt, activeSub);
   const isLateSubmission =
     activeSub?.submittedAt !== null &&
     activeSub?.submittedAt !== undefined &&
@@ -94,11 +94,13 @@ export function toGradingTrackerStudentRow(
   const answerMap = new Map((activeSub?.answers ?? []).map((ans) => [ans.questionId, ans]));
   const scoreSummary = computeSubmissionScoreSummary(questions, answerMap);
   const hasAiDraft = (activeSub?.answers ?? []).some((ans) => ans.aiSuggestedPoints !== null);
-  const canGrade =
+  const canGrade = canMutate && (
     activeSub?.status === SubmissionStatus.SUBMITTED_WAITING ||
-    activeSub?.status === SubmissionStatus.AUTO_GRADED_PENDING_REVIEW;
-  const canAdjustGrade =
-    activeSub?.status === SubmissionStatus.GRADED || activeSub?.status === SubmissionStatus.RETURNED;
+    activeSub?.status === SubmissionStatus.AUTO_GRADED_PENDING_REVIEW
+  );
+  const canAdjustGrade = canMutate && (
+    activeSub?.status === SubmissionStatus.GRADED || activeSub?.status === SubmissionStatus.RETURNED
+  );
 
   return {
     studentId: student.id,
@@ -122,8 +124,8 @@ export function toGradingTrackerStudentRow(
     canGrade,
     canAdjustGrade,
     canConfirm: Boolean(canGrade && scoreSummary.ungradedSubjectiveCount === 0),
-    canPublish: activeSub?.status === SubmissionStatus.GRADED,
-    canRecordOverdueZero: isOverdueNotSubmitted,
+    canPublish: canMutate && activeSub?.status === SubmissionStatus.GRADED,
+    canRecordOverdueZero: canMutate && isOverdueNotSubmitted,
   };
 }
 

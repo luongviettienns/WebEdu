@@ -4,13 +4,13 @@ import { useParams } from 'next/navigation';
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
+import { PaginationBar } from '@/features/common/components/PaginationBar';
 import {
   confirmAllGradedSubmissions,
   confirmSubmissionGrade,
   getAssignmentGradingTracker,
   publishConfirmedGrades,
   recordOverdueZero,
-  requestBatchAiEssaySuggestion,
   type AssignmentGradingTrackerDto,
   type GradingTrackerFilter,
   type GradingTrackerStudentRowDto,
@@ -36,6 +36,7 @@ function TeacherGradingWorkspace({
   onAuthError: (err: unknown) => boolean;
 }) {
   const [filter, setFilter] = useState<GradingTrackerFilter>('ALL');
+  const [page, setPage] = useState(1);
   const [tracker, setTracker] = useState<AssignmentGradingTrackerDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -55,10 +56,14 @@ function TeacherGradingWorkspace({
       setLoading(true);
       setError('');
       try {
-        const res = await getAssignmentGradingTracker(assignmentId, filter, {
+        const res = await getAssignmentGradingTracker(assignmentId, { status: filter, page }, {
           signal: controller.signal,
         });
-        if (!controller.signal.aborted) setTracker(res);
+        if (!controller.signal.aborted) {
+          const lastPage = Math.max(1, Math.ceil(res.total / res.limit));
+          if (page > lastPage) setPage(lastPage);
+          else setTracker(res);
+        }
       } catch (err) {
         if (controller.signal.aborted || onAuthError(err)) return;
         setError(extractErrorMessage(err, 'Không thể tải bảng theo dõi chấm bài'));
@@ -67,7 +72,7 @@ function TeacherGradingWorkspace({
       }
     })();
     return () => controller.abort();
-  }, [assignmentId, filter, reloadTick, onAuthError]);
+  }, [assignmentId, filter, page, reloadTick, onAuthError]);
 
   const runAction = async (
     key: string,
@@ -98,20 +103,6 @@ function TeacherGradingWorkspace({
           isAdminView={isAdminView}
           busyAction={busyAction}
           pendingOverdueZero={pendingOverdueZero}
-          onBatchAiGrade={() =>
-            void runAction(
-              'batch-ai',
-              async () => {
-                const res = await requestBatchAiEssaySuggestion(assignmentId);
-                if (res.requestedCount === 0) return 'Không có bài nộp chờ chấm tự luận để AI gợi ý.';
-                if (res.succeededCount === 0 && res.failedCount > 0) {
-                  throw new Error(`AI không gợi ý được ${res.failedCount}/${res.requestedCount} bài (${res.results[0]?.error ?? 'cần chấm tay'}).`);
-                }
-                return `AI đã gợi ý ${res.succeededCount}/${res.requestedCount} bài nộp${res.failedCount > 0 ? ` (${res.failedCount} bài chuyển chấm tay)` : ''}.`;
-              },
-              'Không thể gọi AI gợi ý hàng loạt',
-            )
-          }
           onConfirmAll={() =>
             void runAction(
               'confirm-all',
@@ -189,7 +180,7 @@ function TeacherGradingWorkspace({
         totalPoints={tracker?.assignment.totalPoints ?? 0}
         loading={loading}
         busyAction={busyAction}
-        onFilterChange={setFilter}
+        onFilterChange={(nextFilter) => { setFilter(nextFilter); setPage(1); }}
         onOpenSubmission={(id) => setActiveSubmissionId(id)}
         onQuickConfirm={(subId) =>
           void runAction(
@@ -205,6 +196,11 @@ function TeacherGradingWorkspace({
           setPendingOverdueZero({ mode: 'STUDENT', student: row })
         }
       />
+
+      {tracker && tracker.total > tracker.limit ? (
+        <PaginationBar page={tracker.page} limit={tracker.limit} total={tracker.total}
+          loading={loading} itemLabel="học viên" onPageChange={setPage} />
+      ) : null}
 
       <SubmissionGradingModal
         submissionId={activeSubmissionId}

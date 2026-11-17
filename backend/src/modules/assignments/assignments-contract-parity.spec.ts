@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND_TYPES_PATH = path.resolve(CURRENT_DIR, 'assignments.types.ts');
+const FRONTEND_TYPES_PATH = path.resolve(
+  CURRENT_DIR,
+  '../../../../frontend/src/features/assignments/api/assignments.types.ts',
+);
 const FRONTEND_API_PATH = path.resolve(
   CURRENT_DIR,
   '../../../../frontend/src/features/assignments/api/assignments.api.ts',
@@ -105,29 +109,33 @@ function serializeTypeElement(member: ts.TypeElement, sourceFile: ts.SourceFile)
     .trim();
 }
 
-function extractContracts(filePath: string): ParsedContracts {
-  const content = fs.readFileSync(filePath, 'utf8');
-  const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+function extractContracts(filePaths: string | ReadonlyArray<string>): ParsedContracts {
+  const paths = typeof filePaths === 'string' ? [filePaths] : filePaths;
   const interfaces = new Map<string, NormalizedMember[]>();
   const typeAliases = new Map<string, string>();
 
-  for (const stmt of sourceFile.statements) {
-    if (!hasExportModifier(stmt)) continue;
+  for (const filePath of paths) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
 
-    if (ts.isInterfaceDeclaration(stmt)) {
-      const members: NormalizedMember[] = stmt.members.map((member) => {
-        if (!ts.isPropertySignature(member)) {
-          throw new Error(`Unsupported interface member in ${stmt.name.text} (${filePath})`);
-        }
-        return {
-          name: normalizePropertyName(member.name, sourceFile),
-          optional: Boolean(member.questionToken),
-          type: member.type ? serializeTypeNode(member.type, sourceFile) : 'unknown',
-        };
-      });
-      interfaces.set(stmt.name.text, members);
-    } else if (ts.isTypeAliasDeclaration(stmt)) {
-      typeAliases.set(stmt.name.text, serializeTypeNode(stmt.type, sourceFile));
+    for (const stmt of sourceFile.statements) {
+      if (!hasExportModifier(stmt)) continue;
+
+      if (ts.isInterfaceDeclaration(stmt)) {
+        const members: NormalizedMember[] = stmt.members.map((member) => {
+          if (!ts.isPropertySignature(member)) {
+            throw new Error(`Unsupported interface member in ${stmt.name.text} (${filePath})`);
+          }
+          return {
+            name: normalizePropertyName(member.name, sourceFile),
+            optional: Boolean(member.questionToken),
+            type: member.type ? serializeTypeNode(member.type, sourceFile) : 'unknown',
+          };
+        });
+        interfaces.set(stmt.name.text, members);
+      } else if (ts.isTypeAliasDeclaration(stmt)) {
+        typeAliases.set(stmt.name.text, serializeTypeNode(stmt.type, sourceFile));
+      }
     }
   }
 
@@ -136,7 +144,7 @@ function extractContracts(filePath: string): ParsedContracts {
 
 describe('Assignments Backend-Frontend DTO Contract Parity', () => {
   const backendContracts = extractContracts(BACKEND_TYPES_PATH);
-  const frontendContracts = extractContracts(FRONTEND_API_PATH);
+  const frontendContracts = extractContracts([FRONTEND_TYPES_PATH, FRONTEND_API_PATH]);
 
   it('covers every exported interface and type alias in assignments.types.ts without omissions', () => {
     expect(Array.from(backendContracts.interfaces.keys()).sort()).toEqual(
