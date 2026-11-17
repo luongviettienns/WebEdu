@@ -20,7 +20,13 @@ const ACTION_OPTIONS: Array<{ value: '' | SessionChangeAction; label: string }> 
   { value: 'ADD_MAKEUP', label: 'Tạo buổi học bù' },
 ];
 
-export function ScheduleChangeLogsView() {
+interface ScheduleChangeLogsViewProps {
+  canFilterByClass?: boolean;
+}
+
+export function ScheduleChangeLogsView({
+  canFilterByClass = true,
+}: ScheduleChangeLogsViewProps) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState('');
   const [action, setAction] = useState<'' | SessionChangeAction>('');
@@ -33,12 +39,13 @@ export function ScheduleChangeLogsView() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!canFilterByClass) return;
     const controller = new AbortController();
     listClasses({ includeEnded: true, limit: 100 }, controller.signal)
       .then((res) => setClasses(res.items))
       .catch(() => {});
     return () => controller.abort();
-  }, []);
+  }, [canFilterByClass]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,23 +80,29 @@ export function ScheduleChangeLogsView() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-3 rounded-xl border border-[var(--line)] bg-white p-4 shadow-xs sm:grid-cols-4">
-        <select
-          aria-label="Lọc theo lớp học"
-          value={classId}
-          onChange={(e) => {
-            setClassId(e.target.value);
-            setPage(1);
-          }}
-          className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-xs font-medium text-[var(--ink)]"
-        >
-          <option value="">Tất cả lớp học</option>
-          {classes.map((cls) => (
-            <option key={cls.id} value={cls.id}>
-              {cls.code} · {cls.course.name}
-            </option>
-          ))}
-        </select>
+      <div
+        className={`grid grid-cols-1 gap-3 rounded-xl border border-[var(--line)] bg-white p-4 shadow-xs ${
+          canFilterByClass ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
+        }`}
+      >
+        {canFilterByClass ? (
+          <select
+            aria-label="Lọc theo lớp học"
+            value={classId}
+            onChange={(e) => {
+              setClassId(e.target.value);
+              setPage(1);
+            }}
+            className="rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-xs font-medium text-[var(--ink)]"
+          >
+            <option value="">Tất cả lớp học</option>
+            {classes.map((cls) => (
+              <option key={cls.id} value={cls.id}>
+                {cls.code} · {cls.course.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
 
         <select
           aria-label="Lọc theo hành động"

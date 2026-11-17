@@ -239,4 +239,20 @@ Giới thiệu một người bạn.
     expect(parsed).toHaveLength(1);
     expect(parsed[0]?.type).toBe(QuestionType.SINGLE_CHOICE);
   });
+
+  it('deduplicates interleaved option IDs (e.g. two-column PDF extraction) and marks needsReview', () => {
+    const parsed = parseImportedQuestions(`
+1. Câu hỏi tách cột PDF bị trùng nhãn phương án?
+A. Đúng
+B. Sai
+A. Lựa chọn 3
+B. Lựa chọn 4
+`);
+    expect(parsed).toHaveLength(1);
+    const options = (parsed[0]?.payload.options ?? []) as Array<{ id: string; text: string }>;
+    const ids = options.map((o) => o.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(['a', 'b', 'c', 'd']);
+    expect(parsed[0]?.needsReview).toBe(true);
+  });
 });

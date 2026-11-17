@@ -6,7 +6,10 @@ import {
   autosaveAssignment, submitAssignment, type StudentAnswerPayload, type StudentExamSessionDto,
 } from '@/features/assignments/api/assignments.api';
 import { useAutosaveScheduler, useExamBrowserSync, useExamCountdown } from './useExamBrowserSync';
-import { clearLocalDraft, findFirstPartialOrderingIndex, formatSavedTimeHmS } from '../utils/exam-draft';
+import {
+  clearLocalDraft, findFirstPartialOrderingIndex, formatSavedTimeHmS,
+  readDraftFlags, writeDraftFlags,
+} from '../utils/exam-draft';
 import {
   mergePendingExamAnswers, pruneAcknowledgedExamDrafts, publishExamRevision, recoverPendingExamAnswers,
   sameExamAnswer, storePendingExamAnswers, type PendingExamAnswers,
@@ -51,6 +54,11 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
 
   const applyServer = useCallback((dto: StudentExamSessionDto, nextMode: 'taking' | 'review', useLocal = false) => {
     const resolved = buildResolvedSessionSnapshot(dto, nextMode);
+    if (nextMode === 'taking' && useLocal) {
+      setFlaggedIds(readDraftFlags(dto.submission.id, dto.submission.studentId));
+    } else if (nextMode !== 'taking') {
+      setFlaggedIds({});
+    }
     if (useLocal && nextMode === 'taking') {
       pruneAcknowledgedExamDrafts(dto);
       const recovered = recoverPendingExamAnswers(dto, resolved.mergedFromLocal ? resolved.snapshot.answers : undefined);
@@ -69,13 +77,9 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     if (conflict.current) setActionError(CONFLICT_MESSAGE);
     else setActionError((current) => current === CONFLICT_MESSAGE ? '' : current);
     show({
-      ...resolved.snapshot,
-      answers: merged.answers,
-      audioPlayCounts: merged.audioPlayCounts,
-      elapsedSeconds: dto.submission.elapsedSeconds,
-      remainingSeconds: dto.submission.remainingSeconds,
-      anchorElapsedSeconds: dto.submission.elapsedSeconds,
-      anchorRemainingSeconds: dto.submission.remainingSeconds,
+      ...resolved.snapshot, answers: merged.answers, audioPlayCounts: merged.audioPlayCounts,
+      elapsedSeconds: dto.submission.elapsedSeconds, remainingSeconds: dto.submission.remainingSeconds,
+      anchorElapsedSeconds: dto.submission.elapsedSeconds, anchorRemainingSeconds: dto.submission.remainingSeconds,
     });
     setLastSavedText(formatSavedTimeHmS(dto.submission.lastSavedAt));
     setSaveState(hasPending ? 'dirty' : 'saved');
@@ -232,12 +236,7 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
       setErrorMessage(extractErrorMessage(error, 'Không thể mở bài tập này'));
       show({ ...INITIAL_SESSION_SNAPSHOT, viewMode: 'error' });
     });
-    return () => {
-      controller.abort();
-      clearTimers();
-      pause();
-      snapshotRef.current = INITIAL_SESSION_SNAPSHOT;
-    };
+    return () => { controller.abort(); clearTimers(); pause(); snapshotRef.current = INITIAL_SESSION_SNAPSHOT; };
   }, [assignmentId, mode, applyServer, clearTimers, flushAutosave, pause, show]);
 
   const resume = useCallback(() => { void flushAutosave(); }, [flushAutosave]);
@@ -253,7 +252,6 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     const timer = setInterval(() => { if (!document.hidden) void flushAutosave(false, true); }, 10_000);
     return () => clearInterval(timer);
   }, [taking, timed, offline, flushAutosave]);
-
   const tick = useCallback(() => {
     if (document.hidden) return null;
     const ticked = tickCountdownSnapshot(snapshotRef.current);
@@ -261,23 +259,17 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     return ticked?.nextRemaining ?? null;
   }, [show]);
   const expire = useCallback(() => void submitNow(true), [submitNow]);
-  useExamCountdown({
-    active: taking && timed && !offline && !connectionLost && !submitting,
-    submissionId: snapshot.session?.submission.id, onTick: tick, onExpire: expire,
-  });
-
+  useExamCountdown({ active: taking && timed && !offline && !connectionLost && !submitting, submissionId: snapshot.session?.submission.id, onTick: tick, onExpire: expire });
   const updateAnswer = useCallback((questionId: string, type: QuestionType, answer: StudentAnswerPayload) => {
     const snap = snapshotRef.current;
     if (snap.viewMode !== 'taking' || !snap.session) return;
-    const base = pending.current[questionId]?.base ??
-      snap.session.answers.find((row) => row.questionId === questionId)?.answerPayload ?? {};
+    const base = pending.current[questionId]?.base ?? snap.session.answers.find((row) => row.questionId === questionId)?.answerPayload ?? {};
     pending.current = { ...pending.current, [questionId]: { base, answer } };
     setDraftMemoryOnly(!storePendingExamAnswers(snap.session, clientId.current, pending.current));
     show({ ...snap, answers: { ...snap.answers, [questionId]: answer } });
     setSaveState(navigator.onLine ? 'dirty' : 'offline');
     scheduleForType(type, () => { if (navigator.onLine && !document.hidden) void flushAutosave(); });
   }, [flushAutosave, scheduleForType, show]);
-
   const recordAudioPlay = useCallback((questionId: string) => {
     const snap = snapshotRef.current;
     if (snap.viewMode !== 'taking') return;
@@ -287,7 +279,14 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     if (Object.keys(pending.current).length && navigator.onLine) void flushAutosave();
     setCurrentIndex(index);
   }, [flushAutosave]);
-  const toggleFlag = useCallback((id: string) => setFlaggedIds((current) => ({ ...current, [id]: !current[id] })), []);
+  const toggleFlag = useCallback((id: string) => {
+    const sub = snapshotRef.current.session?.submission;
+    setFlaggedIds((current) => {
+      const next = { ...current, [id]: !current[id] };
+      if (sub) writeDraftFlags(sub.id, sub.studentId, next);
+      return next;
+    });
+  }, []);
   return {
     ...snapshot, flaggedIds, currentIndex, lastSavedText, errorMessage,
     saveState: draftMemoryOnly && saveState !== 'saving' ? 'memory-only' as const : saveState,

@@ -37,8 +37,17 @@ function getNeedsReviewHint(question: TeacherQuestionDto, draft: QuestionDraft):
   if (question.type === 'ORDERING' && !String(draft.payload.correctSentence ?? '').trim()) {
     return 'Chưa có câu hoàn chỉnh — hãy kiểm tra các mảnh từ và nhập câu đúng sau khi sắp xếp.';
   }
-  if (question.type === 'LISTENING' && !String(draft.payload.mediaId ?? '').trim()) {
-    return 'Câu nghe chưa có file âm thanh — hãy chọn hoặc tải lên file MP3/WAV bên dưới.';
+  if (question.type === 'LISTENING') {
+    if (!String(draft.payload.mediaId ?? '').trim()) {
+      return 'Câu nghe chưa có file âm thanh — hãy chọn hoặc tải lên file MP3/WAV bên dưới.';
+    }
+    const opts = asOptions(draft.payload);
+    if (opts.length > 4) {
+      return 'Số phương án đang vượt quá 4 (do tách dòng PDF) — hãy xóa bớt phương án thừa còn 2–4 phương án rồi chọn đáp án đúng.';
+    }
+    if (opts.length > 0 && asStrings(draft.payload, 'correctOptionIds').length === 0) {
+      return 'Câu nghe đã có phương án trắc nghiệm nhưng chưa chọn đáp án đúng — hãy tích chọn đáp án đúng bên dưới rồi bấm "Lưu & xác nhận".';
+    }
   }
   if (
     question.type === 'IMAGE_BASED' &&

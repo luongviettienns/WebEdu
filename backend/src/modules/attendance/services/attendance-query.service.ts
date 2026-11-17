@@ -243,7 +243,9 @@ export class AttendanceQueryService {
     });
 
     const byClass = groupByKey(enrollments, (e) => e.classId);
-    const uniqueEnrollments = Array.from(byClass.values()).map(selectPrimaryEnrollment);
+    const uniqueEnrollments = Array.from(byClass.values())
+      .map(selectPrimaryEnrollment)
+      .filter((e) => e.status !== EnrollmentStatus.DROPPED);
 
     const classes = uniqueEnrollments.map((e) => ({
       classId: e.classId,

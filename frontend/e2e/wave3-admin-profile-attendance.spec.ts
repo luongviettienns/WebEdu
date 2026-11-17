@@ -494,7 +494,7 @@ test.describe('Wave 3 Task 7 — Profile <16/OTP, SystemSettings Filters & Atten
 
     // Audit logs action filter + refresh
     const auditSection = page.locator('section', {
-      has: page.getByRole('heading', { name: '3. Nhật ký hệ thống' }),
+      has: page.getByRole('heading', { name: '4. Nhật ký hệ thống' }),
     });
     const auditBody = auditSection.locator('tbody');
     // Regression guard for phase2-browser-qa.spec.ts:425 (<option> labels must not contain raw enum codes)

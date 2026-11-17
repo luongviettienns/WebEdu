@@ -1,21 +1,37 @@
 'use client';
 
-import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
+import React from 'react';
+import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
 
 export function AuthArtSide() {
+  const { centerName, centerLogo } = useBrandConfig();
+
   return (
     <div
       className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-[var(--surface)] border-r border-[var(--line)] flex-col justify-between p-10 select-none"
     >
       {/* Brand Header */}
       <Link href="/login" className="flex items-center gap-3 focus:outline-none z-10 group">
-        <div className="seal flex-none" aria-hidden="true">
-          汉
-        </div>
+        {centerLogo ? (
+          <Image
+            src={centerLogo}
+            alt=""
+            width={40}
+            height={40}
+            unoptimized
+            aria-hidden="true"
+            className="h-10 w-10 flex-none rounded-lg border border-[var(--line)] bg-white object-contain p-0.5 shadow-xs"
+          />
+        ) : (
+          <div className="seal flex-none" aria-hidden="true">
+            汉
+          </div>
+        )}
         <div data-bamboo-clear>
           <div className="font-bold text-base tracking-tight text-[var(--ink)] leading-tight group-hover:text-[var(--red)] transition-colors">
-            TD Hán Ngữ
+            {centerName}
           </div>
           <div className="text-xs text-[var(--ink)] mt-0.5 flex items-center gap-1.5 font-medium">
             <span>Trung tâm tiếng Trung</span>

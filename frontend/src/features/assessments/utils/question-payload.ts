@@ -75,7 +75,10 @@ export function updateOptionField<K extends keyof QuestionOption>(
 
 export function addBlankOption(payload: Record<string, unknown>): Record<string, unknown> {
   const options = asOptions(payload);
-  return { ...payload, options: [...options, { id: nextOptionId(options), text: '' }] };
+  const next = [...options, { id: nextOptionId(options), text: '' }].sort((a, b) =>
+    a.id.localeCompare(b.id),
+  );
+  return { ...payload, options: next };
 }
 
 export function removeOptionAt(payload: Record<string, unknown>, idx: number): Record<string, unknown> {

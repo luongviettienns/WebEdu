@@ -24,6 +24,48 @@ export function getDraftStorageKey(submissionId: string, studentId: string): str
   return `${DRAFT_PREFIX}${studentId}_${submissionId}`;
 }
 
+export function getFlagStorageKey(submissionId: string, studentId: string): string {
+  return `${DRAFT_PREFIX}flags_${studentId}_${submissionId}`;
+}
+
+export function readDraftFlags(submissionId: string, studentId: string): Record<string, boolean> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(getFlagStorageKey(submissionId, studentId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPlainRecord(parsed)) return {};
+    const flags: Record<string, boolean> = {};
+    for (const [key, val] of Object.entries(parsed)) {
+      if (val === true) flags[key] = true;
+    }
+    return flags;
+  } catch {
+    return {};
+  }
+}
+
+export function writeDraftFlags(
+  submissionId: string,
+  studentId: string,
+  flags: Record<string, boolean>,
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const cleaned = Object.fromEntries(Object.entries(flags).filter(([, val]) => val));
+    if (Object.keys(cleaned).length === 0) {
+      window.localStorage.removeItem(getFlagStorageKey(submissionId, studentId));
+      return;
+    }
+    window.localStorage.setItem(
+      getFlagStorageKey(submissionId, studentId),
+      JSON.stringify(cleaned),
+    );
+  } catch {
+    // Ignore storage quota / privacy mode restrictions
+  }
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -104,6 +146,7 @@ export function clearLocalDraft(submissionId: string, studentId: string): void {
   if (typeof window === 'undefined') return;
   try {
     window.localStorage.removeItem(getDraftStorageKey(submissionId, studentId));
+    window.localStorage.removeItem(getFlagStorageKey(submissionId, studentId));
   } catch {
     // Ignore storage cleanup errors
   }

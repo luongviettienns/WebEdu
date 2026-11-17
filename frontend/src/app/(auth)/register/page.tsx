@@ -181,7 +181,7 @@ export default function RegisterPage() {
   return (
     <div className="flex min-h-screen w-full bg-[var(--paper)]">
       <AuthArtSide />
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-6 overflow-y-auto">
+      <main className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-6 overflow-y-auto">
         <div className="w-full max-w-[540px]">
           <div className="mb-3.5 text-center lg:text-left">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
@@ -226,7 +226,7 @@ export default function RegisterPage() {
             onSubmit={(e) => void handleSubmit(e)}
           />
         </div>
-      </div>
+      </main>
     </div>
   );
 }

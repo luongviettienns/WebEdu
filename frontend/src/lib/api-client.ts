@@ -181,6 +181,12 @@ export function extractErrorMessage(
   fallback = 'Đã xảy ra lỗi không xác định. Vui lòng thử lại.',
 ): string {
   if (error instanceof ApiClientError) {
+    if (
+      error.problem.detail === 'Request validation failed' &&
+      error.problem.invalidParams?.length
+    ) {
+      return error.problem.invalidParams[0]!;
+    }
     return error.problem.detail || error.message || fallback;
   }
   if (error instanceof Error && error.message) {

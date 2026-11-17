@@ -84,7 +84,7 @@ function ResetPasswordFormContent() {
       <AuthArtSide />
 
       {/* Cột Phải Form Đặt Lại Mật Khẩu */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <main className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-[420px]">
           <div className="mb-4 text-center lg:text-left">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
@@ -204,7 +204,7 @@ function ResetPasswordFormContent() {
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

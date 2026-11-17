@@ -33,39 +33,43 @@ export function StudentClassStatusSection({
   return (
     <>
       <div className="space-y-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
-          Lớp học & Lịch sử
-        </h3>
+        {canManageInternalNotes ? (
+          <>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-2)]">
+              Lớp học & Lịch sử
+            </h3>
 
-        <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-[var(--ink)]">
-              {selectedStudent.assignedClass ? (
-                <>
-                  <span className="font-num text-[var(--jade)] font-bold">
-                    {selectedStudent.assignedClass}
+            <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-[var(--ink)]">
+                  {selectedStudent.assignedClass ? (
+                    <>
+                      <span className="font-num text-[var(--jade)] font-bold">
+                        {selectedStudent.assignedClass}
+                      </span>
+                      {selectedStudent.enrolledAt ? (
+                        <span className="ml-2 text-xs font-normal text-[var(--ink-2)]">
+                          (Từ {formatDateDdMmYyyy(selectedStudent.enrolledAt)})
+                        </span>
+                      ) : null}
+                    </>
+                  ) : (
+                    'Chưa được xếp lớp'
+                  )}
+                </p>
+                {selectedStudent.assignedClass ? (
+                  <span className="rounded-md bg-[var(--jade-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--jade)]">
+                    Đang học
                   </span>
-                  {selectedStudent.enrolledAt ? (
-                    <span className="ml-2 text-xs font-normal text-[var(--ink-2)]">
-                      (Từ {formatDateDdMmYyyy(selectedStudent.enrolledAt)})
-                    </span>
-                  ) : null}
-                </>
-              ) : (
-                'Chưa được xếp lớp'
-              )}
-            </p>
-            {selectedStudent.assignedClass ? (
-              <span className="rounded-md bg-[var(--jade-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--jade)]">
-                Đang học
-              </span>
-            ) : null}
-          </div>
-          <PastClassesHistoryList
-            pastClasses={selectedStudent.pastClasses}
-            classHistory={selectedStudent.classHistory}
-          />
-        </div>
+                ) : null}
+              </div>
+              <PastClassesHistoryList
+                pastClasses={selectedStudent.pastClasses}
+                classHistory={selectedStudent.classHistory}
+              />
+            </div>
+          </>
+        ) : null}
 
         <div className="space-y-1.5">
           <label htmlFor="stu-status" className={labelClass}>
@@ -89,7 +93,7 @@ export function StudentClassStatusSection({
               </>
             )}
           </select>
-          {!isSelectedStudentEnrolled ? (
+          {canManageInternalNotes && !isSelectedStudentEnrolled ? (
             <p className="text-[11px] text-[var(--ink-2)]">
               Để kích hoạt sang <strong>Đang hoạt động</strong>, vui lòng thực
               hiện tại{' '}

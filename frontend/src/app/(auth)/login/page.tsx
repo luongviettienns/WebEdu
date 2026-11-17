@@ -109,10 +109,10 @@ function LoginFormContent() {
       <AuthArtSide />
 
       {/* Cột Phải Form Đăng Nhập */}
-      <div className="relative z-10 w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <main className="relative z-10 w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-[420px]">
           {/* Mobile-only Branding Header */}
-          <div data-bamboo-clear className="lg:hidden flex flex-col items-center text-center mb-4">
+          <div data-bamboo-clear className="lg:hidden flex flex-col items-center text-center mb-3">
             <Link href="/" aria-label={`Trang chủ ${centerName}`} className="flex items-center gap-2 mb-2">
               {centerLogo ? (
                 <Image
@@ -129,23 +129,23 @@ function LoginFormContent() {
                 </div>
               )}
             </Link>
-            <h1 className="text-xl font-bold tracking-tight text-[var(--ink)]">
+            <p className="text-base font-bold tracking-tight text-[var(--ink)]">
               {centerName}
-            </h1>
+            </p>
             <p className="text-xs text-[var(--ink-2)] mt-0.5 font-normal">
               Hệ thống Quản trị & Học tập HSK
             </p>
           </div>
 
-          {/* Desktop Heading with Hanzi eyebrow */}
-          <div data-bamboo-clear className="hidden lg:block mb-4">
-            <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
+          {/* Single semantic Heading (Mobile + Desktop) */}
+          <div data-bamboo-clear className="mb-4 text-center lg:text-left">
+            <div className="hidden lg:block font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
               登录 · HỆ THỐNG HSK
             </div>
-            <h1 className="text-2xl font-bold text-[var(--ink)] tracking-tight">
+            <h1 className="text-xl lg:text-2xl font-bold text-[var(--ink)] tracking-tight">
               Đăng nhập hệ thống
             </h1>
-            <p className="text-sm text-[var(--ink-2)] mt-1">
+            <p className="hidden lg:block text-sm text-[var(--ink-2)] mt-1">
               Nhập email và mật khẩu của bạn để truy cập tài khoản.
             </p>
           </div>
@@ -170,7 +170,7 @@ function LoginFormContent() {
             onDevQuickLogin={process.env.NODE_ENV === 'development' ? handleDevQuickLogin : undefined}
           />
         </div>
-      </div>
+      </main>
     </div>
   );
 }

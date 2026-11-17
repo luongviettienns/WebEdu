@@ -60,6 +60,14 @@ export interface ClassAssignmentSummaryDto {
   stats?: ClassAssignmentStatsDto;
 }
 
+export interface AssignmentSessionSummaryDto {
+  id: string;
+  sessionNumber: number | null;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface StudentAssignmentListItemDto {
   assignmentId: string;
   assessmentId: string;
@@ -68,6 +76,8 @@ export interface StudentAssignmentListItemDto {
   classId: string;
   classCode: string;
   className: string;
+  sessionId: string | null;
+  session: AssignmentSessionSummaryDto | null;
   assignedAt: string;
   dueAt: string;
   effectiveDurationMinutes: number | null;

@@ -15,6 +15,7 @@ import {
   type GradingTrackerFilter,
   type GradingTrackerStudentRowDto,
 } from '@/features/grading/api/grading.api';
+import { BatchAiGradeModal } from '@/features/grading/components/BatchAiGradeModal';
 import {
   GradingTrackerHeader,
   type PendingOverdueZeroTarget,
@@ -43,9 +44,8 @@ function TeacherGradingWorkspace({
   const [notice, setNotice] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [activeSubmissionId, setActiveSubmissionId] = useState<string | null>(null);
-  const [pendingOverdueZero, setPendingOverdueZero] = useState<PendingOverdueZeroTarget | null>(
-    null,
-  );
+  const [batchAiOpen, setBatchAiOpen] = useState(false);
+  const [pendingOverdueZero, setPendingOverdueZero] = useState<PendingOverdueZeroTarget | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
@@ -123,6 +123,7 @@ function TeacherGradingWorkspace({
               'Không thể công bố điểm',
             )
           }
+          onOpenBatchAi={() => setBatchAiOpen(true)}
           onRecordOverdueZeroAll={() =>
             setPendingOverdueZero({ mode: 'ALL', count: tracker.summary.overdueNotSubmittedCount })
           }
@@ -202,12 +203,8 @@ function TeacherGradingWorkspace({
           loading={loading} itemLabel="học viên" onPageChange={setPage} />
       ) : null}
 
-      <SubmissionGradingModal
-        submissionId={activeSubmissionId}
-        onClose={() => setActiveSubmissionId(null)}
-        onNavigateSubmission={(id) => setActiveSubmissionId(id)}
-        onChanged={reload}
-      />
+      <SubmissionGradingModal submissionId={activeSubmissionId} onClose={() => setActiveSubmissionId(null)} onNavigateSubmission={setActiveSubmissionId} onChanged={reload} />
+      <BatchAiGradeModal assignmentId={assignmentId} open={batchAiOpen} onClose={() => setBatchAiOpen(false)} onCompleted={(msg) => { setBatchAiOpen(false); setNotice(msg); reload(); }} />
     </div>
   );
 }
@@ -215,26 +212,12 @@ function TeacherGradingWorkspace({
 function TeacherAssignmentGradingInner() {
   const params = useParams<{ assignmentId: string }>();
   const assignmentId = typeof params?.assignmentId === 'string' ? params.assignmentId : '';
-  const { status, user, errorMessage, handleApiAuthError } =
-    usePortalSession(ALLOWED_ROLES);
+  const { status, user, errorMessage, handleApiAuthError } = usePortalSession(ALLOWED_ROLES);
 
   if (status !== 'authorized' || !user) {
-    return (
-      <PortalGuardView
-        status={status === 'authorized' ? 'checking' : status}
-        currentUser={user}
-        errorMessage={errorMessage}
-      />
-    );
+    return <PortalGuardView status={status === 'authorized' ? 'checking' : status} currentUser={user} errorMessage={errorMessage} />;
   }
-
-  return (
-    <TeacherGradingWorkspace
-      assignmentId={assignmentId}
-      isAdminView={user.effectiveRole === 'ADMIN'}
-      onAuthError={handleApiAuthError}
-    />
-  );
+  return <TeacherGradingWorkspace assignmentId={assignmentId} isAdminView={user.effectiveRole === 'ADMIN'} onAuthError={handleApiAuthError} />;
 }
 
 export default function TeacherAssignmentGradingPage() {

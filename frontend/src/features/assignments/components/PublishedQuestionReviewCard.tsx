@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { QUESTION_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
+import { QuestionStemMedia } from '@/features/assignments/components/QuestionStemMedia';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import type { StudentPublishedQuestionResultDto } from '@/features/grading/api/grading.api';
 import { SelectedOptionImages } from '@/features/grading/components/SelectedOptionImages';
@@ -63,6 +64,14 @@ export function PublishedQuestionReviewCard({
       <p className="whitespace-pre-line text-base font-medium text-[var(--ink)]">
         {question.prompt}
       </p>
+
+      <QuestionStemMedia
+        assignmentId={assignmentId}
+        questionId={question.questionId}
+        questionType={question.type}
+        mediaId={question.mediaId ?? correctAnswer?.mediaId}
+        caption={question.caption ?? correctAnswer?.caption}
+      />
 
       <div className="rounded-xl bg-[var(--surface-2)]/70 p-3.5 text-sm">
         <div className="text-[11px] font-semibold uppercase text-[var(--ink-3)]">

@@ -10,7 +10,7 @@ import type { MediaItem } from '@/features/assessments/components/MediaAttach';
 import { QuestionTypeFields } from '@/features/assessments/components/QuestionTypeFields';
 
 const FIELD =
-  'rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
+  'min-w-0 max-w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
 
 const TEXT_TYPES: QuestionType[] = [
   'SINGLE_CHOICE',
@@ -110,7 +110,7 @@ export function NewQuestionComposer({
     ));
 
   return (
-    <section aria-label="Thêm câu hỏi mới" className="space-y-2.5 border-t border-[var(--line)] pt-3">
+    <section aria-label="Thêm câu hỏi mới" className="min-w-0 space-y-2.5 border-t border-[var(--line)] pt-3">
       <p className="text-xs font-medium text-[var(--ink-2)]">Chọn dạng câu, viết nội dung, rồi bấm Thêm câu.</p>
       <div role="radiogroup" aria-label="Dạng câu" className="space-y-2">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-3)]">

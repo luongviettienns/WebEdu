@@ -88,9 +88,20 @@ export async function registerStudent(
   });
 }
 
+let activeLogoutRedirect: string | null = null;
+
+export function setActiveLogoutRedirect(url: string | null): void {
+  activeLogoutRedirect = url;
+}
+
+export function getActiveLogoutRedirect(): string | null {
+  return activeLogoutRedirect;
+}
+
 export async function loginWithEmail(
   payload: LoginPayload,
 ): Promise<LoginResponse> {
+  activeLogoutRedirect = null;
   purgeLegacyWebStorageTokens();
   const result = await fetchApi<LoginResponse>('/auth/login', {
     method: 'POST',

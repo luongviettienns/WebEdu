@@ -99,11 +99,23 @@ export async function listClassAssignments(
   );
 }
 
+export type AssignmentTrackerStatusFilter =
+  | 'ALL'
+  | 'NOT_STARTED'
+  | 'IN_PROGRESS'
+  | 'SUBMITTED_WAITING'
+  | 'GRADED';
+
 export async function getAssignmentSubmissions(
   assignmentId: string,
-  options?: RequestOptions & { page?: number; limit?: number },
+  options?: RequestOptions & {
+    page?: number;
+    limit?: number;
+    status?: AssignmentTrackerStatusFilter;
+  },
 ): Promise<TeacherAssignmentSubmissionsDto> {
   const query = new URLSearchParams();
+  if (options?.status && options.status !== 'ALL') query.set('status', options.status);
   if (options?.page !== undefined) query.set('page', String(options.page));
   if (options?.limit !== undefined) query.set('limit', String(options.limit));
   const qs = query.toString();

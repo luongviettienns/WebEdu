@@ -25,6 +25,8 @@ const ACTION_BTN =
 export function AssessmentList({
   items,
   courses,
+  currentUserId,
+  isAdmin,
   search,
   type,
   courseId,
@@ -47,6 +49,8 @@ export function AssessmentList({
 }: {
   items: TeacherAssessmentDto[];
   courses: CourseItemDto[];
+  currentUserId: string;
+  isAdmin: boolean;
   search: string;
   type: AssessmentType | '';
   courseId: string;
@@ -90,19 +94,19 @@ export function AssessmentList({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
               </svg>
             </div>
-            <select aria-label="Loại đề" className={FIELD} value={type} onChange={(e) => onType(e.target.value as AssessmentType | '')}>
+            <select aria-label="Loại đề" className={`${FIELD} max-w-full`} value={type} onChange={(e) => onType(e.target.value as AssessmentType | '')}>
               <option value="">Tất cả loại</option>
               {Object.entries(ASSESSMENT_TYPE_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
-            <select aria-label="Khóa HSK" className={`${FIELD} max-w-[190px] truncate`} value={courseId} onChange={(e) => onCourse(e.target.value)}>
+            <select aria-label="Khóa HSK" className={`${FIELD} min-w-0 max-w-full sm:max-w-[190px] truncate`} value={courseId} onChange={(e) => onCourse(e.target.value)}>
               <option value="">Tất cả khóa</option>
               {courses.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
-            <select aria-label="Trạng thái" className={FIELD} value={status} onChange={(e) => onStatus(e.target.value as AssessmentStatus | '')}>
+            <select aria-label="Trạng thái" className={`${FIELD} max-w-full`} value={status} onChange={(e) => onStatus(e.target.value as AssessmentStatus | '')}>
               <option value="">Tất cả trạng thái</option>
               <option value="DRAFT">Nháp</option>
               <option value="PUBLISHED">Đã phát hành</option>
@@ -142,19 +146,19 @@ export function AssessmentList({
         aria-label="Danh sách đề và bài tập"
         className="overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-2xs"
       >
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-[var(--line)] bg-[var(--surface-2)] text-xs font-semibold uppercase text-[var(--ink-2)]">
+        <table className="w-full text-left text-xs xl:text-[13px]">
+          <thead className="border-b border-[var(--line)] bg-[var(--surface-2)] text-[11px] font-semibold uppercase text-[var(--ink-2)]">
             <tr>
-              <th className="px-3 py-2.5 whitespace-nowrap">Tên đề</th>
-              <th className="px-3 py-2.5 whitespace-nowrap">Loại</th>
-              <th className="px-3 py-2.5 whitespace-nowrap">Khóa</th>
-              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Số câu</th>
-              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Tổng điểm</th>
-              <th className="px-3 py-2.5 whitespace-nowrap">Người tạo</th>
-              <th className="px-2.5 py-2.5 text-center leading-snug">Ngày <br />cập nhật</th>
-              <th className="px-2.5 py-2.5 text-center leading-snug">Số lớp <br />đã giao</th>
-              <th className="px-3 py-2.5 whitespace-nowrap">Trạng thái</th>
-              <th className="px-3 py-2.5 text-center whitespace-nowrap">Thao tác</th>
+              <th className="px-2.5 py-2.5 whitespace-nowrap">Tên đề</th>
+              <th className="px-2 py-2.5 whitespace-nowrap">Loại</th>
+              <th className="px-2 py-2.5 whitespace-nowrap">Khóa</th>
+              <th className="px-1.5 py-2.5 text-center leading-tight">Số <br />câu</th>
+              <th className="px-1.5 py-2.5 text-center leading-tight">Tổng <br />điểm</th>
+              <th className="px-2 py-2.5 whitespace-nowrap">Người tạo</th>
+              <th className="px-1.5 py-2.5 text-center leading-tight">Ngày <br />cập nhật</th>
+              <th className="px-1.5 py-2.5 text-center leading-tight">Lớp <br />đã giao</th>
+              <th className="px-2 py-2.5 whitespace-nowrap">Trạng thái</th>
+              <th className="px-2.5 py-2.5 text-center whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--line)]">
@@ -163,61 +167,58 @@ export function AssessmentList({
             ) : items.length === 0 ? (
               <tr><td colSpan={10} className="px-4 py-8 text-center text-[var(--ink-3)]">Chưa có đề nào</td></tr>
             ) : (
-              items.map((a) => (
+              items.map((a) => {
+                const canMutate = isAdmin || a.createdById === currentUserId;
+                const canEditOrReview = canMutate && a.status === 'DRAFT' && !a.isLocked;
+                return (
                 <tr key={a.id} className="hover:bg-[var(--hover)]/60 transition-colors">
-                  <td className="px-3 py-3 min-w-[140px] max-w-[200px]">
+                  <td className="px-2.5 py-2.5 max-w-[165px]">
                     <div className="line-clamp-2 font-medium text-[var(--ink)]" title={a.title}>{a.title}</div>
                     {a.originalFileName ? (
-                      <div className="truncate text-xs text-[var(--ink-3)]" title={a.originalFileName}>{a.originalFileName}</div>
+                      <div className="truncate text-[11px] text-[var(--ink-3)]" title={a.originalFileName}>{a.originalFileName}</div>
                     ) : null}
                   </td>
-                  <td className="px-3 py-3 whitespace-nowrap text-xs font-medium text-[var(--ink-2)]">{ASSESSMENT_TYPE_LABELS[a.type]}</td>
-                  <td className="px-3 py-3 min-w-[130px] max-w-[165px]">
+                  <td className="px-2 py-2.5 whitespace-nowrap text-xs font-medium text-[var(--ink-2)]">{ASSESSMENT_TYPE_LABELS[a.type]}</td>
+                  <td className="px-2 py-2.5 max-w-[130px]">
                     <div className="line-clamp-2 text-[var(--ink-2)]" title={courseName(a.courseId)}>{courseName(a.courseId)}</div>
                   </td>
-                  <td className="px-2.5 py-3 text-center font-medium num">{a.questionCount}</td>
-                  <td className="px-2.5 py-3 text-center font-medium num">{a.totalPoints}</td>
-                  <td className="px-3 py-3 max-w-[135px]">
+                  <td className="px-1.5 py-2.5 text-center font-medium num">{a.questionCount}</td>
+                  <td className="px-1.5 py-2.5 text-center font-medium num">{a.totalPoints}</td>
+                  <td className="px-2 py-2.5 max-w-[105px]">
                     <div className="line-clamp-2 text-[var(--ink-2)]" title={a.createdByName || '—'}>{a.createdByName || '—'}</div>
                   </td>
-                  <td className="px-2.5 py-3 text-center whitespace-nowrap text-xs text-[var(--ink-2)] num">{formatDateDdMmYyyy(a.updatedAt)}</td>
-                  <td className="px-2.5 py-3 text-center font-medium num">{a.assignedClassCount ?? 0}</td>
-                  <td className="px-3 py-3 whitespace-nowrap">
+                  <td className="px-1.5 py-2.5 text-center whitespace-nowrap text-xs text-[var(--ink-2)] num">{formatDateDdMmYyyy(a.updatedAt)}</td>
+                  <td className="px-1.5 py-2.5 text-center font-medium num">{a.assignedClassCount ?? 0}</td>
+                  <td className="px-2 py-2.5 whitespace-nowrap">
                     <StatusTag tone={a.status === 'PUBLISHED' ? 'jade' : 'grey'}>
                       {a.status === 'PUBLISHED' ? 'Đã phát hành' : 'Nháp'}
                     </StatusTag>
                   </td>
-                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                  <td className="px-2 py-2.5 text-center whitespace-nowrap">
                     <div className="inline-flex items-center justify-center gap-1 whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => onOpen(a.id)}
-                        className={`${ACTION_BTN} px-2 border-[var(--line-2)] bg-white text-[var(--ink)] hover:bg-[var(--hover)] hover:text-[var(--blue)] hover:border-[var(--blue)]/40`}
-                        title="Chỉnh sửa đề"
+                        className={`${ACTION_BTN} px-1.5 border-[var(--line-2)] bg-white text-[var(--ink)] hover:bg-[var(--hover)] hover:text-[var(--blue)] hover:border-[var(--blue)]/40`}
+                        title={canEditOrReview ? 'Chỉnh sửa đề' : 'Xem chi tiết đề'}
                       >
                         <svg className="h-3.5 w-3.5 text-[var(--ink-3)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d={canEditOrReview ? 'M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125' : 'M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z'} />
                         </svg>
-                        <span>Sửa</span>
+                        <span>{canEditOrReview ? 'Sửa' : 'Xem'}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onReview(a.id)}
-                        className={`${ACTION_BTN} px-2 border-[var(--blue)]/30 bg-[var(--blue-soft)] text-[var(--blue)] hover:bg-[var(--blue)] hover:text-white`}
-                        title="Duyệt câu hỏi"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>Duyệt</span>
-                      </button>
+                      {canEditOrReview ? (
+                        <button type="button" onClick={() => onReview(a.id)} title="Duyệt câu hỏi"
+                          className={`${ACTION_BTN} px-1.5 border-[var(--blue)]/30 bg-[var(--blue-soft)] text-[var(--blue)] hover:bg-[var(--blue)] hover:text-white`}>
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Duyệt</span>
+                        </button>
+                      ) : null}
                       {a.status === 'PUBLISHED' && onAssign ? (
-                        <button
-                          type="button"
-                          onClick={() => onAssign(a)}
-                          className={`${ACTION_BTN} px-2 border-[var(--jade)]/30 bg-[var(--jade-soft)] text-[var(--jade)] hover:bg-[var(--jade)] hover:text-white`}
-                          title="Giao bài cho lớp"
-                        >
+                        <button type="button" onClick={() => onAssign(a)} title="Giao bài cho lớp"
+                          className={`${ACTION_BTN} px-1.5 border-[var(--jade)]/30 bg-[var(--jade-soft)] text-[var(--jade)] hover:bg-[var(--jade)] hover:text-white`}>
                           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
                           </svg>
@@ -243,7 +244,7 @@ export function AssessmentList({
                         </svg>
                         <span className="hidden 2xl:inline">Nhân bản</span>
                       </button>
-                      {a.status === 'DRAFT' && !a.isLocked ? (
+                      {canEditOrReview ? (
                         <button
                           type="button"
                           aria-label="Xóa"
@@ -260,7 +261,8 @@ export function AssessmentList({
                     </div>
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

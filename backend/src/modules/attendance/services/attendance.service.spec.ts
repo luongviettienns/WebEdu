@@ -378,4 +378,32 @@ describe('AttendanceCrudService & AttendanceQueryService (TDD Slice 4.3-4.4)', (
     const delegate = mockPrisma.attendanceRecord as { createMany: ReturnType<typeof vi.fn> };
     expect(delegate.createMany).toHaveBeenCalledTimes(1);
   });
+
+  it('REGRESSION (BUG-M4-01): excludes DROPPED-only enrollments from getStudentMyAttendance activeClass and sessions', async () => {
+    const findManyMock = (mockPrisma.enrollment as { findMany: ReturnType<typeof vi.fn> }).findMany;
+    findManyMock.mockResolvedValue([
+      {
+        studentId: 'stu-1',
+        classId: 'class-dropped',
+        status: EnrollmentStatus.DROPPED,
+        enrolledDate: new Date('2026-10-01T00:00:00.000Z'),
+        leftDate: new Date('2026-11-12T00:00:00.000Z'),
+        class: {
+          id: 'class-dropped',
+          code: 'HSK2-DROPPED',
+          totalSessions: 24,
+          course: { name: 'Tiếng Trung HSK 2' },
+          teacher: { fullName: 'Vương Quốc Tuấn' },
+        },
+      },
+    ]);
+
+    const mine = await queryService.getStudentMyAttendance(student1, {});
+    expect(mine.classes).toEqual([]);
+    expect(mine.activeClass).toBeNull();
+    expect(mine.sessions).toEqual([]);
+    await expect(
+      queryService.getStudentMyAttendance(student1, { classId: 'class-dropped' }),
+    ).rejects.toThrow(ForbiddenException);
+  });
 });

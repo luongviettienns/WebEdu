@@ -100,15 +100,11 @@ function AdminTeachersContent({
         error,
         'Không thể cập nhật trạng thái giáo viên',
       );
-      if (
-        newStatus === 'INACTIVE' &&
-        (apiMsg.includes('lớp') ||
-          apiMsg.includes('phụ trách') ||
-          apiMsg.includes('hoạt động'))
-      ) {
+      if (newStatus === 'INACTIVE' && /lớp|phụ trách|hoạt động/.test(apiMsg)) {
+        const parsed = Number(apiMsg.match(/(\d+)\s*lớp/i)?.[1] ?? 0);
         setBlockedTeacherAlert({
           name: teacher.fullName,
-          activeClassesCount: 1,
+          activeClassesCount: parsed > 0 ? parsed : Math.max(1, teacher.activeClassesCount ?? 1),
         });
       } else {
         setErrorBanner(apiMsg);
@@ -231,13 +227,7 @@ export default function AdminTeachersPage() {
     usePortalSession(ALLOWED_ROLES);
 
   if (status !== 'authorized' || !user) {
-    return (
-      <PortalGuardView
-        status={status === 'authorized' ? 'checking' : status}
-        currentUser={user}
-        errorMessage={errorMessage}
-      />
-    );
+    return <PortalGuardView status={status === 'authorized' ? 'checking' : status} currentUser={user} errorMessage={errorMessage} />;
   }
 
   return (

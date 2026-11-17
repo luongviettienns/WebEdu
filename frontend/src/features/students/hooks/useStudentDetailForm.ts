@@ -71,7 +71,7 @@ export function useStudentDetailForm({
         if (controller.signal.aborted) return;
 
         let pastClasses = fullDetail.pastClasses;
-        if (!pastClasses) {
+        if (canManageInternalNotes && !pastClasses) {
           try {
             const historyRes = await getStudentClassHistory(initialStudent.id, {
               signal: controller.signal,
@@ -111,7 +111,7 @@ export function useStudentDetailForm({
     return () => {
       controller.abort();
     };
-  }, [initialStudent.id, onAuthError]);
+  }, [initialStudent.id, canManageInternalNotes, onAuthError]);
 
   const initials = (editFullName || initialStudent.fullName)
     .trim()
@@ -130,7 +130,8 @@ export function useStudentDetailForm({
   const isSelectedStudentEnrolled = Boolean(
     selectedStudent.enrolledAt ||
       selectedStudent.currentClassId ||
-      selectedStudent.assignedClass,
+      selectedStudent.assignedClass ||
+      (!canManageInternalNotes && selectedStudent.status === 'ACTIVE'),
   );
 
   const computedAge =

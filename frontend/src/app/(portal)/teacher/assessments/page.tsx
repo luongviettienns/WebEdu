@@ -20,7 +20,13 @@ type View =
   | { mode: 'review'; id: string }
   | { mode: 'upload' };
 
-function AssessmentsContent() {
+function AssessmentsContent({
+  currentUserId,
+  isAdmin,
+}: {
+  currentUserId: string;
+  isAdmin: boolean;
+}) {
   const bank = useAssessments();
   const [view, setView] = useState<View>({ mode: 'list' });
   const [assignTarget, setAssignTarget] = useState<TeacherAssessmentDto | null>(null);
@@ -74,6 +80,8 @@ function AssessmentsContent() {
       <AssessmentList
         items={bank.items}
         courses={bank.courses}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
         search={bank.search}
         type={bank.type}
         courseId={bank.courseId}
@@ -129,7 +137,10 @@ export default function TeacherAssessmentsPage() {
           Tạo đề thủ công hoặc tải Word/PDF, duyệt câu nhận diện rồi mới phát hành.
         </p>
       </div>
-      <AssessmentsContent />
+      <AssessmentsContent
+        currentUserId={user.id}
+        isAdmin={user.roles.includes('ADMIN')}
+      />
     </div>
   );
 }

@@ -72,6 +72,29 @@ export function resolveCorrectIds(
   return options.filter((o) => o.text.trim().toLowerCase() === lowered).map((o) => o.id);
 }
 
+export function deduplicateImportedOptions(
+  raw: Array<{ id: string; text: string }>,
+): { options: Array<{ id: string; text: string }>; hadDuplicateIds: boolean } {
+  const seen = new Set<string>();
+  const used = new Set<string>();
+  const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  let hadDuplicateIds = false;
+
+  const options = raw.map((opt, idx) => {
+    const baseId = opt.id.toLowerCase();
+    let id = baseId;
+    if (seen.has(baseId)) {
+      hadDuplicateIds = true;
+      id = letters.find((ch) => !used.has(ch)) ?? `opt_${idx + 1}`;
+    }
+    seen.add(baseId);
+    used.add(id);
+    return { ...opt, id };
+  });
+
+  return { options, hadDuplicateIds };
+}
+
 export function inferType(draft: ImportDraft): QuestionType | 'SKIP' {
   if (draft.typeHint) return draft.typeHint;
   const prompt = draft.promptLines.join('\n');
@@ -142,14 +165,15 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
     };
   }
 
-  const optionCountOk = draft.options.length >= 2 && draft.options.length <= 4;
-  const correctOptionIds = resolveCorrectIds(draft.options, draft.answerRaw);
+  const { options, hadDuplicateIds } = deduplicateImportedOptions(draft.options);
+  const optionCountOk = options.length >= 2 && options.length <= 4;
+  const correctOptionIds = resolveCorrectIds(options, draft.answerRaw);
   const minCorrect = type === QuestionType.MULTIPLE_CHOICE ? 2 : 1;
   const hasAnswer =
     correctOptionIds.length >= minCorrect &&
-    correctOptionIds.every((id) => draft.options.some((o) => o.id === id));
+    correctOptionIds.every((id) => options.some((o) => o.id === id));
   const payload: Record<string, unknown> = {
-    options: draft.options,
+    options,
     correctOptionIds: hasAnswer ? correctOptionIds : [],
   };
   if (type === QuestionType.LISTENING && draft.maxListens) {
@@ -161,6 +185,6 @@ export function flushDraft(draft: ImportDraft | null): ParsedDraftQuestion | nul
     prompt: promptText,
     payload,
     points,
-    needsReview: !validPoints || missingPrompt || !optionCountOk || !hasAnswer || mediaMissing,
+    needsReview: !validPoints || missingPrompt || !optionCountOk || !hasAnswer || mediaMissing || hadDuplicateIds,
   };
 }

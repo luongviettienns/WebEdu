@@ -123,16 +123,16 @@ export class ManualGradeAnswerItemDto {
   @ApiPropertyOptional({ description: 'Điểm chấm (bội số 0.25, từ 0 tới points tối đa của câu)' })
   @ValidateIf((_, value) => value !== undefined)
   @Transform(parseStrictNumberInput)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  @Min(0)
-  @Max(1000)
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Điểm câu hỏi phải là số hợp lệ' })
+  @Min(0, { message: 'Điểm câu hỏi không được âm (tối thiểu 0)' })
+  @Max(1000, { message: 'Điểm câu hỏi tối đa là 1000' })
   earnedPoints?: number;
 
   @ApiPropertyOptional({ nullable: true, description: 'Điểm trước khi sửa để kiểm tra xung đột tab khác' })
   @IsOptional()
   @Transform(parseStrictNumberInput)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  @Min(0)
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Điểm trước đó phải là số hợp lệ' })
+  @Min(0, { message: 'Điểm trước đó không được âm' })
   previousEarnedPoints?: number | null;
 
   @ApiPropertyOptional({ description: 'Áp dụng nhanh điểm gợi ý AI hiện có của câu hỏi' })
@@ -239,16 +239,16 @@ export class AdjustGradeAnswerItemDto {
   @ApiPropertyOptional({ description: 'Điểm mới cho câu hỏi (bội số 0.25, 0..maxPoints)' })
   @ValidateIf((_, value) => value !== undefined)
   @Transform(parseStrictNumberInput)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  @Min(0)
-  @Max(1000)
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Điểm câu hỏi phải là số hợp lệ' })
+  @Min(0, { message: 'Điểm câu hỏi không được âm (tối thiểu 0)' })
+  @Max(1000, { message: 'Điểm câu hỏi tối đa là 1000' })
   earnedPoints?: number;
 
   @ApiPropertyOptional({ nullable: true, description: 'Điểm trước khi sửa để kiểm tra xung đột tab khác' })
   @IsOptional()
   @Transform(parseStrictNumberInput)
-  @IsNumber({ allowNaN: false, allowInfinity: false })
-  @Min(0)
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { message: 'Điểm trước đó phải là số hợp lệ' })
+  @Min(0, { message: 'Điểm trước đó không được âm' })
   previousEarnedPoints?: number | null;
 
   @ApiPropertyOptional({ maxLength: 2000, nullable: true })

@@ -21,6 +21,7 @@ const EXPECTED_INTERFACES = [
   'OrderingAnswerPayload',
   'ClassAssignmentStatsDto',
   'ClassAssignmentSummaryDto',
+  'AssignmentSessionSummaryDto',
   'StudentAssignmentListItemDto',
   'SanitizedOptionDto',
   'SanitizedQuestionDto',

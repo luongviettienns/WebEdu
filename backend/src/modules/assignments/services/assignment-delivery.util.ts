@@ -9,7 +9,10 @@ import type {
   ClassAssignmentStatsDto,
   TeacherTrackerStudentRowDto,
 } from '../assignments.types.js';
-import { hasExplicitTimezoneOffset } from '../dto/assignments.dto.js';
+import {
+  hasExplicitTimezoneOffset,
+  type AssignmentTrackerStatusFilter,
+} from '../dto/assignments.dto.js';
 import { toTeacherTrackerStudentRowDto } from '../mappers/assignment.mapper.js';
 
 export const SUMMARY_INCLUDE = {
@@ -109,12 +112,35 @@ export async function assertAttachableSession(
   }
 }
 
+function buildTrackerStudentSubmissionFilter(
+  assignmentId: string,
+  status?: AssignmentTrackerStatusFilter,
+): Prisma.UserWhereInput | null {
+  if (!status || status === 'ALL') return null;
+  if (status === 'NOT_STARTED') {
+    return {
+      studentSubmissions: {
+        none: { classAssignmentId: assignmentId, status: { not: SubmissionStatus.SUPERSEDED } },
+      },
+    };
+  }
+  const matchStatuses =
+    status === 'GRADED'
+      ? [...GRADED_COUNT_STATUSES]
+      : [status === 'IN_PROGRESS' ? SubmissionStatus.IN_PROGRESS : SubmissionStatus.SUBMITTED_WAITING];
+  return {
+    studentSubmissions: {
+      some: { classAssignmentId: assignmentId, status: { in: matchStatuses } },
+    },
+  };
+}
+
 export async function loadAssignmentTrackerData(
   db: PrismaService,
   classId: string,
   assignmentId: string,
   questionCount: number,
-  query?: PaginationInput,
+  query?: PaginationInput & { status?: AssignmentTrackerStatusFilter },
 ): Promise<{
   students: TeacherTrackerStudentRowDto[];
   stats: ClassAssignmentStatsDto;
@@ -127,14 +153,20 @@ export async function loadAssignmentTrackerData(
     classId,
     status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
   };
+  const statusFilter = buildTrackerStudentSubmissionFilter(assignmentId, query?.status);
 
-  const [total, pagedGroups, groupedStatuses] = await Promise.all([
+  const [totalAll, filteredTotal, pagedGroups, groupedStatuses] = await Promise.all([
     db.user.count({
       where: { enrollments: { some: enrollmentWhere } },
     }),
+    statusFilter
+      ? db.user.count({
+          where: { enrollments: { some: enrollmentWhere }, ...statusFilter },
+        })
+      : Promise.resolve<number | null>(null),
     db.enrollment.groupBy({
       by: ['studentId'],
-      where: enrollmentWhere,
+      where: statusFilter ? { ...enrollmentWhere, student: statusFilter } : enrollmentWhere,
       _min: { enrolledDate: true, id: true },
       orderBy: [{ _min: { enrolledDate: 'asc' } }, { _min: { id: 'asc' } }],
       skip,
@@ -155,8 +187,9 @@ export async function loadAssignmentTrackerData(
     }),
   ]);
 
+  const total = filteredTotal ?? totalAll;
   const stats = aggregateAssignmentStats(
-    total,
+    totalAll,
     groupedStatuses.map((row) => ({ status: row.status, count: row._count._all })),
   );
   const pagedStudentIds = pagedGroups.map((group) => group.studentId);

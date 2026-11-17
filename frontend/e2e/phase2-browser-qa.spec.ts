@@ -356,6 +356,10 @@ test.describe('Phase 2 Browser QA — Auth, Users & RBAC (Desktop & Mobile)', ()
       '06-pending-enrollment-modal',
     );
 
+    await expect(classSelect).toHaveValue('');
+    await expect(page.getByRole('button', { name: 'Xác nhận' })).toBeDisabled();
+    await classSelect.selectOption('HSK1-K26-01');
+    await expect(page.getByRole('button', { name: 'Xác nhận' })).toBeEnabled();
     await page.getByRole('button', { name: 'Xác nhận' }).click();
     await expect(
       page.getByText(/vào lớp HSK1-K26-01 thành công/i),

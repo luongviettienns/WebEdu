@@ -73,6 +73,39 @@ export async function requestAiEssaySuggestion(
   );
 }
 
+export interface ReviewedAiBatchItemPayload {
+  submissionId: string;
+  questionId: string;
+  reviewedInput: AiEssayReviewInput;
+}
+
+export interface AiBatchSuggestGradeResultDto {
+  assignmentId: string;
+  requestedCount: number;
+  succeededCount: number;
+  failedCount: number;
+  results: Array<{
+    submissionId: string;
+    ok: boolean;
+    gradingStatus?: GradingStatus;
+    suggestedCount?: number;
+    error?: string;
+  }>;
+}
+
+export async function requestBatchAiEssaySuggestions(
+  assignmentId: string,
+  payload: { questionId?: string; reviews: ReviewedAiBatchItemPayload[] },
+): Promise<AiBatchSuggestGradeResultDto> {
+  return requestJson<AiBatchSuggestGradeResultDto>(
+    `/assignments/${encodeURIComponent(assignmentId)}/ai-grade`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export async function saveManualGrade(
   submissionId: string,
   payload: {

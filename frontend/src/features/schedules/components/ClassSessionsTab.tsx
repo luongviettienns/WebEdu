@@ -1,20 +1,17 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { SessionAttendanceModal } from '@/features/attendance/components/SessionAttendanceModal';
 import type { ClassDetail } from '@/features/classes/api/classes.types';
 import {
   listClassSessions,
   listScheduleChangeLogs,
   type ClassSessionsResponse,
-  type LessonSessionItem,
   type SessionChangeLogItem,
   type SessionMutationResult,
+  type SessionStatus,
 } from '@/features/schedules/api/schedules.api';
-import { CancelSessionModal } from '@/features/schedules/components/CancelSessionModal';
-import { MakeupAndManualSessionModal } from '@/features/schedules/components/MakeupAndManualSessionModal';
-import { RescheduleSessionModal } from '@/features/schedules/components/RescheduleSessionModal';
-import { SessionDetailModal } from '@/features/schedules/components/SessionDetailModal';
+import { ClassSessionFilterBar } from '@/features/schedules/components/ClassSessionFilterBar';
+import { ClassSessionModals, type SessionTabModal } from '@/features/schedules/components/ClassSessionModals';
 import { formatShortDdMm, SessionStatusBadge } from '@/features/schedules/components/SessionStatusBadge';
 import { extractErrorMessage } from '@/lib/api-client';
 
@@ -24,15 +21,6 @@ export interface ClassSessionsTabProps {
   canViewChangeLogs: boolean;
   onClassChanged: (message?: string) => void;
 }
-
-type TabModal =
-  | { type: 'detail'; session: LessonSessionItem }
-  | { type: 'reschedule'; session: LessonSessionItem }
-  | { type: 'cancel'; session: LessonSessionItem }
-  | { type: 'makeup'; session: LessonSessionItem }
-  | { type: 'manual' }
-  | { type: 'attendance'; session: LessonSessionItem }
-  | null;
 
 export function ClassSessionsTab({
   detail,
@@ -44,8 +32,11 @@ export function ClassSessionsTab({
   const [logs, setLogs] = useState<SessionChangeLogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [modal, setModal] = useState<TabModal>(null);
+  const [modal, setModal] = useState<SessionTabModal>(null);
   const [banner, setBanner] = useState<{ message: string; warning: string | null } | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'' | SessionStatus>('');
+  const [fromFilter, setFromFilter] = useState('');
+  const [toFilter, setToFilter] = useState('');
   const [tick, setTick] = useState(0);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
@@ -57,7 +48,15 @@ export function ClassSessionsTab({
       setError('');
       try {
         const [sessionRes, logRes] = await Promise.all([
-          listClassSessions(detail.id, undefined, controller.signal),
+          listClassSessions(
+            detail.id,
+            {
+              status: statusFilter || undefined,
+              from: fromFilter || undefined,
+              to: toFilter || undefined,
+            },
+            controller.signal,
+          ),
           canViewChangeLogs
             ? listScheduleChangeLogs({ classId: detail.id, limit: 20 }, controller.signal)
             : Promise.resolve({ items: [], total: 0, page: 1, limit: 20, totalPages: 1 }),
@@ -74,7 +73,7 @@ export function ClassSessionsTab({
       }
     })();
     return () => controller.abort();
-  }, [detail.id, canViewChangeLogs, tick]);
+  }, [detail.id, canViewChangeLogs, statusFilter, fromFilter, toFilter, tick]);
 
   function handleSuccess(message: string, result: SessionMutationResult) {
     setModal(null);
@@ -138,6 +137,20 @@ export function ClassSessionsTab({
           </button>
         ) : null}
       </div>
+
+      <ClassSessionFilterBar
+        status={statusFilter}
+        from={fromFilter}
+        to={toFilter}
+        onStatusChange={setStatusFilter}
+        onFromChange={setFromFilter}
+        onToChange={setToFilter}
+        onReset={() => {
+          setStatusFilter('');
+          setFromFilter('');
+          setToFilter('');
+        }}
+      />
 
       {loading ? (
         <div role="status" className="rounded-xl border border-[var(--line)] bg-white p-8 text-center text-xs text-[var(--ink-2)]">
@@ -224,66 +237,18 @@ export function ClassSessionsTab({
         </div>
       ) : null}
 
-      {modal?.type === 'detail' ? (
-        <SessionDetailModal
-          session={modal.session}
-          onClose={() => setModal(null)}
-          onOpenAttendance={(session) => setModal({ type: 'attendance', session })}
-          onOpenReschedule={(session) => setModal({ type: 'reschedule', session })}
-          onOpenCancel={(session) => setModal({ type: 'cancel', session })}
-          onOpenCreateMakeup={(session) => setModal({ type: 'makeup', session })}
-        />
-      ) : null}
-      {modal?.type === 'reschedule' ? (
-        <RescheduleSessionModal
-          session={modal.session}
-          onClose={() => setModal(null)}
-          onSuccess={(res) => handleSuccess('Đã đổi lịch buổi học thành công.', res)}
-        />
-      ) : null}
-      {modal?.type === 'cancel' ? (
-        <CancelSessionModal
-          session={modal.session}
-          onClose={() => setModal(null)}
-          onSuccess={(res) => handleSuccess('Đã hủy buổi học thành công.', res)}
-        />
-      ) : null}
-      {modal?.type === 'makeup' ? (
-        <MakeupAndManualSessionModal
-          mode="makeup"
-          classId={detail.id}
-          classCode={detail.code}
-          defaultDate={modal.session.sessionDate}
-          defaultStartTime={modal.session.startTime}
-          defaultEndTime={modal.session.endTime}
-          cancelledSession={modal.session}
-          onClose={() => setModal(null)}
-          onSuccess={(res) => handleSuccess('Đã tạo buổi học bù thành công.', res)}
-        />
-      ) : null}
-      {modal?.type === 'manual' ? (
-        <MakeupAndManualSessionModal
-          mode="manual"
-          classId={detail.id}
-          classCode={detail.code}
-          defaultDate={detail.expectedEndDate ?? detail.startDate}
-          defaultStartTime={detail.scheduleStartTime}
-          defaultEndTime={detail.scheduleEndTime}
-          onClose={() => setModal(null)}
-          onSuccess={(res) => handleSuccess('Đã thêm buổi học mới thành công.', res)}
-        />
-      ) : null}
-      {modal?.type === 'attendance' ? (
-        <SessionAttendanceModal
-          sessionId={modal.session.id}
-          onClose={() => setModal(null)}
-          onSaved={() => {
-            setModal(null);
-            setBanner({ message: 'Đã lưu điểm danh buổi học.', warning: null });
-            reload();
-          }}
-        />
-      ) : null}
+      <ClassSessionModals
+        modal={modal}
+        detail={detail}
+        onSetModal={setModal}
+        onSuccess={handleSuccess}
+        onAttendanceSaved={() => {
+          setModal(null);
+          setBanner({ message: 'Đã lưu điểm danh buổi học.', warning: null });
+          reload();
+          onClassChanged();
+        }}
+      />
     </div>
   );
 }

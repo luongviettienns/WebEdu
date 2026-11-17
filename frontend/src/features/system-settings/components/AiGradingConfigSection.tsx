@@ -27,7 +27,7 @@ export function AiGradingConfigSection({
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] pb-4">
         <div>
           <h2 id="ai-grading-cfg-heading" className="text-lg font-bold text-[var(--ink)]">
-            3. Cấu hình AI Gợi ý Chấm Tự luận (FUNC-057)
+            3. Cấu hình AI Gợi ý Chấm Tự luận
           </h2>
           <p className="text-xs text-[var(--ink-2)]">
             API Key được mã hóa. Chỉ dùng AI với bài đã khử định danh. Bộ lọc che một số dữ liệu

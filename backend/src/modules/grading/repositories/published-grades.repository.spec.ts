@@ -183,4 +183,55 @@ describe('PublishedGradesRepository (Zero-Leak Gate FUNC-063)', () => {
     const result = await repo.getStudentPublishedResult('assign-1', student);
     expect(result).toMatchObject({ isPublished: false, status: 'NOT_STARTED', result: null });
   });
+
+  it('exposes question stem mediaId/caption on published review even for subjective audio/image prompts without leaking rubric', async () => {
+    const { prisma, repo } = setupMocks();
+    prisma.classAssignment.findUnique.mockResolvedValueOnce({
+      ...assignmentFixture,
+      assessment: {
+        title: 'Nghe & Hình ảnh HSK2',
+        questions: [
+          {
+            id: 'q-listen-open',
+            position: 1,
+            type: QuestionType.LISTENING,
+            prompt: 'Nghe và tóm tắt',
+            points: 5,
+            payload: { mediaId: 'audio-99', rubric: 'Không tiết lộ' },
+          },
+          {
+            id: 'q-img-open',
+            position: 2,
+            type: QuestionType.IMAGE_BASED,
+            prompt: 'Nhìn ảnh mô tả',
+            points: 5,
+            payload: { mediaId: 'img-88', caption: 'Bảng chữ' },
+          },
+        ],
+      },
+    });
+    prisma.submission.findFirst.mockResolvedValueOnce({
+      id: 'sub-media',
+      attemptNumber: 1,
+      status: SubmissionStatus.RETURNED,
+      submittedAt: new Date('2026-11-18T10:00:00.000Z'),
+      returnedAt: new Date('2026-11-18T12:00:00.000Z'),
+      gradeUpdatedAt: null,
+      autoSubmitted: false,
+      autoScore: 0,
+      totalScore: 8,
+      teacherFeedback: null,
+      answers: [
+        { questionId: 'q-listen-open', answerPayload: { text: 'Nghe tốt' }, isCorrect: null, earnedPoints: 4, teacherComment: null },
+        { questionId: 'q-img-open', answerPayload: { text: 'Ảnh rõ' }, isCorrect: null, earnedPoints: 4, teacherComment: null },
+      ],
+    });
+
+    const res = await repo.getStudentPublishedResult('assign-1', student);
+    expect(res.result?.questions[0]?.mediaId).toBe('audio-99');
+    expect(res.result?.questions[0]?.correctAnswer).toBeNull();
+    expect(res.result?.questions[1]?.mediaId).toBe('img-88');
+    expect(res.result?.questions[1]?.caption).toBe('Bảng chữ');
+    expect(JSON.stringify(res)).not.toContain('Không tiết lộ');
+  });
 });

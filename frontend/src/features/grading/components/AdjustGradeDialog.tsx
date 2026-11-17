@@ -157,7 +157,7 @@ export function AdjustGradeDialog({
         className="w-full max-w-xl rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl focus:outline-none"
       >
         <h3 id="adjust-grade-title" className="text-lg font-bold text-[var(--ink)]">
-          Chỉnh sửa điểm &amp; Ghi nhật ký kiểm toán (FUNC-061, 064)
+          Chỉnh sửa điểm &amp; Ghi nhật ký kiểm toán
         </h3>
         <p className="mt-1 text-xs text-[var(--ink-2)]">
           Học viên: <strong>{detail.student.fullName}</strong> · Thay đổi điểm sau khi đã xác nhận

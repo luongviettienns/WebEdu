@@ -174,7 +174,7 @@ export function PortalTopbar({ user, preferredRoleView = 'ADMIN', onOpenMobileMe
             aria-label="Hồ sơ cá nhân"
             className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-[var(--red)]/25 bg-[var(--red-soft)] text-xs font-bold text-[var(--red-ink)] transition-colors hover:bg-[var(--red)] hover:text-white"
           >
-            {getUserInitials(user.fullName)}
+            <span aria-hidden="true">{getUserInitials(user.fullName)}</span>
           </Link>
         ) : null}
       </div>

@@ -13,10 +13,12 @@ import {
   mergeAudioPlayCounts,
   persistExamDraftSnapshot,
   purgePriorAttemptDrafts,
+  readDraftFlags,
   readLocalDraft,
   resolveInitialSessionDraft,
   sanitizeAdoptedLocalDraft,
   sanitizeLocalDraftAnswers,
+  writeDraftFlags,
   writeLocalDraft,
   type ExamLocalDraft,
 } from '@/features/assignments/utils/exam-draft';
@@ -212,6 +214,8 @@ function createSessionDto(overrides?: {
       classId: 'class-1',
       classCode: 'HSK2-K26-01',
       className: 'HSK 2',
+      sessionId: null,
+      session: null,
       assignedAt: '2026-11-01T00:00:00.000Z',
       dueAt: '2026-11-20T00:00:00.000Z',
       effectiveDurationMinutes: 30,
@@ -844,5 +848,19 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     expect(readLocalDraft('sub-other', 'student-1')?.answers).toEqual({
       'q-fill': { text: 'other assignment' },
     });
+  });
+
+  test('writeDraftFlags persists flagged question IDs across reloads and clears on clearLocalDraft or logout (BUG-M7-03)', () => {
+    installMockWindow();
+    writeDraftFlags('sub-1', 'student-1', { 'q-1': true, 'q-2': false, 'q-3': true });
+    expect(readDraftFlags('sub-1', 'student-1')).toEqual({ 'q-1': true, 'q-3': true });
+
+    writeDraftFlags('sub-2', 'student-1', { 'q-9': true });
+    clearLocalDraft('sub-1', 'student-1');
+    expect(readDraftFlags('sub-1', 'student-1')).toEqual({});
+    expect(readDraftFlags('sub-2', 'student-1')).toEqual({ 'q-9': true });
+
+    purgeLegacyWebStorageTokens();
+    expect(readDraftFlags('sub-2', 'student-1')).toEqual({});
   });
 });

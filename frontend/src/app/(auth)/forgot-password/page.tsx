@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
       <AuthArtSide />
 
       {/* Cột Phải Form Khôi Phục */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
+      <main className="w-full lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8">
         <div className="w-full max-w-[420px]">
           <div className="mb-4 text-center lg:text-left">
             <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
@@ -158,7 +158,7 @@ export default function ForgotPasswordPage() {
             </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

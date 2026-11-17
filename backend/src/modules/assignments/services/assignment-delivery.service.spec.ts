@@ -858,6 +858,69 @@ describe('AssignmentDeliveryService (RED-GREEN TDD)', () => {
       expect(prisma.enrollment.count).not.toHaveBeenCalled();
       expect(prisma.enrollment.findMany).not.toHaveBeenCalled();
     });
+
+    it('filters paginated tracker students by status while preserving overall class stats (BUG-M7-02)', async () => {
+      const prisma = makeMockPrisma();
+      const service = new AssignmentDeliveryService(prisma as never, accessPolicy);
+      prisma.classAssignment.findUnique.mockResolvedValueOnce({
+        id: 'assign-1',
+        assessmentId: 'asm-1',
+        classId: 'cls-1',
+        sessionId: null,
+        assignedById: 'teacher-1',
+        assignedAt: new Date('2026-11-14T10:00:00.000Z'),
+        dueAt: new Date('2026-11-20T10:00:00.000Z'),
+        effectiveDurationMinutes: 30,
+        instructions: null,
+        assessment: {
+          title: 'Kiểm tra',
+          type: AssessmentType.MINI_TEST,
+          description: null,
+          courseId: 'course-1',
+          questions: [{ points: 2 }, { points: 3 }],
+        },
+        class: { code: 'HSK1-A', course: { name: 'HSK 1' } },
+        assignedBy: { fullName: 'Cô Lan' },
+      } as never);
+      prisma.class.findUnique.mockResolvedValueOnce({
+        id: 'cls-1',
+        teacherId: teacher.id,
+        status: ClassStatus.ACTIVE,
+        course: { name: 'HSK 1' },
+      } as never);
+      prisma.user.count.mockResolvedValueOnce(5).mockResolvedValueOnce(2);
+      prisma.enrollment.groupBy.mockResolvedValueOnce([
+        { studentId: 's-1', _min: { enrolledDate: new Date('2026-09-01'), id: 'enr-1' } },
+      ] as never);
+      prisma.submission.groupBy.mockResolvedValueOnce([
+        { status: SubmissionStatus.GRADED, _count: { _all: 3 } },
+      ] as never);
+      prisma.user.findMany.mockResolvedValueOnce([
+        { id: 's-1', fullName: 'An', email: 'an@webedu.vn' },
+      ] as never);
+      prisma.submission.findMany.mockResolvedValueOnce([] as never);
+
+      const filtered = await service.getAssignmentSubmissionsForTeacher('assign-1', teacher, {
+        status: 'NOT_STARTED',
+        page: 1,
+        limit: 10,
+      });
+      expect(filtered.total).toBe(2);
+      expect(filtered.assignment.stats?.totalStudents).toBe(5);
+      expect(filtered.assignment.stats?.notStartedCount).toBe(2);
+      expect(filtered.assignment.stats?.gradedCount).toBe(3);
+      expect(prisma.enrollment.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            student: {
+              studentSubmissions: {
+                none: { classAssignmentId: 'assign-1', status: { not: SubmissionStatus.SUPERSEDED } },
+              },
+            },
+          }),
+        }),
+      );
+    });
   });
 
   describe('reopenSubmission', () => {

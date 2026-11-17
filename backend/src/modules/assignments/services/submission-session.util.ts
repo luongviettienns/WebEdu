@@ -171,6 +171,9 @@ export async function loadAssignmentForSession(
     where: { id: assignmentId },
     include: {
       class: { select: { code: true, status: true, course: { select: { name: true } } } },
+      session: {
+        select: { id: true, sessionNumber: true, sessionDate: true, startTime: true, endTime: true },
+      },
       assessment: {
         select: {
           title: true,

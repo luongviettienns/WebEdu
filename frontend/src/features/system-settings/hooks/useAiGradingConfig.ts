@@ -32,16 +32,6 @@ export const AI_PROVIDER_PRESETS: Record<
   },
 };
 
-const PRESET_URLS = new Set([
-  ...Object.values(AI_PROVIDER_PRESETS).map((p) => p.baseUrl),
-  'https://generativelanguage.googleapis.com/v1beta/openai',
-]);
-const PRESET_MODELS = new Set([
-  ...Object.values(AI_PROVIDER_PRESETS).map((p) => p.model),
-  'gpt-4o-mini',
-  'gemini-2.5-flash',
-]);
-
 export function normalizeAiBaseUrlForKeyTarget(
   targetProvider: AiGradingProvider,
   rawUrl: string,
@@ -128,9 +118,11 @@ export function useAiGradingConfig(
 
   const handleProviderChange = (next: AiGradingProvider) => {
     const preset = AI_PROVIDER_PRESETS[next];
-    const nextBaseUrl = !baseUrl.trim() || PRESET_URLS.has(baseUrl.trim()) ? preset.baseUrl : baseUrl;
+    const changedProvider = next !== provider;
+    const nextBaseUrl = changedProvider ? preset.baseUrl : baseUrl;
+    const nextModel = changedProvider ? preset.model : model;
     if (
-      next !== provider ||
+      changedProvider ||
       normalizeAiBaseUrlForKeyTarget(next, nextBaseUrl) !==
         normalizeAiBaseUrlForKeyTarget(provider, baseUrl)
     ) {
@@ -141,7 +133,7 @@ export function useAiGradingConfig(
     setErrorMsg('');
     setTestResult(null);
     if (nextBaseUrl !== baseUrl) setBaseUrlState(nextBaseUrl);
-    if (!model.trim() || PRESET_MODELS.has(model.trim())) setModel(preset.model);
+    if (nextModel !== model) setModel(nextModel);
   };
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {

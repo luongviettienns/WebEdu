@@ -69,6 +69,9 @@ export class StudentSubmissionService {
           select: { title: true, type: true, questions: { select: { points: true } } },
         },
         class: { select: { code: true, status: true, course: { select: { name: true } } } },
+        session: {
+          select: { id: true, sessionNumber: true, sessionDate: true, startTime: true, endTime: true },
+        },
       },
     });
     if (assignments.length === 0) return { items: [] };

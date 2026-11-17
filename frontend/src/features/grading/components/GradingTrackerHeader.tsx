@@ -23,6 +23,7 @@ interface GradingTrackerHeaderProps {
   pendingOverdueZero: PendingOverdueZeroTarget | null;
   onConfirmAll: () => void;
   onPublishAllConfirmed: () => void;
+  onOpenBatchAi: () => void;
   onRecordOverdueZeroAll: () => void;
   onCancelOverdueZero: () => void;
   onConfirmOverdueZero: () => void;
@@ -36,6 +37,7 @@ export function GradingTrackerHeader({
   pendingOverdueZero,
   onConfirmAll,
   onPublishAllConfirmed,
+  onOpenBatchAi,
   onRecordOverdueZeroAll,
   onCancelOverdueZero,
   onConfirmOverdueZero,
@@ -102,7 +104,7 @@ export function GradingTrackerHeader({
           </p>
           <p className="text-xs text-[var(--ink-2)]">
             Bước 1 xác nhận điểm (GRADED — Học viên chưa thấy). Bước 2 công bố điểm (RETURNED).
-            Học viên quá hạn chưa nộp được giữ nguyên, không tự gán 0 điểm (DEC-038).
+            Học viên quá hạn chưa nộp được giữ nguyên, không tự gán 0 điểm.
           </p>
           {assignment.canMutate && assignment.hasSubjectiveQuestions ? (
             <p className="text-xs text-[var(--ink-2)]">Duyệt từng câu tự luận trong chi tiết bài trước khi gửi AI, hoặc chấm tay.</p>
@@ -110,6 +112,17 @@ export function GradingTrackerHeader({
         </div>
 
         {assignment.canMutate ? <div className="flex flex-wrap items-center gap-2.5">
+          {assignment.hasSubjectiveQuestions ? (
+            <button
+              id="btn-batch-ai-grade"
+              type="button"
+              disabled={Boolean(busyAction) || needsGradingTotal === 0}
+              onClick={onOpenBatchAi}
+              className="rounded-lg border border-[var(--blue)]/40 bg-[var(--blue-soft)] px-3.5 py-2 text-xs font-semibold text-[var(--blue)] hover:bg-white disabled:opacity-50"
+            >
+              Gợi ý AI tự luận hàng loạt
+            </button>
+          ) : null}
           <button
             id="btn-confirm-all-grades"
             type="button"

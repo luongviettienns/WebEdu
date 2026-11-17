@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import React, { Suspense, useCallback, useRef, useState } from 'react';
-import { getCurrentUser, logoutUser } from '@/features/auth/api/auth.api';
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { getCurrentUser, logoutUser, setActiveLogoutRedirect } from '@/features/auth/api/auth.api';
 import { PortalSessionContext, usePortalIdentity } from '@/features/auth/hooks/usePortalSession';
 import { IdleTimeoutWarningModal } from '@/features/auth/components/IdleTimeoutWarningModal';
 import { useIdleTimeout } from '@/features/auth/hooks/useIdleTimeout';
@@ -27,6 +27,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       loggingOutRef.current = true;
       setLoggingOut(true);
       setLogoutFailed(false);
+      setActiveLogoutRedirect(redirectUrl);
       try {
         await logoutUser();
         router.replace(redirectUrl);
@@ -34,10 +35,27 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         loggingOutRef.current = false;
         setLoggingOut(false);
         setLogoutFailed(true);
+        setActiveLogoutRedirect(null);
       }
     },
     [router],
   );
+
+  useEffect(() => {
+    loggingOutRef.current = false;
+    setActiveLogoutRedirect(null);
+    const timer = window.setTimeout(() => {
+      setLoggingOut(false);
+      setLogoutFailed(false);
+      setMobileMenuOpen(false);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      loggingOutRef.current = false;
+      setLoggingOut(false);
+      setLogoutFailed(false);
+    };
+  }, [user?.id]);
 
   const handleIdleExpire = useCallback(() => {
     void executeLogout('/login?reason=idle_timeout');
@@ -63,11 +81,14 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   );
   const logoutError = logoutFailed ? 'Không thể đăng xuất. Vui lòng thử lại.' : '';
 
+  const canRenderChildren =
+    session.status !== 'checking' && !checkingIdle && remainingSeconds !== 0 && !loggingOut;
+
   const hasAdminRole = Boolean(user?.roles?.includes('ADMIN'));
   const hasAdminTeacherSwitch = Boolean(
     hasAdminRole && user?.roles?.includes('TEACHER') && user?.effectiveRole !== 'SUPERADMIN',
   );
-  const pendingCount = usePendingEnrollmentCount(hasAdminRole);
+  const pendingCount = usePendingEnrollmentCount(hasAdminRole && canRenderChildren);
 
   const handleSwitchRoleView = useCallback(
     (nextRole: 'ADMIN' | 'TEACHER') => {
@@ -114,7 +135,9 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             className="portal-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable] focus:outline-none"
           >
             <main className="p-4 sm:p-6 lg:p-7 max-w-[1240px] w-full mx-auto">
-              <PortalSessionContext.Provider value={session}>{children}</PortalSessionContext.Provider>
+              <PortalSessionContext.Provider value={session}>
+                {canRenderChildren ? children : null}
+              </PortalSessionContext.Provider>
             </main>
           </div>
         </div>

@@ -17,9 +17,9 @@ export function SelectedOptionImages({
 
   return (
     <div className="mt-2 flex flex-wrap gap-2">
-      {withImages.map((item) => (
+      {withImages.map((item, idx) => (
         <figure
-          key={item.id}
+          key={`${item.id}-${idx}`}
           className="overflow-hidden rounded-lg border border-[var(--line)] bg-white p-1.5"
         >
           <Image

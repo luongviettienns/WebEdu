@@ -149,6 +149,8 @@ export interface StudentPublishedQuestionResultDto {
   prompt: string;
   points: number;
   isObjective: boolean;
+  mediaId?: string | null;
+  caption?: string | null;
   studentAnswer: {
     answerPayload: Record<string, unknown>;
     isCorrect: boolean | null;

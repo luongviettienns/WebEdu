@@ -6,6 +6,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsObject,
@@ -148,7 +149,21 @@ export class ReopenSubmissionDto {
   newDueAt?: string;
 }
 
+export const ASSIGNMENT_TRACKER_STATUSES = [
+  'ALL',
+  'NOT_STARTED',
+  'IN_PROGRESS',
+  'SUBMITTED_WAITING',
+  'GRADED',
+] as const;
+
+export type AssignmentTrackerStatusFilter = (typeof ASSIGNMENT_TRACKER_STATUSES)[number];
+
 export class ListAssignmentSubmissionsQueryDto {
+  @IsOptional()
+  @IsIn([...ASSIGNMENT_TRACKER_STATUSES])
+  status?: AssignmentTrackerStatusFilter;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

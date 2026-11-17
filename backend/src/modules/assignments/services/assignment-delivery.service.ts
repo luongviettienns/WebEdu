@@ -20,7 +20,11 @@ import type {
   TeacherAssignmentSubmissionsDto,
   TeacherTrackerStudentRowDto,
 } from '../assignments.types.js';
-import type { AssignAssessmentDto, ReopenSubmissionDto } from '../dto/assignments.dto.js';
+import type {
+  AssignAssessmentDto,
+  AssignmentTrackerStatusFilter,
+  ReopenSubmissionDto,
+} from '../dto/assignments.dto.js';
 import {
   resolveEffectiveDueAt,
   toClassAssignmentSummaryDto,
@@ -162,7 +166,7 @@ export class AssignmentDeliveryService {
   async getAssignmentSubmissionsForTeacher(
     assignmentId: string,
     actor: AuthenticatedUser,
-    query?: PaginationInput,
+    query?: PaginationInput & { status?: AssignmentTrackerStatusFilter },
   ): Promise<TeacherAssignmentSubmissionsDto> {
     const assignment = await this.prisma.classAssignment.findUnique({
       where: { id: assignmentId },

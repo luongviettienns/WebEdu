@@ -87,7 +87,7 @@ export function OriginalPaperPreview({
                       {options.length > 0 ? (
                         <div className="mt-1 grid grid-cols-1 gap-x-3 gap-y-0.5 pl-3 text-xs text-[var(--ink-2)] sm:grid-cols-2">
                           {options.map((opt, optIdx) => (
-                            <div key={opt.id}>
+                            <div key={`${opt.id}-${optIdx}`}>
                               <span className="font-semibold">
                                 {String.fromCharCode(65 + optIdx)}.
                               </span>{' '}

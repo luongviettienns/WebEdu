@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { QUESTION_TYPE_LABELS } from '@/features/assessments/api/assessments.api';
+import { QuestionStemMedia } from '@/features/assignments/components/QuestionStemMedia';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import type { AiEssayReviewInput, TeacherGradingQuestionDetailDto } from '@/features/grading/api/grading.api';
 import { SelectedOptionImages } from '@/features/grading/components/SelectedOptionImages';
@@ -96,6 +97,14 @@ export function GradingQuestionCard({
       <p className="whitespace-pre-line text-sm font-semibold text-[var(--ink)]">
         {question.prompt}
       </p>
+
+      <QuestionStemMedia
+        assignmentId={assignmentId}
+        questionId={question.questionId}
+        questionType={question.type}
+        mediaId={questionPayload.mediaId}
+        caption={questionPayload.caption}
+      />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className="rounded-lg bg-[var(--surface-2)]/70 p-3">

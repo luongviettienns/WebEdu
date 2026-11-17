@@ -14,7 +14,7 @@ import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import { isStudentScoreVisible } from '@/features/grading/utils/grading-status';
 import { extractErrorMessage } from '@/lib/api-client';
-import { formatDateTimeVn } from '@/lib/utils/date';
+import { formatDateDdMmYyyy, formatDateTimeVn } from '@/lib/utils/date';
 import type { Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['STUDENT'];
@@ -144,6 +144,12 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
                   <h2 className="text-base font-bold text-[var(--ink)]">{item.assessmentTitle}</h2>
 
                   <div className="num flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--ink-2)]">
+                    {item.session ? (
+                      <span className="font-medium text-[var(--blue)]">
+                        Gắn buổi: {item.session.sessionNumber ? `Buổi ${item.session.sessionNumber}` : 'Buổi học'} ·{' '}
+                        {formatDateDdMmYyyy(item.session.sessionDate)}
+                      </span>
+                    ) : null}
                     <span>Hạn nộp: {formatDateTimeVn(item.dueAt)}</span>
                     <span>
                       Thời lượng:{' '}

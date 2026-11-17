@@ -73,7 +73,7 @@ export class SystemSettingsController {
 
   @Public()
   @Get('config')
-  @Header('Cache-Control', 'public, max-age=300, stale-while-revalidate=600')
+  @Header('Cache-Control', 'no-store')
   @ApiOperation({ summary: 'Lấy cấu hình Tên trung tâm và Logo' })
   async getSystemConfig() {
     return this.systemConfigService.getSystemConfig();

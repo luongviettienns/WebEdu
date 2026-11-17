@@ -177,6 +177,8 @@ export function toPublishedStudentQuestionResult(
     prompt: question.prompt,
     points: question.points,
     isObjective: objective,
+    mediaId: typeof payload.mediaId === 'string' && payload.mediaId.trim() ? payload.mediaId.trim() : null,
+    caption: typeof payload.caption === 'string' && payload.caption.trim() ? payload.caption.trim() : null,
     studentAnswer: {
       answerPayload: isRecord(answer?.answerPayload) ? answer.answerPayload : {},
       isCorrect: answer?.isCorrect ?? null,

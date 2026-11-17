@@ -33,7 +33,7 @@ export default function AdminScheduleLogsPage() {
         </p>
       </div>
 
-      <ScheduleChangeLogsView />
+      <ScheduleChangeLogsView canFilterByClass={user.roles.includes('ADMIN')} />
     </div>
   );
 }

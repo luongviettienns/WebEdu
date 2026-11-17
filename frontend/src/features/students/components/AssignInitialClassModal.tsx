@@ -42,9 +42,7 @@ export function AssignInitialClassModal({
   onAuthError,
 }: AssignInitialClassModalProps) {
   const todayIso = getTodayDateString();
-  const [selectedClass, setSelectedClass] = useState<string>(
-    availableClasses[0]?.code ?? '',
-  );
+  const [selectedClass, setSelectedClass] = useState<string>('');
   const [enrolledAt, setEnrolledAt] = useState<string>(todayIso);
   const [assignError, setAssignError] = useState<string>('');
   const [assigning, setAssigning] = useState<boolean>(false);
@@ -143,6 +141,7 @@ export function AssignInitialClassModal({
                 onChange={(e) => setSelectedClass(e.target.value)}
                 className="w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2.5 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
               >
+                <option value="">-- Chọn lớp --</option>
                 {availableClasses.map((cls) => (
                   <option key={cls.id} value={cls.code}>
                     {formatAvailableClassOption(cls)}
@@ -181,7 +180,9 @@ export function AssignInitialClassModal({
             </button>
             <button
               type="submit"
-              disabled={assigning || availableClasses.length === 0}
+              disabled={
+                assigning || availableClasses.length === 0 || !selectedClass.trim()
+              }
               className="rounded-lg bg-[var(--red)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--red-ink)] disabled:opacity-50"
             >
               {assigning ? 'Đang xếp lớp...' : 'Xác nhận'}

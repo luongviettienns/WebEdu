@@ -19,7 +19,7 @@ import {
 import { extractErrorMessage } from '@/lib/api-client';
 
 const FIELD =
-  'rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
+  'w-full min-w-0 max-w-full rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
 
 const STEPS = ['1 · Tải lên', '2 · Phân tích', '3 · Hoàn tất'] as const;
 type Step = 'idle' | 'up' | 'parse' | 'done' | 'err';
@@ -159,7 +159,7 @@ export function ImportUploadPane({
           {error}
         </div>
       ) : null}
-      <div className="grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
+      <div className="grid min-w-0 gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
         <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tên đề" aria-label="Tên đề" />
         <select className={FIELD} value={type} onChange={(e) => setType(e.target.value as AssessmentType)} aria-label="Loại đề">
           {Object.entries(ASSESSMENT_TYPE_LABELS).map(([k, v]) => (
@@ -232,9 +232,9 @@ export function ImportUploadPane({
           Tải đề lên
         </button>
         {step !== 'idle' ? (
-          <div className="md:col-span-2 space-y-2 rounded-lg border border-[var(--line)] p-3">
-            <div className="text-sm font-medium">{fileName}</div>
-            <div className="flex gap-3 text-xs">
+          <div className="md:col-span-2 min-w-0 space-y-2 rounded-lg border border-[var(--line)] p-3">
+            <div className="truncate text-sm font-medium">{fileName}</div>
+            <div className="flex flex-wrap gap-3 text-xs">
               {STEPS.map((label, i) => (
                 <span
                   key={label}

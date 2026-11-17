@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import {
   getAssignmentStatusTone,
   getAssignmentSubmissions,
+  type AssignmentTrackerStatusFilter,
   type TeacherAssignmentSubmissionsDto,
   type TeacherTrackerStudentRowDto,
 } from '@/features/assignments/api/assignments.api';
@@ -58,16 +59,11 @@ export function ClassAssignmentTrackerModal({
   );
 }
 
-function ClassAssignmentTrackerBody({
-  assignmentId,
-  onClose,
-  onChanged,
-}: {
-  assignmentId: string;
-  onClose: () => void;
-  onChanged?: () => void;
+function ClassAssignmentTrackerBody({ assignmentId, onClose, onChanged }: {
+  assignmentId: string; onClose: () => void; onChanged?: () => void;
 }) {
   const [data, setData] = useState<TeacherAssignmentSubmissionsDto | null>(null);
+  const [statusFilter, setStatusFilter] = useState<AssignmentTrackerStatusFilter>('ALL');
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -86,6 +82,7 @@ function ClassAssignmentTrackerBody({
       setError('');
       try {
         const res = await getAssignmentSubmissions(assignmentId, {
+          status: statusFilter,
           page,
           limit: TRACKER_PAGE_LIMIT,
           signal: controller.signal,
@@ -102,7 +99,7 @@ function ClassAssignmentTrackerBody({
       }
     })();
     return () => controller.abort();
-  }, [assignmentId, page, reloadTick]);
+  }, [assignmentId, statusFilter, page, reloadTick]);
 
   const stats = data?.assignment.stats;
   const totalPages = data ? Math.max(1, Math.ceil(data.total / Math.max(1, data.limit))) : 1;
@@ -129,22 +126,26 @@ function ClassAssignmentTrackerBody({
         <DialogError message={error} />
 
         {stats ? (
-          <div className="flex flex-wrap gap-2 text-xs font-medium">
-            <span className="num rounded-md bg-[var(--surface-2)] px-2.5 py-1 text-[var(--ink)]">
-              Tổng HV: {stats.totalStudents}
-            </span>
-            <span className="num rounded-md bg-[var(--amber-soft)] px-2.5 py-1 text-[var(--amber)]">
-              Chưa làm: {stats.notStartedCount}
-            </span>
-            <span className="num rounded-md bg-[var(--blue-soft)] px-2.5 py-1 text-[var(--blue)]">
-              Đang làm: {stats.inProgressCount}
-            </span>
-            <span className="num rounded-md bg-[var(--amber-soft)] px-2.5 py-1 text-[var(--amber)]">
-              Chờ chấm: {stats.submittedWaitingCount}
-            </span>
-            <span className="num rounded-md bg-[var(--jade-soft)] px-2.5 py-1 text-[var(--jade)]">
-              Đã chấm: {stats.gradedCount}
-            </span>
+          <div role="group" aria-label="Lọc học viên theo trạng thái" className="flex flex-wrap gap-2 text-xs font-medium">
+            {([
+              ['ALL', `Tổng HV: ${stats.totalStudents}`, 'bg-[var(--surface-2)] text-[var(--ink)]'],
+              ['NOT_STARTED', `Chưa làm: ${stats.notStartedCount}`, 'bg-[var(--amber-soft)] text-[var(--amber)]'],
+              ['IN_PROGRESS', `Đang làm: ${stats.inProgressCount}`, 'bg-[var(--blue-soft)] text-[var(--blue)]'],
+              ['SUBMITTED_WAITING', `Chờ chấm: ${stats.submittedWaitingCount}`, 'bg-[var(--amber-soft)] text-[var(--amber)]'],
+              ['GRADED', `Đã chấm: ${stats.gradedCount}`, 'bg-[var(--jade-soft)] text-[var(--jade)]'],
+            ] as const).map(([key, label, cls]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={statusFilter === key}
+                onClick={() => { setStatusFilter(key); setPage(1); setReopenState(null); }}
+                className={`num rounded-md px-2.5 py-1 transition-all ${cls} ${
+                  statusFilter === key ? 'ring-2 ring-[var(--blue)] ring-offset-1 font-bold' : 'opacity-85 hover:opacity-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         ) : null}
 
@@ -192,7 +193,9 @@ function ClassAssignmentTrackerBody({
               ) : !data || data.students.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-[var(--ink-3)]">
-                    Lớp chưa có học viên đang theo học
+                    {statusFilter === 'ALL'
+                      ? 'Lớp chưa có học viên đang theo học'
+                      : 'Không có học viên nào thuộc trạng thái đang lọc'}
                   </td>
                 </tr>
               ) : (

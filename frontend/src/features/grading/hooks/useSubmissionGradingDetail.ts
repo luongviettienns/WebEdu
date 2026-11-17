@@ -116,6 +116,20 @@ export function useSubmissionGradingDetail(
         setError(`Điểm câu ${q.position} không được để trống sau khi đã chấm.`);
         return;
       }
+      if (scoreChanged) {
+        const parsed = Number(rawScore);
+        if (
+          !Number.isFinite(parsed) ||
+          parsed < 0 ||
+          parsed > q.points + 1e-9 ||
+          Math.abs(parsed * 4 - Math.round(parsed * 4)) >= 1e-6
+        ) {
+          setError(
+            `Điểm câu ${q.position} phải là số từ 0 đến ${q.points} theo bước 0.25.`,
+          );
+          return;
+        }
+      }
 
       const initialComment = (q.studentAnswer.teacherComment ?? '').trim();
       const trimmedComment = (comments[q.questionId] ?? '').trim();

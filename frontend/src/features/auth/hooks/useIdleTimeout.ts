@@ -60,6 +60,9 @@ export function useIdleTimeout(
         lastActivity.current = shared;
         lastShared.current = shared;
         setContinueFailed(false);
+      } else if (shared > 0 && shared < lastShared.current) {
+        lastActivity.current = shared;
+        lastShared.current = shared;
       }
     };
     const onStorage = (event: StorageEvent) => {
@@ -79,8 +82,8 @@ export function useIdleTimeout(
     });
 
     const checkIdle = () => {
+      syncSharedActivity();
       const now = Date.now();
-      if (now - lastActivity.current >= IDLE_WARNING_MS) syncSharedActivity();
       const elapsed = now - lastActivity.current;
       if (elapsed >= IDLE_TIMEOUT_MS) {
         if (expired.current || extending.current) return;

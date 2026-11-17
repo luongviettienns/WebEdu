@@ -5,6 +5,7 @@ import { downloadOriginal } from '@/features/assessments/api/assessments.api';
 import { AssessmentQuestionCard } from '@/features/assessments/components/AssessmentQuestionCard';
 import { NewQuestionComposer } from '@/features/assessments/components/NewQuestionComposer';
 import { OriginalPaperPreview } from '@/features/assessments/components/OriginalPaperPreview';
+import { ConfirmDialog } from '@/features/common/components/ConfirmDialog';
 import { useAssessmentWorkspace } from '@/features/assessments/hooks/useAssessments';
 import {
   canAutoMatchMediaSlots,
@@ -28,6 +29,7 @@ export function ImportReviewPane({
   const [onlyReview, setOnlyReview] = useState(false);
   const [reviewCursor, setReviewCursor] = useState(0);
   const [autoMatchNotice, setAutoMatchNotice] = useState('');
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [original, setOriginal] = useState<{ url: string; name: string; isPdf: boolean } | null>(null);
   const originalFileName = ws.detail?.originalFileName;
 
@@ -105,8 +107,9 @@ export function ImportReviewPane({
         : '';
 
   return (
-    <div className="space-y-4">
-      <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
+    <div className="min-w-0 space-y-4">
+      <button type="button" className="text-sm font-semibold text-[var(--blue)]"
+        onClick={() => (hasUnsavedChanges ? setConfirmLeave(true) : onBack())}>
         ← Danh sách đề
       </button>
       {ws.detail?.summary ? <p className="text-sm text-[var(--ink-2)]">{ws.detail.summary}</p> : null}
@@ -229,8 +232,8 @@ export function ImportReviewPane({
           />
         </div>
       ) : null}
-      <div className="grid items-start gap-5 lg:grid-cols-12">
-        <div className="lg:col-span-5">
+      <div className="grid min-w-0 items-start gap-5 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-5">
           <OriginalPaperPreview
             title={ws.title || ws.detail?.title || ''}
             originalFileName={ws.detail?.originalFileName}
@@ -238,7 +241,7 @@ export function ImportReviewPane({
             questions={ws.questions}
           />
         </div>
-        <div className="space-y-3 lg:col-span-7">
+        <div className="min-w-0 space-y-3 lg:col-span-7">
           {visibleQuestions.map((q) => {
             const index = ws.questions.findIndex((item) => item.id === q.id);
             return (
@@ -275,6 +278,17 @@ export function ImportReviewPane({
           ) : null}
         </div>
       </div>
+
+      {confirmLeave ? (
+        <ConfirmDialog
+          title="Rời trang khi chưa lưu?"
+          confirmLabel="Rời trang"
+          onCancel={() => setConfirmLeave(false)}
+          onConfirm={() => { setConfirmLeave(false); onBack(); }}
+        >
+          Bạn có thay đổi chưa lưu nháp. Nếu quay lại danh sách đề lúc này, các chỉnh sửa chưa lưu sẽ bị mất.
+        </ConfirmDialog>
+      ) : null}
     </div>
   );
 }

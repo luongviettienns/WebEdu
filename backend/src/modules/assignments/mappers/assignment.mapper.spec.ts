@@ -258,6 +258,33 @@ describe('assignment.mapper', () => {
       );
       expect(overdueAfterOverride.isOverdue).toBe(true);
     });
+
+    it('maps linked session summary and sessionId onto StudentAssignmentListItemDto (BUG-M7-01)', () => {
+      const dto = toStudentAssignmentListItemDto(
+        {
+          ...assignmentRow,
+          sessionId: 'sess-5',
+          session: {
+            id: 'sess-5',
+            sessionNumber: 5,
+            sessionDate: new Date('2026-11-22T00:00:00.000Z'),
+            startTime: '18:00',
+            endTime: '19:30',
+          },
+        },
+        null,
+        0,
+        new Date('2026-11-14T10:00:00.000Z'),
+      );
+      expect(dto.sessionId).toBe('sess-5');
+      expect(dto.session).toEqual({
+        id: 'sess-5',
+        sessionNumber: 5,
+        sessionDate: '2026-11-22T00:00:00.000Z',
+        startTime: '18:00',
+        endTime: '19:30',
+      });
+    });
   });
 
   describe('countNonEmptyAnswers & toTeacherTrackerStudentRowDto', () => {

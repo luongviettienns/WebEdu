@@ -75,7 +75,7 @@ export function QuestionImageBasedFields({
       {options.length > 0 ? (
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {options.map((opt, idx) => (
-            <div key={opt.id} className="space-y-1 rounded-lg border border-[var(--line)] p-2">
+            <div key={`${opt.id}-${idx}`} className="min-w-0 space-y-1 rounded-lg border border-[var(--line)] p-2">
               <div className="flex items-center justify-between gap-2">
                 <label className="flex items-center gap-1 text-xs font-semibold">
                   <input

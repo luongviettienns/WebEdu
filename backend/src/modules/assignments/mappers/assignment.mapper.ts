@@ -33,21 +33,20 @@ export interface StudentAssignmentRowInput {
   id: string;
   assessmentId: string;
   classId: string;
+  sessionId?: string | null;
   assignedAt: Date;
   dueAt: Date;
   effectiveDurationMinutes: number | null;
   instructions: string | null;
   assessment: { title: string; type: AssessmentType; questions?: ReadonlyArray<{ points: number }> };
   class: { code: string; course?: { name: string } | null };
+  session?: { id: string; sessionNumber: number | null; sessionDate: Date; startTime: string; endTime: string } | null;
 }
 
 export interface ClassAssignmentRowInput extends StudentAssignmentRowInput {
   sessionId: string | null;
   assignedById: string;
-  assessment: StudentAssignmentRowInput['assessment'] & {
-    description: string | null;
-    courseId: string;
-  };
+  assessment: StudentAssignmentRowInput['assessment'] & { description: string | null; courseId: string };
   assignedBy?: { fullName: string } | null;
 }
 
@@ -165,6 +164,14 @@ export function toStudentAssignmentListItemDto(
     classId: assignmentRow.classId,
     classCode: assignmentRow.class.code,
     className: assignmentRow.class.course?.name ?? assignmentRow.class.code,
+    sessionId: assignmentRow.sessionId ?? assignmentRow.session?.id ?? null,
+    session: assignmentRow.session ? {
+      id: assignmentRow.session.id,
+      sessionNumber: assignmentRow.session.sessionNumber,
+      sessionDate: assignmentRow.session.sessionDate.toISOString(),
+      startTime: assignmentRow.session.startTime,
+      endTime: assignmentRow.session.endTime,
+    } : null,
     assignedAt: assignmentRow.assignedAt.toISOString(),
     dueAt: effectiveDueAt.toISOString(),
     effectiveDurationMinutes: assignmentRow.effectiveDurationMinutes,

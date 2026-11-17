@@ -5,6 +5,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { PortalGuardStatus } from '@/features/auth/components/AccessDeniedState';
 import {
   AuthUserDto,
+  getActiveLogoutRedirect,
   getCurrentUser,
 } from '@/features/auth/api/auth.api';
 import { userHasAnyRole } from '@/features/auth/roles';
@@ -43,7 +44,9 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
       if (isUnauthorizedError(error)) {
         purgeLegacyWebStorageTokens();
         setStatus('unauthorized');
-        router.replace('/login');
+        if (!getActiveLogoutRedirect()) {
+          router.replace('/login');
+        }
         return true;
       }
       if (isForbiddenError(error)) {

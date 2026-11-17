@@ -60,7 +60,7 @@ export function AuditLogsSection({
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] pb-4">
         <div>
           <h2 className="text-lg font-bold text-[var(--ink)]">
-            3. Nhật ký hệ thống
+            4. Nhật ký hệ thống
           </h2>
           <p className="text-xs text-[var(--ink-2)]">
             Lịch sử thao tác quản trị trên hệ thống (sắp xếp theo thời gian mới nhất)
