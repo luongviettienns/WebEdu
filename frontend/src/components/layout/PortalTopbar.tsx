@@ -4,6 +4,7 @@ import Link from 'next/link';
 import React from 'react';
 import { usePathname } from 'next/navigation';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
+import { NotificationBellPopover } from '@/features/notifications/components/NotificationBellPopover';
 import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
 import { getUserInitials, resolveActiveRoleView } from './nav-links';
 
@@ -167,6 +168,7 @@ export function PortalTopbar({ user, preferredRoleView = 'ADMIN', onOpenMobileMe
         <span className="text-xs font-semibold text-[var(--ink-2)] truncate max-w-[110px] sm:max-w-none">
           {centerName}
         </span>
+        <NotificationBellPopover user={user} />
         {user ? (
           <Link
             href="/profile"
