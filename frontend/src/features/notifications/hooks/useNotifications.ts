@@ -36,6 +36,13 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
   const listAbortRef = useRef<AbortController | null>(null);
   const countAbortRef = useRef<AbortController | null>(null);
   const lastVisibleRefreshRef = useRef(0);
+  const isOpenRef = useRef(isOpen);
+  const filterStatusRef = useRef(filterStatus);
+
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+    filterStatusRef.current = filterStatus;
+  }, [isOpen, filterStatus]);
 
   const refreshUnreadCount = useCallback(async () => {
     if (!enabled) return;
@@ -93,7 +100,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
             : 'Không thể tải danh sách thông báo';
         setErrorMessage(msg);
       } finally {
-        if (!controller.signal.aborted && !silent) {
+        if (listAbortRef.current === controller && !silent) {
           setIsLoadingList(false);
           setIsLoadingMore(false);
         }
@@ -124,8 +131,8 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
       }
       lastVisibleRefreshRef.current = now;
       void refreshUnreadCount();
-      if (isOpen) {
-        void loadList(filterStatus, 1, false, true);
+      if (isOpenRef.current) {
+        void loadList(filterStatusRef.current, 1, false, true);
       }
     };
 
@@ -142,7 +149,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
       countAbortRef.current?.abort();
       listAbortRef.current?.abort();
     };
-  }, [enabled, filterStatus, isOpen, loadList, refreshUnreadCount]);
+  }, [enabled, loadList, refreshUnreadCount]);
 
   const toggleOpen = useCallback(() => {
     const nextOpen = !isOpen;
