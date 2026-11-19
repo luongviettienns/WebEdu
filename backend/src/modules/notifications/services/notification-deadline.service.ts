@@ -155,7 +155,7 @@ export class NotificationDeadlineService implements OnModuleInit, OnModuleDestro
           title: copy.title,
           body: copy.body,
           linkPath: `/student/assignments/${assignment.id}`,
-          dedupKey: `due_soon:${assignment.id}`,
+          dedupKey: `due_soon:${assignment.id}:${effectiveDueAt.getTime()}`,
         });
       }
     }

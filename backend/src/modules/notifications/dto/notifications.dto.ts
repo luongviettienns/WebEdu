@@ -21,6 +21,7 @@ export class ListNotificationsQueryDto implements PaginationInput {
   @Type(() => Number)
   @IsInt({ message: 'Số trang không hợp lệ' })
   @Min(1, { message: 'Số trang phải từ 1 trở lên' })
+  @Max(10000, { message: 'Số trang vượt quá giới hạn cho phép' })
   page?: number;
 
   @ApiPropertyOptional({ description: 'Số lượng mỗi trang (tối đa 50)' })

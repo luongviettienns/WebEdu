@@ -51,7 +51,7 @@ describe('NotificationDeadlineService & NotificationMaintenanceService', () => {
       [
         expect.objectContaining({
           recipientId: 'stu-unsubmitted',
-          dedupKey: 'due_soon:assign-1',
+          dedupKey: `due_soon:assign-1:${Date.parse('2026-11-19T20:00:00.000Z')}`,
           linkPath: '/student/assignments/assign-1',
         }),
       ],

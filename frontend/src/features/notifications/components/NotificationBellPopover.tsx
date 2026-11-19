@@ -10,9 +10,13 @@ import { NotificationItemRow } from './NotificationItemRow';
 
 interface NotificationBellPopoverProps {
   user?: AuthUserDto | null;
+  pollingActive?: boolean;
 }
 
-export function NotificationBellPopover({ user }: NotificationBellPopoverProps) {
+export function NotificationBellPopover({
+  user,
+  pollingActive = true,
+}: NotificationBellPopoverProps) {
   const router = useRouter();
   const canUseNotifications = Boolean(
     user && user.roles?.some((role) => role !== 'SUPERADMIN'),
@@ -38,7 +42,7 @@ export function NotificationBellPopover({ user }: NotificationBellPopoverProps) 
     reloadCurrent,
     markItemReadAndResolveHref,
     markAllAsRead,
-  } = useNotifications({ enabled: canUseNotifications });
+  } = useNotifications({ enabled: canUseNotifications && pollingActive });
 
   useEffect(() => {
     if (!isOpen) return;

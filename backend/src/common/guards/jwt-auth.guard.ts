@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { AUTH_COOKIE_NAME, TokenService } from '../auth/token.service.js';
-import { IS_PUBLIC_KEY } from '../decorators/roles.decorator.js';
+import { IS_PUBLIC_KEY, SKIP_ACTIVITY_TOUCH_KEY } from '../decorators/roles.decorator.js';
 import { extractAuthToken } from './auth-token.extractor.js';
 import { CsrfOriginPolicy } from './csrf-origin.policy.js';
 import { IDLE_TIMEOUT_MS, SessionValidatorService } from './session-validator.service.js';
@@ -56,8 +56,16 @@ export class JwtAuthGuard implements CanActivate {
       this.csrfOriginPolicy.verifyCookieCsrfOrigin(request);
     }
 
+    const skipActivityTouch =
+      this.reflector.getAllAndOverride<boolean | undefined>(SKIP_ACTIVITY_TOUCH_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true;
+
     try {
-      request.user = await this.sessionValidator.validateSession(extracted.token);
+      request.user = await this.sessionValidator.validateSession(extracted.token, {
+        touchActivity: !skipActivityTouch,
+      });
       return true;
     } catch (error) {
       if (

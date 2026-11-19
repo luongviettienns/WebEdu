@@ -473,5 +473,45 @@ describe('Phase 9 Notifications In-App, 14 Academic Triggers & Zero-Leak E2E (Re
     const purged = await maintenanceService.purgeExpiredNotifications();
     expect(purged.deletedRead).toBeGreaterThanOrEqual(1);
     expect(purged.deletedUnread).toBeGreaterThanOrEqual(1);
+
+    // 8. Audit hardening checks:
+    // (a) GET /notifications/unread-count skips refreshing users.last_activity_at
+    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000);
+    await harness.prisma.user.update({
+      where: { id: studentBId },
+      data: { lastActivityAt: tenMinsAgo },
+    });
+    await studentBClient.get('/api/v1/notifications/unread-count').expect(200);
+    const studentBAfterPoll = await harness.prisma.user.findUnique({
+      where: { id: studentBId },
+      select: { lastActivityAt: true },
+    });
+    expect(studentBAfterPoll?.lastActivityAt?.getTime()).toBe(tenMinsAgo.getTime());
+
+    // (b) DB CHECK constraint blocks '/\' backslash prefix & ASCII control chars
+    await expect(
+      harness.prisma.$executeRaw`
+        INSERT INTO "notifications" ("id", "recipient_id", "type", "title", "body", "link_path")
+        VALUES (gen_random_uuid()::text, ${studentBId}, 'STUDENT_ENROLLED'::"NotificationType", 'T', 'B', '/\\evil')
+      `,
+    ).rejects.toThrow();
+    await expect(
+      harness.prisma.$executeRaw`
+        INSERT INTO "notifications" ("id", "recipient_id", "type", "title", "body", "link_path")
+        VALUES (gen_random_uuid()::text, ${studentBId}, 'STUDENT_ENROLLED'::"NotificationType", 'T', 'B', ${'/bad\npath'})
+      `,
+    ).rejects.toThrow();
+
+    // (c) Reopened submission with a new dueAtOverride within 24h emits a fresh due-soon reminder
+    await harness.prisma.submission.updateMany({
+      where: { classAssignmentId: assignmentId, studentId: studentBId, status: 'IN_PROGRESS' },
+      data: { dueAtOverride: new Date(Date.now() + 12 * 60 * 60 * 1000) },
+    });
+    await deadlineService.dispatchDueSoonReminders();
+    await deadlineService.dispatchDueSoonReminders();
+    const dueSoonBAfterReopen = await harness.prisma.notification.count({
+      where: { recipientId: studentBId, type: NotificationType.ASSIGNMENT_DUE_SOON },
+    });
+    expect(dueSoonBAfterReopen).toBe(2);
   });
 });

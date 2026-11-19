@@ -13,7 +13,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/auth.types.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
-import { Roles } from '../../common/decorators/roles.decorator.js';
+import { Roles, SkipActivityTouch } from '../../common/decorators/roles.decorator.js';
 import { ListNotificationsQueryDto } from './dto/notifications.dto.js';
 import { NotificationQueryService } from './services/notification-query.service.js';
 
@@ -34,6 +34,7 @@ export class NotificationsController {
 
   @Get('unread-count')
   @Roles(Role.ADMIN, Role.TEACHER, Role.STUDENT)
+  @SkipActivityTouch()
   @ApiOperation({ summary: 'Đếm số lượng thông báo chưa đọc của người dùng hiện tại' })
   getUnreadCount(@CurrentUser() actor: AuthenticatedUser) {
     return this.queryService.getUnreadCount(actor);

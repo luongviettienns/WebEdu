@@ -20,7 +20,10 @@ export class SessionValidatorService {
     private readonly activityTracker: ActivityTrackerService,
   ) {}
 
-  async validateSession(token: string): Promise<AuthenticatedUser> {
+  async validateSession(
+    token: string,
+    options?: { touchActivity?: boolean },
+  ): Promise<AuthenticatedUser> {
     let payload: JwtPayload;
     try {
       payload = await this.tokenService.verifyAccessToken(token);
@@ -69,17 +72,19 @@ export class SessionValidatorService {
           tokenVersion: { increment: 1 },
         },
       });
-      if (revoked.count === 0) return this.validateSession(token);
+      if (revoked.count === 0) return this.validateSession(token, options);
       throw new UnauthorizedException(
         'Phiên đăng nhập đã hết hạn do không hoạt động quá 60 phút',
       );
     }
 
-    await this.activityTracker.recordIfDue(
-      userRecord.id,
-      userRecord.lastActivityAt,
-      now,
-    );
+    if (options?.touchActivity !== false) {
+      await this.activityTracker.recordIfDue(
+        userRecord.id,
+        userRecord.lastActivityAt,
+        now,
+      );
+    }
 
     return {
       id: userRecord.id,

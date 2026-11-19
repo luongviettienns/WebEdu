@@ -38,11 +38,13 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
   const lastVisibleRefreshRef = useRef(0);
   const isOpenRef = useRef(isOpen);
   const filterStatusRef = useRef(filterStatus);
+  const pageRef = useRef(page);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
     filterStatusRef.current = filterStatus;
-  }, [isOpen, filterStatus]);
+    pageRef.current = page;
+  }, [isOpen, filterStatus, page]);
 
   const refreshUnreadCount = useCallback(async () => {
     if (!enabled) return;
@@ -100,7 +102,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
             : 'Không thể tải danh sách thông báo';
         setErrorMessage(msg);
       } finally {
-        if (listAbortRef.current === controller && !silent) {
+        if (listAbortRef.current === controller) {
           setIsLoadingList(false);
           setIsLoadingMore(false);
         }
@@ -113,11 +115,13 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
   useEffect(() => {
     if (!enabled) return;
 
-    const controller = new AbortController();
+    countAbortRef.current?.abort();
+    const mountController = new AbortController();
+    countAbortRef.current = mountController;
     lastVisibleRefreshRef.current = Date.now();
-    void fetchUnreadNotificationCount({ signal: controller.signal })
+    void fetchUnreadNotificationCount({ signal: mountController.signal })
       .then((res) => {
-        if (!controller.signal.aborted) {
+        if (!mountController.signal.aborted) {
           setUnreadCount(res.unreadCount);
         }
       })
@@ -130,9 +134,10 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
         return;
       }
       lastVisibleRefreshRef.current = now;
-      void refreshUnreadCount();
-      if (isOpenRef.current) {
+      if (isOpenRef.current && pageRef.current === 1) {
         void loadList(filterStatusRef.current, 1, false, true);
+      } else {
+        void refreshUnreadCount();
       }
     };
 
@@ -142,7 +147,6 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
     document.addEventListener('visibilitychange', handleVisibilityFocus);
 
     return () => {
-      controller.abort();
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleVisibilityFocus);
       document.removeEventListener('visibilitychange', handleVisibilityFocus);
@@ -187,6 +191,8 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
     async (item: NotificationItemDto): Promise<string> => {
       const targetHref = resolveSafeNotificationHref(item.linkPath);
       if (!item.isRead) {
+        countAbortRef.current?.abort();
+        listAbortRef.current?.abort();
         setUnreadCount((prev) => Math.max(0, prev - 1));
         setItems((prev) =>
           filterStatus === 'unread'
@@ -211,6 +217,8 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
 
   const markAllAsRead = useCallback(async () => {
     if (isMarkingAll || unreadCount === 0) return;
+    countAbortRef.current?.abort();
+    listAbortRef.current?.abort();
     setIsMarkingAll(true);
     setErrorMessage(null);
     try {

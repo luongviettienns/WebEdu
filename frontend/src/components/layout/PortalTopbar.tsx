@@ -11,6 +11,7 @@ import { getUserInitials, resolveActiveRoleView } from './nav-links';
 interface PortalTopbarProps {
   user?: AuthUserDto | null;
   preferredRoleView?: 'ADMIN' | 'TEACHER';
+  notificationsActive?: boolean;
   onOpenMobileMenu: () => void;
 }
 
@@ -81,7 +82,12 @@ export function resolveBreadcrumbs(pathname: string): BreadcrumbItem[] {
   return [{ label: 'Hệ thống' }, { label: resolveRouteLabel(normalized) }];
 }
 
-export function PortalTopbar({ user, preferredRoleView = 'ADMIN', onOpenMobileMenu }: PortalTopbarProps) {
+export function PortalTopbar({
+  user,
+  preferredRoleView = 'ADMIN',
+  notificationsActive = true,
+  onOpenMobileMenu,
+}: PortalTopbarProps) {
   const pathname = usePathname();
   const { centerName } = useBrandConfig();
   const normalizedPath = pathname ?? '';
@@ -168,7 +174,7 @@ export function PortalTopbar({ user, preferredRoleView = 'ADMIN', onOpenMobileMe
         <span className="text-xs font-semibold text-[var(--ink-2)] truncate max-w-[110px] sm:max-w-none">
           {centerName}
         </span>
-        <NotificationBellPopover user={user} />
+        <NotificationBellPopover user={user} pollingActive={notificationsActive} />
         {user ? (
           <Link
             href="/profile"
