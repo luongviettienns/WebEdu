@@ -28,7 +28,7 @@ function isTokenStructurallyValid(rawToken?: string): boolean {
 }
 
 /**
- * Edge/Server route guard for protected Portal routes (`SEC-RISK-05`).
+ * Edge/Server route guard for protected Portal routes.
  * Redirects unauthenticated or clearly expired sessions to `/login` before
  * rendering client portal UI (eliminating auth redirect flicker).
  * Authoritative RBAC & tokenVersion checks remain on the NestJS backend.
