@@ -22,6 +22,8 @@ async function main(tx) {
 
   await tx.$executeRawUnsafe(`
     TRUNCATE TABLE
+      "notifications",
+      "grade_audit_logs",
       "submission_reopen_logs",
       "submission_answers",
       "submissions",

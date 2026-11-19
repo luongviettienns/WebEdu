@@ -200,6 +200,8 @@ async function seedQaFixtures(databaseUrl) {
   await client.$transaction(async (prisma) => {
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
+        "notifications",
+        "grade_audit_logs",
         "submission_reopen_logs",
         "submission_answers",
         "submissions",

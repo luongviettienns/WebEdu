@@ -16,7 +16,7 @@ import {
 import { obtainVerificationCodeViaHttp } from './helpers/auth-test-helpers.js';
 
 /**
- * Canonical 100-endpoint inventory through Phase 8 Task 8.2.
+ * Canonical 104-endpoint inventory through Phase 9 (`NotificationsController`).
  * Any route added to a NestJS controller that is not listed here will fail
  * the self-check test in Step 2B.API.2 / Step 3.A.
  */
@@ -139,6 +139,11 @@ export const DECLARED_PHASE2_API_INVENTORY: ReadonlyArray<{
   { method: 'GET', path: '/api/v1/progress/me', isPublic: false },
   { method: 'GET', path: '/api/v1/classes/:classId/progress', isPublic: false },
   { method: 'GET', path: '/api/v1/progress/admin-overview', isPublic: false },
+  // NotificationsController (4 — Phase 9)
+  { method: 'GET', path: '/api/v1/notifications', isPublic: false },
+  { method: 'GET', path: '/api/v1/notifications/unread-count', isPublic: false },
+  { method: 'PATCH', path: '/api/v1/notifications/:id/read', isPublic: false },
+  { method: 'POST', path: '/api/v1/notifications/read-all', isPublic: false },
 ];
 
 interface ExpressRouteLayer {
@@ -232,7 +237,7 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     );
 
     expect(actualRoutes).toEqual(declaredRoutes);
-    expect(actualRoutes).toHaveLength(100);
+    expect(actualRoutes).toHaveLength(104);
   });
 
   it('Step 3.A: Enforces complete RBAC × Data-State matrix across all protected endpoints (Unauthenticated, Revoked, INACTIVE, STUDENT, TEACHER 4 states, ADMIN, pure SUPERADMIN, Multi-Role)', async () => {
@@ -548,6 +553,10 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       { method: 'get', url: '/api/v1/progress/me' },
       { method: 'get', url: `/api/v1/classes/${activeClass.id}/progress` },
       { method: 'get', url: '/api/v1/progress/admin-overview' },
+      { method: 'get', url: '/api/v1/notifications' },
+      { method: 'get', url: '/api/v1/notifications/unread-count' },
+      { method: 'patch', url: `/api/v1/notifications/${nilId}/read` },
+      { method: 'post', url: '/api/v1/notifications/read-all' },
     ];
 
     for (const ep of protectedEndpoints) {
@@ -635,6 +644,14 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       .expect(200);
     await request(server)
       .get('/api/v1/progress/me')
+      .set('Authorization', `Bearer ${studentAToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${studentAToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/notifications/unread-count')
       .set('Authorization', `Bearer ${studentAToken}`)
       .expect(200);
     for (const ep of [
@@ -757,6 +774,8 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
       '/api/v1/progress/me',
       `/api/v1/classes/${activeClass.id}/progress`,
       '/api/v1/progress/admin-overview',
+      '/api/v1/notifications',
+      '/api/v1/notifications/unread-count',
     ]) {
       await request(server)
         .get(saDeniedUrl)
@@ -832,6 +851,18 @@ describe('API Inventory Self-Check, Full RBAC Matrix & Contract Hardening (Real 
     await request(server)
       .get('/api/v1/progress/admin-overview')
       .set('Authorization', `Bearer ${dualSaAdminToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${dualSaAdminToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/notifications/unread-count')
+      .set('Authorization', `Bearer ${activeTeacherToken}`)
+      .expect(200);
+    await request(server)
+      .get('/api/v1/notifications')
+      .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     await request(server)
       .get('/api/v1/progress/me')
