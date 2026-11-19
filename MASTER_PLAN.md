@@ -250,17 +250,17 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 ---
 
-### Phase 9: Module 10 & Production Hardening — Thông Báo In-App, Rà Soát Bảo Mật & Nghiệm Thu UAT *(READY FOR EXECUTION)*
+### Phase 9: Module 10 & Production Hardening — Thông Báo In-App, Rà Soát Bảo Mật & Nghiệm Thu UAT *(HOÀN THÀNH — 100% GATES PASS — MERGED `develop`)*
 - **File Sub-Plan:** [`docs/plans/phase-09-notifications-and-hardening.md`](./docs/plans/phase-09-notifications-and-hardening.md)
 - **Phạm vi Mã Chức Năng (1 FUNC + Toàn bộ 16 mục Prototype Cleanup & E2E Hardening):**
   - `FUNC-080` (Thông báo trong hệ thống web / In-App Notifications — **không gửi Zalo hay Email thông báo nghiệp vụ** theo `DEC-015`).
 - **Open Issues Gate (`NOTIF-01`, `PROTO-01`):** **ĐÃ CHỐT (`RESOLVED`)** tại `DEC-042` & `DEC-043`.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 9:**
-  - [ ] **Task 9.1:** Thiết kế Schema, SQL Migration, `NotificationsModule` Core API (`100 -> 104` endpoints), cơ chế nhắc bài sắp hết hạn 24h (`dedupKey`) và dọn lưu trữ tự động 90d/180d (`FUNC-080`).
-  - [ ] **Task 9.2:** Gắn các điểm phát sự kiện liên module cho đủ 14 loại thông báo (`STUDENT` / `TEACHER` / `ADMIN`), tuyệt đối không bắn thông báo ở bước `GRADED` (Zero-Leak) và không tự bắn cho chính người thao tác (`actorId`), kèm Real-PG E2E.
-  - [ ] **Task 9.3:** Giao diện Popover chuông thông báo In-App trên `PortalTopbar` (tải 20 mục + Tải thêm, polling 60s khi tab hiển thị + focus, ẩn với pure `SUPERADMIN`) + Frontend unit tests.
-  - [ ] **Task 9.4:** Kiểm toán & dọn sạch toàn diện 16 hạng mục **Prototype Cleanup** (`PROTO-01`, `DEC-043`): xóa hẳn khối `"Đăng nhập nhanh (Dev)"` khỏi `/login` (cả dev lẫn prod) và xóa 100% mã đặc tả nội bộ còn sót khỏi mã nguồn non-test.
-  - [ ] **Task 9.5:** Chạy trọn bộ **5 Integration & Security Invariant Tests** từ Hiến chương Kiến trúc, Playwright E2E Phase 9 + Full Regression Suite (Desktop & Mobile + Axe WCAG AA), kiểm toán độc lập (`akit-security`, `akit-critic`) và xuất bản báo cáo nghiệm thu bàn giao [`docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md`](./docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md).
+  - [x] **Task 9.1:** Thiết kế Schema, SQL Migration, `NotificationsModule` Core API (`100 -> 104` endpoints), cơ chế nhắc bài sắp hết hạn 24h (`dedupKey`) và dọn lưu trữ tự động 90d/180d (`FUNC-080`).
+  - [x] **Task 9.2:** Gắn các điểm phát sự kiện liên module cho đủ 14 loại thông báo (`STUDENT` / `TEACHER` / `ADMIN`), tuyệt đối không bắn thông báo ở bước `GRADED` (Zero-Leak) và không tự bắn cho chính người thao tác (`actorId`), kèm Real-PG E2E.
+  - [x] **Task 9.3:** Giao diện Popover chuông thông báo In-App trên `PortalTopbar` (tải 20 mục + Tải thêm, polling 60s khi tab hiển thị + focus, ẩn với pure `SUPERADMIN`) + Frontend unit tests.
+  - [x] **Task 9.4:** Kiểm toán & dọn sạch toàn diện 16 hạng mục **Prototype Cleanup** (`PROTO-01`, `DEC-043`): xóa hẳn khối `"Đăng nhập nhanh (Dev)"` khỏi `/login` (cả dev lẫn prod) và xóa 100% mã đặc tả nội bộ còn sót khỏi mã nguồn non-test.
+  - [x] **Task 9.5:** Chạy trọn bộ **5 Integration & Security Invariant Tests** từ Hiến chương Kiến trúc, Playwright E2E Phase 9 + Full Regression Suite (Desktop & Mobile + Axe WCAG AA), kiểm toán độc lập (`akit-security`, `akit-critic`) và xuất bản báo cáo nghiệm thu bàn giao [`docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md`](./docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md).
 
 ---
 
