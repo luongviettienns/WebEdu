@@ -280,10 +280,12 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     setCurrentIndex(index);
   }, [flushAutosave]);
   const toggleFlag = useCallback((id: string) => {
-    const sub = snapshotRef.current.session?.submission;
+    const snap = snapshotRef.current;
+    const sub = snap.session?.submission;
+    const assignmentIdScope = snap.session?.assignment.assignmentId;
     setFlaggedIds((current) => {
       const next = { ...current, [id]: !current[id] };
-      if (sub) writeDraftFlags(sub.id, sub.studentId, next);
+      if (sub) writeDraftFlags(sub.id, sub.studentId, next, assignmentIdScope);
       return next;
     });
   }, []);

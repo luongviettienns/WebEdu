@@ -25,7 +25,7 @@ export function getDraftStorageKey(submissionId: string, studentId: string): str
 }
 
 export function getFlagStorageKey(submissionId: string, studentId: string): string {
-  return `${DRAFT_PREFIX}flags_${studentId}_${submissionId}`;
+  return `${DRAFT_PREFIX}${studentId}_${submissionId}:flags`;
 }
 
 export function readDraftFlags(submissionId: string, studentId: string): Record<string, boolean> {
@@ -35,8 +35,9 @@ export function readDraftFlags(submissionId: string, studentId: string): Record<
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
     if (!isPlainRecord(parsed)) return {};
+    const source = isPlainRecord(parsed.flags) ? parsed.flags : parsed;
     const flags: Record<string, boolean> = {};
-    for (const [key, val] of Object.entries(parsed)) {
+    for (const [key, val] of Object.entries(source)) {
       if (val === true) flags[key] = true;
     }
     return flags;
@@ -49,6 +50,7 @@ export function writeDraftFlags(
   submissionId: string,
   studentId: string,
   flags: Record<string, boolean>,
+  assignmentId?: string,
 ): void {
   if (typeof window === 'undefined') return;
   try {
@@ -57,9 +59,10 @@ export function writeDraftFlags(
       window.localStorage.removeItem(getFlagStorageKey(submissionId, studentId));
       return;
     }
+    const payload = assignmentId ? { assignmentId, flags: cleaned } : cleaned;
     window.localStorage.setItem(
       getFlagStorageKey(submissionId, studentId),
-      JSON.stringify(cleaned),
+      JSON.stringify(payload),
     );
   } catch {
     // Ignore storage quota / privacy mode restrictions
@@ -147,6 +150,15 @@ export function clearLocalDraft(submissionId: string, studentId: string): void {
   try {
     window.localStorage.removeItem(getDraftStorageKey(submissionId, studentId));
     window.localStorage.removeItem(getFlagStorageKey(submissionId, studentId));
+  } catch {
+    // Ignore storage cleanup errors
+  }
+}
+
+function clearStaleAnswerDraftOnly(submissionId: string, studentId: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(getDraftStorageKey(submissionId, studentId));
   } catch {
     // Ignore storage cleanup errors
   }
@@ -477,7 +489,8 @@ export function resolveInitialSessionDraft(
       draftUpdatedAtMs = localDraft.updatedAtMs;
       mergedFromLocal = true;
     } else if (localDraft !== null) {
-      clearLocalDraft(submissionId, studentId);
+      // Stale answer draft (already saved on server) must not erase the student's review flags.
+      clearStaleAnswerDraftOnly(submissionId, studentId);
     }
   } else {
     clearLocalDraft(submissionId, studentId);

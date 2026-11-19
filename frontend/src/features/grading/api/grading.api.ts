@@ -95,7 +95,7 @@ export interface AiBatchSuggestGradeResultDto {
 
 export async function requestBatchAiEssaySuggestions(
   assignmentId: string,
-  payload: { questionId?: string; reviews: ReviewedAiBatchItemPayload[] },
+  payload: { questionId?: string; submissionIds?: string[]; reviews: ReviewedAiBatchItemPayload[] },
 ): Promise<AiBatchSuggestGradeResultDto> {
   return requestJson<AiBatchSuggestGradeResultDto>(
     `/assignments/${encodeURIComponent(assignmentId)}/ai-grade`,

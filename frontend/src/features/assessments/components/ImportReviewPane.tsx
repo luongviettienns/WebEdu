@@ -14,7 +14,7 @@ import {
 } from '@/features/assessments/utils/question-payload';
 
 const FIELD =
-  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
+  'w-full min-w-0 max-w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
 
 export function ImportReviewPane({
   assessmentId,
@@ -204,7 +204,7 @@ export function ImportReviewPane({
         </button>
       </div>
       {ws.detail ? (
-        <div className="grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
+        <div className="grid min-w-0 gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
           <input
             className={FIELD}
             value={ws.title}

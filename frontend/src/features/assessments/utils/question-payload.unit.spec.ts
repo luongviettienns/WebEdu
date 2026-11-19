@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { deterministicShuffleTokens } from '../components/QuestionPreviewFields';
-import { addBlankOption, removeOptionAt, splitTeacherLines } from './question-payload';
+import {
+  addBlankOption,
+  canAutoMatchMediaSlots,
+  computeAutoMatchedMediaUpdates,
+  removeOptionAt,
+  splitTeacherLines,
+} from './question-payload';
 
 test('splitTeacherLines accepts Word-template delimiters and line breaks', () => {
   expect(splitTeacherLines('您好 | 你好', '|')).toEqual(['您好', '你好']);
@@ -37,4 +43,28 @@ test('deterministicShuffleTokens never leaks identical answer order when >= 2 to
   const shuffled = deterministicShuffleTokens(ordered, 'q-ordering-1');
   expect(shuffled.slice().sort()).toEqual(ordered.slice().sort());
   expect(shuffled).not.toEqual(ordered);
+});
+
+test('auto-match media attaches mediaId for both LISTENING and IMAGE_BASED questions', () => {
+  const questions = [
+    { id: 'q1', type: 'LISTENING', prompt: 'Nghe 1', points: 1, payload: {} },
+    { id: 'q2', type: 'IMAGE_BASED', prompt: 'Ảnh 1', points: 1, payload: { options: [{ id: 'a', text: 'A' }, { id: 'b', text: 'B' }] } },
+  ];
+  const library = [
+    { id: 'aud-1', kind: 'AUDIO' },
+    { id: 'img-1', kind: 'IMAGE' },
+  ];
+  expect(canAutoMatchMediaSlots(questions, {}, library)).toBe(true);
+  const updates = computeAutoMatchedMediaUpdates(questions, {}, library);
+  expect(updates).toEqual([
+    { id: 'q1', draft: { prompt: 'Nghe 1', points: '1', payload: { mediaId: 'aud-1' } } },
+    {
+      id: 'q2',
+      draft: {
+        prompt: 'Ảnh 1',
+        points: '1',
+        payload: { options: [{ id: 'a', text: 'A' }, { id: 'b', text: 'B' }], mediaId: 'img-1' },
+      },
+    },
+  ]);
 });

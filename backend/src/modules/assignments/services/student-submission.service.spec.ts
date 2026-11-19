@@ -1020,6 +1020,30 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
       }));
     });
 
+    it('streams non-listening (e.g. IMAGE_BASED) media even when questionId query is passed, while rejecting wrong questionId for listening audio', async () => {
+      const { prisma, streamStoredFile, service } = makeMockDeps();
+      await service.streamAssignmentMedia('assign-1', 'img-1', student, 'q-img');
+      expect(streamStoredFile).toHaveBeenCalledTimes(1);
+
+      prisma.classAssignment.findUnique.mockResolvedValueOnce(
+        makeAssignmentRow({
+          questions: [
+            {
+              id: 'q-list',
+              position: 1,
+              type: QuestionType.LISTENING,
+              prompt: 'Nghe',
+              points: 2,
+              payload: { mediaId: 'audio-1', maxListens: 2, options: [{ id: 'a', text: 'A' }] },
+            },
+          ],
+        }) as never,
+      );
+      await expect(
+        service.streamAssignmentMedia('assign-1', 'audio-1', student, 'q-wrong'),
+      ).rejects.toThrowError(new NotFoundException('Tệp nghe không thuộc câu hỏi này'));
+    });
+
     it('streamAssignmentMedia verifies asset metadata, enforces maxListens before reading disk, and streams file', async () => {
       const { prisma, tx, verifyAssetForAssessment, streamStoredFile, service } = makeMockDeps();
       await service.streamAssignmentMedia('assign-1', 'media-1', student);

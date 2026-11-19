@@ -13,6 +13,7 @@ import { extractErrorMessage } from '@/lib/api-client';
 export interface ClassAttendanceMatrixTabProps {
   classId: string;
   canMarkAttendance: boolean;
+  onAttendanceSaved?: () => void;
 }
 
 const CELL_META: Record<AttendanceStatus, { symbol: string; cls: string; label: string }> = {
@@ -21,7 +22,11 @@ const CELL_META: Record<AttendanceStatus, { symbol: string; cls: string; label: 
   EXCUSED: { symbol: 'P', cls: 'mk EXCUSED', label: 'Có phép' },
 };
 
-export function ClassAttendanceMatrixTab({ classId, canMarkAttendance }: ClassAttendanceMatrixTabProps) {
+export function ClassAttendanceMatrixTab({
+  classId,
+  canMarkAttendance,
+  onAttendanceSaved,
+}: ClassAttendanceMatrixTabProps) {
   const [matrix, setMatrix] = useState<ClassAttendanceMatrix | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -208,6 +213,7 @@ export function ClassAttendanceMatrixTab({ classId, canMarkAttendance }: ClassAt
           onSaved={() => {
             setActiveSessionId(null);
             reload();
+            onAttendanceSaved?.();
           }}
         />
       ) : null}

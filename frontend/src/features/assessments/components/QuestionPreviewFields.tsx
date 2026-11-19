@@ -154,14 +154,20 @@ export function QuestionPreviewFields({
             </label>
           ))}
         </div>
-      ) : type === 'LISTENING' ? (
+      ) : type === 'LISTENING' || type === 'IMAGE_BASED' ? (
         <input
           type="text"
           disabled
           readOnly
           className={PREVIEW_FIELD}
-          placeholder="Học viên sẽ nhập câu trả lời nghe tại đây..."
-          aria-label="Ô trả lời nghe học viên"
+          placeholder={
+            type === 'LISTENING'
+              ? 'Học viên sẽ nhập câu trả lời nghe tại đây...'
+              : 'Học viên sẽ nhập câu trả lời hình ảnh tại đây...'
+          }
+          aria-label={
+            type === 'LISTENING' ? 'Ô trả lời nghe học viên' : 'Ô trả lời hình ảnh học viên'
+          }
         />
       ) : null}
     </div>

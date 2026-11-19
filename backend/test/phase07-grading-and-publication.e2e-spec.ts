@@ -17,6 +17,7 @@ import {
   type RealE2eAppHarness,
 } from './helpers/e2e-app-harness.js';
 import { SETTING_KEY_AI_GRADING_CONFIG } from '../src/modules/system-settings/system-settings.constants.js';
+import { resolveVnToday } from '../src/common/utils/timezone.util.js';
 
 const ORIGIN = 'http://localhost:3000';
 const PASSWORD = 'Password123';
@@ -431,7 +432,7 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
     // 9. A learner enrolled after the deadline remains untouched by overdue-zero.
     const lateStudent = await seedAndLoginUser('hv.late.p7@webedu.vn', [Role.STUDENT], '0907000007', 'Học viên vào muộn');
     await harness.prisma.enrollment.create({
-      data: { classId, studentId: lateStudent.id, status: EnrollmentStatus.ACTIVE, enrolledDate: new Date() },
+      data: { classId, studentId: lateStudent.id, status: EnrollmentStatus.ACTIVE, enrolledDate: resolveVnToday() },
     });
     await teacherClient.post(`/api/v1/assignments/${assignmentId}/overdue-zero`)
       .send({ studentIds: [lateStudent.id] }).expect(400);
@@ -682,7 +683,7 @@ describe('Phase 7 Grading, AI Essay Draft, 2-Step Confirm/Publish & Zero-Leak E2
 
     const timedLearner = await seedAndLoginUser('hv.timer.p7@webedu.vn', [Role.STUDENT], '0907000008', 'Học viên hết giờ');
     await harness.prisma.enrollment.create({
-      data: { classId, studentId: timedLearner.id, status: EnrollmentStatus.ACTIVE, enrolledDate: new Date() },
+      data: { classId, studentId: timedLearner.id, status: EnrollmentStatus.ACTIVE, enrolledDate: resolveVnToday() },
     });
     const timedStart = await timedLearner.client.post(`/api/v1/assignments/${assignmentId}/submissions/start`).expect(200);
     await timedLearner.client.patch(`/api/v1/assignments/${assignmentId}/submissions/autosave`).send({

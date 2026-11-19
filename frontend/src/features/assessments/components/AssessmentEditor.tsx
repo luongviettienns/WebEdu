@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CourseItemDto } from '@/features/courses/api/courses.api';
 import {
   ASSESSMENT_TYPE_LABELS,
@@ -8,6 +8,7 @@ import {
 } from '@/features/assessments/api/assessments.api';
 import { AssessmentQuestionCard } from '@/features/assessments/components/AssessmentQuestionCard';
 import { NewQuestionComposer } from '@/features/assessments/components/NewQuestionComposer';
+import { ConfirmDialog } from '@/features/common/components/ConfirmDialog';
 import { useAssessmentWorkspace } from '@/features/assessments/hooks/useAssessments';
 import { ASSESSMENT_TYPE_PRESETS } from '@/features/assessments/utils/assessment-presets';
 import { draftFromQuestion } from '@/features/assessments/utils/question-payload';
@@ -25,7 +26,27 @@ export function AssessmentEditor({
   onBack: () => void;
 }) {
   const ws = useAssessmentWorkspace(assessmentId, 'edit');
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const detailCourseId = ws.detail?.courseId;
+
+  const hasUnsavedChanges = Boolean(
+    ws.detail
+      ? ws.title !== ws.detail.title ||
+          ws.description !== (ws.detail.description ?? '') ||
+          ws.durationMinutes !== (ws.detail.durationMinutes ? String(ws.detail.durationMinutes) : '') ||
+          Object.keys(ws.drafts).length > 0
+      : ws.title.trim() || ws.description.trim(),
+  );
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   const courseOptions = useMemo(() => {
     const active = courses.filter((c) => c.isActive);
@@ -37,8 +58,12 @@ export function AssessmentEditor({
   }, [courses, detailCourseId]);
 
   return (
-    <div className="space-y-4">
-      <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
+    <div className="min-w-0 space-y-4">
+      <button
+        type="button"
+        className="text-sm font-semibold text-[var(--blue)]"
+        onClick={() => (hasUnsavedChanges ? setConfirmLeave(true) : onBack())}
+      >
         ← Danh sách đề
       </button>
       {ws.error ? (
@@ -145,7 +170,7 @@ export function AssessmentEditor({
       </div>
 
       {ws.detail ? (
-        <div className="space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+        <div className="min-w-0 space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Câu hỏi ({ws.questions.length})</h2>
             <button type="button" className="text-xs font-semibold text-[var(--blue)]" onClick={() => ws.setPreview((v) => !v)}>
@@ -184,6 +209,20 @@ export function AssessmentEditor({
             />
           ) : null}
         </div>
+      ) : null}
+
+      {confirmLeave ? (
+        <ConfirmDialog
+          title="Rời trang khi chưa lưu?"
+          confirmLabel="Rời trang"
+          onCancel={() => setConfirmLeave(false)}
+          onConfirm={() => {
+            setConfirmLeave(false);
+            onBack();
+          }}
+        >
+          Bạn có thay đổi chưa lưu nháp. Nếu quay lại danh sách đề lúc này, các chỉnh sửa chưa lưu sẽ bị mất.
+        </ConfirmDialog>
       ) : null}
     </div>
   );

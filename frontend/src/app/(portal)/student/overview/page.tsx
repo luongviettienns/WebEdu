@@ -24,6 +24,7 @@ import {
   AdminAccessNotice,
   PendingClassNotice,
 } from '@/features/students/components/StudentOverviewCards';
+import { useBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
 import { ApiClientError, extractErrorMessage } from '@/lib/api-client';
 import { STATUS_LABELS, type Role } from '@/types/user';
 
@@ -38,6 +39,7 @@ function StudentOverviewContent({
   profile,
   onAuthError,
 }: StudentOverviewContentProps) {
+  const { centerName } = useBrandConfig();
   const isStudentAccount = profile.roles.includes('STUDENT');
 
   const [studentDetail, setStudentDetail] = useState<StudentItemDto | null>(
@@ -137,7 +139,7 @@ function StudentOverviewContent({
             Chào {profile.fullName ? profile.fullName.trim().split(/\s+/).slice(-2).join(' ') : 'Học viên'}, hôm nay học gì?
           </h1>
           <p className="mt-1 text-sm text-[var(--ink-2)] font-normal">
-            Theo dõi thông tin lớp học, lịch học và tiến độ học tập tại Trung Tâm TD Hán Ngữ
+            Theo dõi thông tin lớp học, lịch học và tiến độ học tập tại {centerName}
           </p>
         </div>
         <StatusTag tone={getUserStatusTone(currentStatus)}>

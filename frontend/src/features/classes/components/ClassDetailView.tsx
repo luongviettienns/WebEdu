@@ -103,17 +103,11 @@ export function ClassDetailView({
       />
     ),
     attendance: (
-      <ClassAttendanceMatrixTab classId={detail.id} canMarkAttendance={canMarkAttendance} />
+      <ClassAttendanceMatrixTab classId={detail.id} canMarkAttendance={canMarkAttendance} onAttendanceSaved={() => onRefresh()} />
     ),
     assignments: (
-      <ClassAssignmentsTab
-        classId={detail.id}
-        classCode={detail.code}
-        courseId={detail.courseId}
-        courseName={detail.course.name}
-        classStatus={detail.status}
-        canAssign={canMarkAttendance}
-      />
+      <ClassAssignmentsTab classId={detail.id} classCode={detail.code} courseId={detail.courseId}
+        courseName={detail.course.name} classStatus={detail.status} canAssign={canMarkAttendance} />
     ),
     progress: <ClassProgressResultsTab classId={detail.id} />,
   };

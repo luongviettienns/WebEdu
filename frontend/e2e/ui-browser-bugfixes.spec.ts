@@ -99,14 +99,22 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
   }, testInfo) => {
     test.skip(testInfo.project.name.includes('mobile'), 'Desktop workflow check (mobile shell tested in Test 1)');
     let rateLimited = 0;
+    let configFetchesDuringSettingsMount = 0;
+    let countingSettingsFetches = false;
     page.on('response', (res) => {
       if (res.status() === 429) rateLimited += 1;
+      if (countingSettingsFetches && res.url().includes('/system-settings/config')) {
+        configFetchesDuringSettingsMount += 1;
+      }
     });
 
     await loginThroughUi(page, 'superadmin@webedu.vn');
+    countingSettingsFetches = true;
     await page.goto('/superadmin/settings');
     await expect(page.getByRole('heading', { name: '3. Cấu hình AI Gợi ý Chấm Tự luận' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '4. Nhật ký hệ thống' })).toBeVisible();
+    countingSettingsFetches = false;
+    expect(configFetchesDuringSettingsMount).toBeLessThanOrEqual(1);
     expect(await page.locator('body').innerText()).not.toContain('FUNC-057');
 
     // BUG-M2-02: switching CUSTOM -> GEMINI overwrites old custom URL & model cleanly
@@ -119,7 +127,7 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     );
     await expect(page.locator('#ai-cfg-model')).toHaveValue('gemini-3.5-flash-lite');
 
-    // BUG-M2-03 & M9-03: multi-actor brand sync across SPA navigation and /login
+    // BUG-M2-03 & M9-03: multi-actor brand sync across SPA navigation, <title>, and /login
     const studentCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const studentPage = await studentCtx.newPage();
     studentPage.on('response', (res) => {
@@ -137,10 +145,19 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await studentPage.waitForTimeout(600);
     await studentPage.getByRole('link', { name: 'Lịch học' }).first().click();
     await expect(studentPage.locator('header')).toContainText('Trung Tâm QA Đồng Bộ');
+    await expect(studentPage).toHaveTitle(/Trung Tâm QA Đồng Bộ/);
+    // Rapid SPA hop (<500ms cooldown) must retain document.title
+    await studentPage.getByRole('link', { name: 'Kết quả học tập' }).first().click();
+    await expect(studentPage).toHaveTitle(/Trung Tâm QA Đồng Bộ/);
 
     await studentPage.goto('/login');
     await expect(studentPage).toHaveTitle(/Trung Tâm QA Đồng Bộ/);
     await studentCtx.close();
+
+    // Rapid navigation across superadmin/admin pages triggers 0 429s
+    for (const route of ['/admin/overview', '/admin/students', '/admin/teachers', '/admin/courses', '/admin/classes', '/admin/schedule-logs', '/superadmin/settings']) {
+      await page.goto(route);
+    }
     expect(rateLimited).toBe(0);
   });
 
@@ -181,6 +198,12 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await expect(page.locator('#class-session-status-filter')).toBeVisible();
     await expect(page.locator('#class-session-from-filter')).toBeVisible();
     await expect(page.locator('#class-session-to-filter')).toBeVisible();
+    const totalRowsBeforeFilter = await page.locator('[data-testid="class-sessions-table"] tbody tr').count();
+    await page.locator('#class-session-status-filter').selectOption('CANCELLED');
+    await expect(page.locator('[data-testid="class-sessions-table"] tbody tr')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Xóa lọc' }).click();
+    await expect(page.locator('[data-testid="class-sessions-table"] tbody tr')).toHaveCount(totalRowsBeforeFilter);
+
     const sessionWithAttendance = page.locator('[data-testid="class-sessions-table"] tbody tr').filter({
       has: page.getByRole('button', { name: /Điểm danh|Sửa ĐD/ }),
     }).last();
@@ -189,6 +212,14 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await page.getByRole('dialog').getByRole('button', { name: /Lưu điểm danh|Cập nhật điểm danh/ }).click();
     await page.getByRole('tab', { name: 'Thông tin & Học viên' }).click();
     await expect(page.locator('tr', { hasText: 'active.student@webedu.vn' })).toContainText('1 buổi');
+
+    // Also verify saving attendance from Điểm danh matrix tab refreshes ClassStudentsTable without F5
+    await page.getByRole('tab', { name: 'Điểm danh' }).click();
+    await page.locator('th button').first().click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Vắng', exact: true }).first().click();
+    await page.getByRole('dialog').getByRole('button', { name: /Lưu điểm danh|Cập nhật điểm danh/ }).click();
+    await page.getByRole('tab', { name: 'Thông tin & Học viên' }).click();
+    await expect(page.locator('tr', { hasText: 'active.student@webedu.vn' })).toContainText('2 buổi');
 
     // BUG-M4-01: Drop active.student from HSK2-K26-01 -> /student/schedule shows empty state
     await page.locator('tr', { hasText: 'active.student@webedu.vn' }).getByRole('button', { name: /Rút .* khỏi lớp/ }).click();
@@ -203,29 +234,37 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
   });
 
   test('M6, M7, M8 & M9-01: PDF import zero dup keys + listening MCQ + preview clean + responsive + grading validation & media', async ({
+    browser,
     page,
   }, testInfo) => {
     test.skip(testInfo.project.name.includes('mobile'), 'Responsive 375x812 tested directly via setViewportSize below');
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     const reactDupKeys: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error' && msg.text().includes('same key')) reactDupKeys.push(msg.text());
     });
 
+    // Enable AI Grading config once as Superadmin so real Batch AI Zero-PII guard runs
+    const saCtx = await browser.newContext();
+    const saPage = await saCtx.newPage();
+    await loginThroughUi(saPage, 'superadmin@webedu.vn');
+    await saPage.request.put(`${API_BASE_URL}/system-settings/ai-grading`, {
+      headers: { Origin: new URL(saPage.url()).origin },
+      data: { enabled: true, provider: 'OPENAI', apiKey: 'sk-qa-batch-test-key' },
+    });
+    await saCtx.close();
+
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
 
-    // BUG-M6-04: 1366x768 assessment list table fits without horizontal overflow clipping buttons
-    await page.setViewportSize({ width: 1366, height: 768 });
+    // BUG-M6-03 & M6-08 note: 375x812 upload pane zero document overflow + MINI_TEST preset duration
     await page.goto('/teacher/assessments');
-    const listRegionOverflow = await page
-      .locator('[role="region"][aria-label="Danh sách đề và bài tập"]')
-      .evaluate((el) => el.scrollWidth - el.clientWidth);
-    expect(listRegionOverflow).toBeLessThanOrEqual(2);
-
-    // BUG-M6-03: 375x812 upload pane zero document overflow
     await page.setViewportSize({ width: 375, height: 812 });
     await page.getByRole('button', { name: 'Tải đề Word/PDF' }).click();
+    await page.getByLabel('Tải đề Word hoặc PDF').setInputFiles(MINI_TEST_PDF);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
+    await page.getByLabel('Loại đề').selectOption('MINI_TEST');
+    await expect(page.getByLabel('Thời gian làm bài')).toHaveValue('15');
+    await page.getByLabel('Loại đề').selectOption('HOMEWORK');
 
     // BUG-M6-07, M6-01, M6-02, M6-06: import MINI_TEST_01 (2).pdf + check Q1 listening options + clean preview + unsaved confirm
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -256,13 +295,13 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await expect(page.getByRole('dialog', { name: /Rời trang khi chưa lưu/ })).toBeVisible();
     await page.getByRole('button', { name: 'Rời trang' }).click();
 
-    // BUG-M6-08, M7-01, M7-02, M7-03, M8-01..03, M9-01: Create & assign assessment via API matching HSK2-K26-01 course
+    // BUG-M6-08, M7-01, M7-02, M7-03, M8-01..03, M9-01: Create & assign assessment via API with LISTENING, IMAGE_BASED, ORDERING, ESSAY
     const origin = new URL(page.url()).origin;
     const classesRes = await page.request.get(`${API_BASE_URL}/classes`);
     const cls = ((await classesRes.json()) as { items: Array<{ id: string; code: string; course: { id: string } }> }).items.find((c) => c.code === 'HSK2-K26-01')!;
     const createRes = await page.request.post(`${API_BASE_URL}/assessments`, {
       headers: { Origin: origin },
-      data: { title: 'Đề E2E Audio & Tự luận M7-M8', type: 'MINI_TEST', courseId: cls.course.id, durationMinutes: 15 },
+      data: { title: 'Đề E2E Audio Hình Ảnh & Tự luận M7-M8', type: 'MINI_TEST', courseId: cls.course.id, durationMinutes: 15 },
     });
     expect(createRes.ok()).toBeTruthy();
     const created = (await createRes.json()) as { id: string };
@@ -271,23 +310,75 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
       multipart: { file: { name: 'listen.mp3', mimeType: 'audio/mpeg', buffer: MINIMAL_MP3 } },
     });
     expect(mediaUpload.ok()).toBeTruthy();
-    const media = (await mediaUpload.json()) as { id: string };
-    const q1Res = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
+    const audioMedia = (await mediaUpload.json()) as { id: string };
+    const imgUpload = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/media`, {
+      headers: { Origin: origin },
+      multipart: { file: { name: 'picture.png', mimeType: 'image/png', buffer: MINIMAL_PNG } },
+    });
+    expect(imgUpload.ok()).toBeTruthy();
+    const imgMedia = (await imgUpload.json()) as { id: string };
+
+    await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
       headers: { Origin: origin },
       data: {
         type: 'LISTENING',
         prompt: 'Nghe đoạn audio và trả lời',
-        points: 5,
-        payload: { mediaId: media.id, options: [{ id: 'a', text: 'Đúng' }, { id: 'b', text: 'Sai' }], correctOptionIds: ['a'] },
+        points: 2,
+        payload: { mediaId: audioMedia.id, options: [{ id: 'a', text: 'Đúng' }, { id: 'b', text: 'Sai' }], correctOptionIds: ['a'] },
       },
     });
-    expect(q1Res.ok()).toBeTruthy();
-    const q2Res = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
+    await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
+      headers: { Origin: origin },
+      data: {
+        type: 'IMAGE_BASED',
+        prompt: 'Nhìn ảnh và chọn đáp án đúng',
+        points: 2,
+        payload: { mediaId: imgMedia.id, caption: 'Hình minh họa HSK2', options: [{ id: 'a', text: 'Mèo' }, { id: 'b', text: 'Chó' }], correctOptionIds: ['a'] },
+      },
+    });
+    await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
+      headers: { Origin: origin },
+      data: {
+        type: 'ORDERING',
+        prompt: 'Sắp xếp thành câu đúng',
+        points: 1,
+        payload: { tokens: ['我', '姓', '王'], correctSentence: '我姓王' },
+      },
+    });
+    await page.request.post(`${API_BASE_URL}/assessments/${created.id}/questions`, {
       headers: { Origin: origin },
       data: { type: 'ESSAY', prompt: 'Viết 1 câu tiếng Trung', points: 5, payload: { sampleAnswer: '我很好', rubric: 'Đúng ngữ pháp' } },
     });
-    expect(q2Res.ok()).toBeTruthy();
-    expect(MINIMAL_PNG.byteLength).toBeGreaterThan(10);
+
+    // BUG-M6-03 & M6-06 on AssessmentEditor + M6-02 ORDERING/IMAGE preview + M6-04 populated 1366x768 table
+    await page.goto('/teacher/assessments');
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await expect(page.getByText('Đề E2E Audio Hình Ảnh & Tự luận M7-M8')).toBeVisible();
+    const listRegionOverflow = await page
+      .locator('[role="region"][aria-label="Danh sách đề và bài tập"]')
+      .evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(listRegionOverflow).toBeLessThanOrEqual(2);
+
+    await page.locator('tr', { hasText: 'Đề E2E Audio Hình Ảnh & Tự luận M7-M8' }).getByRole('button', { name: 'Sửa' }).click();
+    await page.setViewportSize({ width: 375, height: 812 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBeTruthy();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole('button', { name: 'Xem trước như HV' }).click();
+    const orderingPreview = page.getByRole('article', { name: 'Câu 3', exact: true });
+    await expect(orderingPreview.locator('textarea')).toHaveCount(0);
+    await expect(orderingPreview.getByLabel('Các mảnh từ xáo trộn')).toBeVisible();
+    const orderingTokensText = await orderingPreview.getByLabel('Các mảnh từ xáo trộn').innerText();
+    expect(orderingTokensText.replace(/\s+/g, '')).not.toBe('我姓王');
+    const imgPreview = page.getByRole('article', { name: 'Câu 2', exact: true });
+    await expect(imgPreview.locator('img')).toHaveCount(1);
+    await expect(imgPreview.locator('img')).toHaveJSProperty('complete', true);
+    expect(await imgPreview.locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth > 0)).toBeTruthy();
+    await page.getByRole('button', { name: 'Đang xem trước như HV' }).click();
+    await page.getByLabel('Tên đề').fill('Đề E2E Audio Hình Ảnh Modified');
+    await page.getByRole('button', { name: '← Danh sách đề' }).click();
+    await expect(page.getByRole('dialog', { name: /Rời trang khi chưa lưu/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Rời trang' }).click();
+
     const pubRes = await page.request.post(`${API_BASE_URL}/assessments/${created.id}/publish`, { headers: { Origin: origin } });
     expect(pubRes.ok()).toBeTruthy();
 
@@ -318,11 +409,11 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await page.request.post(`${API_BASE_URL}/auth/logout`, { headers: { Origin: origin } });
     await loginThroughUi(page, 'teacher.idle@webedu.vn');
     await page.goto('/teacher/assessments');
-    const colleagueRow = page.locator('tr', { hasText: 'Đề E2E Audio & Tự luận M7-M8' });
+    const colleagueRow = page.locator('tr', { hasText: 'Đề E2E Audio Hình Ảnh & Tự luận M7-M8' });
     await expect(colleagueRow.getByRole('button', { name: 'Xem' })).toBeVisible();
     await expect(colleagueRow.getByRole('button', { name: 'Duyệt' })).toHaveCount(0);
 
-    // BUG-M7-01 & M7-03: Student sees session badge + flag persists across F5
+    // BUG-M7-01 & M7-03: Student sees session badge + flag persists across Lưu nháp (autosave) and F5
     await page.request.post(`${API_BASE_URL}/auth/logout`, { headers: { Origin: origin } });
     await loginThroughUi(page, 'active.student@webedu.vn');
     await page.goto('/student/assignments');
@@ -332,8 +423,17 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await page.locator('input[type="radio"]').first().check();
     await page.getByRole('button', { name: 'Đánh dấu xem lại' }).click();
     await expect(page.getByRole('button', { name: 'Đã đánh dấu xem lại' })).toBeVisible();
+    await page.getByRole('button', { name: 'Lưu nháp' }).click();
+    await expect(page.getByText(/Đã lưu lúc/)).toBeVisible();
     await page.reload();
     await expect(page.getByRole('button', { name: 'Đã đánh dấu xem lại' })).toBeVisible();
+    // Answer Q2 (IMAGE_BASED), Q3 (ORDERING), Q4 (ESSAY)
+    await page.getByRole('button', { name: 'Câu tiếp' }).click();
+    await page.locator('input[type="radio"]').first().check();
+    await page.getByRole('button', { name: 'Câu tiếp' }).click();
+    for (const tok of ['我', '姓', '王']) {
+      await page.getByRole('group', { name: 'Kho mảnh từ' }).getByRole('button', { name: tok }).click();
+    }
     await page.getByRole('button', { name: 'Câu tiếp' }).click();
     await page.getByRole('textbox').fill('我喜欢学习汉语。');
     await page.getByRole('button', { name: 'Nộp bài' }).click();
@@ -345,19 +445,52 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await loginThroughUi(page, 'teacher.lan@webedu.vn');
     await page.goto(`/teacher/assignments/${assignment.id}/grading`);
     expect(await page.locator('body').innerText()).not.toContain('DEC-038');
+
+    // Batch AI: test real backend Zero-PII rejection + prompt edit resets PII checkbox + clean submit payload
     await expect(page.locator('#btn-batch-ai-grade')).toBeVisible();
     await page.locator('#btn-batch-ai-grade').click();
-    await expect(page.locator('#batch-ai-pii-confirm')).toBeVisible();
-    await page.getByRole('dialog').getByRole('button', { name: 'Hủy' }).click();
+    const batchDlg = page.getByRole('dialog');
+    await expect(batchDlg.locator('#batch-ai-pii-confirm')).toBeVisible();
+    await batchDlg.locator('#batch-ai-pii-confirm').check();
+    await batchDlg.getByLabel('Câu hỏi gửi AI').fill('Tôi là Trần Văn A hãy viết câu');
+    await expect(batchDlg.locator('#batch-ai-pii-confirm')).not.toBeChecked();
+    await batchDlg.locator('#batch-ai-pii-confirm').check();
+    await batchDlg.getByRole('button', { name: /Gửi AI \(1 bài\)/ }).click();
+    await expect(batchDlg.getByRole('alert')).toContainText(/Zero-PII|chấm tay/i);
+
+    const batchPayloads: Array<Record<string, unknown>> = [];
+    await page.route(`**/api/v1/assignments/${assignment.id}/ai-grade`, async (route) => {
+      batchPayloads.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          assignmentId: assignment.id,
+          requestedCount: 1,
+          succeededCount: 1,
+          failedCount: 0,
+          results: [{ submissionId: 'ok', ok: true, gradingStatus: 'AI_DRAFT_READY', suggestedCount: 1 }],
+        }),
+      });
+    });
+    await batchDlg.getByLabel('Câu hỏi gửi AI').fill('Viết 1 câu tiếng Trung');
+    await batchDlg.locator('#batch-ai-pii-confirm').check();
+    await batchDlg.getByRole('button', { name: /Gửi AI \(1 bài\)/ }).click();
+    await expect(page.getByText(/AI đã tạo gợi ý chấm cho 1 bài nộp/i)).toBeVisible();
+    expect(Array.isArray(batchPayloads[0]?.submissionIds)).toBeTruthy();
+    await page.unroute(`**/api/v1/assignments/${assignment.id}/ai-grade`);
 
     await page.locator('tr[data-student-email="active.student@webedu.vn"]').getByRole('button', { name: 'Chấm bài' }).click();
     const dlg = page.getByRole('dialog').first();
     await expect(dlg.locator('audio')).toHaveCount(1);
+    await expect(dlg.locator('img')).toHaveCount(1);
+    await expect(dlg.locator('img')).toHaveJSProperty('complete', true);
+    expect(await dlg.locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth > 0)).toBeTruthy();
     expect(await dlg.innerText()).not.toContain('FUNC-061');
-    const essayScoreInput = dlg.locator('input[type="number"]').nth(1);
+    const essayScoreInput = dlg.locator('input[type="number"]').last();
     await essayScoreInput.fill('-1');
     await dlg.getByRole('button', { name: 'Lưu điểm & Nhận xét' }).click();
-    await expect(dlg.getByRole('alert')).toContainText(/Điểm câu 2 phải là số từ 0 đến 5/i);
+    await expect(dlg.getByRole('alert')).toContainText(/Điểm câu 4 phải là số từ 0 đến 5/i);
     await essayScoreInput.fill('4.5');
     await dlg.getByRole('button', { name: 'Lưu điểm & Nhận xét' }).click();
     await expect(dlg.getByText(/Đã lưu điểm/i)).toBeVisible();
@@ -366,6 +499,10 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await dlg.getByRole('button', { name: /Chỉnh sửa điểm/i }).click();
     const adjustDlg = page.getByRole('dialog').last();
     expect(await adjustDlg.innerText()).not.toContain('FUNC-061');
+    await adjustDlg.locator('#adjust-score-4').fill('-1');
+    await adjustDlg.locator('#adjust-reason').fill('Kiểm tra validation');
+    await adjustDlg.getByRole('button', { name: /Lưu chỉnh sửa điểm/i }).click();
+    await expect(adjustDlg.getByRole('alert')).toContainText(/Điểm câu 4 phải là số từ 0 đến 5/i);
     await adjustDlg.getByRole('button', { name: 'Hủy' }).click();
     await dlg.getByRole('button', { name: 'Đóng' }).click();
     await page.locator('#btn-publish-confirmed-grades').click();
@@ -375,5 +512,8 @@ test.describe('UI Browser Bugfixes Verification (M1-M9)', () => {
     await loginThroughUi(page, 'active.student@webedu.vn');
     await page.goto(`/student/assignments/${assignment.id}?mode=review`);
     await expect(page.locator('audio')).toHaveCount(1);
+    await expect(page.locator('img')).toHaveCount(1);
+    await expect(page.locator('img')).toHaveJSProperty('complete', true);
+    expect(await page.locator('img').evaluate((el: HTMLImageElement) => el.naturalWidth > 0)).toBeTruthy();
   });
 });

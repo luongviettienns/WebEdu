@@ -24,7 +24,11 @@ export function QuestionStemMedia({
   if (!cleanMediaId) return null;
 
   const cleanCaption = typeof caption === 'string' && caption.trim() ? caption.trim() : null;
-  const mediaUrl = getAssignmentMediaUrl(assignmentId, cleanMediaId, questionId);
+  const mediaUrl = getAssignmentMediaUrl(
+    assignmentId,
+    cleanMediaId,
+    questionType === 'LISTENING' ? questionId : undefined,
+  );
 
   if (questionType === 'LISTENING') {
     return (

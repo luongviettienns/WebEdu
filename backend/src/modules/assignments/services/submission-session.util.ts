@@ -469,7 +469,7 @@ export async function recordListeningStreamQuota(
   const matchingQuestions = listeningQuestions.filter(
     (q) => isRecord(q.payload) && q.payload.mediaId === mediaId,
   );
-  if (!questionId && matchingQuestions.length === 0) return;
+  if (matchingQuestions.length === 0) return;
   if (!questionId && matchingQuestions.length > 1) {
     throw new BadRequestException('Vui lòng chọn câu hỏi cần nghe');
   }

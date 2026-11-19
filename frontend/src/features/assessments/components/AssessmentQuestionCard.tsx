@@ -17,13 +17,23 @@ import {
 } from '@/features/assessments/utils/question-payload';
 
 const PROMPT_INPUT =
-  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
+  'w-full min-w-0 max-w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
 const POINTS_INPUT =
   'w-20 rounded-lg border border-[var(--line-2)] bg-white px-2.5 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none disabled:bg-[var(--surface-2)]';
 
 function getNeedsReviewHint(question: TeacherQuestionDto, draft: QuestionDraft): string {
   if (!draft.prompt.trim()) {
     return 'Chưa có nội dung câu hỏi — hãy nhập đề bài vào ô bên dưới.';
+  }
+  const opts = asOptions(draft.payload);
+  if (
+    (question.type === 'SINGLE_CHOICE' ||
+      question.type === 'MULTIPLE_CHOICE' ||
+      question.type === 'LISTENING' ||
+      question.type === 'IMAGE_BASED') &&
+    opts.length > 4
+  ) {
+    return 'Số phương án đang vượt quá 4 (do tách dòng PDF) — hãy xóa bớt phương án thừa còn 2–4 phương án rồi chọn đáp án đúng.';
   }
   if (
     (question.type === 'SINGLE_CHOICE' || question.type === 'MULTIPLE_CHOICE') &&
@@ -41,20 +51,19 @@ function getNeedsReviewHint(question: TeacherQuestionDto, draft: QuestionDraft):
     if (!String(draft.payload.mediaId ?? '').trim()) {
       return 'Câu nghe chưa có file âm thanh — hãy chọn hoặc tải lên file MP3/WAV bên dưới.';
     }
-    const opts = asOptions(draft.payload);
-    if (opts.length > 4) {
-      return 'Số phương án đang vượt quá 4 (do tách dòng PDF) — hãy xóa bớt phương án thừa còn 2–4 phương án rồi chọn đáp án đúng.';
-    }
     if (opts.length > 0 && asStrings(draft.payload, 'correctOptionIds').length === 0) {
       return 'Câu nghe đã có phương án trắc nghiệm nhưng chưa chọn đáp án đúng — hãy tích chọn đáp án đúng bên dưới rồi bấm "Lưu & xác nhận".';
     }
   }
-  if (
-    question.type === 'IMAGE_BASED' &&
-    !String(draft.payload.imageMediaId ?? '').trim() &&
-    asOptions(draft.payload).length === 0
-  ) {
-    return 'Câu nhìn hình chưa gắn ảnh — hãy chọn hoặc tải ảnh minh họa bên dưới.';
+  if (question.type === 'IMAGE_BASED') {
+    const hasStemImage = Boolean(String(draft.payload.mediaId ?? '').trim());
+    const optionImageCount = opts.filter((o) => Boolean(o.imageMediaId?.trim())).length;
+    if (!hasStemImage && optionImageCount < 2) {
+      return 'Câu nhìn hình cần ảnh đề hoặc ít nhất 2 phương án ảnh — hãy chọn hoặc tải ảnh minh họa bên dưới.';
+    }
+    if (opts.length > 0 && asStrings(draft.payload, 'correctOptionIds').length === 0) {
+      return 'Câu nhìn hình đã có phương án nhưng chưa chọn đáp án đúng — hãy tích chọn đáp án đúng bên dưới rồi bấm "Lưu & xác nhận".';
+    }
   }
   return 'Hãy kiểm tra lại nội dung và đáp án máy vừa tách tự động, nếu đã chuẩn hãy bấm "Lưu & xác nhận".';
 }
@@ -121,7 +130,7 @@ export function AssessmentQuestionCard({
       id={`question-card-${question.id}`}
       data-needs-review={question.needsReview ? 'true' : 'false'}
       aria-label={`Câu ${index + 1}`}
-      className={`space-y-2.5 rounded-xl border p-3.5 ${
+      className={`min-w-0 space-y-2.5 rounded-xl border p-3.5 ${
         question.needsReview ? 'border-[var(--amber)] bg-[var(--amber-soft)]' : 'border-[var(--line)] bg-[var(--surface)]'
       }`}
     >

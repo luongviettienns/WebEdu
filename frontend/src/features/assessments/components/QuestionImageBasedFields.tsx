@@ -13,7 +13,7 @@ import {
 } from '@/features/assessments/utils/question-payload';
 
 const FIELD =
-  'w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
+  'w-full min-w-0 max-w-full rounded-lg border border-[var(--line-2)] bg-white px-3 py-2 text-sm text-[var(--ink)] focus:border-[var(--blue)] focus:outline-none';
 
 export function QuestionImageBasedFields({
   payload,
@@ -40,7 +40,7 @@ export function QuestionImageBasedFields({
   const locked = hideAnswer || disabled;
 
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <MediaAttach
         kind="IMAGE"
         value={String(payload.mediaId ?? '')}
@@ -73,7 +73,7 @@ export function QuestionImageBasedFields({
         </>
       )}
       {options.length > 0 ? (
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {options.map((opt, idx) => (
             <div key={`${opt.id}-${idx}`} className="min-w-0 space-y-1 rounded-lg border border-[var(--line)] p-2">
               <div className="flex items-center justify-between gap-2">

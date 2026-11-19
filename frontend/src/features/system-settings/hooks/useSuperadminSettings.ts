@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import {
-  getSystemConfig,
   listAuditLogs,
   listSystemUsers,
   type AuditLogItemDto,
   type SystemUserDto,
 } from '@/features/system-settings/api/system-settings.api';
+import { refreshSharedBrandConfig } from '@/features/system-settings/hooks/useBrandConfig';
 import { normalizeAndVerifyLogoDataUrl } from '@/features/system-settings/utils/logo';
 import { extractErrorMessage } from '@/lib/api-client';
 import type { Role, UserStatus } from '@/types/user';
@@ -49,25 +49,17 @@ export function useSuperadminSettings(onAuthError: (error: unknown) => boolean) 
   }, [userSearch, debouncedUserSearch]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
     void (async () => {
-      try {
-        const cfg = await getSystemConfig({ signal: controller.signal });
-        if (controller.signal.aborted || !cfg) return;
-        setCenterName(cfg.centerName || 'Trung Tâm TD Hán Ngữ');
-        setCenterLogoBase64(
-          normalizeAndVerifyLogoDataUrl(
-            cfg.centerLogoBase64 ?? cfg.centerLogoUrl,
-          ),
-        );
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          onAuthError(error);
-        }
-      }
+      const cfg = await refreshSharedBrandConfig(false);
+      if (!active) return;
+      setCenterName(cfg.centerName || 'Trung Tâm TD Hán Ngữ');
+      setCenterLogoBase64(normalizeAndVerifyLogoDataUrl(cfg.centerLogo));
     })();
-    return () => controller.abort();
-  }, [onAuthError]);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

@@ -850,16 +850,49 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     });
   });
 
-  test('writeDraftFlags persists flagged question IDs across reloads and clears on clearLocalDraft or logout (BUG-M7-03)', () => {
+  test('writeDraftFlags persists flagged question IDs across reloads, scopes by assignment on reopen, and clears on clearLocalDraft or logout (BUG-M7-03)', () => {
     installMockWindow();
-    writeDraftFlags('sub-1', 'student-1', { 'q-1': true, 'q-2': false, 'q-3': true });
+    writeDraftFlags('sub-1', 'student-1', { 'q-1': true, 'q-2': false, 'q-3': true }, 'assign-1');
     expect(readDraftFlags('sub-1', 'student-1')).toEqual({ 'q-1': true, 'q-3': true });
 
-    writeDraftFlags('sub-2', 'student-1', { 'q-9': true });
-    clearLocalDraft('sub-1', 'student-1');
+    writeDraftFlags('sub-2', 'student-1', { 'q-9': true }, 'assign-1');
+    writeDraftFlags('sub-other', 'student-1', { 'q-7': true }, 'assign-2');
+
+    // Reopening assign-1 (sub-2) purges sub-1 flags for assign-1 while keeping sub-2 and assign-2 flags
+    purgePriorAttemptDrafts('sub-2', 'student-1', 'assign-1');
     expect(readDraftFlags('sub-1', 'student-1')).toEqual({});
     expect(readDraftFlags('sub-2', 'student-1')).toEqual({ 'q-9': true });
+    expect(readDraftFlags('sub-other', 'student-1')).toEqual({ 'q-7': true });
 
+    clearLocalDraft('sub-other', 'student-1');
+    expect(readDraftFlags('sub-other', 'student-1')).toEqual({});
+
+    // Stale answer draft after manual autosave ("Lưu nháp") must NOT wipe flags on F5 reload in taking mode
+    const serverSavedAt = '2026-11-17T10:05:00.000Z';
+    const serverSavedMs = new Date(serverSavedAt).getTime();
+    writeLocalDraft('sub-2', 'student-1', {
+      assignmentId: 'assign-1',
+      updatedAtMs: serverSavedMs - 5_000,
+      answers: { 'q-fill': { text: 'already saved on server' } },
+      elapsedSeconds: 20,
+      remainingSeconds: 880,
+      audioPlayCounts: {},
+    });
+    const savedSession = createSessionDto({
+      submissionId: 'sub-2',
+      attemptNumber: 1,
+      assignmentId: 'assign-1',
+      lastSavedAt: serverSavedAt,
+    });
+    resolveInitialSessionDraft(savedSession, 'taking', serverSavedMs + 10_000);
+    expect(readLocalDraft('sub-2', 'student-1')).toBeNull();
+    expect(readDraftFlags('sub-2', 'student-1')).toEqual({ 'q-9': true });
+
+    // Entering review/submitted mode DOES clear flags
+    resolveInitialSessionDraft(savedSession, 'review', serverSavedMs + 10_000);
+    expect(readDraftFlags('sub-2', 'student-1')).toEqual({});
+
+    writeDraftFlags('sub-2', 'student-1', { 'q-9': true }, 'assign-1');
     purgeLegacyWebStorageTokens();
     expect(readDraftFlags('sub-2', 'student-1')).toEqual({});
   });

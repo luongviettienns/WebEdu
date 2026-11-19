@@ -117,8 +117,11 @@ export function useBrandConfig(): BrandConfig {
   const brand = useSyncExternalStore(subscribeBrand, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
+    if (typeof document !== 'undefined' && lastFetchedAt > 0) {
+      document.title = `${brand.centerName} — Hệ Thống Quản Trị Học Tập`;
+    }
     void refreshSharedBrandConfig(false);
-  }, [pathname]);
+  }, [pathname, brand.centerName]);
 
   return brand;
 }

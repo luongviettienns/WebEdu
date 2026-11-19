@@ -94,7 +94,11 @@ export function BatchAiGradeModal({
           { status: 'NEEDS_GRADING', page: 1 },
           { signal: controller.signal },
         );
-        const candidates = tracker.students.filter((s) => Boolean(s.submissionId)).slice(0, 20);
+        const withSubmission = tracker.students.filter((s) => Boolean(s.submissionId));
+        const candidates = [
+          ...withSubmission.filter((s) => !s.hasAiDraft),
+          ...withSubmission.filter((s) => s.hasAiDraft),
+        ].slice(0, 20);
         const loaded = await Promise.all(
           candidates.map((s) => getSubmissionGradingDetail(s.submissionId!, { signal: controller.signal })),
         );
@@ -131,6 +135,7 @@ export function BatchAiGradeModal({
     try {
       const res = await requestBatchAiEssaySuggestions(assignmentId, {
         questionId: selectedQuestionId,
+        submissionIds: selectedEntries.map((item) => item.submissionId),
         reviews: selectedEntries.map((item) => ({
           submissionId: item.submissionId,
           questionId: selectedQuestionId,
@@ -203,15 +208,15 @@ export function BatchAiGradeModal({
             <div className="grid gap-2.5 sm:grid-cols-2">
               <label className="block text-xs font-semibold text-[var(--ink-2)] sm:col-span-2">
                 Câu hỏi gửi AI
-                <textarea rows={2} value={promptText} onChange={(e) => setPromptText(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line-2)] p-2 text-xs text-[var(--ink)]" />
+                <textarea rows={2} value={promptText} onChange={(e) => { setConfirmedPii(false); setPromptText(e.target.value); }} className="mt-1 w-full rounded-lg border border-[var(--line-2)] p-2 text-xs text-[var(--ink)]" />
               </label>
               <label className="block text-xs font-semibold text-[var(--ink-2)]">
                 Đáp án mẫu gửi AI
-                <textarea rows={2} value={sampleText} onChange={(e) => setSampleText(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line-2)] p-2 text-xs text-[var(--ink)]" />
+                <textarea rows={2} value={sampleText} onChange={(e) => { setConfirmedPii(false); setSampleText(e.target.value); }} className="mt-1 w-full rounded-lg border border-[var(--line-2)] p-2 text-xs text-[var(--ink)]" />
               </label>
               <label className="block text-xs font-semibold text-[var(--ink-2)]">
                 Rubric gửi AI
-                <textarea rows={2} value={rubricText} onChange={(e) => setRubricText(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line-2)] p-2 text-xs text-[var(--ink)]" />
+                <textarea rows={2} value={rubricText} onChange={(e) => { setConfirmedPii(false); setRubricText(e.target.value); }} className="mt-1 w-full rounded-lg border border-[var(--line-2)] p-2 text-xs text-[var(--ink)]" />
               </label>
             </div>
 

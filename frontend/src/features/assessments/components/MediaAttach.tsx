@@ -100,7 +100,7 @@ export function MediaAttach({
   const accept = kind === 'AUDIO' ? '.mp3,.m4a,.wav' : '.jpg,.jpeg,.png';
   const label = kind === 'AUDIO' ? 'Tải audio' : 'Tải ảnh';
   return (
-    <div className="min-w-0 space-y-2">
+    <div className="min-w-0 max-w-full space-y-2 overflow-hidden">
       {value && assessmentId && kind === 'IMAGE' ? <MediaThumb assessmentId={assessmentId} mediaId={value} /> : null}
       {value && assessmentId && kind === 'AUDIO' ? (
         <MediaAudioPlayer assessmentId={assessmentId} mediaId={value} />

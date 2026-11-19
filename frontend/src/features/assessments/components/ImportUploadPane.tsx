@@ -16,6 +16,7 @@ import {
   validateExtraFile,
   WordTemplateGuideModal,
 } from '@/features/assessments/components/WordTemplateGuideModal';
+import { formatPresetDurationInput } from '@/features/assessments/utils/assessment-presets';
 import { extractErrorMessage } from '@/lib/api-client';
 
 const FIELD =
@@ -39,6 +40,7 @@ export function ImportUploadPane({
   const [type, setType] = useState<AssessmentType>('HOMEWORK');
   const [courseId, setCourseId] = useState('');
   const [duration, setDuration] = useState('');
+  const [durationTouched, setDurationTouched] = useState(false);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [extras, setExtras] = useState<File[]>([]);
   const [step, setStep] = useState<Step>('idle');
@@ -135,7 +137,7 @@ export function ImportUploadPane({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <button type="button" className="text-sm font-semibold text-[var(--blue)]" onClick={onBack}>
         ← Danh sách đề
       </button>
@@ -161,7 +163,16 @@ export function ImportUploadPane({
       ) : null}
       <div className="grid min-w-0 gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 md:grid-cols-2">
         <input className={FIELD} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tên đề" aria-label="Tên đề" />
-        <select className={FIELD} value={type} onChange={(e) => setType(e.target.value as AssessmentType)} aria-label="Loại đề">
+        <select
+          className={FIELD}
+          value={type}
+          onChange={(e) => {
+            const nextType = e.target.value as AssessmentType;
+            setType(nextType);
+            if (!durationTouched) setDuration(formatPresetDurationInput(nextType));
+          }}
+          aria-label="Loại đề"
+        >
           {Object.entries(ASSESSMENT_TYPE_LABELS).map(([k, v]) => (
             <option key={k} value={k}>{v}</option>
           ))}
@@ -172,35 +183,35 @@ export function ImportUploadPane({
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        <input className={FIELD} value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="Thời gian làm bài (phút)" aria-label="Thời gian làm bài" />
+        <input
+          className={FIELD}
+          value={duration}
+          onChange={(e) => { setDurationTouched(true); setDuration(e.target.value); }}
+          placeholder="Thời gian làm bài (phút)"
+          aria-label="Thời gian làm bài"
+        />
         <label
-          className="md:col-span-2 flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border border-dashed border-[var(--line-2)] bg-[var(--surface-2)] px-4 py-8 text-center text-sm hover:border-[var(--blue)] transition-colors"
+          className="md:col-span-2 flex min-w-0 max-w-full cursor-pointer flex-col items-center gap-1.5 overflow-hidden rounded-xl border border-dashed border-[var(--line-2)] bg-[var(--surface-2)] px-4 py-8 text-center text-sm hover:border-[var(--blue)] transition-colors"
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            pickDoc(e.dataTransfer.files[0]);
-          }}
+          onDrop={(e) => { e.preventDefault(); pickDoc(e.dataTransfer.files[0]); }}
         >
           <input
             type="file"
             accept=".docx,.pdf"
             className="hidden"
             aria-label="Tải đề Word hoặc PDF"
-            onChange={(e) => {
-              pickDoc(e.target.files?.[0]);
-              e.target.value = '';
-            }}
+            onChange={(e) => { pickDoc(e.target.files?.[0]); e.target.value = ''; }}
           />
           <span className="rounded-full bg-[var(--red-soft)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--red-ink)]">
             Bước 1 · Chọn file đề gốc (.docx hoặc .pdf)
           </span>
-          <b>{docFile ? docFile.name : 'Kéo thả file vào đây hoặc bấm để chọn'}</b>
+          <b className="max-w-full break-all">{docFile ? docFile.name : 'Kéo thả file vào đây hoặc bấm để chọn'}</b>
           <span className="text-xs text-[var(--ink-2)]">Dùng file mẫu Word · tối đa 20MB</span>
           <span className="max-w-xl text-xs text-[var(--ink-2)]">
             Hỗ trợ 5 dạng câu chữ trong mẫu (không dùng PDF ảnh scan). Khẩu ngữ không import.
           </span>
         </label>
-        <div className="md:col-span-2 space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
+        <div className="md:col-span-2 min-w-0 space-y-2 rounded-xl border border-[var(--line)] bg-[var(--surface-2)]/60 p-3.5">
           <div className="text-sm font-semibold text-[var(--ink)]">Bước 2 · Đính kèm file Nghe / Hình ảnh (tuỳ chọn)</div>
           <p className="text-xs text-[var(--ink-2)]">
             Nếu đề có câu Nghe (.mp3, .wav, .m4a) hoặc Hình (.png, .jpg), bấm chọn thêm tại đây để ghép nhanh ở bước kiểm tra.

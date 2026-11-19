@@ -173,7 +173,7 @@ export function AdjustGradeDialog({
           </div>
         ) : null}
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="mt-4 space-y-4">
+        <form onSubmit={(e) => void handleSubmit(e)} noValidate className="mt-4 space-y-4">
           <div className="max-h-64 space-y-2.5 overflow-y-auto pr-1">
             {detail.questions.map((q) => (
               <div

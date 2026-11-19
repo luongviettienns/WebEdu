@@ -63,7 +63,7 @@ export function QuestionTypeFields({
 
   if (type === 'SINGLE_CHOICE' || type === 'MULTIPLE_CHOICE') {
     return (
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         <ChoiceOptionsBlock
           payload={payload}
           onChange={onChange}
@@ -79,7 +79,7 @@ export function QuestionTypeFields({
   if (type === 'FILL_BLANK') {
     const answers = asStrings(payload, 'acceptedAnswers');
     return (
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         <p className="text-xs text-[var(--ink-2)]">
           Mỗi dòng 1 đáp án đúng, hoặc ngăn cách bằng dấu | (ví dụ: 您好 | 你好)
         </p>
@@ -109,7 +109,7 @@ export function QuestionTypeFields({
   if (type === 'ORDERING') {
     const tokens = asStrings(payload, 'tokens');
     return (
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         <p className="text-xs text-[var(--ink-2)]">
           Mỗi dòng 1 từ/cụm từ, hoặc ngăn cách bằng dấu / (ví dụ: 我 / 姓 / 王)
         </p>
@@ -137,7 +137,7 @@ export function QuestionTypeFields({
 
   if (type === 'ESSAY') {
     return (
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         <textarea
           className={FIELD}
           rows={2}
@@ -176,7 +176,7 @@ export function QuestionTypeFields({
     const options = asOptions(payload);
     const multiple = Boolean(payload.multiple);
     return (
-      <div className="space-y-2.5">
+      <div className="min-w-0 space-y-2.5">
         <p className="text-xs text-[var(--ink-2)]">Gắn file nghe tại đây. Không ghi tên file trong Word.</p>
         <MediaAttach
           kind="AUDIO"

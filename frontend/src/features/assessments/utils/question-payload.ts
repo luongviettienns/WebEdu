@@ -240,10 +240,22 @@ export function withQuestionList<
 type MediaQuestionLike = { id: string; type: string; prompt: string; points: number; payload: Record<string, unknown> };
 type MediaLibraryLike = { id: string; kind: string };
 
-function getMediaFieldKey(type: string): 'mediaId' | 'imageMediaId' | null {
-  if (type === 'LISTENING') return 'mediaId';
-  if (type === 'IMAGE_BASED') return 'imageMediaId';
+function getMediaFieldKey(type: string): 'mediaId' | null {
+  if (type === 'LISTENING' || type === 'IMAGE_BASED') return 'mediaId';
   return null;
+}
+
+function needsAutoMatchedStemMedia(
+  q: MediaQuestionLike,
+  payload: Record<string, unknown>,
+): boolean {
+  if (!getMediaFieldKey(q.type)) return false;
+  if (String(payload.mediaId ?? '').trim()) return false;
+  if (q.type === 'IMAGE_BASED') {
+    const optionImages = asOptions(payload).filter((o) => Boolean(o.imageMediaId?.trim())).length;
+    if (optionImages >= 2) return false;
+  }
+  return true;
 }
 
 export function canAutoMatchMediaSlots(
@@ -254,11 +266,8 @@ export function canAutoMatchMediaSlots(
   const audioCount = library.filter((m) => m.kind === 'AUDIO').length;
   const imageCount = library.filter((m) => m.kind === 'IMAGE').length;
   return questions.some((q) => {
-    const key = getMediaFieldKey(q.type);
-    if (!key) return false;
     const current = drafts[q.id] ?? draftFromQuestion(q);
-    const hasMedia = Boolean(String(current.payload[key] ?? '').trim());
-    if (hasMedia) return false;
+    if (!needsAutoMatchedStemMedia(q, current.payload)) return false;
     return q.type === 'LISTENING' ? audioCount > 0 : imageCount > 0;
   });
 }
@@ -282,15 +291,13 @@ export function computeAutoMatchedMediaUpdates(
   const updates: Array<{ id: string; draft: QuestionDraft }> = [];
 
   for (const q of questions) {
-    const key = getMediaFieldKey(q.type);
-    if (!key) continue;
     const current = drafts[q.id] ?? draftFromQuestion(q);
-    if (String(current.payload[key] ?? '').trim()) continue;
-    const nextMedia = key === 'mediaId' ? freeAudios[audioIdx++] : freeImages[imageIdx++];
+    if (!needsAutoMatchedStemMedia(q, current.payload)) continue;
+    const nextMedia = q.type === 'LISTENING' ? freeAudios[audioIdx++] : freeImages[imageIdx++];
     if (!nextMedia) continue;
     updates.push({
       id: q.id,
-      draft: { ...current, payload: { ...current.payload, [key]: nextMedia.id } },
+      draft: { ...current, payload: { ...current.payload, mediaId: nextMedia.id } },
     });
   }
   return updates;
