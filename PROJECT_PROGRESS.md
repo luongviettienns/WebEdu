@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 8 (Hoàn thành)** $\rightarrow$ Chuẩn bị khởi động **Phase 9: Module 10 — Thông báo In-App & Production Hardening (`FUNC-080`)**.
+* **Giai đoạn hiện tại**: **Phase 8 (Hoàn thành)** $\rightarrow$ **Đã chốt Sub-Plan Phase 9 (`DEC-042`, `DEC-043`) & đồng bộ tài liệu trên `develop`**, sẵn sàng triển khai **Phase 9: Module 10 — Thông báo In-App & Production Hardening (`FUNC-080`)**.
 
 ---
 
@@ -130,9 +130,10 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 
 ---
 
-### Phase 9: Module 10 & Production Hardening — Thông báo In-App, Dọn Prototype & Nghiệm thu UAT (`FUNC-080`) *(CHƯA BẮT ĐẦU)*
-- [ ] Lập Sub-Plan `docs/plans/phase-09-notifications-and-hardening.md` & chốt `NOTIF-01`, `PROTO-01`.
-- [ ] **Slice 9.1**: Hệ thống Thông báo In-App (`FUNC-080` — chỉ gửi thông báo điểm khi `PUBLISHED`).
-- [ ] **Slice 9.2**: Kiểm toán loại bỏ 100% 16 hạng mục demo trong `prototype-review.md`.
-- [ ] **Slice 9.3**: Chạy bộ 5 Integration Invariant Tests + Full Playwright E2E Regression Suite.
-- [ ] **Slice 9.4**: Thực hiện `akit-simplify`, `akit-security` audit, `akit-review` độc lập và đóng gói bàn giao (`akit-deliver`).
+### Phase 9: Module 10 & Production Hardening — Thông báo In-App, Dọn Prototype & Nghiệm thu UAT (`FUNC-080`) *(READY FOR EXECUTION)*
+- [x] Lập Sub-Plan [`docs/plans/phase-09-notifications-and-hardening.md`](./docs/plans/phase-09-notifications-and-hardening.md) & chốt `NOTIF-01` (`DEC-042`), `PROTO-01` (`DEC-043`).
+- [ ] **Task 9.1**: Schema `Notification`, SQL Migration, `NotificationsModule` Core API (`100 -> 104`), nhắc hạn 24h & dọn lưu trữ tự động (`FUNC-080`).
+- [ ] **Task 9.2**: Gắn 14 sự kiện thông báo liên module (`STUDENT` / `TEACHER` / `ADMIN`, Zero-Leak `GRADED` vs `RETURNED`) & Real-PG E2E.
+- [ ] **Task 9.3**: Giao diện Popover chuông thông báo In-App trên `PortalTopbar` (ẩn với thuần `SUPERADMIN`, polling 60s khi tab mở).
+- [ ] **Task 9.4**: Kiểm toán & xóa 100% 16 hạng mục `prototype-review.md` (xóa hẳn Dev Quick-Login khỏi `/login` & mã nội bộ khỏi code non-test).
+- [ ] **Task 9.5**: Chạy bộ 5 Integration Invariant Tests + Full Playwright E2E + Kiểm toán độc lập (`akit-security`/`akit-critic`) + Xuất bản Báo cáo Nghiệm thu cuối kỳ.

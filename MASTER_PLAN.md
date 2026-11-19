@@ -165,7 +165,7 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 ---
 
-### Phase 5: Module 06 (Phần 1) — Ngân Hàng Câu Hỏi Đa Phương Tiện & Chuyển Đổi Đề Word/PDF *(NHÁNH `feature/phase-05-question-bank-and-import` — CHƯA MERGE `develop`, CÒN BACKLOG `#7`)*
+### Phase 5: Module 06 (Phần 1) — Ngân Hàng Câu Hỏi Đa Phương Tiện & Chuyển Đổi Đề Word/PDF *(ĐÃ HOÀN THÀNH — MERGED `develop`)*
 - **File Sub-Plan:** [`docs/plans/phase-05-question-bank-and-import.md`](./docs/plans/phase-05-question-bank-and-import.md)
 - **Phạm vi Mã Chức Năng (12 FUNCs):**
   - `FUNC-039`..`FUNC-050`.
@@ -182,31 +182,29 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
   - [x] **Task 5.1:** Thiết kế Schema & Migration (`20261113090000`, `20261113120000`, `20261113130000`) cho `Assessment`, `Question`, `MediaAsset`, `QuestionMedia` và dịch vụ Upload/Stream Media + tải file gốc (`/original`, `/media/:mediaId`) kiểm tra magic bytes (`FUNC-049, 050`).
   - [x] **Task 5.2:** Xây dựng CRUD Bài tập/Đề kiểm tra (`FUNC-039`, `409 Conflict` khi đã phát hành/khóa) và Trình biên tập thủ công 7 dạng câu hỏi HSK (`FUNC-043..050`), chưa mở endpoint/DTO học viên (`Zero-Leak`).
   - [x] **Task 5.3:** Xây dựng pipeline Upload & Parse đề `.docx`/`.pdf` (`FUNC-040, 041`) sang bản nháp `DRAFT` + Màn hình Giáo viên kiểm duyệt 2 cột (`ImportReviewPane`, `FUNC-042`).
-  - [x] **Task 5.4:** Giao diện Ngân hàng đề (`/teacher/assessments`), Trình tạo/sửa câu hỏi và Playwright E2E tests (`52/52` PASS). *(Mở backlog `#7`: `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01`, `TD-09` trong `TECH_DEBT_AND_SECURITY_BACKLOG.md`.)*
+  - [x] **Task 5.4:** Giao diện Ngân hàng đề (`/teacher/assessments`), Trình tạo/sửa câu hỏi và Playwright E2E tests (`52/52` PASS). *(Đã hoàn tất khắc phục Waves 1–3 cho `QB-BUG-01`, `QB-SEC-01`, `QB-UI-01`, `TD-09` trong `TECH_DEBT_AND_SECURITY_BACKLOG.md` và hợp nhất vào `develop`.)*
 
 ---
 
-### Phase 6: Module 06 (Phần 2) — Giao Bài, Làm Bài Trực Tuyến, Lưu Nháp & Nộp Bài 1 Lượt
-- **File Sub-Plan dự kiến:** `docs/plans/phase-06-assignment-delivery-and-submission.md`
+### Phase 6: Module 06 (Phần 2) — Giao Bài, Làm Bài Trực Tuyến, Lưu Nháp & Nộp Bài 1 Lượt *(ĐÃ HOÀN THÀNH — MERGED `develop`)*
+- **File Sub-Plan:** [`docs/plans/phase-06-assignment-delivery-and-submission.md`](./docs/plans/phase-06-assignment-delivery-and-submission.md)
 - **Phạm vi Mã Chức Năng (4 FUNCs):**
   - `FUNC-051` (Giao bài tập/bài kiểm tra cho lớp kèm hạn nộp), `FUNC-052` (Danh sách bài được giao & thao tác "Xem bài nộp" — **Cleanup #14**), `FUNC-053` (Lưu bài đang làm / Autosave bản nháp), `FUNC-054` (Chỉ cho nộp bài chính thức 1 lượt duy nhất; GV có quyền mở lại cho phép nộp lại trong trường hợp đặc biệt — `DEC-011`).
-- **Open Issues Gate cần chốt đầu Phase 6:**
-  - `ASSIGN-02`: Quy tắc autosave, xử lý khi mở 2 tab, hết giờ làm bài có tự nộp không.
-  - `ASSIGN-03`: Khi GV mở lại bài cho học viên nộp lại (`FUNC-054`): giữ câu trả lời cũ để sửa, reset trắng hay tạo attempt mới có lưu lịch sử attempt cũ.
+- **Open Issues Gate (`ASSIGN-02`, `ASSIGN-03`):** **ĐÃ CHỐT (`RESOLVED`)** tại `DEC-034`, `DEC-035`.
 - **Interfaces (`Consumes` / `Produces`):**
   - **Consumes:** `Assessment`, `Question`, `ClassEnrollment` từ Phase 3 & Phase 5.
   - **Produces:**
-    - Models: `ClassAssignment` (bài được giao cho lớp), `Submission` (Unique constraint `UNIQUE(class_assignment_id, student_id, attempt_number)`), `SubmissionAnswer`, `SubmissionReopenLog`.
+    - Models: `ClassAssignment` (bài được giao cho lớp), `Submission` (Partial Unique Index `idx_unique_active_submission_per_student` + `UNIQUE(class_assignment_id, student_id, attempt_number)`), `SubmissionAnswer`, `SubmissionReopenLog`.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 6:**
-  - [ ] **Task 6.1:** Schema & Migration cho `ClassAssignment`, `Submission`, `SubmissionAnswer` với khóa Unique chống nộp đúp (double-submit / multi-tab race condition).
-  - [ ] **Task 6.2:** Nghiệp vụ Giao bài cho lớp (`FUNC-051`) và Danh sách bài được giao cho Học viên (`FUNC-052`, chỉ học viên đang thuộc lớp mới xem/làm được bài).
-  - [ ] **Task 6.3:** Nghiệp vụ Lưu nháp đang làm (`FUNC-053`) và Nộp bài chính thức 1 lượt (`FUNC-054`) + Tính năng Giáo viên mở lại lượt nộp có ghi log (`DEC-011`).
-  - [ ] **Task 6.4:** Giao diện Học viên làm bài tương tác (trắc nghiệm, điền từ, kéo thả sắp xếp câu chữ Hán, nghe audio, viết tự luận), nút "Xem bài nộp" (**Cleanup #14**) và kiểm thử Concurrency 2 requests nộp bài đồng thời.
+  - [x] **Task 6.1:** Schema & Migration cho `ClassAssignment`, `Submission`, `SubmissionAnswer` với khóa Unique chống nộp đúp (double-submit / multi-tab race condition).
+  - [x] **Task 6.2:** Nghiệp vụ Giao bài cho lớp (`FUNC-051`) và Danh sách bài được giao cho Học viên (`FUNC-052`, chỉ học viên đang thuộc lớp mới xem/làm được bài).
+  - [x] **Task 6.3:** Nghiệp vụ Lưu nháp đang làm (`FUNC-053`) và Nộp bài chính thức 1 lượt (`FUNC-054`) + Tính năng Giáo viên mở lại lượt nộp có ghi log (`DEC-011`, `DEC-035`).
+  - [x] **Task 6.4:** Giao diện Học viên làm bài tương tác (trắc nghiệm, điền từ, kéo thả sắp xếp câu chữ Hán, nghe audio, viết tự luận), nút "Xem bài nộp" (**Cleanup #14**) và kiểm thử Concurrency 2 requests nộp bài đồng thời.
 
 ---
 
-### Phase 7: Module 07 — Chấm Điểm Tự Động, AI Gợi Ý Tự Luận & Công Bố Điểm 2 Bước
-- **File Sub-Plan:** `docs/plans/phase-07-grading-and-publication.md`
+### Phase 7: Module 07 — Chấm Điểm Tự Động, AI Gợi Ý Tự Luận & Công Bố Điểm 2 Bước *(ĐÃ HOÀN THÀNH — MERGED `develop`)*
+- **File Sub-Plan:** [`docs/plans/phase-07-grading-and-publication.md`](./docs/plans/phase-07-grading-and-publication.md)
 - **Phạm vi Mã Chức Năng (9 FUNCs In-Scope — `FUNC-057` đã khôi phục theo `DEC-036`):**
   - `In-Scope (9)`: `FUNC-056` (Tự động chấm câu có đáp án xác định bằng thuật toán rule-based — `DEC-012`, `DEC-037`), `FUNC-057` (AI gợi ý chấm sơ bộ câu tự luận `ESSAY` theo kiến trúc đa provider động `OPENAI`/`GEMINI`/`CUSTOM`, kích hoạt `on-demand`, tuân thủ Zero-PII — khôi phục theo `DEC-036`), `FUNC-058` (GV kiểm tra kết quả chấm và chấm câu tự luận), `FUNC-059` (GV xác nhận điểm — bước 1: `GRADED`), `FUNC-060` (Công bố điểm sau khi xác nhận — bước 2 riêng biệt: `RETURNED`, `DEC-012`, `DEC-038`), `FUNC-061` (GV/Admin chỉnh sửa điểm sau xác nhận/công bố — `DEC-013`, `DEC-038`), `FUNC-062` (Theo dõi danh sách học viên đã nộp / quá hạn chưa nộp), `FUNC-063` (Học viên xem kết quả, nhận xét và đáp án sau khi bài đã `RETURNED` — `DEC-013`), `FUNC-064` (Lưu lịch sử chỉnh sửa điểm / `GradeAuditLog` — `DEC-013`, `DEC-038`).
 - **Open Issues Gate (Đã chốt):**
@@ -219,12 +217,12 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
     - Domain Events: `AssignmentScoresPublishedEvent` (dùng cho Notification ở Phase 9).
     - Repository Gate: `PublishedGradesRepository` / service gate cưỡng chế `status = 'RETURNED'` (business status `PUBLISHED`) cho mọi truy vấn từ phía Học viên + tuyệt đối ẩn trường nháp AI.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 7:**
-  - [ ] **Slice 7.1:** Rule-based Auto-Grading Engine (`FUNC-056`, `DEC-037`) cho 1 đáp án, nhiều đáp án partial credit, điền từ & sắp xếp chuẩn hóa `NFKC`, bước điểm `0.25`.
-  - [ ] **Slice 7.2:** Dynamic Multi-Provider AI Config (`OPENAI` / `GEMINI` / `CUSTOM`, `AES-256-GCM`, SSRF guard) & On-Demand AI Essay Grading Engine (`FUNC-057`, `DEC-036`, Zero-PII).
-  - [ ] **Slice 7.3:** Workspace GV chấm tự luận (`FUNC-058`) & Bảng theo dõi Đã nộp / Quá hạn chưa nộp + nút ghi `0 điểm` tường minh (`FUNC-062`, `DEC-038`).
-  - [ ] **Slice 7.4:** State Machine 2 bước (`GRADED` `FUNC-059` $\rightarrow$ `RETURNED` `FUNC-060`) + Cổng Zero-Leak cho Học viên (`FUNC-063`) + Chỉnh sửa điểm & `GradeAuditLog` (`FUNC-061`, `FUNC-064`, `DEC-038`).
-  - [ ] **Slice 7.5:** Giao diện Superadmin cấu hình AI đa provider (`/superadmin/settings`) & Giao diện Giáo viên chấm bài, gọi AI gợi ý, xác nhận và công bố điểm.
-  - [ ] **Slice 7.6:** Giao diện Học viên xem kết quả sau công bố, Negative Security Test chống lộ điểm/nháp AI & Verification Gate (`E2E`, `unit`, `check-loc`).
+  - [x] **Slice 7.1:** Rule-based Auto-Grading Engine (`FUNC-056`, `DEC-037`) cho 1 đáp án, nhiều đáp án partial credit, điền từ & sắp xếp chuẩn hóa `NFKC`, bước điểm `0.25`.
+  - [x] **Slice 7.2:** Dynamic Multi-Provider AI Config (`OPENAI` / `GEMINI` / `CUSTOM`, `AES-256-GCM`, SSRF guard) & On-Demand AI Essay Grading Engine (`FUNC-057`, `DEC-036`, Zero-PII).
+  - [x] **Slice 7.3:** Workspace GV chấm tự luận (`FUNC-058`) & Bảng theo dõi Đã nộp / Quá hạn chưa nộp + nút ghi `0 điểm` tường minh (`FUNC-062`, `DEC-038`).
+  - [x] **Slice 7.4:** State Machine 2 bước (`GRADED` `FUNC-059` $\rightarrow$ `RETURNED` `FUNC-060`) + Cổng Zero-Leak cho Học viên (`FUNC-063`) + Chỉnh sửa điểm & `GradeAuditLog` (`FUNC-061`, `FUNC-064`, `DEC-038`).
+  - [x] **Slice 7.5:** Giao diện Superadmin cấu hình AI đa provider (`/superadmin/settings`) & Giao diện Giáo viên chấm bài, gọi AI gợi ý, xác nhận và công bố điểm.
+  - [x] **Slice 7.6:** Giao diện Học viên xem kết quả sau công bố, Negative Security Test chống lộ điểm/nháp AI & Verification Gate (`E2E`, `unit`, `check-loc`).
 
 ---
 
@@ -252,18 +250,17 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 
 ---
 
-### Phase 9: Module 10 & Production Hardening — Thông Báo In-App, Rà Soát Bảo Mật & Nghiệm Thu UAT
-- **File Sub-Plan dự kiến:** `docs/plans/phase-09-notifications-and-hardening.md`
+### Phase 9: Module 10 & Production Hardening — Thông Báo In-App, Rà Soát Bảo Mật & Nghiệm Thu UAT *(READY FOR EXECUTION)*
+- **File Sub-Plan:** [`docs/plans/phase-09-notifications-and-hardening.md`](./docs/plans/phase-09-notifications-and-hardening.md)
 - **Phạm vi Mã Chức Năng (1 FUNC + Toàn bộ 16 mục Prototype Cleanup & E2E Hardening):**
-  - `FUNC-080` (Thông báo trong hệ thống web / In-App Notifications — **không gửi Zalo hay Email marketing** theo `DEC-015`).
-- **Open Issues Gate cần chốt đầu Phase 9:**
-  - `NOTIF-01`: Danh sách các sự kiện sinh thông báo (giao bài mới, đổi/hủy/bù lịch, công bố điểm, xếp/chuyển lớp), trạng thái Đã đọc/Chưa đọc.
-  - `PROTO-01`: Kiểm tra đối chiếu toàn bộ 16 thành phần thừa trong prototype đã được loại bỏ 100% khỏi giao diện production.
+  - `FUNC-080` (Thông báo trong hệ thống web / In-App Notifications — **không gửi Zalo hay Email thông báo nghiệp vụ** theo `DEC-015`).
+- **Open Issues Gate (`NOTIF-01`, `PROTO-01`):** **ĐÃ CHỐT (`RESOLVED`)** tại `DEC-042` & `DEC-043`.
 - **Các Vertical Slice Tasks trong Sub-Plan Phase 9:**
-  - [ ] **Task 9.1:** Thiết kế Schema, API & UI Chuông thông báo In-App (`FUNC-080`), kết nối với các sự kiện: Giao bài mới, Đổi lịch/Bù buổi, và Công bố điểm (`AssignmentScoresPublishedEvent` — tuyệt đối không bắn thông báo cho HV ở bước `TEACHER_CONFIRMED`).
-  - [ ] **Task 9.2:** Kiểm toán toàn diện 16 mục **Prototype Cleanup** (`PROTO-01`) trên toàn bộ Frontend: đảm bảo không còn bất kỳ nhãn `FUNC-xxx`, nút file mẫu demo, thanh đổi vai trò demo hay ghi chú "chờ chốt" nào.
-  - [ ] **Task 9.3:** Chạy trọn bộ **5 Integration & Security Invariant Tests** từ Hiến chương Kiến trúc + Kiểm thử E2E Playwright trên cả Desktop & Mobile viewports (`akit-browser-qa`).
-  - [ ] **Task 9.4:** Thực hiện `akit-simplify`, `akit-security` audit, `akit-review` độc lập và đóng gói tài liệu bàn giao vận hành (`akit-deliver`).
+  - [ ] **Task 9.1:** Thiết kế Schema, SQL Migration, `NotificationsModule` Core API (`100 -> 104` endpoints), cơ chế nhắc bài sắp hết hạn 24h (`dedupKey`) và dọn lưu trữ tự động 90d/180d (`FUNC-080`).
+  - [ ] **Task 9.2:** Gắn các điểm phát sự kiện liên module cho đủ 14 loại thông báo (`STUDENT` / `TEACHER` / `ADMIN`), tuyệt đối không bắn thông báo ở bước `GRADED` (Zero-Leak) và không tự bắn cho chính người thao tác (`actorId`), kèm Real-PG E2E.
+  - [ ] **Task 9.3:** Giao diện Popover chuông thông báo In-App trên `PortalTopbar` (tải 20 mục + Tải thêm, polling 60s khi tab hiển thị + focus, ẩn với pure `SUPERADMIN`) + Frontend unit tests.
+  - [ ] **Task 9.4:** Kiểm toán & dọn sạch toàn diện 16 hạng mục **Prototype Cleanup** (`PROTO-01`, `DEC-043`): xóa hẳn khối `"Đăng nhập nhanh (Dev)"` khỏi `/login` (cả dev lẫn prod) và xóa 100% mã đặc tả nội bộ còn sót khỏi mã nguồn non-test.
+  - [ ] **Task 9.5:** Chạy trọn bộ **5 Integration & Security Invariant Tests** từ Hiến chương Kiến trúc, Playwright E2E Phase 9 + Full Regression Suite (Desktop & Mobile + Axe WCAG AA), kiểm toán độc lập (`akit-security`, `akit-critic`) và xuất bản báo cáo nghiệm thu bàn giao [`docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md`](./docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md).
 
 ---
 
@@ -292,5 +289,5 @@ Mỗi khi bắt đầu một Phase (từ Phase 1 đến Phase 9), chúng ta **kh
 | `Phase 2 -> Phase 3..9` | `JwtAuthGuard`, `RolesGuard`, `@CurrentUser()`, `user.roles` | User payload thống nhất `{ id, username, roles }` (kiêm nhiệm đa vai trò qua `role-hierarchy`) | **Clean** |
 | `Phase 3 -> Phase 4, 6, 8` | `Enrollment` (Partial Index `ACTIVE`), `ClassAccessService` | Mọi truy vấn lớp/bài tập/điểm danh đều dùng access policy riêng (`ClassAccessService` / `ScheduleAccessPolicy` / `AttendancePolicy`) để chống IDOR | **Clean** |
 | `Phase 4 -> Phase 8` | `LessonSession` (`COMPLETED` chỉ khi đã điểm danh), `AttendanceRecord` | Tiến độ lớp (`FUNC-071`) chỉ đếm buổi `COMPLETED` đã điểm danh (`DEC-009`) | **Clean** |
-| `Phase 5 -> Phase 6, 7` | `Assessment`, `Question`, `MediaAsset` (trên nhánh `feature/phase-05...`) | Tách biệt `TeacherAssessmentDto` trong Phase 5 (không có endpoint `STUDENT`); xử lý `QB-BUG-01`/`QB-SEC-01` trước khi nối Phase 6 | **Pending P5 Fixes** |
-| `Phase 7 -> Phase 8, 9` | `PublishedGradesRepository` (`status = 'PUBLISHED'`), `AssignmentScoresPublishedEvent` | Dashboard tiến độ (`Phase 8`) và Notification (`Phase 9`) chỉ đọc điểm `PUBLISHED` | **Clean** |
+| `Phase 5 -> Phase 6, 7` | `Assessment`, `Question`, `MediaAsset` (`develop`) | Đã xử lý triệt để Wave 1–3 (`QB-BUG-01`, `QB-SEC-01`, `QB-UI-01`, `TD-09`), hợp nhất sạch vào `develop` | **Clean** |
+| `Phase 7 -> Phase 8, 9` | `PublishedGradesRepository` (`status = 'RETURNED'` / business status `PUBLISHED`), `AssignmentScoresPublishedEvent` | Dashboard tiến độ (`Phase 8`) và Notification (`Phase 9`) chỉ đọc/phát khi `RETURNED` | **Clean** |

@@ -66,6 +66,7 @@ Thumbs.db
 # Stryker mutation testing & Playwright reports
 .stryker-tmp/
 reports/
+!docs/reports/
 playwright-report/
 test-results/
 # Playwright CLI output (may contain credentials)
