@@ -3,10 +3,12 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
 import {
   assertVnDateNotInFuture,
@@ -34,6 +36,7 @@ export class StudentEnrollmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queries: StudentQueryService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async listAvailableClasses(): Promise<{ items: AvailableClassDto[] }> {
@@ -161,6 +164,11 @@ export class StudentEnrollmentService {
             previousStatus: targetUser.status,
             newStatus: UserStatus.ACTIVE,
           },
+        });
+        await this.academicNotifications?.onStudentsPlacedTx(tx, {
+          studentIds: [studentId],
+          classCode: targetClass.code,
+          actorId: actor.id,
         });
       });
     } catch (err: unknown) {

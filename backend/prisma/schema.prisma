@@ -123,6 +123,23 @@ enum GradingStatus {
   GRADED
 }
 
+enum NotificationType {
+  NEW_STUDENT_PENDING_CLASS
+  STUDENT_ENROLLED
+  STUDENT_TRANSFERRED
+  STUDENT_DROPPED
+  TEACHER_ASSIGNED_CLASS
+  SESSION_RESCHEDULED
+  SESSION_CANCELLED
+  SESSION_MAKEUP_ADDED
+  ASSIGNMENT_ASSIGNED
+  ASSIGNMENT_DUE_SOON
+  SUBMISSION_REOPENED
+  SUBMISSION_PENDING_GRADING
+  GRADE_PUBLISHED
+  GRADE_UPDATED
+}
+
 model User {
   id                  String     @id @default(uuid())
   email               String     @unique @db.VarChar(255)
@@ -161,6 +178,7 @@ model User {
   gradedSubmissions         Submission[]             @relation("GradedSubmissions")
   reopenedSubmissions       SubmissionReopenLog[]    @relation("SubmissionReopener")
   actedGradeAuditLogs       GradeAuditLog[]          @relation("GradeAuditActor")
+  notifications             Notification[]           @relation("UserNotifications")
 
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -699,4 +717,24 @@ model GradeAuditLog {
   @@index([submissionId, createdAt])
   @@index([answerId])
   @@map("grade_audit_logs")
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  type        NotificationType
+  title       String           @db.VarChar(180)
+  body        String           @db.VarChar(500)
+  linkPath    String           @map("link_path") @db.VarChar(255)
+  dedupKey    String?          @map("dedup_key") @db.VarChar(160)
+  isRead      Boolean          @default(false) @map("is_read")
+  readAt      DateTime?        @map("read_at") @db.Timestamptz(3)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  recipient User @relation("UserNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  @@index([recipientId, isRead, createdAt(sort: Desc)])
+  @@index([recipientId, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("notifications")
 }

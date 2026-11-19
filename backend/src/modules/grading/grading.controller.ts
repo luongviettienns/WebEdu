@@ -49,7 +49,7 @@ export class GradingController {
 
   @Get('assignments/:assignmentId/grading-tracker')
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Bảng theo dõi chấm điểm và học viên quá hạn chưa nộp (FUNC-058, 062)' })
+  @ApiOperation({ summary: 'Bảng theo dõi chấm điểm và học viên quá hạn chưa nộp' })
   getAssignmentGradingTracker(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
@@ -61,7 +61,7 @@ export class GradingController {
   @Post('assignments/:assignmentId/overdue-zero')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Ghi nhận 0 điểm tường minh cho học viên quá hạn chưa nộp (DEC-038)' })
+  @ApiOperation({ summary: 'Ghi nhận 0 điểm tường minh cho học viên quá hạn chưa nộp' })
   recordOverdueZero(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
@@ -73,7 +73,7 @@ export class GradingController {
   @Post('assignments/:assignmentId/confirm-grades')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Xác nhận hàng loạt bài nộp đã chấm đủ điểm (FUNC-059)' })
+  @ApiOperation({ summary: 'Xác nhận hàng loạt bài nộp đã chấm đủ điểm' })
   confirmAssignmentGradesBatch(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
@@ -85,7 +85,7 @@ export class GradingController {
   @Post('assignments/:assignmentId/publish-grades')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Công bố điểm các bài đã xác nhận GRADED -> RETURNED (FUNC-060)' })
+  @ApiOperation({ summary: 'Công bố điểm các bài đã xác nhận GRADED -> RETURNED' })
   publishAssignmentGrades(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
@@ -109,7 +109,7 @@ export class GradingController {
 
   @Get('assignments/:assignmentId/published-result')
   @Roles(Role.STUDENT)
-  @ApiOperation({ summary: 'Học viên xem kết quả sau công bố với cổng Zero-Leak (FUNC-063)' })
+  @ApiOperation({ summary: 'Học viên xem kết quả sau công bố với cổng Zero-Leak' })
   getStudentPublishedResult(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('assignmentId', ParseUUIDPipe) assignmentId: string,
@@ -153,7 +153,7 @@ export class GradingController {
 
   @Patch('submissions/:submissionId/manual-grade')
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Giáo viên chấm điểm câu tự luận, áp dụng gợi ý AI & nhận xét (FUNC-058)' })
+  @ApiOperation({ summary: 'Giáo viên chấm điểm câu tự luận, áp dụng gợi ý AI & nhận xét' })
   gradeSubmissionManually(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('submissionId', ParseUUIDPipe) submissionId: string,
@@ -165,7 +165,7 @@ export class GradingController {
   @Post('submissions/:submissionId/confirm-grade')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Xác nhận điểm bài nộp chuyển sang trạng thái GRADED (FUNC-059)' })
+  @ApiOperation({ summary: 'Xác nhận điểm bài nộp chuyển sang trạng thái GRADED' })
   confirmSubmissionGrade(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('submissionId', ParseUUIDPipe) submissionId: string,
@@ -175,7 +175,7 @@ export class GradingController {
 
   @Patch('submissions/:submissionId/adjust-grade')
   @Roles(Role.TEACHER, Role.ADMIN)
-  @ApiOperation({ summary: 'Chỉnh sửa điểm sau xác nhận/công bố kèm lý do & GradeAuditLog (FUNC-061, 064)' })
+  @ApiOperation({ summary: 'Chỉnh sửa điểm sau xác nhận/công bố kèm lý do & GradeAuditLog' })
   adjustConfirmedOrPublishedGrade(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('submissionId', ParseUUIDPipe) submissionId: string,

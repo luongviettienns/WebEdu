@@ -3,13 +3,15 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { Prisma, SessionChangeAction, SessionStatus, SessionType } from '@prisma/client';
+import { NotificationType, Prisma, SessionChangeAction, SessionStatus, SessionType } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
 import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
 import { assertValidTimeRange } from '../../classes/policies/class-schedule.util.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import type {
   AddManualSessionDto,
   CancelSessionDto,
@@ -35,6 +37,7 @@ export class SessionWorkflowService {
     private readonly prisma: PrismaService,
     private readonly access: ScheduleAccessPolicy,
     private readonly generator: SessionGeneratorService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async addManualSession(
@@ -169,6 +172,11 @@ export class SessionWorkflowService {
         tx,
         target.classId,
       );
+      await this.academicNotifications?.onSessionChangedTx(tx, {
+        type: NotificationType.SESSION_RESCHEDULED, classId: target.classId, classCode: target.class.code,
+        teacherId: target.class.teacherId, actorId: actor.id, sessionNumber: target.sessionNumber,
+        previousDate: target.sessionDate, previousStartTime: target.startTime, newDate, newStartTime: startTime, newEndTime: endTime, reason,
+      });
       return { expectedEndDate: nextExpectedEnd, warning: teacherWarning };
     });
 
@@ -182,9 +190,11 @@ export class SessionWorkflowService {
   ): Promise<SessionMutationResultDto> {
     const reason = dto.reason.trim();
     if (!reason) throw new BadRequestException('Vui lòng nhập lý do hủy buổi học');
-    if (dto.makeup) {
-      const mDate = parseSessionCalendarDateOrThrow(dto.makeup.sessionDate, 'Ngày học bù');
-      assertSessionDateNotPastVn(mDate, 'Không thể tạo buổi học bù vào ngày trong quá khứ');
+    const makeupDate = dto.makeup
+      ? parseSessionCalendarDateOrThrow(dto.makeup.sessionDate, 'Ngày học bù')
+      : undefined;
+    if (dto.makeup && makeupDate) {
+      assertSessionDateNotPastVn(makeupDate, 'Không thể tạo buổi học bù vào ngày trong quá khứ');
       assertValidTimeRange(dto.makeup.startTime, dto.makeup.endTime);
     }
 
@@ -230,6 +240,12 @@ export class SessionWorkflowService {
         tx,
         target.classId,
       );
+      await this.academicNotifications?.onSessionChangedTx(tx, {
+        type: NotificationType.SESSION_CANCELLED, classId: target.classId, classCode: target.class.code,
+        teacherId: target.class.teacherId, actorId: actor.id, sessionNumber: target.sessionNumber,
+        sessionDate: target.sessionDate, reason,
+        ...(dto.makeup && makeupDate ? { makeupDate, makeupStartTime: dto.makeup.startTime, makeupEndTime: dto.makeup.endTime } : {}),
+      });
       return { expectedEndDate: nextExpectedEnd, warning: makeupRes?.teacherWarning ?? null };
     });
 
@@ -270,12 +286,15 @@ export class SessionWorkflowService {
         tx,
         target.classId,
       );
+      await this.academicNotifications?.onSessionChangedTx(tx, {
+        type: NotificationType.SESSION_MAKEUP_ADDED, classId: target.classId, classCode: target.class.code,
+        teacherId: target.class.teacherId, actorId: actor.id, makeupDate: mDate,
+        makeupStartTime: dto.startTime, makeupEndTime: dto.endTime, originalDate: target.sessionDate,
+      });
       return { makeupId: createdId, expectedEndDate: nextExpectedEnd, warning: teacherWarning };
     });
-
     return this.buildMutationResult(actor, makeupId, expectedEndDate, warning);
   }
-
   private async runWorkflowTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     try {
       return await this.prisma.$transaction(fn);
@@ -301,7 +320,7 @@ export class SessionWorkflowService {
     const target = await tx.lessonSession.findUnique({
       where: { id: sessionId },
       include: {
-        class: { select: { id: true, teacherId: true, status: true, totalSessions: true } },
+        class: { select: { id: true, code: true, teacherId: true, status: true, totalSessions: true } },
         makeupReplacement: { select: { id: true } },
       },
     });

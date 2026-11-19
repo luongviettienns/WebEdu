@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Role, UserStatus } from '@prisma/client';
-import { IS_PUBLIC_KEY } from '../decorators/roles.decorator.js';
+import { IS_PUBLIC_KEY, SKIP_ACTIVITY_TOUCH_KEY } from '../decorators/roles.decorator.js';
 import { TokenService } from '../auth/token.service.js';
 import { ActivityTrackerService } from './activity-tracker.service.js';
 import { CsrfOriginPolicy } from './csrf-origin.policy.js';
@@ -538,5 +538,56 @@ describe('JwtAuthGuard', () => {
 
     await expect(guard.canActivate(ctx.context)).rejects.toThrow('ECONNRESET');
     expect(ctx.clearCookie).not.toHaveBeenCalled();
+  });
+
+  it('skips refreshing lastActivityAt when handler carries @SkipActivityTouch() while still enforcing idle expiry', async () => {
+    const fixedNow = new Date('2026-11-20T00:00:00.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+
+    const token = await jwtService.signAsync({
+      sub: 'u-poll',
+      email: 'poll@webedu.vn',
+      tokenVersion: 1,
+    });
+    prismaMock.user.findUnique.mockResolvedValueOnce({
+      id: 'u-poll',
+      email: 'poll@webedu.vn',
+      fullName: 'Poll User',
+      phone: '0901234568',
+      roles: [Role.STUDENT],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 1,
+      lastActivityAt: new Date(fixedNow.getTime() - 10 * 60 * 1000),
+    });
+    getAllAndOverrideMock.mockImplementation((key: string) =>
+      key === SKIP_ACTIVITY_TOUCH_KEY ? true : false,
+    );
+
+    const ctx = createHttpContext({
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await expect(guard.canActivate(ctx.context)).resolves.toBe(true);
+    expect(prismaMock.user.update).not.toHaveBeenCalled();
+
+    // When idle > 60 minutes, @SkipActivityTouch() route must still reject & revoke session
+    prismaMock.user.findUnique.mockResolvedValueOnce({
+      id: 'u-poll',
+      email: 'poll@webedu.vn',
+      fullName: 'Poll User',
+      phone: '0901234568',
+      roles: [Role.STUDENT],
+      status: UserStatus.ACTIVE,
+      tokenVersion: 1,
+      lastActivityAt: new Date(fixedNow.getTime() - IDLE_TIMEOUT_MS - 1_000),
+    });
+    const expiredCtx = createHttpContext({
+      headers: { authorization: `Bearer ${token}` },
+    });
+    await expect(guard.canActivate(expiredCtx.context)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(prismaMock.user.updateMany).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

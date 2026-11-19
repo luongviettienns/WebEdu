@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Optional,
 } from '@nestjs/common';
 import { Role, UserStatus } from '@prisma/client';
 import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit.util.js';
@@ -20,6 +21,7 @@ import {
 } from '../../../common/auth/auth.types.js';
 import { MailService } from '../../../common/mail/mail.service.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import {
   EMAIL_REGEX,
   normalizeEmail,
@@ -48,6 +50,7 @@ export class AuthRegistrationService {
     private readonly prisma: PrismaService,
     private readonly sessionService: AuthSessionService,
     private readonly mailService: MailService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async sendVerificationCode(
@@ -184,6 +187,11 @@ export class AuthRegistrationService {
             },
           });
         }
+
+        await this.academicNotifications?.onNewStudentRegisteredTx(tx, {
+          studentId: user.id,
+          fullName: user.fullName,
+        });
 
         return { user, studentProfile };
       });

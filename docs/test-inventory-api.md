@@ -1,7 +1,7 @@
 # Kho Lưu Trữ Bề Mặt API Backend (Backend API Surface Inventory)
 
-> **Đồng bộ gần nhất:** 2026-11-16 (Phase 8 Task 8.2 — `ProgressController`)
-> **Phạm vi kiểm chứng hiện tại:** **100 HTTP Endpoints** trên **14 Controllers**, đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
+> **Đồng bộ gần nhất:** 2026-11-19 (Phase 9 — `NotificationsController`)
+> **Phạm vi kiểm chứng hiện tại:** **104 HTTP Endpoints** trên **15 Controllers**, đối chiếu khớp 100% với `DECLARED_PHASE2_API_INVENTORY` trong [`backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts).
 
 ---
 
@@ -15,7 +15,7 @@
 
 ---
 
-## 2. Danh Sách 100 API Endpoints Theo Controller
+## 2. Danh Sách 104 API Endpoints Theo Controller
 
 ### A. Hạ Tầng & Xác Thực (Phases 1–2 — `develop`)
 
@@ -201,3 +201,13 @@ Toàn bộ endpoints dưới đây áp dụng `@Roles(Role.ADMIN, Role.TEACHER)`
 | 98 | `GET` | `/progress/me` | `STUDENT` · Query: `GetStudentProgressQueryDto { classId? }` | `200 OK` — Tiến độ buổi học, chuyên cần, thống kê BTVN tách biệt, điểm tổng kết theo trọng số khóa học, `publishedResults` (chỉ `RETURNED` — Zero-Leak) & `classHistory`; `403` nếu truyền `classId` không thuộc ghi danh của HV |
 | 99 | `GET` | `/classes/:classId/progress` | `ADMIN`, `TEACHER` (chủ nhiệm lớp) · Param: `:classId` (UUID) | `200 OK` — Tóm tắt lớp, công thức điểm khóa học & bảng tiến độ từng HV (`absencesCount`, `attendanceRatePercent`, `homeworkSubmittedCount`/`GivenCount`, `miniTestAvg`, `midtermAvg`, `finalAvg`, `finalScore`, `passStatus`, `isAtRisk`), cô lập lịch sử lớp cũ (`DEC-024`/`DEC-025`) |
 | 100 | `GET` | `/progress/admin-overview` | `ADMIN` · Query: `AdminOverviewQueryDto { courseId?, teacherId?, status?, includeEnded? }` | `200 OK` — 5 chỉ số KPI hệ thống, danh sách lớp kèm tiến độ & chuyên cần TB tính theo lô, danh sách buổi học `Hôm nay` & `5 ngày tới` (GMT+7), bộ lọc khóa học/giáo viên |
+
+### 2.15 `NotificationsController` (Phase 9 — `backend/src/modules/notifications/notifications.controller.ts`)
+> **Kiểm chứng E2E:** `backend/test/phase09-notifications.e2e-spec.ts` & `backend/test/api-inventory-and-rbac-matrix.e2e-spec.ts`.
+
+| STT | Method | Path (`/api/v1/...`) | Phân quyền / Query / Params | Phản hồi & Hành vi xác thực |
+|---:|:---:|---|---|---|
+| 101 | `GET` | `/notifications` | `ADMIN`, `TEACHER`, `STUDENT` · Query: `ListNotificationsQueryDto { status?: 'all' \| 'unread', page?, limit? (<=50) }` | `200 OK` — Danh sách thông báo In-App của người dùng hiện tại (`items`, `unreadCount`, `total`, `page`, `limit`, `hasMore`); kích hoạt kiểm tra nhắc hạn 24h cho `STUDENT`; thuần `SUPERADMIN` nhận `403` |
+| 102 | `GET` | `/notifications/unread-count` | `ADMIN`, `TEACHER`, `STUDENT` | `200 OK` — Trả `{ unreadCount }` cho badge chuông trên Topbar; thuần `SUPERADMIN` nhận `403` |
+| 103 | `PATCH` | `/notifications/:id/read` | `ADMIN`, `TEACHER`, `STUDENT` · Param: `:id` (UUID) | `200 OK` — Đánh dấu thông báo thuộc người dùng hiện tại đã đọc (`{ id, isRead: true, readAt }`); trả `404` nếu thông báo thuộc người khác (chống IDOR) |
+| 104 | `POST` | `/notifications/read-all` | `ADMIN`, `TEACHER`, `STUDENT` | `200 OK` — Đánh dấu toàn bộ thông báo chưa đọc của người dùng hiện tại là đã đọc (`{ markedCount, unreadCount: 0 }`) |

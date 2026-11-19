@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ClassStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
 import { formatIsoDateUtc, isVnFutureDate, resolveVnCalendarDateForDb, resolveVnToday } from '../../../common/utils/timezone.util.js';
 import { syncTeacherActiveClassesCount } from '../../../common/policies/teacher-invariants.policy.js';
@@ -40,6 +41,7 @@ export class ClassCrudService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sessionGenerator: SessionGeneratorService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async createClass(actor: AuthenticatedUser, dto: CreateClassDto): Promise<ClassItemDto> {
@@ -115,6 +117,9 @@ export class ClassCrudService {
           targetType: 'Class',
           targetId: cls.id,
           metadata: { code: cls.code, courseId: course.id, teacherId: dto.teacherId, totalSessions, startDate: formatIsoDateUtc(startDate), expectedEndDate: formatIsoDateUtc(expectedEndDate) },
+        });
+        await this.academicNotifications?.onTeacherAssignedClassTx(tx, {
+          teacherId: dto.teacherId, classId: cls.id, classCode: cls.code, courseName: cls.course.name, isReassignment: false, actorId: actor.id,
         });
         const nextSession = await findNextScheduledSession(tx, cls.id);
         return { created: cls, scheduleConflictWarning: warning, nextSession };
@@ -277,6 +282,9 @@ export class ClassCrudService {
               assignedFrom: formatIsoDateUtc(assignedFromDate),
               reason,
             },
+          });
+          await this.academicNotifications?.onTeacherAssignedClassTx(tx, {
+            teacherId: nextTeacherId, classId: cls.id, classCode: cls.code, courseName: cls.course.name, isReassignment: true, actorId: actor.id,
           });
         } else if (nextStatus !== existing.status) {
           await syncTeacherActiveClassesCount(tx, nextTeacherId);

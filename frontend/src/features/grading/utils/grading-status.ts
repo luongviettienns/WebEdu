@@ -4,7 +4,7 @@ import { formatDateDdMmYyyy } from '../../../lib/utils/date';
 import type { GradingTrackerStudentRowDto } from '../api/grading.api';
 
 /**
- * Cổng Zero-Leak (FUNC-063): Chỉ trả về true khi bài nộp đã ở trạng thái RETURNED (Đã công bố).
+ * Cổng Zero-Leak: Chỉ trả về true khi bài nộp đã ở trạng thái RETURNED (Đã công bố).
  * Tuyệt đối ẩn điểm khi bài đang SUBMITTED_WAITING, AUTO_GRADED_PENDING_REVIEW hoặc GRADED.
  */
 export function isStudentScoreVisible(status: AssignmentDisplayStatus): boolean {

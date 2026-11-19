@@ -94,14 +94,6 @@ function LoginFormContent() {
     await submitLogin(email, password);
   };
 
-  const handleDevQuickLogin = (devEmail: string, devPassword: string) => {
-    setEmail(devEmail);
-    setPassword(devPassword);
-    setEmailError('');
-    setPasswordError('');
-    void submitLogin(devEmail, devPassword);
-  };
-
   return (
     <div className="relative flex min-h-screen w-full bg-[var(--paper)]">
       <BambooLeavesBackground />
@@ -167,7 +159,6 @@ function LoginFormContent() {
             resetSuccess={resetSuccess}
             idleTimeout={idleTimeout}
             onSubmit={(e) => void handleSubmit(e)}
-            onDevQuickLogin={process.env.NODE_ENV === 'development' ? handleDevQuickLogin : undefined}
           />
         </div>
       </main>

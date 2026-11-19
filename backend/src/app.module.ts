@@ -20,6 +20,7 @@ import { AssessmentsModule } from './modules/assessments/assessments.module.js';
 import { AssignmentsModule } from './modules/assignments/assignments.module.js';
 import { GradingModule } from './modules/grading/grading.module.js';
 import { ProgressModule } from './modules/progress/progress.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { ProgressModule } from './modules/progress/progress.module.js';
     AssignmentsModule,
     GradingModule,
     ProgressModule,
+    NotificationsModule,
   ],
   providers: [
     {

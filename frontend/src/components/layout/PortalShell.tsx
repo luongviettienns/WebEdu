@@ -127,6 +127,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
             <PortalTopbar
               user={user}
               preferredRoleView={preferredRoleView}
+              notificationsActive={canRenderChildren && remainingSeconds === null}
               onOpenMobileMenu={() => setMobileMenuOpen(true)}
             />
           </Suspense>

@@ -1,7 +1,8 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import { isPrismaUniqueConstraintError } from '../../../common/utils/prisma-error.util.js';
 import { resolveVnCalendarDateForDb } from '../../../common/utils/timezone.util.js';
 import { assertActorMayModifyAccount } from '../../../common/auth/superadmin-protection.policy.js';
@@ -11,7 +12,10 @@ import type { DropStudentClassDto, EnrollStudentsDto, TransferStudentClassDto } 
 
 @Injectable()
 export class ClassEnrollmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
+  ) {}
 
   async enrollStudents(
     actor: AuthenticatedUser,
@@ -96,6 +100,9 @@ export class ClassEnrollmentService {
             enrolledCount: sortedIds.length,
             enrolledDate: enrolledDate.toISOString(),
           },
+        });
+        await this.academicNotifications?.onStudentsPlacedTx(tx, {
+          studentIds: sortedIds, classCode: targetClass.code, actorId: actor.id,
         });
 
         return {
@@ -216,6 +223,9 @@ export class ClassEnrollmentService {
             reason: trimmedReason,
           },
         });
+        await this.academicNotifications?.onStudentTransferredTx(tx, {
+          studentId, sourceClassCode: sourceClass.code, targetClassCode: targetClass.code, actorId: actor.id,
+        });
 
         return {
           status: 'TRANSFERRED' as const,
@@ -302,6 +312,9 @@ export class ClassEnrollmentService {
           leftDate: leftDate.toISOString(),
           reason: trimmedReason,
         },
+      });
+      await this.academicNotifications?.onStudentDroppedTx(tx, {
+        studentId, classCode: targetClass.code, actorId: actor.id,
       });
 
       return { status: 'DROPPED' as const, classId, studentId };

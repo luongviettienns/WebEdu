@@ -12,7 +12,7 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
   - **Frontend**: `frontend/` — Next.js (App Router) + Tailwind CSS + Thiết kế Thư họa Á Đông kế thừa 100% Prototype (`prototype/TD Hán Ngữ (Copy).html`): Nền giấy dó (`#F5F6F2`), chữ mực tàu (`#1C2320`), son triện đỏ 朱砂 (`#B5322A`), ngọc bích (`#2B7760`), xanh chàm (`#31578A`), con dấu `.seal`, hồi văn `.fret`.
   - **Múi giờ chuẩn**: Lưu trữ UTC, tính toán hạn nghiệp vụ theo `Asia/Ho_Chi_Minh` (GMT+7).
   - **Quy trình Git**: Git Flow chuyên nghiệp (`main`, `develop`, `feature/*`, `bugfix/*`, `fix/*`, Conventional Commits).
-* **Giai đoạn hiện tại**: **Phase 8 (Hoàn thành)** $\rightarrow$ **Đã chốt Sub-Plan Phase 9 (`DEC-042`, `DEC-043`) & đồng bộ tài liệu trên `develop`**, sẵn sàng triển khai **Phase 9: Module 10 — Thông báo In-App & Production Hardening (`FUNC-080`)**.
+* **Giai đoạn hiện tại**: **Hoàn thành 100% toàn bộ 10 giai đoạn (`Phase 0 → Phase 9`) trên nhánh `develop`** — Sẵn sàng nghiệm thu bàn giao & chờ xác nhận phát hành sang `main` ([Báo cáo nghiệm thu cuối kỳ Phase 9](./docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md)).
 
 ---
 
@@ -130,10 +130,10 @@ Tài liệu theo dõi trạng thái tiến độ, các mốc quan trọng và h�
 
 ---
 
-### Phase 9: Module 10 & Production Hardening — Thông báo In-App, Dọn Prototype & Nghiệm thu UAT (`FUNC-080`) *(READY FOR EXECUTION)*
+### Phase 9: Module 10 & Production Hardening — Thông báo In-App, Dọn Prototype & Nghiệm thu UAT (`FUNC-080`) *(HOÀN THÀNH — 100% GATES PASS — MERGED `develop`)*
 - [x] Lập Sub-Plan [`docs/plans/phase-09-notifications-and-hardening.md`](./docs/plans/phase-09-notifications-and-hardening.md) & chốt `NOTIF-01` (`DEC-042`), `PROTO-01` (`DEC-043`).
-- [ ] **Task 9.1**: Schema `Notification`, SQL Migration, `NotificationsModule` Core API (`100 -> 104`), nhắc hạn 24h & dọn lưu trữ tự động (`FUNC-080`).
-- [ ] **Task 9.2**: Gắn 14 sự kiện thông báo liên module (`STUDENT` / `TEACHER` / `ADMIN`, Zero-Leak `GRADED` vs `RETURNED`) & Real-PG E2E.
-- [ ] **Task 9.3**: Giao diện Popover chuông thông báo In-App trên `PortalTopbar` (ẩn với thuần `SUPERADMIN`, polling 60s khi tab mở).
-- [ ] **Task 9.4**: Kiểm toán & xóa 100% 16 hạng mục `prototype-review.md` (xóa hẳn Dev Quick-Login khỏi `/login` & mã nội bộ khỏi code non-test).
-- [ ] **Task 9.5**: Chạy bộ 5 Integration Invariant Tests + Full Playwright E2E + Kiểm toán độc lập (`akit-security`/`akit-critic`) + Xuất bản Báo cáo Nghiệm thu cuối kỳ.
+- [x] **Task 9.1**: Schema `Notification`, SQL Migration (`20261119235000_phase09_notifications`), `NotificationsModule` Core API (`100 -> 104`), nhắc hạn 24h & dọn lưu trữ tự động 90d/180d (`FUNC-080`).
+- [x] **Task 9.2**: Gắn 14 sự kiện thông báo liên module (`STUDENT` / `TEACHER` / `ADMIN`, Zero-Leak `GRADED` vs `RETURNED`, không self-notify) & Real-PG E2E (`phase09-notifications.e2e-spec.ts`).
+- [x] **Task 9.3**: Giao diện Popover chuông thông báo In-App trên `PortalTopbar` (tải 20 mục + `Tải thêm`, polling 60s khi tab hiển thị + focus, ẩn với thuần `SUPERADMIN`, responsive Desktop/Mobile).
+- [x] **Task 9.4**: Kiểm toán & xóa 100% 16 hạng mục `prototype-review.md` (xóa hẳn Dev Quick-Login khỏi `LoginFormCard.tsx`/`login/page.tsx` & 10 mã nội bộ còn sót khỏi non-test `backend/src`, `frontend/src` — `git grep` = 0).
+- [x] **Task 9.5, Kiểm toán Bảo mật & Hợp nhất `develop`**: Khắc phục triệt để toàn bộ phát hiện kiểm toán độc lập (commit `b5a5b00`: `@SkipActivityTouch()` trên `/unread-count` bảo toàn Idle Timeout 60p + tạm dừng polling khi cảnh báo mở, sửa race `useNotifications`, migration `20261120003000_phase09_notification_link_check_hardening` chặn `/\` + control chars, `due_soon` hỗ trợ bài mở lại); xác nhận 100% sau commit cuối (`check-loc` **281/281**, Backend Unit+Cov **61/61 · 591/591 PASS · 90.67% Lines / 80.6% Branches**, PG Integration **20/20 PASS**, Backend E2E **14/14 · 80/80 PASS** gồm **5/5 Architecture Invariants**, Frontend Unit **47/47 PASS**, `next build` **29/29**, Full Playwright E2E **111 passed / 3 pre-existing desktop-only skips / 0 failed** + Axe WCAG AA) và xuất bản [`docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md`](./docs/reports/PHASE_09_FINAL_ACCEPTANCE_REPORT.md).

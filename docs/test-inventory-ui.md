@@ -1,7 +1,7 @@
 # Kho Lưu Trữ Bề Mặt UI Frontend (Frontend Routes & UI Inventory)
 
-> **Đồng bộ gần nhất:** 2026-11-16 (sau hoàn tất Phase 8: Kiểm tra tổng kết & Theo dõi tiến độ học tập)
-> **Tổng số Route `page.tsx` thực tế:** **26 routes** (**20 routes** Phases 1–4 + **1 route** `/teacher/assessments` Phase 5 + **2 routes** `/student/assignments` & `/student/assignments/[id]` Phase 6 + **1 route** `/teacher/assignments/[assignmentId]/grading` Phase 7 + **2 routes** `/student/results` & `/admin/overview` Phase 8).
+> **Đồng bộ gần nhất:** 2026-11-19 (Phase 9: Thông báo In-App & Chuẩn hóa Sản phẩm)
+> **Tổng số Route `page.tsx` thực tế:** **26 routes** (**20 routes** Phases 1–4 + **1 route** `/teacher/assessments` Phase 5 + **2 routes** `/student/assignments` & `/student/assignments/[id]` Phase 6 + **1 route** `/teacher/assignments/[assignmentId]/grading` Phase 7 + **2 routes** `/student/results` & `/admin/overview` Phase 8; Phase 9 dùng Popover trực tiếp trên Topbar, không thêm route mới).
 
 ---
 
@@ -10,6 +10,7 @@
 - **Prototype Cleanup áp dụng xuyên suốt:** Không hiển thị thanh đổi vai trò demo (`Cleanup #1`), tài khoản demo / thử lỗi (`Cleanup #2, #3`), nhãn `FUNC-xxx` (`Cleanup #6..#8`), menu điểm danh rời 14 ngày (`Cleanup #9`), hay nút dùng file mẫu `.docx` (`Cleanup #5`).
 - **Chuẩn hóa `PortalTopbar` & Sidebar (`nav-links.ts`):**
   - [`PortalTopbar.tsx`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/src/components/layout/PortalTopbar.tsx) ánh xạ đầy đủ tiêu đề tiếng Việt cho các route tĩnh (gồm `/student/results`, `/admin/overview`) và route động (`/teacher/classes/[id]`, `/admin/classes/[id]`, `/student/assignments/[id]`).
+  - **Chuông Thông Báo In-App (Phase 9):** [`NotificationBellPopover.tsx`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/src/features/notifications/components/NotificationBellPopover.tsx) gắn trên `PortalTopbar` cho `STUDENT`, `TEACHER`, `ADMIN` (ẩn hoàn toàn với `SUPERADMIN` thuần): badge chưa đọc, popover tab `Tất cả` / `Chưa đọc`, phân trang 20 mục + `Tải thêm`, đánh dấu đã đọc khi bấm điều hướng / `Đánh dấu tất cả đã đọc`, đồng bộ nền mỗi 60s theo `visibilityState` + khi focus cửa sổ.
   - [`nav-links.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/src/components/layout/nav-links.ts) tổng hợp menu theo tổ hợp vai trò thực tế của người dùng (hiển thị `/admin/overview` cho tài khoản có vai trò `ADMIN` — ẩn hoàn toàn với `SUPERADMIN` thuần — cùng `/student/results`, `/teacher/schedules`, `/student/schedule`, `/student/assignments`, `/teacher/assessments` cho tài khoản kiêm nhiệm); giữ nguyên route chuyển hướng mặc định sau đăng nhập Admin là `/admin/students`.
 - **Idle Timeout (`FUNC-004`):** Hook [`useIdleTimeout.ts`](file:///c:/Users/ASUS/Desktop/WebEdu/frontend/src/features/auth/hooks/useIdleTimeout.ts) (ngưỡng 60 phút / cảnh báo phút 55) + `IdleTimeoutWarningModal.tsx` đã được gắn trực tiếp vào `PortalShell.tsx`.
 

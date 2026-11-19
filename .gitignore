@@ -73,5 +73,5 @@ test-results/
 .playwright-cli/
 
 # Local manual test files
-Test/
+/Test/
 
