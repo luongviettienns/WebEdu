@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   StreamableFile,
 } from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, SubmissionStatus } from '@prisma/client';
@@ -11,6 +12,7 @@ import { assertRateLimitNotExceeded } from '../../../common/auth/auth-rate-limit
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssessmentMediaAccessService } from '../../assessments/index.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import type {
   StudentAssignmentListItemDto,
   StudentExamSessionDto,
@@ -46,6 +48,7 @@ export class StudentSubmissionService {
     private readonly accessPolicy: AssignmentAccessPolicy,
     private readonly answerPolicy: SubmissionAnswerPolicy,
     private readonly mediaAccess: AssessmentMediaAccessService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async listMyAssignments(
@@ -118,10 +121,9 @@ export class StudentSubmissionService {
       } else if (submission.status !== SubmissionStatus.IN_PROGRESS) {
         throw new ConflictException('Bài tập đã được nộp');
       }
-      return applySubmissionTickAndPersist(
-        tx, this.answerPolicy, assignment, submission, actor.id, now,
-        { forceSubmit: false, timerClientId: timerClientId ?? submission.id },
-      );
+      return this.persistTickAndNotifyTx(tx, assignment, submission, actor.id, now, {
+        forceSubmit: false, timerClientId: timerClientId ?? submission.id,
+      });
     });
     try {
       return await start();
@@ -148,7 +150,11 @@ export class StudentSubmissionService {
       if (submission?.status !== SubmissionStatus.IN_PROGRESS ||
           !isDraftExpired(assignment, submission, now)) return submission;
       const timer = tickSubmissionTimer(submission, assignment.effectiveDurationMinutes, now);
-      return autoSubmitExpiredSubmission(tx, assignment, submission.id, now, timer);
+      const updated = await autoSubmitExpiredSubmission(tx, assignment, submission.id, now, timer);
+      if (updated.status !== SubmissionStatus.IN_PROGRESS) {
+        await this.academicNotifications?.onSubmissionPendingGradingTx(tx, { assignmentId, studentId });
+      }
+      return updated;
     });
   }
 
@@ -178,21 +184,13 @@ export class StudentSubmissionService {
         throw new ConflictException('Bài tập đã được nộp, không thể lưu nháp');
       }
 
-      return applySubmissionTickAndPersist(
-        tx,
-        this.answerPolicy,
-        assignment,
-        submission,
-        actor.id,
-        new Date(),
-        {
-          answers: dto.answers,
-          revision: dto.revision,
-          timerClientId: dto.timerClientId,
-          pauseTimer: dto.pauseTimer,
-          forceSubmit: false,
-        },
-      );
+      return this.persistTickAndNotifyTx(tx, assignment, submission, actor.id, new Date(), {
+        answers: dto.answers,
+        revision: dto.revision,
+        timerClientId: dto.timerClientId,
+        pauseTimer: dto.pauseTimer,
+        forceSubmit: false,
+      });
     });
   }
 
@@ -228,20 +226,31 @@ export class StudentSubmissionService {
         throw new BadRequestException('Đã quá hạn nộp bài');
       }
 
-      return applySubmissionTickAndPersist(
-        tx,
-        this.answerPolicy,
-        assignment,
-        submission,
-        actor.id,
-        now,
-        {
-          answers: dto.answers,
-          revision: dto.revision,
-          forceSubmit: true,
-        },
-      );
+      return this.persistTickAndNotifyTx(tx, assignment, submission, actor.id, now, {
+        answers: dto.answers,
+        revision: dto.revision,
+        forceSubmit: true,
+      });
     });
+  }
+
+  private async persistTickAndNotifyTx(
+    tx: Prisma.TransactionClient,
+    assignment: Parameters<typeof applySubmissionTickAndPersist>[2],
+    submission: Parameters<typeof applySubmissionTickAndPersist>[3],
+    studentId: string,
+    now: Date,
+    params: Parameters<typeof applySubmissionTickAndPersist>[6],
+  ): Promise<StudentExamSessionDto> {
+    const result = await applySubmissionTickAndPersist(
+      tx, this.answerPolicy, assignment, submission, studentId, now, params,
+    );
+    if (result.submission.status !== SubmissionStatus.IN_PROGRESS) {
+      await this.academicNotifications?.onSubmissionPendingGradingTx(tx, {
+        assignmentId: assignment.id, studentId,
+      });
+    }
+    return result;
   }
 
   async getMySubmittedView(

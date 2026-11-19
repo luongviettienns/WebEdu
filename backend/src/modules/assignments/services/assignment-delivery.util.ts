@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { EnrollmentStatus, Prisma, SessionStatus, SubmissionStatus } from '@prisma/client';
+import { EnrollmentStatus, GradingStatus, Prisma, SessionStatus, SubmissionStatus } from '@prisma/client';
 import type { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
   resolvePagination,
@@ -236,4 +236,63 @@ export async function loadAssignmentTrackerData(
   });
 
   return { students, stats, total, page, limit };
+}
+
+export async function createReopenedAttemptWithCarryOverTx(
+  tx: Prisma.TransactionClient,
+  input: {
+    classAssignmentId: string;
+    studentId: string;
+    attemptNumber: number;
+    effectiveDurationMinutes: number | null;
+    dueAtOverride: Date | null;
+    validQuestionIds: ReadonlySet<string>;
+    answers: ReadonlyArray<{ questionId: string; answerPayload: Prisma.JsonValue; audioPlayCount: number }>;
+    student: { id: string; fullName: string; email: string };
+  },
+): Promise<{ row: TeacherTrackerStudentRowDto; createdAttemptId: string }> {
+  const createdAttempt = await tx.submission.create({
+    data: {
+      classAssignmentId: input.classAssignmentId,
+      studentId: input.studentId,
+      attemptNumber: input.attemptNumber,
+      status: SubmissionStatus.IN_PROGRESS,
+      gradingStatus: GradingStatus.NONE,
+      elapsedSeconds: 0,
+      remainingSeconds: input.effectiveDurationMinutes !== null ? input.effectiveDurationMinutes * 60 : null,
+      dueAtOverride: input.dueAtOverride,
+    },
+  });
+
+  const carryOverAnswers = input.answers.filter((ans) => input.validQuestionIds.has(ans.questionId));
+  if (carryOverAnswers.length > 0) {
+    await tx.submissionAnswer.createMany({
+      data: carryOverAnswers.map((ans) => ({
+        submissionId: createdAttempt.id,
+        questionId: ans.questionId,
+        answerPayload: ans.answerPayload as Prisma.InputJsonValue,
+        audioPlayCount: ans.audioPlayCount,
+        lastAudioPlayAt: null,
+        isCorrect: null,
+        earnedPoints: null,
+        aiFeedback: null,
+        teacherComment: null,
+      })),
+    });
+  }
+
+  const attempts = await tx.submission.findMany({
+    where: { classAssignmentId: input.classAssignmentId, studentId: input.studentId },
+    orderBy: { attemptNumber: 'asc' },
+    include: {
+      answers: { select: { answerPayload: true } },
+      reopenLogs: { select: { reason: true, reopenedAt: true }, orderBy: { reopenedAt: 'asc' } },
+    },
+  });
+  const active = attempts.find((a) => a.status !== SubmissionStatus.SUPERSEDED) ?? null;
+  const superseded = attempts.filter((a) => a.status === SubmissionStatus.SUPERSEDED);
+  return {
+    row: toTeacherTrackerStudentRowDto(input.student, active, superseded, input.validQuestionIds.size),
+    createdAttemptId: createdAttempt.id,
+  };
 }

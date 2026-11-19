@@ -1,9 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { EnrollmentStatus, GradingStatus, Prisma, QuestionType, SubmissionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import { isAssignmentEligibleForEnrollment } from '../../progress/policies/grade-calculation.policy.js';
 import type { SubmissionBatchSelectionDto } from '../dto/grading.dto.js';
 import type {
@@ -38,6 +39,7 @@ export class GradePublicationService {
     private readonly prisma: PrismaService,
     private readonly accessPolicy: AssignmentAccessPolicy,
     private readonly gradingEvents: GradingEventsService,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async confirmSubmissionGrade(
@@ -275,6 +277,11 @@ export class GradePublicationService {
           publishedSubmissionIds: publishedIds,
           overdueUntouchedCount,
         },
+      });
+      await this.academicNotifications?.onGradesPublishedTx(tx, {
+        assignmentId,
+        studentIds,
+        actorId: actor.id,
       });
 
       return {

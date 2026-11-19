@@ -52,3 +52,43 @@ export interface UpsertDedupNotificationInput {
   linkPath: string;
   dedupKey: string;
 }
+
+export type SessionChangedNotificationInput =
+  | {
+      type: typeof NotificationType.SESSION_RESCHEDULED;
+      classId: string;
+      classCode: string;
+      teacherId: string;
+      actorId?: string;
+      sessionNumber?: number | null;
+      previousDate: Date;
+      previousStartTime: string;
+      newDate: Date;
+      newStartTime: string;
+      newEndTime: string;
+      reason: string;
+    }
+  | {
+      type: typeof NotificationType.SESSION_CANCELLED;
+      classId: string;
+      classCode: string;
+      teacherId: string;
+      actorId?: string;
+      sessionNumber?: number | null;
+      sessionDate: Date;
+      reason: string;
+      makeupDate?: Date;
+      makeupStartTime?: string;
+      makeupEndTime?: string;
+    }
+  | {
+      type: typeof NotificationType.SESSION_MAKEUP_ADDED;
+      classId: string;
+      classCode: string;
+      teacherId: string;
+      actorId?: string;
+      makeupDate: Date;
+      makeupStartTime: string;
+      makeupEndTime: string;
+      originalDate?: Date;
+    };

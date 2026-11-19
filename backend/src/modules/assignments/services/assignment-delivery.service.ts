@@ -3,18 +3,18 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   AssessmentStatus,
   EnrollmentStatus,
-  GradingStatus,
-  Prisma,
   SubmissionStatus,
 } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { PaginationInput } from '../../../common/utils/pagination.util.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import type {
   ClassAssignmentSummaryDto,
   TeacherAssignmentSubmissionsDto,
@@ -28,12 +28,12 @@ import type {
 import {
   resolveEffectiveDueAt,
   toClassAssignmentSummaryDto,
-  toTeacherTrackerStudentRowDto,
 } from '../mappers/assignment.mapper.js';
 import { AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import {
   assertAttachableSession,
   computeAssignmentStats,
+  createReopenedAttemptWithCarryOverTx,
   loadAssignmentTrackerData,
   parseRequiredOffsetIsoDate,
   REOPENABLE_STATUSES,
@@ -45,6 +45,7 @@ export class AssignmentDeliveryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessPolicy: AssignmentAccessPolicy,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async assignToClasses(
@@ -111,6 +112,12 @@ export class AssignmentDeliveryService {
           sessionId: dto.sessionId ?? null,
         },
       });
+      for (const row of createdRows) {
+        await this.academicNotifications?.onAssignmentPublishedToClassTx(tx, {
+          assignmentId: row.id, classId: row.classId, classCode: row.class.code,
+          assessmentTitle: row.assessment.title, dueAt: row.dueAt, actorId: actor.id,
+        });
+      }
 
       return { items: createdRows.map((row) => toClassAssignmentSummaryDto(row)) };
     });
@@ -268,77 +275,41 @@ export class AssignmentDeliveryService {
         },
         _max: { attemptNumber: true },
       });
-
-      const durationMinutes = submission.classAssignment.effectiveDurationMinutes;
-      const createdAttempt = await tx.submission.create({
-        data: {
-          classAssignmentId: submission.classAssignmentId,
-          studentId: submission.studentId,
-          attemptNumber: (agg._max.attemptNumber ?? submission.attemptNumber) + 1,
-          status: SubmissionStatus.IN_PROGRESS,
-          gradingStatus: GradingStatus.NONE,
-          elapsedSeconds: 0,
-          remainingSeconds: durationMinutes !== null ? durationMinutes * 60 : null,
-          dueAtOverride: nextDueAtOverride,
-        },
-      });
-
+      const attemptNumber = (agg._max.attemptNumber ?? submission.attemptNumber) + 1;
       const validQuestionIds = new Set(
         submission.classAssignment.assessment.questions.map((q) => q.id),
       );
-      const carryOverAnswers = submission.answers.filter((ans) =>
-        validQuestionIds.has(ans.questionId),
-      );
-
-      if (carryOverAnswers.length > 0) {
-        await tx.submissionAnswer.createMany({
-          data: carryOverAnswers.map((ans) => ({
-            submissionId: createdAttempt.id,
-            questionId: ans.questionId,
-            answerPayload: ans.answerPayload as Prisma.InputJsonValue,
-            audioPlayCount: ans.audioPlayCount,
-            lastAudioPlayAt: null,
-            isCorrect: null,
-            earnedPoints: null,
-            aiFeedback: null,
-            teacherComment: null,
-          })),
-        });
-      }
+      const { row, createdAttemptId } = await createReopenedAttemptWithCarryOverTx(tx, {
+        classAssignmentId: submission.classAssignmentId,
+        studentId: submission.studentId,
+        attemptNumber,
+        effectiveDurationMinutes: submission.classAssignment.effectiveDurationMinutes,
+        dueAtOverride: nextDueAtOverride,
+        validQuestionIds,
+        answers: submission.answers,
+        student: submission.student,
+      });
 
       await writeAuditLog(tx, actor, {
         action: 'SUBMISSION_REOPENED',
         targetType: 'Submission',
-        targetId: createdAttempt.id,
+        targetId: createdAttemptId,
         metadata: {
           oldSubmissionId: submission.id,
           classAssignmentId: submission.classAssignmentId,
           studentId: submission.studentId,
-          attemptNumber: createdAttempt.attemptNumber,
+          attemptNumber,
           reason,
         },
       });
-
-      const attempts = await tx.submission.findMany({
-        where: {
-          classAssignmentId: submission.classAssignmentId,
-          studentId: submission.studentId,
-        },
-        orderBy: { attemptNumber: 'asc' },
-        include: {
-          answers: { select: { answerPayload: true } },
-          reopenLogs: { select: { reason: true, reopenedAt: true }, orderBy: { reopenedAt: 'asc' } },
-        },
+      await this.academicNotifications?.onSubmissionReopenedTx(tx, {
+        assignmentId: submission.classAssignmentId,
+        assessmentTitle: submission.classAssignment.assessment.title,
+        studentId: submission.studentId,
+        dueAt: newDueAt,
+        actorId: actor.id,
       });
-
-      const active = attempts.find((a) => a.status !== SubmissionStatus.SUPERSEDED) ?? null;
-      const superseded = attempts.filter((a) => a.status === SubmissionStatus.SUPERSEDED);
-      return toTeacherTrackerStudentRowDto(
-        submission.student,
-        active,
-        superseded,
-        submission.classAssignment.assessment.questions.length,
-      );
+      return row;
     });
   }
 }

@@ -2,14 +2,17 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, SubmissionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import type { AdjustGradeSubmissionDto } from '../dto/grading.dto.js';
 import type { AdjustGradeResultDto } from '../grading.types.js';
+import { sumQuestionMaxScore } from '../policies/answer-normalizer.policy.js';
 import {
   assertValidQuestionScore,
   computeSubmissionScoreSummary,
@@ -27,6 +30,7 @@ export class GradeAdjustmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessPolicy: AssignmentAccessPolicy,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   async adjustConfirmedOrPublishedGrade(
@@ -64,6 +68,7 @@ export class GradeAdjustmentService {
               classId: true,
               assessment: {
                 select: {
+                  title: true,
                   questions: {
                     orderBy: { position: 'asc' },
                     select: { id: true, position: true, type: true, points: true, payload: true },
@@ -254,6 +259,16 @@ export class GradeAdjustmentService {
           auditLogsCreated,
         },
       });
+      if (isPublished) {
+        await this.academicNotifications?.onPublishedGradeAdjustedTx(tx, {
+          assignmentId: submission.classAssignmentId,
+          studentId: submission.studentId,
+          assessmentTitle: submission.classAssignment.assessment.title ?? 'Bài tập',
+          totalScore: updated.totalScore ?? 0,
+          maxScore: sumQuestionMaxScore(questions),
+          actorId: actor.id,
+        });
+      }
 
       return {
         submissionId: updated.id,
