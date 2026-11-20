@@ -15,8 +15,9 @@ import {
   sameExamAnswer, storePendingExamAnswers, type PendingExamAnswers,
 } from '../utils/exam-pending-draft';
 import {
-  buildResolvedSessionSnapshot, buildSyncPayload, fetchExamEntrySession,
-  INITIAL_SESSION_SNAPSHOT, tickCountdownSnapshot,
+  applyPendingQuestionPatch, buildResolvedSessionSnapshot, buildSyncPayload, fetchExamEntrySession,
+  INITIAL_SESSION_SNAPSHOT, mergeAutosaveSessionQuestions,
+  reconcilePendingAfterAutosave, tickCountdownSnapshot,
   type ExamSaveState, type ExamSnapshotLike,
 } from '../utils/exam-session-transport';
 import { ApiClientError, extractErrorMessage } from '@/lib/api-client';
@@ -115,20 +116,13 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
     if (request.answers.length) { clearTimers(); setSaveState('saving'); setActionError(''); }
     const write = (async () => {
       try {
-        const updated = await autosaveAssignment(assignmentId, {
+        const rawUpdated = await autosaveAssignment(assignmentId, {
           ...request, timerClientId: clientId.current,
         });
         if (snapshotRef.current.session?.submission.id !== expectedId) return;
+        const updated = mergeAutosaveSessionQuestions(rawUpdated, snap.session!.questions);
         if (updated.submission.revision > snap.session!.submission.revision && request.answers.length) {
-          const next = { ...pending.current };
-          for (const item of request.answers) {
-            const current = next[item.questionId];
-            if (!current) continue;
-            const base = updated.answers.find((answer) => answer.questionId === item.questionId)?.answerPayload ?? {};
-            if (sameExamAnswer(base, current.answer)) delete next[item.questionId];
-            else next[item.questionId] = { ...current, base };
-          }
-          pending.current = next;
+          pending.current = reconcilePendingAfterAutosave(pending.current, request.answers, updated, sameExamAnswer);
           conflict.current = false;
           pruneAcknowledgedExamDrafts(updated, explicit ? { drafts: recoveredDrafts.current, sent: request.answers, displayed: snap.answers } : undefined);
           publishExamRevision(updated);
@@ -260,32 +254,37 @@ export function useStudentExamSession(assignmentId: string, mode?: string | null
   }, [show]);
   const expire = useCallback(() => void submitNow(true), [submitNow]);
   useExamCountdown({ active: taking && timed && !offline && !connectionLost && !submitting, submissionId: snapshot.session?.submission.id, onTick: tick, onExpire: expire });
-  const updateAnswer = useCallback((questionId: string, type: QuestionType, answer: StudentAnswerPayload) => {
+  const stagePending = useCallback((
+    questionId: string,
+    type: QuestionType,
+    patch: { answer?: StudentAnswerPayload; audioPlayCount?: number },
+  ) => {
     const snap = snapshotRef.current;
     if (snap.viewMode !== 'taking' || !snap.session) return;
-    const base = pending.current[questionId]?.base ?? snap.session.answers.find((row) => row.questionId === questionId)?.answerPayload ?? {};
-    pending.current = { ...pending.current, [questionId]: { base, answer } };
-    setDraftMemoryOnly(!storePendingExamAnswers(snap.session, clientId.current, pending.current));
-    show({ ...snap, answers: { ...snap.answers, [questionId]: answer } });
-    setSaveState(navigator.onLine ? 'dirty' : 'offline');
+    const { nextPending, nextSnap } = applyPendingQuestionPatch(snap, pending.current, questionId, patch);
+    pending.current = nextPending;
+    setDraftMemoryOnly(!storePendingExamAnswers(snap.session, clientId.current, nextPending));
+    show(nextSnap);
+    if (patch.answer !== undefined) setSaveState(navigator.onLine ? 'dirty' : 'offline');
     scheduleForType(type, () => { if (navigator.onLine && !document.hidden) void flushAutosave(); });
   }, [flushAutosave, scheduleForType, show]);
+  const updateAnswer = useCallback((questionId: string, type: QuestionType, answer: StudentAnswerPayload) => {
+    stagePending(questionId, type, { answer });
+  }, [stagePending]);
   const recordAudioPlay = useCallback((questionId: string) => {
-    const snap = snapshotRef.current;
-    if (snap.viewMode !== 'taking') return;
-    show({ ...snap, audioPlayCounts: { ...snap.audioPlayCounts, [questionId]: (snap.audioPlayCounts[questionId] ?? 0) + 1 } });
-  }, [show]);
+    const nextPlays = (snapshotRef.current.audioPlayCounts[questionId] ?? 0) + 1;
+    stagePending(questionId, 'LISTENING', { audioPlayCount: nextPlays });
+  }, [stagePending]);
   const selectQuestion = useCallback((index: number) => {
     if (Object.keys(pending.current).length && navigator.onLine) void flushAutosave();
     setCurrentIndex(index);
   }, [flushAutosave]);
   const toggleFlag = useCallback((id: string) => {
-    const snap = snapshotRef.current;
-    const sub = snap.session?.submission;
-    const assignmentIdScope = snap.session?.assignment.assignmentId;
+    const sub = snapshotRef.current.session?.submission;
+    const scope = snapshotRef.current.session?.assignment.assignmentId;
     setFlaggedIds((current) => {
       const next = { ...current, [id]: !current[id] };
-      if (sub) writeDraftFlags(sub.id, sub.studentId, next, assignmentIdScope);
+      if (sub) writeDraftFlags(sub.id, sub.studentId, next, scope);
       return next;
     });
   }, []);

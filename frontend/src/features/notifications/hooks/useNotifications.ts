@@ -11,7 +11,10 @@ import type {
   NotificationFilterStatus,
   NotificationItemDto,
 } from '../types/notifications.types';
-import { resolveSafeNotificationHref } from '../utils/notification-time.util';
+import {
+  dispatchNotificationsChanged,
+  resolveSafeNotificationHref,
+} from '../utils/notification-time.util';
 
 const PAGE_LIMIT = 20;
 const POLL_INTERVAL_MS = 60_000;
@@ -36,9 +39,19 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
   const listAbortRef = useRef<AbortController | null>(null);
   const countAbortRef = useRef<AbortController | null>(null);
   const lastVisibleRefreshRef = useRef(0);
+  const prevUnreadRef = useRef<number | null>(null);
   const isOpenRef = useRef(isOpen);
   const filterStatusRef = useRef(filterStatus);
   const pageRef = useRef(page);
+
+  const syncUnreadCountFromServer = useCallback((nextUnreadCount: number) => {
+    const previous = prevUnreadRef.current;
+    prevUnreadRef.current = nextUnreadCount;
+    setUnreadCount(nextUnreadCount);
+    if (previous !== null && nextUnreadCount > previous) {
+      dispatchNotificationsChanged();
+    }
+  }, []);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -54,12 +67,12 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
     try {
       const res = await fetchUnreadNotificationCount({ signal: controller.signal });
       if (!controller.signal.aborted) {
-        setUnreadCount(res.unreadCount);
+        syncUnreadCountFromServer(res.unreadCount);
       }
     } catch {
       // Bỏ qua lỗi polling nền / abort để không làm gián đoạn thao tác người dùng
     }
-  }, [enabled]);
+  }, [enabled, syncUnreadCountFromServer]);
 
   const loadList = useCallback(
     async (
@@ -86,7 +99,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
         );
         if (controller.signal.aborted) return;
 
-        setUnreadCount(res.unreadCount);
+        syncUnreadCountFromServer(res.unreadCount);
         setHasMore(res.hasMore);
         setPage(res.page);
         setItems((prev) => {
@@ -108,7 +121,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
         }
       }
     },
-    [enabled],
+    [enabled, syncUnreadCountFromServer],
   );
 
   // Sync unread count on mount + visibility-gated 60s polling + throttled focus refresh
@@ -122,6 +135,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
     void fetchUnreadNotificationCount({ signal: mountController.signal })
       .then((res) => {
         if (!mountController.signal.aborted) {
+          prevUnreadRef.current = res.unreadCount;
           setUnreadCount(res.unreadCount);
         }
       })
@@ -193,7 +207,11 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
       if (!item.isRead) {
         countAbortRef.current?.abort();
         listAbortRef.current?.abort();
-        setUnreadCount((prev) => Math.max(0, prev - 1));
+        setUnreadCount((prev) => {
+          const next = Math.max(0, prev - 1);
+          prevUnreadRef.current = next;
+          return next;
+        });
         setItems((prev) =>
           filterStatus === 'unread'
             ? prev.filter((row) => row.id !== item.id)
@@ -223,6 +241,7 @@ export function useNotifications({ enabled }: UseNotificationsOptions) {
     setErrorMessage(null);
     try {
       const res = await markAllNotificationsRead();
+      prevUnreadRef.current = res.unreadCount;
       setUnreadCount(res.unreadCount);
       setItems((prev) =>
         filterStatus === 'unread'

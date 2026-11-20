@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { PaginationBar } from '@/features/common/components/PaginationBar';
 import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import { type StudentItemDto } from '../api/students.api';
 import { formatDateDdMmYyyy } from '@/lib/utils/date';
@@ -25,8 +26,6 @@ export function StudentListTable({
   onPageChange,
   onSelectStudent,
 }: StudentListTableProps) {
-  const totalPages = Math.max(1, Math.ceil(total / pageLimit));
-
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-xs">
       <div
@@ -113,29 +112,14 @@ export function StudentListTable({
         </table>
       </div>
 
-      <div className="flex items-center justify-between border-t border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 text-xs text-[var(--ink-2)] font-num">
-        <span>
-          Trang {page} / {totalPages}
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => onPageChange(Math.max(1, page - 1))}
-            className="rounded-md border border-[var(--line-2)] bg-white px-3 py-1 font-medium text-[var(--ink)] hover:bg-[var(--hover)] disabled:opacity-40"
-          >
-            Trang trước
-          </button>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => onPageChange(Math.min(totalPages, page + 1))}
-            className="rounded-md border border-[var(--line-2)] bg-white px-3 py-1 font-medium text-[var(--ink)] hover:bg-[var(--hover)] disabled:opacity-40"
-          >
-            Trang sau
-          </button>
-        </div>
-      </div>
+      <PaginationBar
+        page={page}
+        limit={pageLimit}
+        total={total}
+        loading={loading}
+        itemLabel="học viên"
+        onPageChange={onPageChange}
+      />
     </div>
   );
 }

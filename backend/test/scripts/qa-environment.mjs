@@ -465,6 +465,15 @@ async function main() {
     const inspectorPort = Number(process.env.QA_MAIL_INSPECTOR_PORT || 4026);
     const mailServers = await startQaSmtpAndInspector(smtpPort, inspectorPort, databaseUrl);
 
+    // Ensure both dev (3000) and QA (3005) origins are allowed even if @prisma/client loaded backend/.env at import time.
+    const qaCorsOrigins = Array.from(
+      new Set([
+        ...(process.env.CORS_ORIGIN ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+        'http://localhost:3000',
+        'http://localhost:3005',
+      ]),
+    ).join(',');
+
     const backendChild = spawn(process.execPath, ['dist/main.js'], {
       cwd: BACKEND_ROOT,
       env: {
@@ -473,7 +482,7 @@ async function main() {
         PORT: '3001',
         DATABASE_URL: databaseUrl,
         JWT_SECRET: 'webedu-browser-qa-jwt-secret-key-at-least-32-chars-2026',
-        CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:3005',
+        CORS_ORIGIN: qaCorsOrigins,
         FRONTEND_APP_URL: process.env.FRONTEND_APP_URL || 'http://localhost:3005',
         MAIL_PROVIDER: 'smtp',
         SMTP_HOST: '127.0.0.1',

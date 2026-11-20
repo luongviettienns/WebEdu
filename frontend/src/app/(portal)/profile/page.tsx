@@ -1,8 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
-import { usePortalProfileSession } from '@/features/auth/hooks/usePortalSession';
+import {
+  notifyPortalProfileUpdated,
+  usePortalProfileSession,
+} from '@/features/auth/hooks/usePortalSession';
 import { type UserProfileDto } from '@/features/profile/api/profile.api';
 import { ChangePasswordSection } from '@/features/profile/components/ChangePasswordSection';
 import { PersonalInfoSection } from '@/features/profile/components/PersonalInfoSection';
@@ -20,14 +23,14 @@ function ProfilePageContent({
 }: ProfilePageContentProps) {
   return (
     <div className="space-y-6">
-      <div className="border-b border-[#E0DED5] pb-4">
-        <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
+      <div className="border-b border-[var(--line)] pb-4">
+        <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
           个人档案 · HỒ SƠ CÁ NHÂN
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
+        <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
           Hồ Sơ Cá Nhân & Bảo Mật Tài Khoản
         </h1>
-        <p className="mt-1 text-sm text-[#5A6460]">
+        <p className="mt-1 text-sm text-[var(--ink-2)]">
           Quản lý thông tin liên hệ cá nhân và thiết lập mật khẩu đăng nhập an toàn
         </p>
       </div>
@@ -48,6 +51,24 @@ export default function ProfilePage() {
   const { status, user, errorMessage, setUser, handleApiAuthError } =
     usePortalProfileSession();
 
+  const handleProfileUpdated: React.Dispatch<React.SetStateAction<UserProfileDto | null>> =
+    useCallback(
+      (action) => {
+        setUser((prev) => {
+          const next = typeof action === 'function' ? action(prev) : action;
+          if (next) {
+            notifyPortalProfileUpdated({
+              fullName: next.fullName,
+              email: next.email,
+              phone: next.phone,
+            });
+          }
+          return next;
+        });
+      },
+      [setUser],
+    );
+
   if (status !== 'authorized' || !user) {
     return (
       <PortalGuardView
@@ -61,7 +82,7 @@ export default function ProfilePage() {
   return (
     <ProfilePageContent
       profile={user}
-      onProfileUpdated={setUser}
+      onProfileUpdated={handleProfileUpdated}
       onAuthError={handleApiAuthError}
     />
   );

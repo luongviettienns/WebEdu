@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, '..');
 const BACKEND_SERVICE_MAX_LOC = 350;
 const BACKEND_GUARD_MAX_LOC = 200;
 const BACKEND_MODULE_PART_MAX_LOC = 250;
+const BACKEND_HELPER_MAX_LOC = 400;
 const FRONTEND_PAGE_MAX_LOC = 250;
 const FRONTEND_HOOK_MAX_LOC = 300;
 const FRONTEND_COMPONENT_MAX_LOC = 300;
@@ -69,6 +70,14 @@ const checks = [
     files: scanDir(
       path.join(ROOT, 'backend', 'src'),
       (p) => /\.(controller|policy|mapper|parser)\.ts$/.test(p) && !isTestFile(p),
+    ),
+  },
+  {
+    label: 'Backend Helpers / Adapters / Repositories',
+    maxLoc: BACKEND_HELPER_MAX_LOC,
+    files: scanDir(
+      path.join(ROOT, 'backend', 'src'),
+      (p) => /\.(util|adapter|repository)\.ts$/.test(p) && !isTestFile(p),
     ),
   },
   {

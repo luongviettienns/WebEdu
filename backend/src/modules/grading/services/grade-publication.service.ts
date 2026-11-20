@@ -8,7 +8,6 @@ import { NotificationAcademicTriggersService } from '../../notifications/service
 import { isAssignmentEligibleForEnrollment } from '../../progress/policies/grade-calculation.policy.js';
 import type { SubmissionBatchSelectionDto } from '../dto/grading.dto.js';
 import type {
-  AssignmentScoresPublishedEvent,
   BatchConfirmGradesResultDto,
   ConfirmGradeResultDto,
   PublishGradesResultDto,
@@ -20,7 +19,6 @@ import {
   GRADEABLE_ACTIVE_STATUSES,
   type StoredAnswerForGrading,
 } from '../policies/grading-workflow.policy.js';
-import { GradingEventsService } from './grading-events.service.js';
 import {
   lockAssignmentSubmissionsOrderedTx,
   lockClassAssignmentRowTx,
@@ -38,7 +36,6 @@ export class GradePublicationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessPolicy: AssignmentAccessPolicy,
-    private readonly gradingEvents: GradingEventsService,
     @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
@@ -195,7 +192,7 @@ export class GradePublicationService {
     const now = new Date();
     const requestedIds = dto.submissionIds?.length ? [...new Set(dto.submissionIds)] : null;
 
-    const { result, event } = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       await lockClassRowForAssignmentTx(tx, assignmentId);
       await lockClassAssignmentRowTx(tx, assignmentId);
       const assignment = await tx.classAssignment.findUnique({
@@ -285,26 +282,13 @@ export class GradePublicationService {
       });
 
       return {
-        result: {
-          assignmentId,
-          publishedCount: publishedIds.length,
-          publishedSubmissionIds: publishedIds,
-          publishedAt: now.toISOString(),
-          overdueUntouchedCount,
-        },
-        event: {
-          assignmentId,
-          classId: assignment.classId,
-          submissionIds: publishedIds,
-          studentIds,
-          publishedById: actor.id,
-          publishedAt: now.toISOString(),
-        } satisfies AssignmentScoresPublishedEvent,
+        assignmentId,
+        publishedCount: publishedIds.length,
+        publishedSubmissionIds: publishedIds,
+        publishedAt: now.toISOString(),
+        overdueUntouchedCount,
       };
     });
-
-    this.gradingEvents.emitScoresPublished(event);
-    return result;
   }
 
   private async finalizeSubmissionGradeTx(

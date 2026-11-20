@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ClassStatus, EnrollmentStatus, GradingStatus, type Prisma, SubmissionStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
@@ -17,6 +18,7 @@ import {
   type AssignmentSessionRow,
 } from '../../assignments/services/submission-session.util.js';
 import { tickSubmissionTimer } from '../../assignments/services/submission-timer.util.js';
+import { NotificationAcademicTriggersService } from '../../notifications/services/notification-academic-triggers.service.js';
 import { isAssignmentEligibleForEnrollment } from '../../progress/policies/grade-calculation.policy.js';
 import type { GradingTrackerQueryDto, RecordOverdueZeroDto } from '../dto/grading.dto.js';
 import type { AssignmentGradingTrackerDto, RecordOverdueZeroResultDto } from '../grading.types.js';
@@ -52,6 +54,7 @@ export class GradingTrackerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessPolicy: AssignmentAccessPolicy,
+    @Optional() private readonly academicNotifications?: NotificationAcademicTriggersService,
   ) {}
 
   private async loadAssignment(assignmentId: string) {
@@ -76,11 +79,23 @@ export class GradingTrackerService {
       if (!openClass(cls.status)) return;
       await lockClassAssignmentRowTx(tx, assignment.id);
       const candidates = await findExpiredTrackerDrafts(tx, assignment, now, true);
+      const autoSubmittedStudentIds: string[] = [];
       for (const draft of candidates) {
         const timers = tickSubmissionTimer(draft, assignment.effectiveDurationMinutes, now);
         if (isExpired(now, resolveEffectiveDueAt(assignment.dueAt, draft.dueAtOverride), timers.remainingSeconds)) {
-          await autoSubmitExpiredSubmission(tx, assignment, draft.id, now, timers);
+          const updated = await autoSubmitExpiredSubmission(tx, assignment, draft.id, now, timers);
+          if (updated.status !== SubmissionStatus.IN_PROGRESS) {
+            autoSubmittedStudentIds.push(draft.studentId);
+          }
         }
+      }
+      if (autoSubmittedStudentIds.length > 0) {
+        const triggerStudentId =
+          autoSubmittedStudentIds.find((id) => id !== cls.teacherId) ?? autoSubmittedStudentIds[0]!;
+        await this.academicNotifications?.onSubmissionPendingGradingTx(tx, {
+          assignmentId: assignment.id,
+          studentId: triggerStudentId,
+        });
       }
     }, { timeout: 15_000 });
   }

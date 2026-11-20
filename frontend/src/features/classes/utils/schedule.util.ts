@@ -1,4 +1,7 @@
 import type { ClassStatus } from '@/features/classes/api/classes.api';
+import { getTodayVnIsoDate } from '@/lib/utils/date';
+
+export { getTodayVnIsoDate };
 
 export const WEEKDAY_OPTIONS: ReadonlyArray<{
   value: number;
@@ -31,15 +34,6 @@ export const CLASS_STATUS_LABELS: Record<ClassStatus, string> = {
   COMPLETED: 'Đã kết thúc',
   ARCHIVED: 'Lưu trữ',
 };
-
-export function getTodayVnIsoDate(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-}
 
 export const MAX_CLASS_TOTAL_SESSIONS = 200;
 

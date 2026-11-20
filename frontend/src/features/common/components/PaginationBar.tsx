@@ -32,7 +32,7 @@ export function PaginationBar({
       className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] bg-[var(--surface)] px-4 py-3 text-xs text-[var(--ink-2)]"
     >
       <span className="num" data-testid="pagination-summary">
-        Hiển thị {from}–{to} / {total} {itemLabel} · Trang {page}/{totalPages}
+        Hiển thị {from}–{to} / {total} {itemLabel} · Trang {page} / {totalPages}
       </span>
       <div className="flex items-center gap-2">
         <button

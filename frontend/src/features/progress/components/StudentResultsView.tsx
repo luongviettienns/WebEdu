@@ -12,9 +12,13 @@ import {
   StudentAttendanceHomeworkCard,
   StudentClassProgressCard,
 } from '@/features/progress/components/StudentResultsOverviewCards';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import type { StudentProgressResponseDto } from '@/features/progress/types/progress.types';
 import { canReviewClassResults } from '@/features/progress/utils/progress-format';
 import { extractErrorMessage } from '@/lib/api-client';
+
+const REFRESH_EVENTS = [NOTIFICATIONS_CHANGED_EVENT] as const;
 
 export interface StudentResultsViewProps {
   onAuthError?: (error: unknown) => boolean;
@@ -25,6 +29,7 @@ export function StudentResultsView({ onAuthError }: StudentResultsViewProps) {
   const [data, setData] = useState<StudentProgressResponseDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const syncTick = useWindowEventRefreshTick(REFRESH_EVENTS);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,7 +49,7 @@ export function StudentResultsView({ onAuthError }: StudentResultsViewProps) {
       }
     })();
     return () => controller.abort();
-  }, [selectedClassId, onAuthError]);
+  }, [selectedClassId, onAuthError, syncTick]);
 
   if (loading) {
     return (

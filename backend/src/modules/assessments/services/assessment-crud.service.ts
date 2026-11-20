@@ -149,7 +149,6 @@ export class AssessmentCrudService {
         throw new ConflictException('Đề đã phát hành, chỉ được nhân bản bản mới');
       }
       const assets = await tx.mediaAsset.findMany({ where: { assessmentId: id }, select: { storageKey: true } });
-      await tx.questionMedia.deleteMany({ where: { question: { assessmentId: id } } });
       await tx.mediaAsset.deleteMany({ where: { assessmentId: id } });
       await tx.question.deleteMany({ where: { assessmentId: id } });
       await tx.assessment.delete({ where: { id } });
@@ -227,7 +226,7 @@ export class AssessmentCrudService {
   }
 
   async publish(id: string, actor: AssessmentActor): Promise<TeacherAssessmentDto> {
-    return this.prisma.$transaction(async (tx) => {
+    const { dto, orphanKeys } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "assessments" WHERE id = ${id} FOR UPDATE`;
       const existing = await tx.assessment.findUnique({
         where: { id },
@@ -251,13 +250,30 @@ export class AssessmentCrudService {
         this.schemaPolicy.validatePayload(q.type, q.payload);
         this.assertPublishableEssay(q.type, q.payload);
       }
+
+      const referencedIds = [...new Set(existing.questions.flatMap((q) => collectPayloadMediaIds(q.payload)))];
+      const orphanWhere: Prisma.MediaAssetWhereInput = referencedIds.length > 0
+        ? { assessmentId: id, id: { notIn: referencedIds } }
+        : { assessmentId: id };
+      const orphans = await tx.mediaAsset.findMany({ where: orphanWhere, select: { id: true, storageKey: true } });
+      if (orphans.length > 0) {
+        await tx.mediaAsset.deleteMany({ where: { id: { in: orphans.map((m) => m.id) } } });
+      }
+
       const updated = await tx.assessment.update({
         where: { id },
         data: { status: AssessmentStatus.PUBLISHED },
         include: { questions: QUESTIONS_ORDERED, ...WITH_AUTHOR },
       });
-      return toTeacherAssessmentDto(updated);
+      return {
+        dto: toTeacherAssessmentDto(updated),
+        orphanKeys: orphans.map((m) => m.storageKey).filter(Boolean),
+      };
     });
+    if (orphanKeys.length > 0) {
+      await Promise.all(orphanKeys.map(unlinkStoredFile));
+    }
+    return dto;
   }
 
   async uploadMedia(

@@ -12,6 +12,8 @@ import {
   type StudentMyAttendance,
 } from '@/features/attendance/api/attendance.api';
 import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import type { UserProfileDto } from '@/features/profile/api/profile.api';
 import { getMyProgress } from '@/features/progress/api/progress.api';
 import type { StudentProgressResponseDto } from '@/features/progress/types/progress.types';
@@ -29,6 +31,7 @@ import { ApiClientError, extractErrorMessage } from '@/lib/api-client';
 import { STATUS_LABELS, type Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['STUDENT', 'ADMIN'];
+const STUDENT_OVERVIEW_REFRESH_EVENTS = [NOTIFICATIONS_CHANGED_EVENT] as const;
 
 interface StudentOverviewContentProps {
   profile: UserProfileDto;
@@ -56,6 +59,7 @@ function StudentOverviewContent({
   );
   const [detailLoading, setDetailLoading] = useState<boolean>(isStudentAccount);
   const [detailError, setDetailError] = useState<string>('');
+  const syncTick = useWindowEventRefreshTick(STUDENT_OVERVIEW_REFRESH_EVENTS);
 
   useEffect(() => {
     if (!isStudentAccount) {
@@ -120,7 +124,7 @@ function StudentOverviewContent({
     return () => {
       controller.abort();
     };
-  }, [isStudentAccount, profile.id, onAuthError]);
+  }, [isStudentAccount, profile.id, onAuthError, syncTick]);
 
   const currentStatus = studentDetail?.status ?? profile.status;
   const assignedClass =

@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
+import { PaginationBar } from '@/features/common/components/PaginationBar';
 import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import { type SystemUserDto } from '@/features/system-settings/api/system-settings.api';
 import { CreateSystemUserModal } from '@/features/system-settings/components/CreateSystemUserModal';
 import { EditUserRolesModal } from '@/features/system-settings/components/EditUserRolesModal';
-import { SettingsPaginationFooter } from '@/features/system-settings/components/SettingsPaginationFooter';
 import { ROLE_LABELS, STATUS_LABELS, type Role, type UserStatus } from '@/types/user';
 
 const FILTER_CONTROL_CLS =
@@ -23,7 +23,6 @@ interface SystemUsersSectionProps {
   userRoleFilter: Role | '';
   userStatusFilter: UserStatus | '';
   userPage: number;
-  totalUserPages: number;
   userTotal: number;
   onUserSearchChange: (value: string) => void;
   onUserRoleChange: (value: Role | '') => void;
@@ -43,7 +42,6 @@ export function SystemUsersSection({
   userRoleFilter,
   userStatusFilter,
   userPage,
-  totalUserPages,
   userTotal,
   onUserSearchChange,
   onUserRoleChange,
@@ -222,14 +220,13 @@ export function SystemUsersSection({
           </table>
         </div>
 
-        <SettingsPaginationFooter
+        <PaginationBar
           page={userPage}
-          totalPages={totalUserPages}
-          totalItems={userTotal}
-          itemLabel="tài khoản"
+          limit={20}
+          total={userTotal}
           loading={usersLoading}
-          onPrevPage={onPrevPage}
-          onNextPage={onNextPage}
+          itemLabel="tài khoản"
+          onPageChange={(next) => (next < userPage ? onPrevPage() : onNextPage())}
         />
       </section>
 

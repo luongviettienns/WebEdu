@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { BaseDialog } from '@/features/common/components/BaseDialog';
 import {
   assignStudentInitialClass,
   type AvailableClassDto,
@@ -8,17 +9,7 @@ import {
 } from '@/features/students/api/students.api';
 import { notifyPendingEnrollmentUpdated } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage } from '@/lib/api-client';
-import { formatDateDdMmYyyy } from '@/lib/utils/date';
-
-function getTodayDateString(): string {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return formatter.format(new Date());
-}
+import { formatDateDdMmYyyy, getTodayVnIsoDate } from '@/lib/utils/date';
 
 function formatAvailableClassOption(cls: AvailableClassDto): string {
   const statusLabel =
@@ -41,7 +32,7 @@ export function AssignInitialClassModal({
   onSuccess,
   onAuthError,
 }: AssignInitialClassModalProps) {
-  const todayIso = getTodayDateString();
+  const todayIso = getTodayVnIsoDate();
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [enrolledAt, setEnrolledAt] = useState<string>(todayIso);
   const [assignError, setAssignError] = useState<string>('');
@@ -92,16 +83,13 @@ export function AssignInitialClassModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
+    <BaseDialog
+      title="Xếp Lớp Cho Học Viên"
+      onClose={onClose}
+      busy={assigning}
+      maxWidthClass="max-w-md"
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-[var(--ink)]">
-          Xếp Lớp Cho Học Viên
-        </h2>
-        <p className="mt-1 text-xs text-[var(--ink-2)]">
+        <p className="text-xs text-[var(--ink-2)]">
           Học viên: <strong>{targetStudent.fullName}</strong> (
           {targetStudent.email})
         </p>
@@ -189,7 +177,6 @@ export function AssignInitialClassModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </BaseDialog>
   );
 }

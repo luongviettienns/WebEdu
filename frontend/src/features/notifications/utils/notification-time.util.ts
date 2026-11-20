@@ -31,6 +31,14 @@ export function formatUnreadBadgeLabel(unreadCount: number): string {
   return unreadCount > 99 ? '99+' : String(unreadCount);
 }
 
+export const NOTIFICATIONS_CHANGED_EVENT = 'webedu:notifications-changed';
+
+export function dispatchNotificationsChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT));
+  }
+}
+
 export function resolveSafeNotificationHref(linkPath: string): string {
   const trimmed = linkPath.trim();
   if (

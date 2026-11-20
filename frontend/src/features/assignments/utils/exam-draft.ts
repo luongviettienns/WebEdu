@@ -622,10 +622,3 @@ export function parseVnDateTimeLocalToIso(value: string): string | null {
   const parsed = new Date(`${withSeconds}+07:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
-
-export function parseIncomingDraftUpdate(
-  raw: string,
-  lastUpdatedAtMs: number,
-): ExamLocalDraft | null {
-  return parseDraftJson(raw, lastUpdatedAtMs);
-}

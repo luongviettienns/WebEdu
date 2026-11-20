@@ -26,18 +26,22 @@ import {
 import { assertAssignmentClassOpen, AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import {
+  loadAssignmentForMediaStream,
+  recordListeningStreamQuota,
+} from './submission-audio.util.js';
+import {
   SUBMIT_GRACE_MS,
+  applyAutosaveTickAndPersist,
   applySubmissionTickAndPersist,
   autoSubmitExpiredSubmission,
   buildStudentExamSessionDto,
   createInitialSubmission,
   isExpired,
   isPrismaUniqueError,
-  loadAssignmentForMediaStream,
   loadAssignmentForSession,
+  loadAssignmentSummaryForAutosave,
   lockAndFindActiveSubmission,
   lockStudentAssignment,
-  recordListeningStreamQuota,
 } from './submission-session.util.js';
 import { tickSubmissionTimer } from './submission-timer.util.js';
 
@@ -172,7 +176,10 @@ export class StudentSubmissionService {
     });
 
     return this.prisma.$transaction(async (tx) => {
-      const assignment = await this.loadOpenAssignmentForStudent(tx, assignmentId, actor.id);
+      await lockStudentAssignment(tx, assignmentId);
+      const assignment = await loadAssignmentSummaryForAutosave(tx, assignmentId);
+      await this.accessPolicy.assertStudentEnrolledInClass(tx, actor.id, assignment.classId);
+      assertAssignmentClassOpen(assignment.class.status);
       const submission = await lockAndFindActiveSubmission(tx, assignmentId, actor.id);
       if (!submission) {
         throw new NotFoundException('Chưa bắt đầu làm bài');
@@ -184,13 +191,20 @@ export class StudentSubmissionService {
         throw new ConflictException('Bài tập đã được nộp, không thể lưu nháp');
       }
 
-      return this.persistTickAndNotifyTx(tx, assignment, submission, actor.id, new Date(), {
-        answers: dto.answers,
-        revision: dto.revision,
-        timerClientId: dto.timerClientId,
-        pauseTimer: dto.pauseTimer,
-        forceSubmit: false,
-      });
+      const result = await applyAutosaveTickAndPersist(
+        tx, this.answerPolicy, assignment, submission, actor.id, new Date(), {
+          answers: dto.answers,
+          revision: dto.revision,
+          timerClientId: dto.timerClientId,
+          pauseTimer: dto.pauseTimer,
+        },
+      );
+      if (result.submission.status !== SubmissionStatus.IN_PROGRESS) {
+        await this.academicNotifications?.onSubmissionPendingGradingTx(tx, {
+          assignmentId: assignment.id, studentId: actor.id,
+        });
+      }
+      return result;
     });
   }
 

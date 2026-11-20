@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useRef } from 'react';
+import { useDialogFocusTrap } from '@/features/common/components/BaseDialog';
 import { StatusTag, getUserStatusTone } from '@/features/common/components/StatusTag';
 import type { StudentItemDto } from '@/features/students/api/students.api';
 import { StudentClassStatusSection } from '@/features/students/components/StudentClassStatusSection';
@@ -30,10 +31,11 @@ export function StudentDetailModal({
   const form = useStudentDetailForm({
     initialStudent,
     canManageInternalNotes,
-    onClose,
     onSuccess,
     onAuthError,
   });
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocusTrap(panelRef, onClose, form.saving);
 
   const { selectedStudent, values, set } = form;
 
@@ -43,11 +45,15 @@ export function StudentDetailModal({
       aria-modal="true"
       aria-label="Chi tiết hồ sơ học viên"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !form.saving) onClose();
       }}
       className="fixed inset-0 z-50 flex justify-end bg-[#1C2320]/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
     >
-      <div className="flex h-full w-full max-w-lg flex-col border-l border-[var(--line)] bg-white shadow-2xl transition-transform animate-in slide-in-from-right duration-200">
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="flex h-full w-full max-w-lg flex-col border-l border-[var(--line)] bg-white shadow-2xl transition-transform animate-in slide-in-from-right duration-200 focus:outline-none"
+      >
         <div className="flex items-center justify-between border-b border-[var(--line)] p-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-[var(--surface-2)] text-sm font-bold text-[var(--ink)] border border-[var(--line-2)] font-han">

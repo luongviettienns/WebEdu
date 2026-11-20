@@ -8,9 +8,14 @@ import {
 } from '@/features/attendance/api/attendance.api';
 import { StudentSessionsListTable } from '@/features/attendance/components/StudentSessionsListTable';
 import { BaseDialog } from '@/features/common/components/BaseDialog';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import { formatShortDdMm, SessionStatusBadge } from '@/features/schedules/components/SessionStatusBadge';
 import { getMonthGridBounds } from '@/features/schedules/hooks/useCalendarSchedule';
 import { extractErrorMessage } from '@/lib/api-client';
+import { getTodayVnIsoDate } from '@/lib/utils/date';
+
+const STUDENT_ATTENDANCE_REFRESH_EVENTS = [NOTIFICATIONS_CHANGED_EVENT] as const;
 
 type StudentSessionItem = StudentMyAttendance['sessions'][number];
 
@@ -29,16 +34,14 @@ function resolveStudentEventClass(s: StudentSessionItem): string {
 }
 
 export function StudentAttendanceView() {
-  const vnToday = useMemo(
-    () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()),
-    [],
-  );
+  const vnToday = useMemo(() => getTodayVnIsoDate(), []);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [monthAnchor, setMonthAnchor] = useState<string>(() => vnToday.slice(0, 7));
   const [data, setData] = useState<StudentMyAttendance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [selectedSession, setSelectedSession] = useState<StudentSessionItem | null>(null);
+  const syncTick = useWindowEventRefreshTick(STUDENT_ATTENDANCE_REFRESH_EVENTS);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,7 +60,7 @@ export function StudentAttendanceView() {
       }
     })();
     return () => controller.abort();
-  }, [selectedClassId]);
+  }, [selectedClassId, syncTick]);
 
   const grid = useMemo(() => getMonthGridBounds(monthAnchor), [monthAnchor]);
 

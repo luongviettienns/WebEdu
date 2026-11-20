@@ -60,8 +60,14 @@ function AdminTeachersContent({
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
+        const nextTotal = response.total ?? (response.items ? response.items.length : 0);
+        const lastPage = Math.max(1, Math.ceil(nextTotal / PAGE_LIMIT));
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
         setTeachers(response.items ?? []);
-        setTotal(response.total ?? (response.items ? response.items.length : 0));
+        setTotal(nextTotal);
         setErrorBanner('');
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -145,7 +151,7 @@ function AdminTeachersContent({
               setSearch(e.target.value);
               setPage(1);
             }}
-            className="w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
+            className="w-full sm:w-72 rounded-lg border border-[var(--line-2)] bg-white px-3.5 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--ink-3)] focus:border-[var(--blue)] focus:outline-none focus:ring-2 focus:ring-[var(--blue)]/20"
           />
           <select
             value={statusFilter}

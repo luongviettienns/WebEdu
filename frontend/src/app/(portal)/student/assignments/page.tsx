@@ -12,12 +12,15 @@ import {
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { StatusTag } from '@/features/common/components/StatusTag';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import { isStudentScoreVisible } from '@/features/grading/utils/grading-status';
 import { extractErrorMessage } from '@/lib/api-client';
 import { formatDateDdMmYyyy, formatDateTimeVn } from '@/lib/utils/date';
 import type { Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['STUDENT'];
+const REFRESH_EVENTS = [NOTIFICATIONS_CHANGED_EVENT] as const;
 type AssignmentFilter = 'all' | 'pending' | 'submitted';
 
 function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown) => boolean }) {
@@ -25,6 +28,7 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<AssignmentFilter>('all');
+  const syncTick = useWindowEventRefreshTick(REFRESH_EVENTS);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -42,7 +46,7 @@ function StudentAssignmentsContent({ onAuthError }: { onAuthError: (err: unknown
       }
     })();
     return () => controller.abort();
-  }, [onAuthError]);
+  }, [onAuthError, syncTick]);
 
   const pendingItems = items.filter((i) => !isSubmittedAssignmentStatus(i.status));
   const submittedItems = items.filter((i) => isSubmittedAssignmentStatus(i.status));

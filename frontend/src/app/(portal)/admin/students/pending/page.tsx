@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { type AuthUserDto } from '@/features/auth/api/auth.api';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import {
   listAvailableClasses,
   listPendingEnrollmentStudents,
@@ -12,10 +14,15 @@ import {
 } from '@/features/students/api/students.api';
 import { AssignInitialClassModal } from '@/features/students/components/AssignInitialClassModal';
 import { PendingStudentListTable } from '@/features/students/components/PendingStudentListTable';
+import { PENDING_ENROLLMENT_UPDATED_EVENT } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage } from '@/lib/api-client';
 import { type Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['ADMIN'];
+const PENDING_REFRESH_EVENTS = [
+  NOTIFICATIONS_CHANGED_EVENT,
+  PENDING_ENROLLMENT_UPDATED_EVENT,
+] as const;
 
 interface PendingEnrollmentStudentsContentProps {
   currentUser: AuthUserDto;
@@ -36,6 +43,7 @@ function PendingEnrollmentStudentsContent({
   const [errorBanner, setErrorBanner] = useState<string>('');
   const [successBanner, setSuccessBanner] = useState<string>('');
   const [refreshTick, setRefreshTick] = useState<number>(0);
+  const syncTick = useWindowEventRefreshTick(PENDING_REFRESH_EVENTS);
   const [targetStudent, setTargetStudent] = useState<PendingStudentDto | null>(
     null,
   );
@@ -76,7 +84,7 @@ function PendingEnrollmentStudentsContent({
     return () => {
       controller.abort();
     };
-  }, [refreshTick, onAuthError]);
+  }, [refreshTick, syncTick, onAuthError]);
 
   return (
     <div className="space-y-6">

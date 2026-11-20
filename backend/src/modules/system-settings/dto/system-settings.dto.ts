@@ -71,11 +71,6 @@ export class CreateSystemUserDto {
   @IsArray()
   @IsEnum(Role, { each: true })
   roles!: Role[];
-
-  @ApiPropertyOptional({ enum: UserStatus })
-  @IsOptional()
-  @IsEnum(UserStatus)
-  status?: UserStatus;
 }
 
 export class UpdateUserRolesStatusDto {

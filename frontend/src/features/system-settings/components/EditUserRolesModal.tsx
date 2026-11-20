@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { BaseDialog } from '@/features/common/components/BaseDialog';
 import {
   updateSystemUserRoles,
   type SystemUserDto,
@@ -99,16 +100,13 @@ export function EditUserRolesModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
+    <BaseDialog
+      title="Gán Đa Vai Trò & Trạng Thái"
+      onClose={onClose}
+      busy={savingUser}
+      maxWidthClass="max-w-md"
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-[var(--ink)]">
-          Gán Đa Vai Trò & Trạng Thái
-        </h2>
-        <p className="mt-1 text-xs text-[var(--ink-2)]">
+        <p className="text-xs text-[var(--ink-2)]">
           Tài khoản: <strong>{editingUser.fullName}</strong> (
           {editingUser.email})
         </p>
@@ -212,7 +210,6 @@ export function EditUserRolesModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </BaseDialog>
   );
 }

@@ -57,7 +57,10 @@ export class NotificationDeadlineService implements OnModuleInit, OnModuleDestro
       return;
     }
     if (this.lastStudentCheckAt.size >= MAX_THROTTLE_CACHE_ENTRIES) {
-      this.lastStudentCheckAt.clear();
+      const oldestKey = this.lastStudentCheckAt.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.lastStudentCheckAt.delete(oldestKey);
+      }
     }
     this.lastStudentCheckAt.set(studentId, nowMs);
 
@@ -164,8 +167,30 @@ export class NotificationDeadlineService implements OnModuleInit, OnModuleDestro
       return 0;
     }
 
+    const recipientIds = [...new Set(inputs.map((item) => item.recipientId))];
+    const dedupKeys = [
+      ...new Set(inputs.map((item) => item.dedupKey).filter((k): k is string => Boolean(k))),
+    ];
+    const existing =
+      dedupKeys.length > 0 && typeof this.prisma.notification?.findMany === 'function'
+        ? await this.prisma.notification.findMany({
+            where: {
+              recipientId: { in: recipientIds },
+              dedupKey: { in: dedupKeys },
+            },
+            select: { recipientId: true, dedupKey: true },
+          })
+        : [];
+    const existingPairs = new Set(existing.map((row) => `${row.recipientId}:${row.dedupKey}`));
+    const pendingInputs = inputs.filter(
+      (item) => !item.dedupKey || !existingPairs.has(`${item.recipientId}:${item.dedupKey}`),
+    );
+    if (pendingInputs.length === 0) {
+      return 0;
+    }
+
     return this.prisma.$transaction((tx) =>
-      this.dispatchService.dispatchManyTx(tx, inputs),
+      this.dispatchService.dispatchManyTx(tx, pendingInputs),
     );
   }
 }

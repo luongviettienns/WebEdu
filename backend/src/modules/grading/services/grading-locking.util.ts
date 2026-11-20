@@ -65,7 +65,7 @@ export async function lockClassRowForAssignmentTx(
   await tx.$queryRaw`
     SELECT id FROM "classes"
     WHERE id = (SELECT class_id FROM "class_assignments" WHERE id = ${assignmentId})
-    FOR UPDATE
+    FOR SHARE
   `;
 }
 
@@ -80,7 +80,7 @@ export async function lockClassRowForSubmissionTx(
       JOIN "class_assignments" ca ON ca.id = s.class_assignment_id
       WHERE s.id = ${submissionId}
     )
-    FOR UPDATE
+    FOR SHARE
   `;
 }
 

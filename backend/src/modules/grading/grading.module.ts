@@ -7,7 +7,6 @@ import { AiEssayGradingService } from './services/ai-essay-grading.service.js';
 import { AutoGradingService } from './services/auto-grading.service.js';
 import { GradeAdjustmentService } from './services/grade-adjustment.service.js';
 import { GradePublicationService } from './services/grade-publication.service.js';
-import { GradingEventsService } from './services/grading-events.service.js';
 import { GradingTrackerService } from './services/grading-tracker.service.js';
 import { TeacherGradingService } from './services/teacher-grading.service.js';
 
@@ -17,7 +16,6 @@ import { TeacherGradingService } from './services/teacher-grading.service.js';
   providers: [
     AutoGradingService,
     AiEssayGradingService,
-    GradingEventsService,
     GradingTrackerService,
     TeacherGradingService,
     GradePublicationService,
@@ -27,7 +25,6 @@ import { TeacherGradingService } from './services/teacher-grading.service.js';
   exports: [
     AutoGradingService,
     AiEssayGradingService,
-    GradingEventsService,
     GradingTrackerService,
     TeacherGradingService,
     GradePublicationService,

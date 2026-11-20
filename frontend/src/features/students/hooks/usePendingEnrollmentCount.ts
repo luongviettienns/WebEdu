@@ -24,7 +24,7 @@ export function usePendingEnrollmentCount(enabled: boolean): number {
 
     const fetchCount = async () => {
       try {
-        const res = await listPendingEnrollmentStudents();
+        const res = await listPendingEnrollmentStudents({ page: 1, limit: 1 });
         if (active) {
           setCount(res.totalPending ?? res.items?.length ?? 0);
         }

@@ -29,26 +29,6 @@ const SECTION_RE =
 const SKIP_RE =
   /^(chúc các bạn\b|tiếng trung cho người|mini\s*test\b|mẫu đề\b|họ\s*tên\s*:|姓名|班级|\[chưa hỗ trợ\]|(?:i{1,3}|iv|vi{0,3}|ix|xi{0,3})\.\s*|-{2,}|={2,})/i;
 
-export function htmlToPlainText(html: string): { text: string; images: ExtractedImage[] } {
-  const images: ExtractedImage[] = [];
-  const withoutImgs = html.replace(
-    /<img\b[^>]*src="data:([^;]+);base64,([^"]+)"[^>]*>/gi,
-    (_m, mime: string, b64: string) => {
-      images.push({ mime, bytes: Buffer.from(b64, 'base64') });
-      return '\n';
-    },
-  );
-  const text = withoutImgs
-    .replace(/<(?:br|\/p|\/div|\/li|\/h[1-6])\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&');
-  return { text, images };
-}
-
 export function parseImportedQuestions(text: string): ParsedDraftQuestion[] {
   const drafts: ImportDraft[] = [];
   let current: ImportDraft | null = null;

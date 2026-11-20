@@ -1,6 +1,13 @@
 import { PrismaClient, Role, UserStatus } from '@prisma/client';
 import { isEmail } from 'class-validator';
-import { assertPasswordWithinLimit, hashPassword } from '../src/common/auth/password-hash.util.ts';
+
+let passwordHashUtil;
+try {
+  passwordHashUtil = await import('../dist/common/auth/password-hash.util.js');
+} catch {
+  passwordHashUtil = await import('../src/common/auth/password-hash.util.ts');
+}
+const { assertPasswordWithinLimit, hashPassword } = passwordHashUtil;
 
 const email = (process.env.BOOTSTRAP_SUPERADMIN_EMAIL ?? '').trim().toLowerCase();
 const phone = (process.env.BOOTSTRAP_SUPERADMIN_PHONE ?? '').trim();

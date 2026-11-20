@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { QuestionType } from '@prisma/client';
-import { htmlToPlainText, parseImportedQuestions } from './document-import.parser.js';
+import { parseImportedQuestions } from './document-import.parser.js';
 
 const FIXTURE = `Câu 1. 你好吗？
 A. 我很好
@@ -48,16 +48,6 @@ describe('document-import.parser (Task 5.3 TDD)', () => {
     expect(parsed[1]?.needsReview).toBe(false);
     expect(parsed[2]?.needsReview).toBe(true);
     expect((parsed[2]?.payload.correctOptionIds as string[])).toEqual([]);
-  });
-
-  it('extracts embedded images from mammoth HTML without normalizing text', () => {
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString('base64');
-    const { text, images } = htmlToPlainText(
-      `<p>Câu 1. 看图 nǐ hǎo</p><img src="data:image/png;base64,${png}" /><p>A. 猫</p>`,
-    );
-    expect(text).toContain('看图 nǐ hǎo');
-    expect(images).toHaveLength(1);
-    expect(images[0]?.mime).toBe('image/png');
   });
 
   it('requires review when any labeled correct option does not exist', () => {
