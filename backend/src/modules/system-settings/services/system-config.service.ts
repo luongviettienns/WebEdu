@@ -21,11 +21,26 @@ export interface SystemConfigResponseDto {
   centerLogoBase64: string | null;
 }
 
+const SYSTEM_CONFIG_CACHE_TTL_MS = 60_000;
+
 @Injectable()
 export class SystemConfigService {
+  private cachedConfig: { value: SystemConfigResponseDto; expiresAt: number } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSystemConfig(): Promise<SystemConfigResponseDto> {
+  invalidateCache(): void {
+    this.cachedConfig = null;
+  }
+
+  async getSystemConfig(
+    cacheTtlMs = process.env.NODE_ENV === 'test' ? 0 : SYSTEM_CONFIG_CACHE_TTL_MS,
+  ): Promise<SystemConfigResponseDto> {
+    const now = Date.now();
+    if (cacheTtlMs > 0 && this.cachedConfig && this.cachedConfig.expiresAt > now) {
+      return this.cachedConfig.value;
+    }
+
     const rows = await this.prisma.systemSetting.findMany({
       where: {
         key: {
@@ -42,12 +57,15 @@ export class SystemConfigService {
     const centerName = map.get(SETTING_KEY_CENTER_NAME) || DEFAULT_CENTER_NAME;
     const logoValue = map.get(SETTING_KEY_CENTER_LOGO_URL) || null;
 
-    // Cleanup #15: Strictly return ONLY centerName and logo fields (never timezone)
-    return {
+    const result: SystemConfigResponseDto = {
       centerName,
       centerLogoUrl: logoValue,
       centerLogoBase64: logoValue,
     };
+    if (cacheTtlMs > 0) {
+      this.cachedConfig = { value: result, expiresAt: now + cacheTtlMs };
+    }
+    return result;
   }
 
   async updateSystemConfig(
@@ -116,6 +134,7 @@ export class SystemConfigService {
       });
     });
 
+    this.invalidateCache();
     return this.getSystemConfig();
   }
 

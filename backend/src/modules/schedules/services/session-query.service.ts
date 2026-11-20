@@ -60,6 +60,20 @@ export const SESSION_DETAIL_INCLUDE = {
   },
 } satisfies Prisma.LessonSessionInclude;
 
+function buildSessionDetailInclude(
+  actorId: string,
+  effectiveRole: 'ADMIN' | 'TEACHER' | 'STUDENT',
+): Prisma.LessonSessionInclude {
+  if (effectiveRole !== 'STUDENT') return SESSION_DETAIL_INCLUDE;
+  return {
+    ...SESSION_DETAIL_INCLUDE,
+    attendanceRecords: {
+      where: { studentId: actorId },
+      select: { studentId: true, status: true, note: true },
+    },
+  };
+}
+
 @Injectable()
 export class SessionQueryService {
   constructor(
@@ -87,7 +101,7 @@ export class SessionQueryService {
     const rows = (await this.prisma.lessonSession.findMany({
       where,
       orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
-      include: SESSION_DETAIL_INCLUDE,
+      include: buildSessionDetailInclude(actor.id, effectiveRole),
     })) as unknown as LessonSessionEntity[];
 
     const now = new Date();
@@ -166,7 +180,7 @@ export class SessionQueryService {
     const rows = (await this.prisma.lessonSession.findMany({
       where,
       orderBy: [{ sessionDate: 'asc' }, { startTime: 'asc' }, { createdAt: 'asc' }],
-      include: SESSION_DETAIL_INCLUDE,
+      include: buildSessionDetailInclude(actor.id, scope.effectiveRole),
     })) as unknown as LessonSessionEntity[];
 
     const now = new Date();

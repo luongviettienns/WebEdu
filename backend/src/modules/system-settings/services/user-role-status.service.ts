@@ -143,7 +143,7 @@ export class UserRoleStatusService {
     const willBePureStudent =
       nextRoles.length === 1 && nextRoles[0] === Role.STUDENT;
     if (willBePureStudent) {
-      const { hasActiveOrCompletedEnrollment, hasEverBeenEnrolled } =
+      const { hasActiveOrCompletedEnrollment } =
         await loadEnrollmentFacts(tx, targetUserId, targetUser.studentProfile);
 
       if (!hasActiveOrCompletedEnrollment && nextStatus === UserStatus.ACTIVE) {
@@ -151,7 +151,7 @@ export class UserRoleStatusService {
           'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
         );
       }
-      if (hasEverBeenEnrolled && nextStatus === UserStatus.PENDING_CLASS) {
+      if (hasActiveOrCompletedEnrollment && nextStatus === UserStatus.PENDING_CLASS) {
         throw new BadRequestException(
           'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
         );

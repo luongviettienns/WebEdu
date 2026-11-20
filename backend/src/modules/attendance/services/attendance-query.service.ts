@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { formatIsoDateUtc } from '../../../common/utils/timezone.util.js';
 import { computeSessionDisplayStatus, getWeekdayVnLabel } from '../../schedules/policies/session-schedule.policy.js';
+import { groupByKey, selectPrimaryEnrollment } from '../../progress/mappers/progress.mapper.js';
 import type {
   ClassAttendanceMatrixDto,
   SessionAttendanceSheetDto,
@@ -16,25 +17,6 @@ import {
   type SessionRosterEnrollmentEntity,
 } from '../mappers/attendance.mapper.js';
 import { AttendancePolicy } from '../policies/attendance.policy.js';
-
-function selectPrimaryEnrollment<T extends { status: EnrollmentStatus; enrolledDate: Date }>(
-  rows: T[],
-): T {
-  const active = rows.find((r) => r.status === EnrollmentStatus.ACTIVE);
-  if (active) return active;
-  return [...rows].sort((a, b) => b.enrolledDate.getTime() - a.enrolledDate.getTime())[0]!;
-}
-
-function groupByKey<T>(rows: T[], getKey: (row: T) => string): Map<string, T[]> {
-  const map = new Map<string, T[]>();
-  for (const row of rows) {
-    const k = getKey(row);
-    const list = map.get(k);
-    if (list) list.push(row);
-    else map.set(k, [row]);
-  }
-  return map;
-}
 
 @Injectable()
 export class AttendanceQueryService {

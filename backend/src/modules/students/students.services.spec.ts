@@ -906,7 +906,7 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
     expect(updated.status).toBe(UserStatus.INACTIVE);
   });
 
-  it('FIX-02: forbids moving a student with DROPPED or TRANSFERRED enrollment back to PENDING_CLASS', async () => {
+  it('BUG-QA-09: allows restoring an INACTIVE dropped-only student to PENDING_CLASS while still forbidding ACTIVE bypass or re-queueing COMPLETED students', async () => {
     usersStore.set('student-dropped', {
       id: 'student-dropped',
       email: 'dropped@example.com',
@@ -939,6 +939,35 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
       leftDate: new Date('2026-10-01'),
     });
 
+    // Cannot jump directly from INACTIVE to ACTIVE without an active/completed enrollment
+    await expect(
+      service.updateStudent(adminActor, 'student-dropped', {
+        status: UserStatus.ACTIVE,
+      }),
+    ).rejects.toThrowError(
+      new BadRequestException(
+        'Tài khoản chờ xếp lớp chỉ được kích hoạt thông qua nghiệp vụ Xếp lớp ban đầu',
+      ),
+    );
+
+    // Restoring INACTIVE dropped-only student back to PENDING_CLASS succeeds (not permanently bricked)
+    const restored = await service.updateStudent(adminActor, 'student-dropped', {
+      status: UserStatus.PENDING_CLASS,
+      internalNotes: 'Bảo lưu chờ khóa HSK2 tháng sau',
+    });
+    expect(restored.status).toBe(UserStatus.PENDING_CLASS);
+    expect(restored.internalNotes).toBe('Bảo lưu chờ khóa HSK2 tháng sau');
+
+    // A student with a COMPLETED enrollment still cannot be moved from INACTIVE back to PENDING_CLASS
+    usersStore.get('student-dropped')!.status = UserStatus.INACTIVE;
+    enrollmentsStore.push({
+      id: 'enr-completed',
+      classId: 'cls-k21',
+      studentId: 'student-dropped',
+      status: EnrollmentStatus.COMPLETED,
+      enrolledDate: new Date('2026-06-01'),
+      leftDate: new Date('2026-08-01'),
+    });
     await expect(
       service.updateStudent(adminActor, 'student-dropped', {
         status: UserStatus.PENDING_CLASS,
@@ -947,21 +976,6 @@ describe('Students services (FUNC-007, 008, 010, DEC-024..026)', () => {
       new BadRequestException(
         'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',
       ),
-    );
-
-    // When a dropped/completed student is already in PENDING_CLASS, editing internalNotes while keeping status = PENDING_CLASS succeeds
-    usersStore.get('student-dropped')!.status = UserStatus.PENDING_CLASS;
-    const updatedDropped = await service.updateStudent(
-      adminActor,
-      'student-dropped',
-      {
-        status: UserStatus.PENDING_CLASS,
-        internalNotes: 'Bảo lưu chờ khóa HSK2 tháng sau',
-      },
-    );
-    expect(updatedDropped.status).toBe(UserStatus.PENDING_CLASS);
-    expect(updatedDropped.internalNotes).toBe(
-      'Bảo lưu chờ khóa HSK2 tháng sau',
     );
   });
 

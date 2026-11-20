@@ -238,6 +238,13 @@ export class NotificationAcademicTriggersService {
     });
     if (!assignment || assignment.class.teacherId === input.studentId) return;
 
+    // Serialize count + dedup upsert per assignment so concurrent submits cannot overwrite with a lower count.
+    if (typeof tx.$executeRaw === 'function') {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`sub_pending:${input.assignmentId}`}, 0))
+      `;
+    }
+
     const pendingCount = await tx.submission.count({
       where: {
         classAssignmentId: input.assignmentId,

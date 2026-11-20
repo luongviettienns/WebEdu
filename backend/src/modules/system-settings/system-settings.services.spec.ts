@@ -634,23 +634,17 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
       }),
     ).rejects.toThrowError(ForbiddenException);
 
-    // createSystemUser locks active superadmins and validates minimum 1 active superadmin
+    // createSystemUser locks only the acting superadmin row (FOR SHARE), not all superadmins
     const queryRawMock = mockPrisma.$queryRaw as ReturnType<typeof vi.fn>;
-    queryRawMock.mockResolvedValueOnce([]);
-    await expect(
-      service.createSystemUser(superadminA, {
-        fullName: 'Should Fail Without Superadmin',
-        phone: '0988777665',
-        email: 'no.sa@webedu.vn',
-        initialPassword: 'Password@123',
-        roles: [Role.ADMIN],
-      }),
-    ).rejects.toThrowError(
-      new BadRequestException(
-        'Hệ thống bắt buộc duy trì tối thiểu 1 Superadmin đang hoạt động',
-      ),
-    );
-    expect(queryRawMock).toHaveBeenCalled();
+    queryRawMock.mockClear();
+    await service.createSystemUser(superadminA, {
+      fullName: 'Scoped Actor Lock Admin',
+      phone: '0988777665',
+      email: 'scoped.lock@webedu.vn',
+      initialPassword: 'Password@123',
+      roles: [Role.ADMIN],
+    });
+    expect(queryRawMock).toHaveBeenCalledTimes(1);
 
     // Demoting the last OTHER active Superadmin uses canonical message from assertAnotherActiveSuperadminRemains
     queryRawMock.mockResolvedValueOnce([
@@ -686,5 +680,22 @@ describe('SystemSettings Services (Slice 2.4 - FUNC-013, SEC-07, SEC-09, SEC-10)
         roles: [Role.ADMIN],
       }),
     ).rejects.toThrowError(UnauthorizedException);
+  });
+
+  it('BUG-QA-15: caches getSystemConfig within TTL and invalidates immediately on updateSystemConfig', async () => {
+    const systemSettingMock = mockPrisma.systemSetting as { findMany: ReturnType<typeof vi.fn> };
+    systemSettingMock.findMany.mockClear();
+
+    const first = await service.getSystemConfig(60_000);
+    const second = await service.getSystemConfig(60_000);
+    expect(second).toEqual(first);
+    expect(systemSettingMock.findMany).toHaveBeenCalledTimes(1);
+
+    await service.updateSystemConfig(superadminA, {
+      centerName: 'TD Hán Ngữ Cache Test',
+    });
+    const refreshed = await service.getSystemConfig(60_000);
+    expect(refreshed.centerName).toBe('TD Hán Ngữ Cache Test');
+    expect(systemSettingMock.findMany.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -58,6 +58,37 @@ describe('NotificationDeadlineService & NotificationMaintenanceService', () => {
     );
   });
 
+  it('skips write transaction when due-soon dedupKey already exists (BUG-QA-10)', async () => {
+    const now = new Date('2026-11-19T10:00:00.000Z');
+    const dueAt = new Date('2026-11-19T20:00:00.000Z');
+    const prisma = {
+      classAssignment: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'assign-1',
+            dueAt,
+            assessment: { title: 'Mini-test Bài 5' },
+            class: { enrollments: [{ studentId: 'stu-1' }] },
+            submissions: [],
+          },
+        ]),
+      },
+      notification: {
+        findMany: vi.fn().mockResolvedValue([
+          { recipientId: 'stu-1', dedupKey: `due_soon:assign-1:${dueAt.getTime()}` },
+        ]),
+      },
+      $transaction: vi.fn(),
+    } as never;
+    const dispatchService = { dispatchManyTx: vi.fn() } as never;
+
+    const deadlineService = new NotificationDeadlineService(prisma, dispatchService);
+    const created = await deadlineService.dispatchDueSoonReminders(now, 'stu-1');
+
+    expect(created).toBe(0);
+    expect((prisma as { $transaction: ReturnType<typeof vi.fn> }).$transaction).not.toHaveBeenCalled();
+  });
+
   it('purges read notifications > 90 days and unread notifications > 180 days in bounded batches', async () => {
     const prisma = {
       $executeRaw: vi.fn().mockResolvedValueOnce(4).mockResolvedValueOnce(2),

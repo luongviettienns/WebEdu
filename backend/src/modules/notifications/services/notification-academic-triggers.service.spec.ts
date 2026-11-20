@@ -61,7 +61,12 @@ describe('NotificationAcademicTriggersService', () => {
       upsertDedupNotificationTx: vi.fn().mockResolvedValue(undefined),
       resolveActiveAdminRecipientIdsTx: vi.fn(),
     } as never;
+    const callOrder: string[] = [];
     const tx = {
+      $executeRaw: vi.fn().mockImplementation(async () => {
+        callOrder.push('lock');
+        return 1;
+      }),
       classAssignment: {
         findUnique: vi.fn().mockResolvedValue({
           id: 'assign-1',
@@ -70,7 +75,10 @@ describe('NotificationAcademicTriggersService', () => {
         }),
       },
       submission: {
-        count: vi.fn().mockResolvedValue(2),
+        count: vi.fn().mockImplementation(async () => {
+          callOrder.push('count');
+          return 2;
+        }),
       },
     } as never;
 
@@ -79,6 +87,8 @@ describe('NotificationAcademicTriggersService', () => {
       assignmentId: 'assign-1',
       studentId: 'stu-2',
     });
+
+    expect(callOrder).toEqual(['lock', 'count']);
 
     expect((tx as { submission: { count: ReturnType<typeof vi.fn> } }).submission.count)
       .toHaveBeenCalledWith({

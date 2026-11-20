@@ -50,6 +50,22 @@ export class EnvironmentVariables {
 
   @IsString()
   @IsOptional()
+  TRUST_PROXY?: string;
+
+  @IsString()
+  @IsOptional()
+  UPLOAD_DIR?: string;
+
+  @IsString()
+  @IsOptional()
+  AI_CONFIG_ENCRYPTION_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  EXAM_SHUFFLE_SECRET?: string;
+
+  @IsString()
+  @IsOptional()
   MAIL_PROVIDER: string = 'smtp';
 
   @ValidateIf(

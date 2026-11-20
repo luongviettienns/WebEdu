@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AuthenticatedUser } from '../../../common/auth/auth.types.js';
 import { AssignmentAccessPolicy } from '../../assignments/policies/assignment-access.policy.js';
 import { GradePublicationService } from './grade-publication.service.js';
-import { GradingEventsService } from './grading-events.service.js';
 
 function makeTeacher(id = 'teacher-1'): AuthenticatedUser {
   return {
@@ -52,13 +51,13 @@ describe('GradePublicationService (Slice 7.4)', () => {
       $transaction: vi.fn(),
     };
     prisma.$transaction.mockImplementation(async (cb: (tx: typeof prisma) => Promise<unknown>) => cb(prisma));
-    const events = new GradingEventsService();
+    const academicNotifications = { onGradesPublishedTx: vi.fn(async () => undefined) };
     const service = new GradePublicationService(
       prisma as never,
       new AssignmentAccessPolicy(),
-      events,
+      academicNotifications as never,
     );
-    return { prisma, events, service };
+    return { prisma, academicNotifications, service };
   }
 
   it('confirmSubmissionGrade scores skipped objective questions, sums totalScore, and blocks ungraded essay (400)', async () => {
@@ -142,12 +141,8 @@ describe('GradePublicationService (Slice 7.4)', () => {
     });
   });
 
-  it('publishAssignmentGrades moves ONLY GRADED to RETURNED, leaves overdue untouched, and emits AssignmentScoresPublishedEvent', async () => {
-    const { prisma, events, service } = setupMocks();
-    const emitted: unknown[] = [];
-    events.onScoresPublished((evt) => {
-      emitted.push(evt);
-    });
+  it('publishAssignmentGrades moves ONLY GRADED to RETURNED, leaves overdue untouched, and dispatches published notifications', async () => {
+    const { prisma, academicNotifications, service } = setupMocks();
 
     const pastDue = new Date(Date.now() - 86_400_000);
     const assignedAt = new Date(pastDue.getTime() - 7 * 86_400_000);
@@ -174,8 +169,10 @@ describe('GradePublicationService (Slice 7.4)', () => {
     expect(res.publishedCount).toBe(1);
     expect(res.publishedSubmissionIds).toEqual(['sub-graded']);
     expect(res.overdueUntouchedCount).toBe(1);
-    expect(emitted).toHaveLength(1);
-    expect(events.getPublishedEvents()).toHaveLength(1);
+    expect(academicNotifications.onGradesPublishedTx).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ assignmentId: 'assign-1', studentIds: ['stu-graded'] }),
+    );
     expect(prisma.submission.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: { in: ['sub-graded'] }, status: SubmissionStatus.GRADED },
@@ -200,12 +197,8 @@ describe('GradePublicationService (Slice 7.4)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('Issue #4: batch confirm re-reads locked DB scores before summing totalScore, and conditional publish emits events only for actually transitioned GRADED rows', async () => {
-    const { prisma, events, service } = setupMocks();
-    const emitted: Array<{ submissionIds: string[]; studentIds: string[] }> = [];
-    events.onScoresPublished((evt) => {
-      emitted.push({ submissionIds: evt.submissionIds, studentIds: evt.studentIds });
-    });
+  it('Issue #4: batch confirm re-reads locked DB scores before summing totalScore, and conditional publish notifies only actually transitioned GRADED rows', async () => {
+    const { prisma, academicNotifications, service } = setupMocks();
 
     const questions = [
       { id: 'q-1', type: QuestionType.SINGLE_CHOICE, points: 2, payload: { options: [{ id: 'a' }], correctOptionIds: ['a'] } },
@@ -236,7 +229,7 @@ describe('GradePublicationService (Slice 7.4)', () => {
       }),
     );
 
-    // Partial updateMany (e.g. one submission concurrently reopened before updateMany): event contains ONLY transitioned row
+    // Partial updateMany (e.g. one submission concurrently reopened before updateMany): notification contains ONLY transitioned row
     prisma.classAssignment.findUnique.mockResolvedValueOnce({
       id: 'assign-1',
       classId: 'cls-1',
@@ -258,6 +251,9 @@ describe('GradePublicationService (Slice 7.4)', () => {
     const pubRes = await service.publishAssignmentGrades('assign-1', {}, makeTeacher());
     expect(pubRes.publishedCount).toBe(1);
     expect(pubRes.publishedSubmissionIds).toEqual(['sub-1']);
-    expect(emitted).toEqual([{ submissionIds: ['sub-1'], studentIds: ['stu-1'] }]);
+    expect(academicNotifications.onGradesPublishedTx).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ assignmentId: 'assign-1', studentIds: ['stu-1'] }),
+    );
   });
 });

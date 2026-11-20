@@ -1,11 +1,46 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import type { EmailProvider, SendEmailPayload } from './mail.types.js';
 
 @Injectable()
 export class SmtpEmailProvider implements EmailProvider {
+  private cachedKey = '';
+  private cachedTransporter: Transporter | null = null;
+
   constructor(private readonly configService: ConfigService) {}
+
+  private getTransporter(config: {
+    host: string;
+    port: number;
+    secure: boolean;
+    smtpUser: string;
+    smtpPass: string;
+  }): Transporter {
+    const key = `${config.host}|${config.port}|${config.secure}|${config.smtpUser}|${config.smtpPass}`;
+    if (this.cachedTransporter && this.cachedKey === key) {
+      return this.cachedTransporter;
+    }
+    this.cachedTransporter?.close();
+    this.cachedTransporter = nodemailer.createTransport({
+      host: config.host,
+      port: config.port,
+      secure: config.secure,
+      ...(config.smtpUser && config.smtpPass
+        ? {
+            auth: {
+              user: config.smtpUser,
+              pass: config.smtpPass,
+            },
+          }
+        : {}),
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 15_000,
+    });
+    this.cachedKey = key;
+    return this.cachedTransporter;
+  }
 
   async sendEmail(payload: SendEmailPayload): Promise<void> {
     const providerMode = (
@@ -61,21 +96,12 @@ export class SmtpEmailProvider implements EmailProvider {
       'Trung Tâm TD Hán Ngữ <no-reply@webedu.local>'
     ).trim();
 
-    const transporter = nodemailer.createTransport({
+    const transporter = this.getTransporter({
       host,
       port,
       secure,
-      ...(smtpUser && smtpPass
-        ? {
-            auth: {
-              user: smtpUser,
-              pass: smtpPass,
-            },
-          }
-        : {}),
-      connectionTimeout: 10_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 15_000,
+      smtpUser,
+      smtpPass,
     });
 
     await transporter.sendMail({

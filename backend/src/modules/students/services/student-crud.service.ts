@@ -247,7 +247,7 @@ export class StudentCrudService {
   ): Promise<void> {
     const isPureStudent =
       targetUser.roles.length === 1 && targetUser.roles[0] === Role.STUDENT;
-    const { hasActiveOrCompletedEnrollment, hasEverBeenEnrolled } =
+    const { hasActiveOrCompletedEnrollment } =
       await loadEnrollmentFacts(tx, targetUser.id, targetUser.studentProfile);
 
     if (
@@ -263,7 +263,7 @@ export class StudentCrudService {
     if (
       nextStatus === UserStatus.PENDING_CLASS &&
       targetUser.status !== UserStatus.PENDING_CLASS &&
-      !(isPureStudent && !hasEverBeenEnrolled)
+      !(isPureStudent && !hasActiveOrCompletedEnrollment)
     ) {
       throw new BadRequestException(
         'Không thể chuyển học viên đã xếp lớp về lại trạng thái Chờ xếp lớp',

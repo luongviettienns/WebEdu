@@ -23,8 +23,8 @@ import type { AssessmentMediaAccessService } from '../../assessments/index.js';
 import { AssignmentAccessPolicy } from '../policies/assignment-access.policy.js';
 import { SubmissionAnswerPolicy } from '../policies/submission-answer.policy.js';
 import { StudentSubmissionService } from './student-submission.service.js';
+import { AUDIO_LISTEN_WINDOW_MS } from './submission-audio.util.js';
 import {
-  AUDIO_LISTEN_WINDOW_MS,
   SUBMIT_GRACE_MS,
   isExpired,
 } from './submission-session.util.js';
@@ -102,6 +102,17 @@ function makeMockDeps() {
     $executeRaw: vi.fn(async () => 1),
     enrollment,
     classAssignment,
+    question: {
+      findMany: vi.fn(async (args?: { where?: { id?: { in?: string[] } } }) => {
+        const lastResult = classAssignment.findUnique.mock.results.at(-1);
+        const loaded = (lastResult?.type === 'return' ? await lastResult.value : null) as
+          | ReturnType<typeof makeAssignmentRow>
+          | null;
+        const allQuestions = loaded?.assessment?.questions ?? makeAssignmentRow().assessment.questions;
+        const ids = args?.where?.id?.in;
+        return ids ? allQuestions.filter((q) => ids.includes(q.id)) : allQuestions;
+      }),
+    },
     submission: {
       findFirst: vi.fn(async () => null),
       aggregate: vi.fn(async () => ({ _max: { attemptNumber: null } })),
@@ -1877,6 +1888,44 @@ describe('StudentSubmissionService (RED-GREEN TDD)', () => {
           update: { isCorrect: true, earnedPoints: 0.9 },
         }),
       );
+    });
+
+    it('BUG-QA-07: autosave timer heartbeat skips question lookup and omits full questions array while IN_PROGRESS', async () => {
+      const { service, tx } = makeMockDeps();
+      const activeSub = {
+        id: 'sub-lite-1',
+        studentId: 'student-1',
+        attemptNumber: 1,
+        status: SubmissionStatus.IN_PROGRESS,
+        revision: 2,
+        elapsedSeconds: 30,
+        remainingSeconds: 1770,
+        timerAccountedAt: new Date(Date.now() - 10_000),
+        timerLeaseUntil: new Date(Date.now() + 20_000),
+        timerClientId: 'tab-1',
+        startedAt: new Date(Date.now() - 30_000),
+        lastSavedAt: new Date(),
+        lastSyncedAt: new Date(),
+        submittedAt: null,
+        autoSubmitted: false,
+        dueAtOverride: null,
+        answers: [],
+      };
+      tx.submission.findFirst.mockResolvedValueOnce(activeSub as never);
+      tx.submission.update.mockImplementationOnce((async (args: { data: Record<string, unknown> }) => ({
+        ...activeSub,
+        ...args.data,
+      })) as never);
+
+      const res = await service.autosave(
+        'assign-1',
+        { submissionId: 'sub-lite-1', revision: 2, timerClientId: 'tab-1', answers: [] },
+        student,
+      );
+
+      expect(res.submission.status).toBe(SubmissionStatus.IN_PROGRESS);
+      expect(res.questions).toEqual([]);
+      expect(tx.question.findMany).not.toHaveBeenCalled();
     });
   });
 });

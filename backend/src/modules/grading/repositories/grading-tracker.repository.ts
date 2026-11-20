@@ -11,7 +11,11 @@ interface TrackerPage extends GradingTrackerSummaryDto {
   rows: Array<{ studentId: string; fullName: string; email: string; overdue: boolean }>;
 }
 
-type ExpiredTrackerDraft = Parameters<typeof tickSubmissionTimer>[0] & { id: string; dueAtOverride: Date | null };
+type ExpiredTrackerDraft = Parameters<typeof tickSubmissionTimer>[0] & {
+  id: string;
+  studentId: string;
+  dueAtOverride: Date | null;
+};
 
 export function findExpiredTrackerDrafts(
   db: DbClient,
@@ -22,7 +26,7 @@ export function findExpiredTrackerDrafts(
   const cutoff = new Date(now.getTime() - SUBMIT_GRACE_MS);
   const durationSeconds = assignment.effectiveDurationMinutes === null ? null : assignment.effectiveDurationMinutes * 60;
   return db.$queryRaw<ExpiredTrackerDraft[]>`
-    SELECT id, elapsed_seconds AS "elapsedSeconds", remaining_seconds AS "remainingSeconds",
+    SELECT id, student_id AS "studentId", elapsed_seconds AS "elapsedSeconds", remaining_seconds AS "remainingSeconds",
       due_at_override AS "dueAtOverride", timer_accounted_at AS "timerAccountedAt",
       timer_lease_until AS "timerLeaseUntil", timer_client_id AS "timerClientId"
     FROM submissions

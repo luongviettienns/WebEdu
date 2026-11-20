@@ -160,7 +160,10 @@ export class AdminOverviewService {
               },
             }),
             this.prisma.attendanceRecord.findMany({
-              where: { classId: { in: classIds } },
+              where: {
+                classId: { in: classIds },
+                session: { status: SessionStatus.COMPLETED },
+              },
               select: { classId: true, sessionId: true, studentId: true, status: true },
             }),
           ])

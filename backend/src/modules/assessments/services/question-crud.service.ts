@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import {
   assertEditableAssessment,
@@ -99,10 +99,15 @@ export class QuestionCrudService {
         throw new NotFoundException('Không tìm thấy câu hỏi');
       }
       await tx.question.delete({ where: { id: questionId } });
-      const rest = await tx.question.findMany({ where: { assessmentId }, ...byPosition });
-      for (let i = 0; i < rest.length; i += 1) {
-        await tx.question.update({ where: { id: rest[i]!.id }, data: { position: i + 1 } });
-      }
+      // Two-step shift avoids unique constraint collisions on (assessmentId, position) in PostgreSQL.
+      await tx.question.updateMany({
+        where: { assessmentId, position: { gt: existing.position } },
+        data: { position: { increment: 10000 } },
+      });
+      await tx.question.updateMany({
+        where: { assessmentId, position: { gt: existing.position + 10000 } },
+        data: { position: { decrement: 10001 } },
+      });
     });
   }
 
@@ -118,8 +123,20 @@ export class QuestionCrudService {
         throw new NotFoundException('Danh sách câu hỏi không khớp với đề');
       }
       await tx.question.updateMany({ where: { assessmentId }, data: { position: { increment: 10000 } } });
-      for (let i = 0; i < dto.questionIds.length; i += 1) {
-        await tx.question.update({ where: { id: dto.questionIds[i]! }, data: { position: i + 1 } });
+      if (dto.questionIds.length > 0) {
+        if (typeof tx.$executeRaw === 'function') {
+          const pairs = dto.questionIds.map((id, idx) => Prisma.sql`(${id}, ${idx + 1}::int)`);
+          await tx.$executeRaw`
+            UPDATE "questions" AS q
+            SET "position" = v."pos"
+            FROM (VALUES ${Prisma.join(pairs)}) AS v("id", "pos")
+            WHERE q."id" = v."id" AND q."assessment_id" = ${assessmentId}
+          `;
+        } else {
+          for (let i = 0; i < dto.questionIds.length; i += 1) {
+            await tx.question.update({ where: { id: dto.questionIds[i]! }, data: { position: i + 1 } });
+          }
+        }
       }
       const rows = await tx.question.findMany({ where: { assessmentId }, ...byPosition });
       return rows.map(toTeacherQuestionDto);

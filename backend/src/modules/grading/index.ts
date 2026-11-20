@@ -5,7 +5,6 @@ export * from './policies/auto-grading.policy.js';
 export * from './policies/grading-workflow.policy.js';
 export * from './services/auto-grading.service.js';
 export * from './services/ai-essay-grading.service.js';
-export * from './services/grading-events.service.js';
 export * from './services/grading-tracker.service.js';
 export * from './services/teacher-grading.service.js';
 export * from './services/grade-publication.service.js';

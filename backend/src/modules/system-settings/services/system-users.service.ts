@@ -7,9 +7,7 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import { hashPassword } from '../../../common/auth/password-hash.util.js';
 import {
   assertActorMayModifyAccount,
-  assertAnotherActiveSuperadminRemains,
   assertFreshActiveSuperadminActorInTx,
-  lockUserAndActiveSuperadmins,
 } from '../../../common/auth/superadmin-protection.policy.js';
 import { PrismaService } from '../../../common/prisma/prisma.service.js';
 import { writeAuditLog } from '../../../common/audit/audit-log.util.js';
@@ -112,13 +110,12 @@ export class SystemUsersService {
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
-        const lockedSuperadmins = await lockUserAndActiveSuperadmins(tx, actor.id);
+        await tx.$queryRaw`SELECT id FROM "users" WHERE id = ${actor.id} FOR SHARE`;
         await assertFreshActiveSuperadminActorInTx(
           tx,
           actor,
           'Chỉ Quản trị tối cao (Superadmin) mới có quyền phân quyền hoặc tạo tài khoản hệ thống',
         );
-        assertAnotherActiveSuperadminRemains('__create_system_user__', lockedSuperadmins);
 
         const user = await tx.user.create({
           data: {
