@@ -26,14 +26,14 @@ function SuperadminSettingsContent({
 
   return (
     <div className="space-y-8">
-      <div className="border-b border-[#E0DED5] pb-4">
-        <div className="font-han text-xs tracking-widest text-[#B5322A] uppercase mb-1">
+      <div className="border-b border-[var(--line)] pb-4">
+        <div className="font-han text-xs tracking-widest text-[var(--red)] uppercase mb-1">
           系统运营 · VẬN HÀNH HỆ THỐNG
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-[#1C2320]">
+        <h1 className="text-2xl font-bold tracking-tight text-[var(--ink)]">
           Vận Hành Hệ Thống (Superadmin)
         </h1>
-        <p className="mt-1 text-sm text-[#5A6460]">
+        <p className="mt-1 text-sm text-[var(--ink-2)]">
           Quản lý tài khoản quản trị, gán đa vai trò, cấu hình thương hiệu
           trung tâm và giám sát nhật ký hệ thống
         </p>
@@ -48,7 +48,6 @@ function SuperadminSettingsContent({
         userRoleFilter={s.userRoleFilter}
         userStatusFilter={s.userStatusFilter}
         userPage={s.userPage}
-        totalUserPages={s.totalUserPages}
         userTotal={s.userTotal}
         onUserSearchChange={s.handleUserSearchChange}
         onUserRoleChange={s.handleUserRoleChange}
@@ -78,7 +77,6 @@ function SuperadminSettingsContent({
         auditLoading={s.auditLoading}
         auditErrorBanner={s.auditErrorBanner}
         auditPage={s.auditPage}
-        totalAuditPages={s.totalAuditPages}
         auditTotal={s.auditTotal}
         auditActionFilter={s.auditActionFilter}
         onAuditActionChange={s.handleAuditActionChange}

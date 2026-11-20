@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listCalendarSessions, type LessonSessionItem } from '@/features/schedules/api/schedules.api';
 import { extractErrorMessage } from '@/lib/api-client';
+import { getTodayVnIsoDate } from '@/lib/utils/date';
 
 export type CalendarViewMode = 'month' | 'week' | 'list';
 
 function toVnTodayYmd(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date());
+  return getTodayVnIsoDate();
 }
 
 export function getMonthGridBounds(monthAnchor: string): { from: string; to: string; days: Date[]; year: number; month: number } {

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { PasswordInput } from '@/components/ui/PasswordInput';
+import { BaseDialog } from '@/features/common/components/BaseDialog';
 import { createSystemUser } from '@/features/system-settings/api/system-settings.api';
 import { extractErrorMessage } from '@/lib/api-client';
 import { ROLE_LABELS, type Role } from '@/types/user';
@@ -95,20 +96,16 @@ export function CreateSystemUserModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
+    <BaseDialog
+      title="Tạo Tài Khoản Quản Trị Mới"
+      onClose={onClose}
+      busy={creating}
+      maxWidthClass="max-w-md"
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-bold text-[var(--ink)]">
-          Tạo Tài Khoản Quản Trị Mới
-        </h2>
-
         {createError ? (
           <div
             role="alert"
-            className="mt-3 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
+            className="mb-3 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {createError}
           </div>
@@ -117,7 +114,7 @@ export function CreateSystemUserModal({
         <form
           onSubmit={(e) => void handleSubmit(e)}
           noValidate
-          className="mt-4 space-y-4"
+          className="space-y-4"
         >
           <div className="space-y-1">
             <label
@@ -231,7 +228,6 @@ export function CreateSystemUserModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </BaseDialog>
   );
 }

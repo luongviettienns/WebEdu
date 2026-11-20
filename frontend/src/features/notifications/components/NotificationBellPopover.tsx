@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import type { AuthUserDto } from '@/features/auth/api/auth.api';
 import { useNotifications } from '../hooks/useNotifications';
 import type { NotificationItemDto } from '../types/notifications.types';
-import { formatUnreadBadgeLabel } from '../utils/notification-time.util';
+import {
+  dispatchNotificationsChanged,
+  formatUnreadBadgeLabel,
+} from '../utils/notification-time.util';
 import { NotificationItemRow } from './NotificationItemRow';
 
 interface NotificationBellPopoverProps {
@@ -77,7 +80,13 @@ export function NotificationBellPopover({
 
   const handleSelectItem = async (item: NotificationItemDto) => {
     const href = await markItemReadAndResolveHref(item);
-    router.push(href);
+    const targetPath = href.split('?')[0]?.split('#')[0] ?? href;
+    if (typeof window !== 'undefined' && window.location.pathname === targetPath) {
+      dispatchNotificationsChanged();
+      router.refresh();
+    } else {
+      router.push(href);
+    }
   };
 
   return (

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { PasswordInput } from '@/components/ui/PasswordInput';
+import { BaseDialog } from '@/features/common/components/BaseDialog';
 import {
   createTeacher,
   updateTeacher,
@@ -116,33 +117,22 @@ export function TeacherFormModal({
   };
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1C2320]/50 p-4 backdrop-blur-xs overflow-y-auto"
+    <BaseDialog
+      title={
+        mode === 'create'
+          ? 'Tạo Tài Khoản Giáo Viên Mới'
+          : mode === 'edit'
+            ? 'Cập Nhật Thông Tin Giáo Viên'
+            : 'Chi Tiết Hồ Sơ Giáo Viên'
+      }
+      onClose={onClose}
+      busy={submitting}
+      maxWidthClass="max-w-lg"
     >
-      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
-          <h2 className="text-lg font-bold text-[var(--ink)]">
-            {mode === 'create'
-              ? 'Tạo Tài Khoản Giáo Viên Mới'
-              : mode === 'edit'
-                ? 'Cập Nhật Thông Tin Giáo Viên'
-                : 'Chi Tiết Hồ Sơ Giáo Viên'}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm font-medium text-[var(--ink-2)] hover:text-[var(--ink)]"
-          >
-            Đóng
-          </button>
-        </div>
-
         {formError ? (
           <div
             role="alert"
-            className="mt-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
+            className="mb-4 rounded-xl border border-[var(--red)]/30 bg-[var(--red-soft)] p-3 text-xs font-medium text-[var(--red-ink)]"
           >
             {formError}
           </div>
@@ -151,7 +141,7 @@ export function TeacherFormModal({
         <form
           onSubmit={(e) => void handleSaveTeacher(e)}
           noValidate
-          className="mt-4 space-y-4"
+          className="space-y-4"
         >
           <div className="space-y-1.5">
             <label
@@ -279,7 +269,6 @@ export function TeacherFormModal({
             ) : null}
           </div>
         </form>
-      </div>
-    </div>
+    </BaseDialog>
   );
 }

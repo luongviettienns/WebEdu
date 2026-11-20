@@ -77,6 +77,11 @@ export function useSuperadminSettings(onAuthError: (error: unknown) => boolean) 
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
+        const lastUserPage = Math.max(1, Math.ceil(res.total / USER_PAGE_LIMIT));
+        if (userPage > lastUserPage) {
+          setUserPage(lastUserPage);
+          return;
+        }
         setUsers(res.items);
         setUserTotal(res.total);
         setUserErrorBanner('');
@@ -119,10 +124,15 @@ export function useSuperadminSettings(onAuthError: (error: unknown) => boolean) 
           { signal: controller.signal },
         );
         if (controller.signal.aborted) return;
+        const nextAuditTotal =
+          response.total ?? (response.items ? response.items.length : 0);
+        const lastAuditPage = Math.max(1, Math.ceil(nextAuditTotal / AUDIT_PAGE_LIMIT));
+        if (auditPage > lastAuditPage) {
+          setAuditPage(lastAuditPage);
+          return;
+        }
         setAuditLogs(response.items ?? []);
-        setAuditTotal(
-          response.total ?? (response.items ? response.items.length : 0),
-        );
+        setAuditTotal(nextAuditTotal);
         setAuditErrorBanner('');
       } catch (error) {
         if (controller.signal.aborted) return;

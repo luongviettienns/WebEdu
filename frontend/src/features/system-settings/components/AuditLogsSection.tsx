@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
+import { PaginationBar } from '@/features/common/components/PaginationBar';
 import { type AuditLogItemDto } from '@/features/system-settings/api/system-settings.api';
-import { SettingsPaginationFooter } from '@/features/system-settings/components/SettingsPaginationFooter';
 import { formatDateTimeVn } from '@/lib/utils/date';
 import { ROLE_LABELS } from '@/types/user';
 
@@ -33,7 +33,6 @@ interface AuditLogsSectionProps {
   auditLoading: boolean;
   auditErrorBanner: string;
   auditPage: number;
-  totalAuditPages: number;
   auditTotal: number;
   auditActionFilter: string;
   onAuditActionChange: (action: string) => void;
@@ -47,7 +46,6 @@ export function AuditLogsSection({
   auditLoading,
   auditErrorBanner,
   auditPage,
-  totalAuditPages,
   auditTotal,
   auditActionFilter,
   onAuditActionChange,
@@ -176,14 +174,13 @@ export function AuditLogsSection({
         </table>
       </div>
 
-      <SettingsPaginationFooter
+      <PaginationBar
         page={auditPage}
-        totalPages={totalAuditPages}
-        totalItems={auditTotal}
-        itemLabel="nhật ký"
+        limit={20}
+        total={auditTotal}
         loading={auditLoading}
-        onPrevPage={onPrevPage}
-        onNextPage={onNextPage}
+        itemLabel="nhật ký"
+        onPageChange={(next) => (next < auditPage ? onPrevPage() : onNextPage())}
       />
     </section>
   );

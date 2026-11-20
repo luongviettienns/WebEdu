@@ -25,12 +25,18 @@ import {
 import {
   buildResolvedSessionSnapshot,
   buildSyncPayload,
+  mergeAutosaveSessionQuestions,
+  reconcilePendingAfterAutosave,
   tickCountdownSnapshot,
   type ExamSnapshotLike,
 } from '@/features/assignments/utils/exam-session-transport';
 import { purgeLegacyWebStorageTokens } from '@/lib/api-client';
 import {
-  mergePendingExamAnswers, pruneAcknowledgedExamDrafts, recoverPendingExamAnswers, storePendingExamAnswers,
+  mergePendingExamAnswers,
+  pruneAcknowledgedExamDrafts,
+  recoverPendingExamAnswers,
+  sameExamAnswer,
+  storePendingExamAnswers,
 } from '@/features/assignments/utils/exam-pending-draft';
 
 class MemoryStorage implements Storage {
@@ -895,5 +901,65 @@ test.describe('Exam Draft Security, Bounded Merge & Transport Sync', () => {
     writeDraftFlags('sub-2', 'student-1', { 'q-9': true }, 'assign-1');
     purgeLegacyWebStorageTokens();
     expect(readDraftFlags('sub-2', 'student-1')).toEqual({});
+  });
+
+  test('BUG-QA-01 & BUG-QA-07: persists LISTENING audioPlayCount across F5 reload and merges lightweight autosave responses', () => {
+    const listeningQuestion: SanitizedQuestionDto = {
+      id: 'q-listen',
+      position: 1,
+      type: 'LISTENING',
+      prompt: 'Nghe đoạn hội thoại',
+      points: 2,
+      mediaId: 'media-1',
+      maxListens: 2,
+      options: [
+        { id: 'a', text: 'A' },
+        { id: 'b', text: 'B' },
+      ],
+    };
+    const baseSession = createSessionDto({
+      submissionId: 'sub-listen',
+      questions: [listeningQuestion],
+      answers: [],
+    });
+
+    // Student plays audio once without modifying answer -> stored in pending draft
+    const pending = {
+      'q-listen': { base: {}, answer: {}, audioPlayCount: 1 },
+    };
+    expect(storePendingExamAnswers(baseSession, 'tab-1', pending)).toBe(true);
+
+    // Simulating instant F5 reload before server autosave finished: recoverPendingExamAnswers restores audioPlayCount=1
+    const recovered = recoverPendingExamAnswers(baseSession);
+    expect(recovered.pending['q-listen']?.audioPlayCount).toBe(1);
+    const merged = mergePendingExamAnswers(baseSession, recovered.pending);
+    expect(merged.audioPlayCounts['q-listen']).toBe(1);
+    expect(merged.hasConflict).toBe(false);
+
+    // Lightweight autosave response omits questions array (questions: []) -> mergeAutosaveSessionQuestions preserves loaded paper
+    const serverAckSession: StudentExamSessionDto = {
+      ...baseSession,
+      submission: { ...baseSession.submission, revision: 1 },
+      questions: [],
+      answers: [
+        {
+          questionId: 'q-listen',
+          answerPayload: { selectedOptionIds: [] },
+          audioPlayCount: 1,
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    };
+    const hydrated = mergeAutosaveSessionQuestions(serverAckSession, baseSession.questions);
+    expect(hydrated.questions).toHaveLength(1);
+
+    // Reconcile clears pending entry once server acknowledges audioPlayCount >= 1
+    const remainingPending = reconcilePendingAfterAutosave(
+      { 'q-listen': { base: { selectedOptionIds: [] }, answer: { selectedOptionIds: [] }, audioPlayCount: 1 } },
+      [{ questionId: 'q-listen' }],
+      hydrated,
+      sameExamAnswer,
+    );
+    expect(remainingPending).toEqual({});
   });
 });

@@ -5,6 +5,8 @@ import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { PortalGuardView } from '@/features/auth/components/AccessDeniedState';
 import { usePortalSession } from '@/features/auth/hooks/usePortalSession';
 import { PaginationBar } from '@/features/common/components/PaginationBar';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import {
   confirmAllGradedSubmissions,
   confirmSubmissionGrade,
@@ -26,6 +28,7 @@ import { extractErrorMessage } from '@/lib/api-client';
 import type { Role } from '@/types/user';
 
 const ALLOWED_ROLES: readonly Role[] = ['TEACHER', 'ADMIN'];
+const GRADING_REFRESH_EVENTS = [NOTIFICATIONS_CHANGED_EVENT] as const;
 
 function TeacherGradingWorkspace({
   assignmentId,
@@ -47,6 +50,7 @@ function TeacherGradingWorkspace({
   const [batchAiOpen, setBatchAiOpen] = useState(false);
   const [pendingOverdueZero, setPendingOverdueZero] = useState<PendingOverdueZeroTarget | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
+  const syncTick = useWindowEventRefreshTick(GRADING_REFRESH_EVENTS);
 
   const reload = useCallback(() => setReloadTick((t) => t + 1), []);
 
@@ -72,7 +76,7 @@ function TeacherGradingWorkspace({
       }
     })();
     return () => controller.abort();
-  }, [assignmentId, filter, page, reloadTick, onAuthError]);
+  }, [assignmentId, filter, page, reloadTick, syncTick, onAuthError]);
 
   const runAction = async (
     key: string,

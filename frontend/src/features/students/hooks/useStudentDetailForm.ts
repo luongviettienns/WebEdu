@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { getUserInitials } from '@/components/layout/nav-links';
 import {
   getStudentClassHistory,
   getStudentDetail,
   updateStudent,
   type StudentItemDto,
 } from '@/features/students/api/students.api';
+import { notifyPendingEnrollmentUpdated } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage, isUnauthorizedError } from '@/lib/api-client';
 import { calculateAgeInVnTimezone } from '@/lib/utils/date';
 import type { UserStatus } from '@/types/user';
@@ -19,7 +21,6 @@ function normalizeIsoDateForInput(iso?: string | null): string {
 interface UseStudentDetailFormArgs {
   initialStudent: StudentItemDto;
   canManageInternalNotes: boolean;
-  onClose: () => void;
   onSuccess: (updatedFullName: string) => void;
   onAuthError: (error: unknown) => boolean;
 }
@@ -27,7 +28,6 @@ interface UseStudentDetailFormArgs {
 export function useStudentDetailForm({
   initialStudent,
   canManageInternalNotes,
-  onClose,
   onSuccess,
   onAuthError,
 }: UseStudentDetailFormArgs) {
@@ -52,14 +52,6 @@ export function useStudentDetailForm({
   );
   const [modalError, setModalError] = useState<string>('');
   const [saving, setSaving] = useState<boolean>(false);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -113,13 +105,7 @@ export function useStudentDetailForm({
     };
   }, [initialStudent.id, canManageInternalNotes, onAuthError]);
 
-  const initials = (editFullName || initialStudent.fullName)
-    .trim()
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(-2)
-    .join('')
-    .toUpperCase();
+  const initials = getUserInitials(editFullName || initialStudent.fullName);
 
   const isGuardianConsentLocked = Boolean(
     selectedStudent.dateOfBirthLocked ||
@@ -184,6 +170,7 @@ export function useStudentDetailForm({
           ? { internalNotes: editInternalNotes.trim() }
           : {}),
       });
+      notifyPendingEnrollmentUpdated();
       onSuccess(trimmedName);
     } catch (error) {
       if (isUnauthorizedError(error)) {

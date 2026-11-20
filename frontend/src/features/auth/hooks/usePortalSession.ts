@@ -22,6 +22,16 @@ import {
 } from '@/lib/api-client';
 import type { Role } from '@/types/user';
 
+export const PORTAL_PROFILE_UPDATED_EVENT = 'webedu:portal-profile-updated';
+
+export type PortalProfilePatch = Partial<Pick<AuthUserDto, 'fullName' | 'email' | 'phone'>>;
+
+export function notifyPortalProfileUpdated(patch: PortalProfilePatch): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent<PortalProfilePatch>(PORTAL_PROFILE_UPDATED_EVENT, { detail: patch }));
+  }
+}
+
 export interface PortalSessionState<TUser extends AuthUserDto> {
   status: PortalGuardStatus;
   user: TUser | null;
@@ -102,11 +112,11 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
         const fresh = await fetchSessionUser();
         setUser((prev) => {
           if (!prev) return fresh;
-          if (
+          const rolesOrAccessChanged =
             prev.id !== fresh.id ||
             prev.status !== fresh.status ||
-            JSON.stringify(prev.roles) !== JSON.stringify(fresh.roles)
-          ) {
+            JSON.stringify(prev.roles) !== JSON.stringify(fresh.roles);
+          if (rolesOrAccessChanged) {
             if (
               allowedRoles &&
               allowedRoles.length > 0 &&
@@ -118,6 +128,13 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
             }
             return fresh;
           }
+          if (
+            prev.fullName !== fresh.fullName ||
+            prev.email !== fresh.email ||
+            prev.phone !== fresh.phone
+          ) {
+            return fresh;
+          }
           return prev;
         });
       } catch (err) {
@@ -125,13 +142,21 @@ function usePortalSessionBase<TUser extends AuthUserDto>(
       }
     };
 
+    const handleProfileUpdated = (event: Event) => {
+      const patch = (event as CustomEvent<PortalProfilePatch>).detail;
+      if (!patch) return;
+      setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+    };
+
     window.addEventListener('focus', recheckSession);
     document.addEventListener('visibilitychange', recheckSession);
+    window.addEventListener(PORTAL_PROFILE_UPDATED_EVENT, handleProfileUpdated);
 
     return () => {
       controller.abort();
       window.removeEventListener('focus', recheckSession);
       document.removeEventListener('visibilitychange', recheckSession);
+      window.removeEventListener(PORTAL_PROFILE_UPDATED_EVENT, handleProfileUpdated);
     };
   }, [fetchSessionUser, allowedRoles, handleApiAuthError]);
 

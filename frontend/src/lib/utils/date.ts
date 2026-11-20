@@ -1,3 +1,12 @@
+export function getTodayVnIsoDate(referenceInstant: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(referenceInstant);
+}
+
 /**
  * Tính tuổi chính xác theo giờ Việt Nam (Asia/Ho_Chi_Minh).
  * Xử lý chuẩn cả năm nhuận 29/02 và biên 00:00-06:59 GMT+7.

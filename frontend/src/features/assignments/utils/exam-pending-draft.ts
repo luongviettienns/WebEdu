@@ -4,6 +4,7 @@ import { buildSessionAnswerMaps, getDraftStorageKey, sanitizeLocalDraftAnswers }
 export type PendingExamAnswers = Record<string, {
   base: StudentAnswerPayload;
   answer: StudentAnswerPayload;
+  audioPlayCount?: number;
 }>;
 
 export function sameExamAnswer(a?: StudentAnswerPayload, b?: StudentAnswerPayload): boolean {
@@ -12,17 +13,30 @@ export function sameExamAnswer(a?: StudentAnswerPayload, b?: StudentAnswerPayloa
 
 export function mergePendingExamAnswers(session: StudentExamSessionDto, pending: PendingExamAnswers) {
   const { answers, audioPlayCounts } = buildSessionAnswerMaps(session);
+  const validIds = new Set(session.questions.map((q) => q.id));
   const cleaned = sanitizeLocalDraftAnswers(
     session.questions, Object.fromEntries(Object.entries(pending).map(([id, entry]) => [id, entry.answer])),
   );
   const remaining: PendingExamAnswers = {};
   let hasConflict = false;
-  for (const [id, answer] of Object.entries(cleaned)) {
-    if (sameExamAnswer(answer, answers[id])) continue;
-    const base = pending[id].base;
-    if (!sameExamAnswer(base, answers[id])) hasConflict = true;
-    remaining[id] = { base, answer };
-    answers[id] = answer;
+  for (const [id, entry] of Object.entries(pending)) {
+    if (!validIds.has(id)) continue;
+    const cleanedAnswer = cleaned[id];
+    const serverPlays = audioPlayCounts[id] ?? 0;
+    const pendingPlays = entry.audioPlayCount ?? 0;
+    const hasNewAudioPlay = pendingPlays > serverPlays;
+    const answerChanged = cleanedAnswer !== undefined && !sameExamAnswer(cleanedAnswer, answers[id]);
+    if (!answerChanged && !hasNewAudioPlay) continue;
+    const base = entry.base;
+    const nextAnswer = cleanedAnswer ?? answers[id] ?? {};
+    if (answerChanged && !sameExamAnswer(base, answers[id])) hasConflict = true;
+    remaining[id] = {
+      base,
+      answer: nextAnswer,
+      ...(hasNewAudioPlay ? { audioPlayCount: pendingPlays } : {}),
+    };
+    if (answerChanged) answers[id] = nextAnswer;
+    if (hasNewAudioPlay) audioPlayCounts[id] = pendingPlays;
   }
   return { answers, audioPlayCounts, pending: remaining, hasConflict };
 }
@@ -79,7 +93,11 @@ export function recoverPendingExamAnswers(
       for (const [questionId, entry] of Object.entries(unresolved)) {
         const prior = pending[questionId];
         if (prior && !sameExamAnswer(prior.answer, entry.answer)) hasConflict = true;
-        pending[questionId] = entry;
+        const maxAudio = Math.max(prior?.audioPlayCount ?? 0, entry.audioPlayCount ?? 0);
+        pending[questionId] = {
+          ...entry,
+          ...(maxAudio > 0 ? { audioPlayCount: maxAudio } : {}),
+        };
       }
     }
   } catch {
@@ -105,11 +123,12 @@ export function pruneAcknowledgedExamDrafts(
 ): void {
   try {
     const storage = window.localStorage;
-    const { answers } = buildSessionAnswerMaps(session);
+    const { answers, audioPlayCounts } = buildSessionAnswerMaps(session);
     const acceptedIds = new Set(resolved?.sent
-      .filter(({ questionId, answerPayload }) =>
+      .filter(({ questionId, answerPayload, audioPlayCount }) =>
         sameExamAnswer(answerPayload, resolved.displayed[questionId]) &&
-        sameExamAnswer(answerPayload, answers[questionId]),
+        sameExamAnswer(answerPayload, answers[questionId]) &&
+        (audioPlayCount ?? 0) <= (audioPlayCounts[questionId] ?? 0),
       )
       .map(({ questionId }) => questionId));
     for (const key of pendingKeys(storage, session)) {
@@ -118,9 +137,11 @@ export function pruneAcknowledgedExamDrafts(
       if (!draft || draft.baseRevision > session.submission.revision) continue;
       const observed = resolved?.drafts.get(key) === raw;
       const entries = Object.entries(draft.pending);
-      const remaining = entries.filter(([id, entry]) =>
-        !sameExamAnswer(entry.answer, answers[id]) && !(observed && acceptedIds.has(id)),
-      );
+      const remaining = entries.filter(([id, entry]) => {
+        const audioSynced = (entry.audioPlayCount ?? 0) <= (audioPlayCounts[id] ?? 0);
+        const answerSynced = sameExamAnswer(entry.answer, answers[id]);
+        return !(answerSynced && audioSynced) && !(observed && acceptedIds.has(id));
+      });
       if (remaining.length === entries.length || storage.getItem(key) !== raw) continue;
       if (remaining.length) {
         storage.setItem(key, JSON.stringify({

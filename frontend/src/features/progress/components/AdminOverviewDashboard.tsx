@@ -3,11 +3,19 @@
 import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import type { ClassStatus } from '@/features/classes/api/classes.types';
+import { useWindowEventRefreshTick } from '@/features/common/hooks/useWindowEventRefreshTick';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/features/notifications/utils/notification-time.util';
 import { getAdminOverview } from '@/features/progress/api/progress.api';
 import { AdminOverviewClassesSection } from '@/features/progress/components/AdminOverviewClassesSection';
 import { AdminOverviewScheduleColumn } from '@/features/progress/components/AdminOverviewScheduleColumn';
 import type { AdminOverviewResponseDto } from '@/features/progress/types/progress.types';
+import { PENDING_ENROLLMENT_UPDATED_EVENT } from '@/features/students/hooks/usePendingEnrollmentCount';
 import { extractErrorMessage } from '@/lib/api-client';
+
+const ADMIN_OVERVIEW_REFRESH_EVENTS = [
+  NOTIFICATIONS_CHANGED_EVENT,
+  PENDING_ENROLLMENT_UPDATED_EVENT,
+] as const;
 
 export interface AdminOverviewDashboardProps {
   onAuthError?: (error: unknown) => boolean;
@@ -22,6 +30,7 @@ export function AdminOverviewDashboard({ onAuthError }: AdminOverviewDashboardPr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reloadTick, setReloadTick] = useState(0);
+  const syncTick = useWindowEventRefreshTick(ADMIN_OVERVIEW_REFRESH_EVENTS);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -49,7 +58,7 @@ export function AdminOverviewDashboard({ onAuthError }: AdminOverviewDashboardPr
       }
     })();
     return () => controller.abort();
-  }, [courseId, teacherId, status, includeEnded, reloadTick, onAuthError]);
+  }, [courseId, teacherId, status, includeEnded, reloadTick, syncTick, onAuthError]);
 
   const handleStatusChange = (nextStatus: ClassStatus | '') => {
     setStatus(nextStatus);

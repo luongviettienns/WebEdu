@@ -200,12 +200,3 @@ export function resolveActiveRoleView(
   }
   return preferredRoleView;
 }
-
-export function getNavLinks(
-  role: Role | undefined,
-  assignedRoles: readonly Role[] | undefined,
-  pendingCount: number = 0,
-): NavItem[] {
-  const groups = getGroupedNavLinks(role, assignedRoles, pendingCount);
-  return groups.flatMap((group) => group.items);
-}

@@ -11,6 +11,7 @@ import {
 import { ReopenSubmissionForm } from '@/features/assignments/components/ReopenSubmissionForm';
 import { toVnDateTimeLocalValue } from '@/features/assignments/utils/exam-draft';
 import { BaseDialog, DialogError } from '@/features/common/components/BaseDialog';
+import { PaginationBar } from '@/features/common/components/PaginationBar';
 import { StatusTag } from '@/features/common/components/StatusTag';
 import { extractErrorMessage } from '@/lib/api-client';
 import { formatDateTimeVn } from '@/lib/utils/date';
@@ -88,6 +89,11 @@ function ClassAssignmentTrackerBody({ assignmentId, onClose, onChanged }: {
           signal: controller.signal,
         });
         if (!controller.signal.aborted) {
+          const lastPage = Math.max(1, Math.ceil(res.total / Math.max(1, res.limit)));
+          if (page > lastPage) {
+            setPage(lastPage);
+            return;
+          }
           setData(res);
         }
       } catch (err) {
@@ -102,7 +108,6 @@ function ClassAssignmentTrackerBody({ assignmentId, onClose, onChanged }: {
   }, [assignmentId, statusFilter, page, reloadTick]);
 
   const stats = data?.assignment.stats;
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / Math.max(1, data.limit))) : 1;
 
   const openReopenForm = (row: TeacherTrackerStudentRowDto) => {
     const assignmentOverdue = data ? isIsoPastDeadline(data.assignment.dueAt) : false;
@@ -258,38 +263,17 @@ function ClassAssignmentTrackerBody({ assignmentId, onClose, onChanged }: {
         </div>
 
         {data && data.total > data.limit ? (
-          <nav
-            aria-label="Phân trang danh sách học viên"
-            className="flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--ink-2)]"
-          >
-            <span className="num">
-              Trang {data.page}/{totalPages}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={loading || data.page <= 1}
-                onClick={() => {
-                  setReopenState(null);
-                  setPage((prev) => Math.max(1, prev - 1));
-                }}
-                className="rounded-md border border-[var(--line-2)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Trước
-              </button>
-              <button
-                type="button"
-                disabled={loading || data.page * data.limit >= data.total}
-                onClick={() => {
-                  setReopenState(null);
-                  setPage((prev) => prev + 1);
-                }}
-                className="rounded-md border border-[var(--line-2)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--ink)] hover:bg-[var(--hover)] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Sau
-              </button>
-            </div>
-          </nav>
+          <PaginationBar
+            page={data.page}
+            limit={data.limit}
+            total={data.total}
+            loading={loading}
+            itemLabel="học viên"
+            onPageChange={(nextPage) => {
+              setReopenState(null);
+              setPage(nextPage);
+            }}
+          />
         ) : null}
       </div>
     </BaseDialog>
